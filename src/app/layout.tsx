@@ -9,7 +9,7 @@ const geistSans = Geist({
 
 export const metadata: Metadata = {
   title: { default: "MyWine", template: "%s · MyWine" },
-  description: "Persönlicher Weinkeller",
+  description: "Persönliche Weinsammlung",
 };
 
 export const viewport: Viewport = {

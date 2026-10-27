@@ -42,7 +42,7 @@ export function vintageOptions(items: PageItem[]): VintageOption[] {
 
 /**
  * Gewählter Jahrgang: der angefragte, falls vorhanden; sonst der älteste mit Flaschen im
- * Keller (offen oder ungeöffnet), sonst der zuletzt getrunkene.
+ * Bestand (offen oder ungeöffnet), sonst der zuletzt getrunkene.
  */
 export function pickVintage(options: VintageOption[], requested: number | null | undefined, items: PageItem[]) {
   if (requested !== undefined && options.some((o) => o.year === requested)) return requested;

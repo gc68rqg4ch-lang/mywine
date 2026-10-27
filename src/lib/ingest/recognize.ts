@@ -39,7 +39,7 @@ export type LabelImage = { mediaType: "image/jpeg" | "image/png" | "image/webp";
 
 export class RecognitionError extends Error {}
 
-const RECOGNITION_SYSTEM = `Du liest Weinetiketten für einen privaten Weinkeller in der Schweiz.
+const RECOGNITION_SYSTEM = `Du liest Weinetiketten für eine private Weinsammlung in der Schweiz.
 Du bekommst Fotos der Vorder- und meist auch der Rückseite derselben Flasche.
 Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. Land aus "Product of Spain").
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
@@ -331,7 +331,7 @@ export async function enrichFromWeb(proposal: WineProposal): Promise<{
   };
 }
 
-const TEXT_SYSTEM = `Du erfasst Weineinkäufe für einen privaten Weinkeller in der Schweiz aus einer kurzen Nachricht, z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“.
+const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in der Schweiz aus einer kurzen Nachricht, z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“.
 Übernimm nur, was in der Nachricht steht oder sich eindeutig daraus ergibt; erfinde nichts.
 - name: Weinname ohne Produzent und Jahrgang. producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500).

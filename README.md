@@ -1,6 +1,6 @@
 # MyWine
 
-Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`@supabase/ssr`), Deployment auf Vercel.
+Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase (`@supabase/ssr`), Deployment auf Vercel.
 
 ## Funktionen (Meilenstein 1)
 
@@ -14,7 +14,7 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
   (bis 30 / 30–60 / 60–100 / 100–200 / über 200 CHF). Bei Jahrgang und Preisklasse steht ein Wein in jeder
   passenden Gruppe mit deren Flaschenzahl, bei Rebsorte Cuvées unter jeder Traube. Gruppen laden zugeklappt
   (Titel, Symbol bzw. Flagge, Flaschenzahl); bei aktiver Suche gehen die Gruppen mit Treffern auf. Kacheln: Bestand
-  (Flaschen, Weine, Jahrgänge, Kellerwert bezahlt/normal), offene Flaschen (Tage seit Öffnen), Käufe des
+  (Flaschen, Weine, Jahrgänge, Bestandswert bezahlt/normal), offene Flaschen (Tage seit Öffnen), Käufe des
   Jahres (aus dem Journal `inventory_events`) und Trinkreife. Weintypen als Trauben-Symbole
   (`src/components/wine-type-icon.tsx`); Logik in `src/lib/cellar/overview.ts`.
 - **Offen** (`/offen`) und **Getrunken** (`/getrunken`) sind wie der Bestand aufgebaut und nutzen dieselben
@@ -88,8 +88,8 @@ zieht ein Trigger den Journal-Eintrag „getrunken“ mit.
   (Schlüssel wie im Tool).
 - **Recherche** (`/recherche`, 🔎 in der Navigation – öffnet nur die Seite, startet nie etwas): zuerst die
   Übersicht, wie viele Weine welche Lücke haben (Rebsorten ohne %, Rebsorten fehlen, Alkohol, Trinkfenster,
-  Region/Appellation) – jeweils „im Keller“ (ungeöffnete oder offene Flaschen) und „alle“ – mit der Liste der
-  Weine. Umfang wählbar (Standard: im Keller). Start nur nach Bestätigung („Ich recherchiere jetzt X Weine. Das
+  Region/Appellation) – jeweils „im Bestand“ (ungeöffnete oder offene Flaschen, egal welcher Lagerort) und „alle, auch ausgetrunkene“ – mit der Liste der
+  Weine. Umfang wählbar: „Nur Weine im Bestand“ (Standard) oder „Alle Weine, auch ausgetrunkene“. Start nur nach Bestätigung („Ich recherchiere jetzt X Weine. Das
   dauert etwa Y Minuten. Starten?“), dann Fortschritt „7 von 20“ mit Abbrechen (Gefundenes bleibt gespeichert)
   und eine Zusammenfassung. Die Zeitschätzung beginnt mit 60 s pro Wein und nimmt danach den gemessenen Schnitt.
   Option „Auch vollständige Weine prüfen“ (`?vollstaendig=1`, Standard aus): dann alle Weine der Auswahl, auch
@@ -256,7 +256,7 @@ Ablauf in `src/lib/ingest/flow.ts`, `ingest_jobs.source = 'text'`:
 - Erkennen (`parseTextEntry`, Haiku/Sonnet, Schema `TextEntrySchema` mit Kaufangaben), dann wie bei Fotos: Abgleich
   mit bestehenden Weinen (ohne Produzent über einen eindeutigen Namen), sonst Websuche (Produzent, Herkunft, Typ,
   Alkohol, Trinkfenster des Jahrgangs) und Rebsorten mit %.
-- Liegt der Wein mit dem Jahrgang schon im Keller: „Nachkauf zu bestehendem Wein?“ → nur eine neue Charge.
+- Liegt der Wein mit dem Jahrgang schon im Bestand: „Nachkauf zu bestehendem Wein?“ → nur eine neue Charge.
 - Danach nur, was im Text fehlt: Lagerort, Anzahl, Preis, Normalpreis, Händler (`nextPurchaseStep`); zum Schluss
   eine Zusammenfassung mit [Ja] [Nein]. Der Händler aus dem Text wird erst beim Speichern angelegt.
 - Das Trinkfenster wird in `wine_vintages` übernommen, wenn dort noch keines steht (auch bei der Foto-Erfassung).

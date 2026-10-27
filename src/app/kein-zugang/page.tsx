@@ -16,7 +16,7 @@ export default async function NoAccessPage() {
         <h1 className="brand">MyWine</h1>
         <h2 className="section-title">Kein Zugang</h2>
         <p>
-          Du bist als <strong>{email ?? "unbekannt"}</strong> angemeldet, bist aber nicht für diesen Weinkeller
+          Du bist als <strong>{email ?? "unbekannt"}</strong> angemeldet, bist aber nicht für diese Weinsammlung
           freigeschaltet.
         </p>
         <p className="muted">

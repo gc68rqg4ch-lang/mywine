@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Recherche" };
 export const maxDuration = 300;
 
 /**
- * Übersicht zuerst: welche Angaben bei wie vielen Weinen fehlen (im Keller / alle).
+ * Übersicht zuerst: welche Angaben bei wie vielen Weinen fehlen (im Bestand / alle, auch ausgetrunkene).
  * Gestartet wird nur mit Bestätigung; diese Seite startet von sich aus nie etwas.
  */
 export default async function ResearchPage({ searchParams }: PageProps<"/recherche">) {
@@ -90,7 +90,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
           <thead>
             <tr>
               <th scope="col">Lücke</th>
-              <th scope="col">im Keller</th>
+              <th scope="col">im Bestand</th>
               <th scope="col">alle</th>
             </tr>
           </thead>
@@ -109,15 +109,15 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
             </tr>
           </tbody>
         </table>
-        <p className="muted small">„Im Keller“ = Weine mit ungeöffneten oder offenen Flaschen; „alle“ = auch getrunkene.</p>
+        <p className="muted small">„Im Bestand“ = Weine mit ungeöffneten oder offenen Flaschen, egal an welchem Lagerort; „alle“ = auch ausgetrunkene.</p>
       </section>
 
       <nav className="segmented" aria-label="Umfang">
         <Link href={href({ alle: false })} className={scope === "cellar" ? "segment active" : "segment"} aria-current={scope === "cellar" ? "page" : undefined}>
-          Nur im Keller ({cellar.length})
+          Nur Weine im Bestand ({cellar.length})
         </Link>
         <Link href={href({ alle: true })} className={scope === "all" ? "segment active" : "segment"} aria-current={scope === "all" ? "page" : undefined}>
-          Alle Weine ({all.length})
+          Alle Weine, auch ausgetrunkene ({all.length})
         </Link>
       </nav>
 

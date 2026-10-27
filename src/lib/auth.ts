@@ -33,7 +33,7 @@ export const getSession = cache(async () => {
 });
 
 /**
- * Für Seiten im Keller: wie getSession, aber wer angemeldet ist und nicht in
+ * Für Seiten der Weinsammlung: wie getSession, aber wer angemeldet ist und nicht in
  * app_members steht, landet auf „Kein Zugang“ (statt einer leeren Seite).
  */
 export async function getMemberSession() {
@@ -46,7 +46,7 @@ export async function getMemberSession() {
 export async function requireMember() {
   const session = await getSession();
   if (!session.isMember) {
-    throw new Error("Kein Zugriff auf diesen Weinkeller.");
+    throw new Error("Kein Zugriff auf diese Weinsammlung.");
   }
   return session;
 }

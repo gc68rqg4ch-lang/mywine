@@ -149,7 +149,7 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   assert.match(String(edited.body.text), /Geöffnet/);
   assert.ok((edited.body.reply_markup as Kb).inline_keyboard.flat().some((b) => b.text === "🥃 1 Glas"), "danach das Menü der offenen Flasche");
 
-  // B) Nachkauf: Wein + Jahrgang liegt schon im Keller → Rückfrage, keine Recherche der Stammdaten
+  // B) Nachkauf: Wein + Jahrgang liegt schon im Bestand → Rückfrage, keine Recherche der Stammdaten
   net.tables.wines.push({ id: W, name: "Pintia", producer: "Vega Sicilia", country: "Spanien", region: "Toro", appellation: null, type: "red", alcohol_content: 14.5, grapes: [] });
   net.tables.inventory_items.push({ id: "old", wine_id: W, vintage_year: 2018, status: "sealed", quantity: 2 });
   net.tables.inventory_items.push({ id: "old2", wine_id: W, vintage_year: 2018, status: "open", quantity: 1 });

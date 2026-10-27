@@ -81,7 +81,7 @@ export function proposalMessage(state: IngestState, matched: boolean) {
   if (r.notes) lines.push(`<i>Unsicher: ${e(r.notes)}</i>`);
   const grapeNote = {
     research: "🍇 <i>Die Rebsorten habe ich für diesen Jahrgang recherchiert</i>",
-    existing: "🍇 <i>Die Rebsorten habe ich aus deinem Keller übernommen</i>",
+    existing: "🍇 <i>Die Rebsorten habe ich aus deinem Bestand übernommen</i>",
   }[state.grape_source as string];
   if (grapeNote && p.grape_shares.length) lines.push(grapeNote);
   if (matched) lines.push("✅ <i>Diesen Wein kenne ich schon – ich lege nur eine neue Charge an.</i>");
@@ -170,7 +170,7 @@ export function skipVendorKeyboard(jobId: string): TgInlineKeyboard {
 }
 
 export const HELP_TEXT = [
-  "Ich bin Antoine, dein Kellermeister. 🍷",
+  "Ich bin Antoine, dein Sommelier. 🍷",
   "Unten findest du das Menü: <b>🍷 Offen</b>, <b>📦 Bestand</b>, <b>⏰ Trinkreif</b>, <b>📷 Neuer Wein</b>.",
   "Tipp auf einen Wein für Gläser, Füllstand, Öffnen, Ausgetrunken, Bewertungen und ✏️ Bearbeiten.",
   "",

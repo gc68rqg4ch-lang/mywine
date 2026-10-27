@@ -1,4 +1,4 @@
-// Recherche pro Wein: Lücken im Keller/alle und vollständiges Ergänzen in einem Durchgang,
+// Recherche pro Wein: Lücken im Bestand/alle und vollständiges Ergänzen in einem Durchgang,
 // ohne Vorhandenes zu überschreiben. Claude und Supabase per fetch-Stub. Ausführen: npm test
 import assert from "node:assert/strict";
 import { claudeTool, installNet, type Net } from "./stub-net";
@@ -79,14 +79,14 @@ installNet(net);
   const { createAdminClient } = await import("@/lib/supabase/admin");
   const db = createAdminClient();
 
-  // Lücken: im Keller nur Pintia 2019; „alle“ auch 2016 und Alion (dort fehlt nichts)
+  // Lücken: im Bestand nur Pintia 2019; „alle“ auch 2016 und Alion (dort fehlt nichts)
   const data = await loadGapData(db);
   const pintia = data.wines.find((w) => w.id === W)!;
   const cellar = wineGaps(pintia, data, "cellar")!;
   assert.deepEqual(cellar.gaps, ["grapePercent", "alcohol", "window", "origin"]);
   assert.deepEqual(cellar.vintages.map((v) => v.year), [2019]);
   assert.deepEqual(wineGaps(pintia, data, "all")!.vintages.map((v) => v.year), [2019, 2016]);
-  assert.equal(wineGaps(data.wines.find((w) => w.id === W2)!, data, "cellar"), null, "Alion ist nicht im Keller");
+  assert.equal(wineGaps(data.wines.find((w) => w.id === W2)!, data, "cellar"), null, "Alion ist nicht im Bestand");
   assert.equal(needsResearch(wineGaps(data.wines.find((w) => w.id === W2)!, data, "all")!), false);
   assert.deepEqual(gapCounts([cellar]), { grapePercent: 1, grapes: 0, alcohol: 1, window: 1, origin: 1 });
 

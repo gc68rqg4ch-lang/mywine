@@ -1,4 +1,4 @@
-// Lücken je Wein für die Recherche (rein, ohne DB): welche Angaben fehlen – im Keller
+// Lücken je Wein für die Recherche (rein, ohne DB): welche Angaben fehlen – im Bestand
 // (ungeöffnete oder offene Flaschen) bzw. über alle Jahrgänge mit Flaschen.
 
 export type ResearchScope = "cellar" | "all";

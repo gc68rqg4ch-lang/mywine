@@ -18,7 +18,7 @@ type Db = SupabaseClient<Database>;
 
 const WINE_COLUMNS = "id, name, producer, country, region, appellation, type, alcohol_content, grapes" as const;
 
-/** Alles, was die Lückenberechnung braucht – für einen Wein oder den ganzen Keller. */
+/** Alles, was die Lückenberechnung braucht – für einen Wein oder alle Weine. */
 export async function loadGapData(db: Db, wineId?: string) {
   const one = <Q extends { eq: (c: "wine_id", v: string) => Q }>(q: Q) => (wineId ? q.eq("wine_id", wineId) : q);
   const [wines, items, vintages, shares] = await Promise.all([

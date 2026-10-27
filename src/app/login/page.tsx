@@ -18,7 +18,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
     <main className="login">
       <div className="card login-card">
         <h1 className="brand">MyWine</h1>
-        <p className="muted">Dein persönlicher Weinkeller. Melde dich per Magic Link an.</p>
+        <p className="muted">Deine persönliche Weinsammlung. Melde dich per Magic Link an.</p>
         {params.fehler && (
           <p className="notice notice-error" role="alert">
             Der Login-Link ist ungültig oder abgelaufen. Bitte fordere einen neuen an.

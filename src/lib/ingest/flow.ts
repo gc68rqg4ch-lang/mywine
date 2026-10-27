@@ -408,7 +408,7 @@ export async function discardDescribe(db: AdminClient, chatId: number) {
     .eq("extracted->>step", "describe");
 }
 
-/** Liegt dieser Wein mit diesem Jahrgang schon im Keller (ungeöffnet oder offen)? */
+/** Liegt dieser Wein mit diesem Jahrgang schon im Bestand (ungeöffnet oder offen)? */
 async function inStock(db: AdminClient, wineId: string, year: number | null) {
   let q = db.from("inventory_items").select("id", { count: "exact", head: true }).eq("wine_id", wineId).in("status", ["sealed", "open"]);
   q = year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
@@ -480,7 +480,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
       drink = web.drink;
     }
     if (!known) {
-      // Den recherchierten Produzenten gibt es vielleicht schon im Keller.
+      // Den recherchierten Produzenten gibt es vielleicht schon im Bestand.
       known = await findWine(db, proposal.name, proposal.producer);
       if (known) proposal = mergeWithKnownWine(proposal, known);
     }
@@ -527,7 +527,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     if (step === "restock") {
       await sendMessage(
         chatId,
-        "Diesen Wein mit diesem Jahrgang hast du schon im Keller. Ist es ein Nachkauf? (Sonst schreib ihn mir mit genauerem Namen neu.)",
+        "Diesen Wein mit diesem Jahrgang hast du schon im Bestand. Ist es ein Nachkauf? (Sonst schreib ihn mir mit genauerem Namen neu.)",
         restockKeyboard(jobId),
       );
     } else if (step === "producer") {
@@ -555,7 +555,7 @@ export async function setVintage(db: AdminClient, job: IngestJob, chatId: number
     if (job.matched_wine_id && (await inStock(db, job.matched_wine_id, year))) {
       const next = await advanceJob(db, job, "vintage", { ...patch, step: "restock" });
       if (next) {
-        await sendMessage(chatId, "Diesen Wein mit diesem Jahrgang hast du schon im Keller. Ist es ein Nachkauf?", restockKeyboard(job.id));
+        await sendMessage(chatId, "Diesen Wein mit diesem Jahrgang hast du schon im Bestand. Ist es ein Nachkauf?", restockKeyboard(job.id));
       }
       return;
     }
@@ -584,7 +584,7 @@ export async function setProducer(db: AdminClient, job: IngestJob, chatId: numbe
     if (next) {
       await sendMessage(
         chatId,
-        "Diesen Wein mit diesem Jahrgang hast du schon im Keller. Ist es ein Nachkauf?",
+        "Diesen Wein mit diesem Jahrgang hast du schon im Bestand. Ist es ein Nachkauf?",
         restockKeyboard(job.id),
       );
     }
