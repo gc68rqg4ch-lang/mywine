@@ -47,7 +47,7 @@ export const DRINK_STATUS_LABELS: Record<DrinkStatus, string> = {
   unknown: "unbekannt",
 };
 
-export type GroupBy = "typ" | "land" | "rebsorte" | "jahrgang" | "preis";
+export type GroupBy = "typ" | "land" | "rebsorte" | "jahrgang" | "preis" | "getrunken";
 
 export const GROUP_BY_LABELS: Record<GroupBy, string> = {
   typ: "Weintyp",
@@ -55,10 +55,24 @@ export const GROUP_BY_LABELS: Record<GroupBy, string> = {
   rebsorte: "Rebsorte",
   jahrgang: "Jahrgang",
   preis: "Preisklasse",
+  getrunken: "Getrunken am",
 };
 
-export function isGroupBy(value: unknown): value is GroupBy {
-  return typeof value === "string" && value in GROUP_BY_LABELS;
+/** Gruppierungen von Bestand und Offen; Getrunken hat zusätzlich „Getrunken am“. */
+export const BASE_GROUPINGS: GroupBy[] = ["typ", "land", "rebsorte", "jahrgang", "preis"];
+
+export function isGroupBy(value: unknown, allowed: GroupBy[] = BASE_GROUPINGS): value is GroupBy {
+  return typeof value === "string" && (allowed as string[]).includes(value);
+}
+
+/** Preisklasse wie public.price_class() in der DB. */
+export function priceClass(price: number | null | undefined): string | null {
+  if (price == null) return null;
+  if (price <= 30) return "bis 30";
+  if (price <= 60) return "30–60";
+  if (price <= 100) return "60–100";
+  if (price <= 200) return "100–200";
+  return "über 200";
 }
 
 // ---------------------------------------------------------------------------
@@ -140,11 +154,34 @@ export function countIn(row: VintageRow, filter: LocationFilter) {
 
 export type CellarVintage = VintageRow & { sealed: number; open: number };
 
-export type CellarWine = SummaryWine & {
+/**
+ * Zähleinheit fürs Gruppieren: so viele Flaschen mit diesem Jahrgang, dieser Preisklasse
+ * (und ggf. diesem Trinkdatum). Ein Eintrag kann aus mehreren Einheiten bestehen.
+ */
+export type GroupUnit = {
+  vintage_year: number | null;
+  price_class: string | null;
+  count: number;
+  /** YYYY-MM-DD (Zürich), nur bei getrunkenen Flaschen. */
+  drunk_on?: string | null;
+};
+
+/** Was Liste, Suche und Gruppierung von einem Eintrag brauchen. */
+export type Groupable = {
+  name: string;
+  producer: string;
+  country: string | null;
+  region: string | null;
+  type: WineType | null;
+  grapes: string[];
+  /** Jahrgänge des Eintrags, aufsteigend (ohne Jahrgang = null, zuletzt). */
+  vintages: (number | null)[];
+  units: GroupUnit[];
+};
+
+export type CellarWine = SummaryWine & Groupable & {
   sealed: number;
   open: number;
-  /** Jahrgänge mit ungeöffneten Flaschen im Filter, aufsteigend (ohne Jahrgang = null, zuletzt). */
-  vintages: (number | null)[];
   rows: CellarVintage[];
 };
 
@@ -173,13 +210,16 @@ export function buildCellarWines(
       sealed,
       open,
       vintages: sortVintages([...new Set(wineRows.filter((r) => r.sealed > 0).map((r) => r.vintage_year))]),
+      units: wineRows
+        .filter((r) => r.sealed > 0)
+        .map((r) => ({ vintage_year: r.vintage_year, price_class: r.price_class, count: r.sealed })),
       rows: wineRows,
     });
   }
   return result.sort(compareWines);
 }
 
-function sortVintages(years: (number | null)[]) {
+export function sortVintages(years: (number | null)[]) {
   return years.sort((a, b) => (a == null ? 1 : b == null ? -1 : a - b));
 }
 
@@ -194,7 +234,7 @@ export function formatVintages(vintages: (number | null)[]) {
 // ---------------------------------------------------------------------------
 // Suche
 
-export function matchesQuery(wine: CellarWine, query: string) {
+export function matchesQuery(wine: Groupable, query: string) {
   const haystack = [
     wine.name,
     wine.producer,
@@ -216,46 +256,80 @@ export function matchesQuery(wine: CellarWine, query: string) {
 // ---------------------------------------------------------------------------
 // Gruppen
 
-export type GroupItem = { wine: CellarWine; bottles: number; vintages: (number | null)[] };
+export type GroupItem<T extends Groupable = CellarWine> = { wine: T; bottles: number; vintages: (number | null)[] };
 
-export type WineGroup = {
+export type GroupSection<T extends Groupable = CellarWine> = {
+  key: string;
+  label: string;
+  bottles: number;
+  items: GroupItem<T>[];
+};
+
+export type WineGroup<T extends Groupable = CellarWine> = {
   key: string;
   label: string;
   /** Flaggen-Emoji (Land) bzw. Weintyp (für das Trauben-Symbol). */
   flag?: string;
   wineType?: WineType | null;
   bottles: number;
-  items: GroupItem[];
+  items: GroupItem<T>[];
+  /** Untergruppen (bei „Getrunken am“: Monate eines Jahres). */
+  sections?: GroupSection<T>[];
 };
 
 const TYPE_ORDER: (WineType | "unknown")[] = [
   "red", "white", "rose", "sparkling", "sweet", "fortified", "orange", "unknown",
 ];
 
-function pushTo(
-  groups: Map<string, WineGroup>,
+const MONTHS = [
+  "Januar", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember",
+];
+
+function pushTo<G extends { bottles: number; items: GroupItem<T>[] }, T extends Groupable>(
+  groups: Map<string, G>,
   key: string,
-  init: () => Omit<WineGroup, "bottles" | "items">,
-  item: GroupItem,
+  init: () => Omit<G, "bottles" | "items">,
+  item: GroupItem<T>,
 ) {
   if (item.bottles <= 0) return;
   let group = groups.get(key);
   if (!group) {
-    group = { ...init(), bottles: 0, items: [] };
+    group = { ...init(), bottles: 0, items: [] } as unknown as G;
     groups.set(key, group);
   }
   group.bottles += item.bottles;
   group.items.push(item);
 }
 
+/** Einheiten eines Eintrags nach Schlüssel zusammenfassen (Flaschen + Jahrgänge je Schlüssel). */
+function splitBy<T extends Groupable>(wine: T, keyOf: (u: GroupUnit) => string) {
+  const parts = new Map<string, GroupItem<T>>();
+  for (const u of wine.units) {
+    if (u.count <= 0) continue;
+    const key = keyOf(u);
+    const part = parts.get(key) ?? { wine, bottles: 0, vintages: [] };
+    part.bottles += u.count;
+    if (!part.vintages.includes(u.vintage_year)) part.vintages.push(u.vintage_year);
+    parts.set(key, part);
+  }
+  for (const part of parts.values()) sortVintages(part.vintages);
+  return parts;
+}
+
 /**
- * Gruppiert die Weine. Bei Jahrgang und Preisklasse erscheint ein Wein in jeder
- * passenden Gruppe mit der Flaschenzahl dieser Gruppe; bei Rebsorte in jeder
- * seiner Rebsorten (Cuvées also mehrfach) mit allen Flaschen.
+ * Gruppiert die Einträge. Bei Jahrgang, Preisklasse und „Getrunken am“ erscheint ein
+ * Eintrag in jeder passenden Gruppe mit der Flaschenzahl dieser Gruppe; bei Rebsorte
+ * in jeder seiner Rebsorten (Cuvées also mehrfach) mit allen Flaschen.
  */
-export function groupWines(wines: CellarWine[], by: GroupBy): WineGroup[] {
-  const groups = new Map<string, WineGroup>();
-  const whole = (wine: CellarWine): GroupItem => ({ wine, bottles: wine.sealed, vintages: wine.vintages });
+export function groupWines<T extends Groupable>(wines: T[], by: GroupBy): WineGroup<T>[] {
+  const groups = new Map<string, WineGroup<T>>();
+  const whole = (wine: T): GroupItem<T> => ({
+    wine,
+    bottles: wine.units.reduce((s, u) => s + u.count, 0),
+    vintages: wine.vintages,
+  });
+  const months = new Map<string, Map<string, GroupSection<T>>>();
 
   for (const wine of wines) {
     switch (by) {
@@ -285,34 +359,27 @@ export function groupWines(wines: CellarWine[], by: GroupBy): WineGroup[] {
         break;
       }
       case "jahrgang": {
-        const byYear = new Map<number | null, number>();
-        for (const r of wine.rows) byYear.set(r.vintage_year, (byYear.get(r.vintage_year) ?? 0) + r.sealed);
-        for (const [year, bottles] of byYear) {
-          const key = year == null ? "" : String(year);
-          pushTo(groups, key, () => ({ key, label: year == null ? "Ohne Jahrgang" : String(year) }), {
-            wine,
-            bottles,
-            vintages: [year],
-          });
+        for (const [key, item] of splitBy(wine, (u) => (u.vintage_year == null ? "" : String(u.vintage_year)))) {
+          pushTo(groups, key, () => ({ key, label: key || "Ohne Jahrgang" }), item);
         }
         break;
       }
       case "preis": {
-        const byClass = new Map<string, { bottles: number; vintages: Set<number | null> }>();
-        for (const r of wine.rows) {
-          if (r.sealed === 0) continue;
-          const key = r.price_class ?? "";
-          const entry = byClass.get(key) ?? { bottles: 0, vintages: new Set() };
-          entry.bottles += r.sealed;
-          entry.vintages.add(r.vintage_year);
-          byClass.set(key, entry);
+        for (const [key, item] of splitBy(wine, (u) => u.price_class ?? "")) {
+          pushTo(groups, key, () => ({ key, label: key ? `${key} CHF` : "Ohne Preis" }), item);
         }
-        for (const [key, entry] of byClass) {
-          pushTo(groups, key, () => ({ key, label: key ? `${key} CHF` : "Ohne Preis" }), {
-            wine,
-            bottles: entry.bottles,
-            vintages: sortVintages([...entry.vintages]),
-          });
+        break;
+      }
+      case "getrunken": {
+        for (const [year, item] of splitBy(wine, (u) => u.drunk_on?.slice(0, 4) ?? "")) {
+          pushTo(groups, year, () => ({ key: year, label: year || "Ohne Datum" }), item);
+        }
+        for (const [month, item] of splitBy(wine, (u) => u.drunk_on?.slice(0, 7) ?? "")) {
+          if (!month) continue;
+          const year = month.slice(0, 4);
+          const sections = months.get(year) ?? new Map<string, GroupSection<T>>();
+          months.set(year, sections);
+          pushTo(sections, month, () => ({ key: month, label: MONTHS[Number(month.slice(5, 7)) - 1] ?? month }), item);
         }
         break;
       }
@@ -320,7 +387,7 @@ export function groupWines(wines: CellarWine[], by: GroupBy): WineGroup[] {
   }
 
   const list = [...groups.values()];
-  const lastIfEmpty = (a: WineGroup, b: WineGroup) => (a.key === "" ? 1 : 0) - (b.key === "" ? 1 : 0);
+  const lastIfEmpty = (a: { key: string }, b: { key: string }) => (a.key === "" ? 1 : 0) - (b.key === "" ? 1 : 0);
   switch (by) {
     case "typ":
       list.sort((a, b) => TYPE_ORDER.indexOf(a.key as WineType) - TYPE_ORDER.indexOf(b.key as WineType));
@@ -335,6 +402,14 @@ export function groupWines(wines: CellarWine[], by: GroupBy): WineGroup[] {
           PRICE_CLASSES.indexOf(a.key as (typeof PRICE_CLASSES)[number]) -
             PRICE_CLASSES.indexOf(b.key as (typeof PRICE_CLASSES)[number]),
       );
+      break;
+    case "getrunken":
+      // Neueste zuerst, „Ohne Datum“ zuletzt; darin Monate absteigend.
+      list.sort((a, b) => lastIfEmpty(a, b) || b.key.localeCompare(a.key));
+      for (const group of list) {
+        const sections = months.get(group.key);
+        if (sections) group.sections = [...sections.values()].sort((a, b) => b.key.localeCompare(a.key));
+      }
       break;
     default:
       list.sort((a, b) => lastIfEmpty(a, b) || b.bottles - a.bottles || a.label.localeCompare(b.label, "de-CH"));
@@ -376,6 +451,11 @@ const COUNTRY_CODES: Record<string, string> = {
   schweiz: "CH", slowakei: "SK", slowenien: "SI", spanien: "ES", "südafrika": "ZA", tschechien: "CZ",
   "türkei": "TR", ungarn: "HU", uruguay: "UY", usa: "US", "vereinigte staaten": "US", zypern: "CY",
 };
+
+/** „🇪🇸 Rioja“ – Flagge plus Region (oder Land) für die Kartenzeile. */
+export function originLabel(w: { country: string | null; region: string | null }) {
+  return [countryFlag(w.country), w.region ?? w.country].filter(Boolean).join(" ") || null;
+}
 
 /** Flaggen-Emoji für einen (deutschen) Ländernamen, sonst null. */
 export function countryFlag(country: string | null | undefined) {

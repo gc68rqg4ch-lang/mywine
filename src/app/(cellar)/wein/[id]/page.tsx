@@ -11,7 +11,7 @@ import {
   type LocationCount,
   type VintageRow,
 } from "@/lib/cellar/overview";
-import { STATUS_LABELS, formatBottleSize, formatMoney, formatStorage } from "@/lib/format";
+import { STATUS_LABELS, formatBottleSize, formatDate, formatMoney, formatStorage, zurichDate } from "@/lib/format";
 import { formatShares } from "@/lib/grapes/shares";
 import { loadGrapeShares } from "@/lib/grapes/store";
 
@@ -50,10 +50,9 @@ export default async function WinePage({ params }: PageProps<"/wein/[id]">) {
     supabase
       .from("cellar_overview")
       .select(
-        "inventory_item_id, vintage_year, status, quantity, bottle_size_ml, storage_house, storage_room, storage_compartment, storage_location, fill_level_percent",
+        "inventory_item_id, vintage_year, status, quantity, bottle_size_ml, storage_house, storage_room, storage_compartment, storage_location, fill_level_percent, drunk_at",
       )
       .eq("wine_id", wine.id)
-      .in("status", ["sealed", "open"])
       .order("vintage_year", { nullsFirst: false }),
     loadGrapeShares(supabase, wine.id, null),
   ]);
@@ -77,6 +76,12 @@ export default async function WinePage({ params }: PageProps<"/wein/[id]">) {
     }
   }
 
+  // Flaschenliste: im Keller zuerst, getrunkene (neueste zuerst) danach.
+  const bottles = [...(positions.data ?? [])].sort(
+    (a, b) =>
+      Number(a.status === "drunk") - Number(b.status === "drunk") ||
+      (b.drunk_at ?? "").localeCompare(a.drunk_at ?? ""),
+  );
   const totalSealed = rows.reduce((s, r) => s + count(r).sealed, 0);
   const totalOpen = rows.reduce((s, r) => s + count(r).open, 0);
   const grapeText = grapes ? formatShares(grapes.shares) : wine.grapes.join(", ");
@@ -186,14 +191,18 @@ export default async function WinePage({ params }: PageProps<"/wein/[id]">) {
 
         <section className="card stack">
           <h2 className="section-title">Flaschen</h2>
-          <p className="muted small">Öffnen, Preise, Bewertungen und Verkostungen auf der jeweiligen Flasche.</p>
+          <p className="muted small">Öffnen, Preise, Bewertungen und Verkostungen auf der jeweiligen Flasche – auch bei getrunkenen.</p>
           <ul className="mini-list">
-            {(positions.data ?? []).map((p) => (
+            {bottles.map((p) => (
               <li key={p.inventory_item_id}>
                 <Link href={`/flasche/${p.inventory_item_id}`}>
-                  {p.vintage_year ?? "o. J."} · {p.status === "open" ? `offen (${p.fill_level_percent ?? "–"} %)` : `${p.quantity}× ${STATUS_LABELS.sealed.toLowerCase()}`}
-                  {" · "}
-                  {formatStorage(p) ?? "ohne Lagerort"}
+                  {p.vintage_year ?? "o. J."} ·{" "}
+                  {p.status === "drunk"
+                    ? `getrunken${p.drunk_at ? ` am ${formatDate(zurichDate(p.drunk_at))}` : ""}`
+                    : p.status === "open"
+                      ? `offen (${p.fill_level_percent ?? "–"} %)`
+                      : `${p.quantity}× ${STATUS_LABELS.sealed.toLowerCase()}`}
+                  {p.status !== "drunk" && ` · ${formatStorage(p) ?? "ohne Lagerort"}`}
                   {p.bottle_size_ml && p.bottle_size_ml !== 750 ? ` · ${formatBottleSize(p.bottle_size_ml)}` : ""}
                 </Link>
               </li>

@@ -1,22 +1,23 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { GroupedList } from "@/components/cellar/grouped-list";
+import { ListControls, readListParams } from "@/components/cellar/list-controls";
+import { BottleCount, WineCard } from "@/components/cellar/wine-card";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getSession } from "@/lib/auth";
 import {
+  BASE_GROUPINGS,
   DRINK_STATUS_LABELS,
-  GROUP_BY_LABELS,
   buildCellarWines,
   cellarTotals,
-  countryFlag,
   drinkCounts,
   formatVintages,
   groupWines,
-  isGroupBy,
   matchesQuery,
+  originLabel,
   toSummaryWine,
   toVintageRow,
   type DrinkStatus,
-  type GroupBy,
   type LocationFilter,
 } from "@/lib/cellar/overview";
 import { daysSince, formatMoney, todayIso } from "@/lib/format";
@@ -34,8 +35,7 @@ function storagePattern(filter: NonNullable<LocationFilter>) {
 
 export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   const params = await searchParams;
-  const query = typeof params.q === "string" ? params.q.trim() : "";
-  const groupBy: GroupBy = isGroupBy(params.gruppe) ? params.gruppe : "typ";
+  const { query, groupBy } = readListParams(params, BASE_GROUPINGS);
 
   const { supabase } = await getSession();
   const { filter, selected } = await getLocationFilter();
@@ -84,13 +84,6 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
     { bottles: 0, chf: 0 },
   );
 
-  const groupHref = (g: GroupBy, q = query) => {
-    const p = new URLSearchParams();
-    if (g !== "typ") p.set("gruppe", g);
-    if (q) p.set("q", q);
-    const s = p.toString();
-    return s ? `/?${s}` : "/";
-  };
 
   return (
     <div className="stack-lg">
@@ -153,84 +146,30 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
         </div>
       </section>
 
-      <div className="controls">
-        <form className="search" role="search">
-          {groupBy !== "typ" && <input type="hidden" name="gruppe" value={groupBy} />}
-          <input
-            type="search"
-            name="q"
-            defaultValue={query}
-            placeholder="Suche: Wein, Produzent, Region, Traube, Jahrgang …"
-            aria-label="Suche"
-          />
-          {query && (
-            <Link href={groupHref(groupBy, "")} className="btn btn-ghost" aria-label="Suche zurücksetzen">
-              ✕
-            </Link>
-          )}
-        </form>
-        <nav className="segmented" aria-label="Gruppieren nach">
-          {(Object.keys(GROUP_BY_LABELS) as GroupBy[]).map((g) => (
-            <Link
-              key={g}
-              href={groupHref(g)}
-              className={g === groupBy ? "segment active" : "segment"}
-              aria-current={g === groupBy ? "page" : undefined}
-            >
-              {GROUP_BY_LABELS[g]}
-            </Link>
-          ))}
-        </nav>
-      </div>
+      <ListControls basePath="/" groupBy={groupBy} groupings={BASE_GROUPINGS} query={query} />
 
-      {groups.length === 0 ? (
-        <p className="empty">{query ? "Keine Weine passen zur Suche." : "Keine ungeöffneten Flaschen hier."}</p>
-      ) : (
-        <div className="groups">
-          {groups.map((group) => (
-            // Zugeklappt laden; bei aktiver Suche sind nur Gruppen mit Treffern da – die gehen auf.
-            <details key={`${groupBy}:${group.key || "none"}:${query}`} className="group" open={query !== ""}>
-              <summary>
-                {groupBy === "typ" && <WineTypeIcon type={group.wineType ?? null} size={24} />}
-                {group.flag && (
-                  <span className="flag" aria-hidden>
-                    {group.flag}
-                  </span>
-                )}
-                <span className="group-title">{group.label}</span>
-                <span className="group-count">{group.bottles} Fl.</span>
-              </summary>
-              <ul className="list">
-                {group.items.map(({ wine, bottles, vintages }) => (
-                  <li key={wine.wine_id}>
-                    <Link href={`/wein/${wine.wine_id}`} className="item">
-                      <WineTypeIcon type={wine.type} />
-                      <div className="item-main">
-                        <span className="item-producer">{wine.producer}</span>
-                        <span className="item-title">{wine.name}</span>
-                        <span className="item-meta">
-                          {[
-                            formatVintages(vintages),
-                            [countryFlag(wine.country), wine.region ?? wine.country].filter(Boolean).join(" "),
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                      </div>
-                      <span className="item-qty">
-                        {bottles} <span className="unit">Fl.</span>
-                        {wine.open > 0 && groupBy !== "jahrgang" && groupBy !== "preis" && (
-                          <span className="item-open">+{wine.open} offen</span>
-                        )}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ))}
-        </div>
-      )}
+      <GroupedList
+        groups={groups}
+        groupBy={groupBy}
+        query={query}
+        empty="Keine ungeöffneten Flaschen hier."
+        itemKey={({ wine }) => wine.wine_id}
+        renderItem={({ wine, bottles, vintages }) => (
+          <WineCard
+            href={`/wein/${wine.wine_id}`}
+            type={wine.type}
+            producer={wine.producer}
+            title={wine.name}
+            meta={[formatVintages(vintages), originLabel(wine)]}
+            aside={
+              <BottleCount
+                bottles={bottles}
+                note={wine.open > 0 && groupBy !== "jahrgang" && groupBy !== "preis" ? `+${wine.open} offen` : null}
+              />
+            }
+          />
+        )}
+      />
     </div>
   );
 }

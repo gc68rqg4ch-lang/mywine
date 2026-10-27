@@ -16,9 +16,17 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
   Jahres (aus dem Journal `inventory_events`) und Trinkreife. Weintypen als Trauben-Symbole
   (`src/components/wine-type-icon.tsx`); Logik in `src/lib/cellar/overview.ts`.
 - **Weinseite** (`/wein/[id]`): Aufteilung nach Jahrgang (Flaschen, Ø Preis, Preisklasse, Trinkreife,
-  Bewertungen) und nach Lagerort, dazu alle Flaschen – immer ungefiltert.
-- **Offene Flaschen** (`/offen`): älteste zuerst, mit Füllstand
-- **Getrunken** (`/getrunken`): neueste zuerst nach `drunk_at`, mit persönlicher Bewertung; importierte Zeilen ohne `drunk_at` folgen alphabetisch
+  Bewertungen) und nach Lagerort, dazu alle Flaschen inkl. getrunkener – immer ungefiltert.
+- **Offen** (`/offen`) und **Getrunken** (`/getrunken`) sind wie der Bestand aufgebaut und nutzen dieselben
+  Komponenten (`src/components/cellar/`: Suche/Gruppierung, einklappbare Gruppen, Weinkarte) und dieselbe
+  Gruppierungslogik (`groupWines` über `Groupable`-Einträge, `src/lib/cellar/lists.ts`); die Lagerort-Wahl gilt.
+  - Offen: eine Karte pro offener Flasche mit Füllstand und Tagen seit dem Öffnen; Kacheln: Anzahl offen, am
+    längsten offen, Ø Füllstand.
+  - Getrunken: ein Eintrag pro Wein mit Anzahl, letztem Trinkdatum (`drunk_at`) und neuester Bewertung je Person
+    (sonst die alte Import-Bewertung); zusätzliche Gruppierung „Getrunken am“ (Jahr, darin Monate). Kacheln:
+    getrunken dieses Jahr, Lieblingsweine (beste Bewertungen), zuletzt getrunken. Die Karte führt zur zuletzt
+    getrunkenen Flasche.
+  - Flaschen ohne Lagerort (Import) erscheinen nur unter „Alle“; die Kachel nennt ihre Anzahl.
 - **Detailseite** (`/flasche/[id]`) mit Aktionen:
   - **Öffnen** (ungeöffnet): ruft `public.open_bottle()` auf
   - **Füllstand ändern** (offen)

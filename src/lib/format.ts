@@ -122,6 +122,13 @@ export function formatStorage(parts: {
   return joined || null;
 }
 
+/** 4.5 → „4½“, 4 → „4“ (halbe Sterne als Zahl). */
+export function formatStarNumber(rating: number) {
+  const whole = Math.floor(rating);
+  const half = rating - whole >= 0.5;
+  return half ? (whole ? `${whole}½` : "½") : String(whole);
+}
+
 export function formatRating(rating: number | null | undefined) {
   if (rating == null) return null;
   const full = Math.round(rating);

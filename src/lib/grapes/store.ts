@@ -127,3 +127,23 @@ export async function researchAndStore(
     shares: result.shares,
   };
 }
+
+/**
+ * Rebsorten-Namen je Wein wie in cellar_wine_summary: aus wine_grape_shares (alle Jahrgänge),
+ * sonst aus wines.grapes.
+ */
+export async function loadGrapeNames(db: Db, wines: { id: string; grapes: string[] | null }[]) {
+  const ids = [...new Set(wines.map((w) => w.id))];
+  const result = new Map<string, string[]>();
+  if (!ids.length) return result;
+  const { data, error } = await db.from("wine_grape_shares").select("wine_id, grape").in("wine_id", ids);
+  if (error) throw error;
+  for (const row of data ?? []) {
+    const list = result.get(row.wine_id) ?? [];
+    if (!list.includes(row.grape)) list.push(row.grape);
+    result.set(row.wine_id, list);
+  }
+  for (const w of wines) if (!result.has(w.id) && w.grapes?.length) result.set(w.id, [...w.grapes]);
+  for (const list of result.values()) list.sort((a, b) => a.localeCompare(b, "de-CH"));
+  return result;
+}

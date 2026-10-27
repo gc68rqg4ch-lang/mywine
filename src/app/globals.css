@@ -1059,6 +1059,18 @@ input[inputmode="decimal"] {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+/* Drei Kacheln (Offen, Getrunken): auf schmalen Bildschirmen die dritte über die ganze Breite */
+.tiles-3 > :nth-child(3) {
+  grid-column: 1 / -1;
+}
+@media (min-width: 900px) {
+  .tiles.tiles-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .tiles-3 > :nth-child(3) {
+    grid-column: auto;
+  }
+}
 .tile {
   display: flex;
   flex-direction: column;
@@ -1198,6 +1210,22 @@ input[inputmode="decimal"] {
 .flag {
   font-size: 1.4rem;
   line-height: 1;
+}
+/* Untergruppen (Getrunken am: Monate eines Jahres) */
+.group-section + .group-section {
+  margin-top: 12px;
+}
+.group-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 2px 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.item-extra {
+  color: var(--text);
 }
 @media (min-width: 900px) {
   .group .list {

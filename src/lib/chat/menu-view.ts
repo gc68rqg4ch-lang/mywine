@@ -10,7 +10,7 @@
 //   R:<subj>:<person>:<l>     Sterne wählen               S:<subj>:<person>:<halbe>:<l>  Bewertung speichern
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
-import type { WineType } from "@/lib/format";
+import { formatStarNumber, type WineType } from "@/lib/format";
 import type { TgInlineButton, TgInlineKeyboard, TgReplyKeyboard } from "@/lib/telegram/types";
 
 export const PAGE_SIZE = 8;
@@ -234,12 +234,7 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
 // ---------------------------------------------------------------------------
 // Texte
 
-/** 4.5 → „4½“, 4 → „4“. */
-export function formatStars(rating: number) {
-  const whole = Math.floor(rating);
-  const half = rating - whole >= 0.5;
-  return half ? (whole ? `${whole}½` : "½") : String(whole);
-}
+export const formatStars = formatStarNumber;
 
 export function daysLabel(days: number | null) {
   if (days == null) return null;
