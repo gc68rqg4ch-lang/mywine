@@ -100,6 +100,8 @@ oder wiederverwenden, `inventory_items` mit `status = sealed` und den Fotos anle
 - **Rebsorten:** Prozentanteile vom Etikett (`source = label`); fehlen sie, recherchiert `claude-sonnet-5-5` per
   `web_search` die Anteile für den konkreten Jahrgang (`source = research`, gleiche Logik wie `/recherche`).
   Ohne belegte Prozente werden nur die Rebsorten gespeichert. Manuelle Angaben werden nie überschrieben.
+  Gespeichert wird atomar über `public.replace_grape_shares(wine_id, vintage_year, shares)` – auch von der
+  Detailseite und vom Sammellauf.
 - **Korrigieren:** Freitext-Antwort, die per `claude-haiku-5-5` in den Vorschlag übernommen wird.
 - **Album:** Telegram schickt jedes Foto einzeln. Alle Fotos eines Albums landen über eine aus
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.

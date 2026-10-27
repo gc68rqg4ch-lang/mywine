@@ -373,6 +373,26 @@ export type Database = {
         }
         Returns: string
       }
+      replace_grape_shares: {
+        Args: { p_shares: Json; p_vintage_year: number; p_wine_id: string }
+        Returns: {
+          created_at: string
+          grape: string
+          id: string
+          percent: number | null
+          sort_order: number
+          source: string
+          updated_at: string
+          vintage_year: number | null
+          wine_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "wine_grape_shares"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
     }
     Enums: {
       ingest_status:

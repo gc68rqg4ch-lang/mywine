@@ -1,12 +1,11 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, Tables } from "@/lib/database.types";
+import type { Database } from "@/lib/database.types";
 import { researchGrapeShares, type WineForResearch } from "./research";
 import { hasAnyPercent, isGrapeSource, type GrapeShare, type GrapeSource } from "./shares";
 
 type Db = SupabaseClient<Database>;
-type ShareRow = Tables<"wine_grape_shares">;
 
 export type StoredGrapeShares = {
   shares: GrapeShare[];
@@ -44,17 +43,23 @@ export async function loadGrapeShares(
   };
 }
 
-async function scopeRows(db: Db, wineId: string, vintageYear: number | null) {
-  let query = db.from("wine_grape_shares").select("*").eq("wine_id", wineId);
+/** true, wenn für Wein + Jahrgang manuell gepflegte Rebsorten existieren. */
+async function hasManualShares(db: Db, wineId: string, vintageYear: number | null) {
+  let query = db
+    .from("wine_grape_shares")
+    .select("id", { count: "exact", head: true })
+    .eq("wine_id", wineId)
+    .eq("source", "manual");
   query = vintageYear == null ? query.is("vintage_year", null) : query.eq("vintage_year", vintageYear);
-  const { data, error } = await query;
+  const { count, error } = await query;
   if (error) throw error;
-  return data ?? [];
+  return (count ?? 0) > 0;
 }
 
 /**
- * Ersetzt die Rebsorten eines Weins für genau einen Jahrgang (null = alle Jahrgänge).
- * Mit keepManual bleiben manuell gepflegte Angaben unangetastet.
+ * Ersetzt die Rebsorten eines Weins für genau einen Jahrgang (null = alle Jahrgänge)
+ * atomar über public.replace_grape_shares. Mit keepManual bleiben manuell gepflegte
+ * Angaben unangetastet.
  */
 export async function replaceGrapeShares(
   db: Db,
@@ -66,52 +71,24 @@ export async function replaceGrapeShares(
     keepManual: boolean;
   },
 ): Promise<"saved" | "kept_manual"> {
-  const existing = await scopeRows(db, input.wineId, input.vintageYear);
-  if (input.keepManual && existing.some((r) => r.source === "manual")) return "kept_manual";
-
-  if (existing.length) {
-    const { error } = await db
-      .from("wine_grape_shares")
-      .delete()
-      .in(
-        "id",
-        existing.map((r) => r.id),
-      );
-    if (error) throw error;
+  if (input.keepManual && (await hasManualShares(db, input.wineId, input.vintageYear))) {
+    return "kept_manual";
   }
 
-  if (input.shares.length === 0) return "saved";
-
-  const { error } = await db.from("wine_grape_shares").insert(
-    input.shares.map((share, index) => ({
-      wine_id: input.wineId,
-      vintage_year: input.vintageYear,
+  const { error } = await db.rpc("replace_grape_shares", {
+    p_wine_id: input.wineId,
+    // Die Funktion akzeptiert null (= alle Jahrgänge); der generierte Typ kennt
+    // die Nullbarkeit von Funktionsargumenten nicht.
+    p_vintage_year: input.vintageYear as number,
+    p_shares: input.shares.map((share, index) => ({
       grape: share.grape,
       percent: share.percent,
       sort_order: index,
       source: input.source,
     })),
-  );
-  if (error) {
-    await restoreRows(db, existing);
-    throw error;
-  }
+  });
+  if (error) throw error;
   return "saved";
-}
-
-/** Bestmöglich die vorherigen Zeilen wiederherstellen, falls das Einfügen scheitert. */
-async function restoreRows(db: Db, rows: ShareRow[]) {
-  if (rows.length === 0) return;
-  await db.from("wine_grape_shares").insert(
-    rows.map(({ wine_id, vintage_year, grape, percent, sort_order, source }) => ({
-      wine_id,
-      vintage_year,
-      grape,
-      percent,
-      sort_order,
-      source,
-    })),
-  );
 }
 
 export type ResearchOutcome = {
