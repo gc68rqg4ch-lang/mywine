@@ -1,7 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getMemberSession } from "@/lib/auth";
-import { GAP_KEYS, GAP_LABELS, gapCounts, needsResearch, wineGaps, type ResearchScope } from "@/lib/research/gaps";
+import {
+  GAP_KEYS,
+  GAP_LABELS,
+  RECENT_DAYS,
+  gapCounts,
+  needsResearch,
+  researchedRecently,
+  wineGaps,
+  type ResearchScope,
+} from "@/lib/research/gaps";
 import { ResearchSuggestions } from "@/components/research-suggestions";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { loadPendingSuggestions, type Suggestion } from "@/lib/research/suggestions";
@@ -22,10 +31,13 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const scope: ResearchScope = params.alle === "1" ? "all" : "cellar";
   // „Auch vollständige Weine prüfen“: alle Weine der Auswahl, Abweichungen werden Vorschläge.
   const complete = params.vollstaendig === "1";
-  const href = (next: { alle?: boolean; vollstaendig?: boolean }) => {
+  // „In den letzten 7 Tagen geprüfte überspringen“ – Standard an; ?kuerzlich=1 schaltet es aus.
+  const skipRecent = params.kuerzlich !== "1";
+  const href = (next: { alle?: boolean; vollstaendig?: boolean; skipRecent?: boolean }) => {
     const q = new URLSearchParams();
     if (next.alle ?? scope === "all") q.set("alle", "1");
     if (next.vollstaendig ?? complete) q.set("vollstaendig", "1");
+    if (!(next.skipRecent ?? skipRecent)) q.set("kuerzlich", "1");
     const query = q.toString();
     return `/recherche${query ? `?${query}` : ""}`;
   };
@@ -38,7 +50,9 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const cellar = inScope("cellar").filter(needsResearch);
   const all = inScope("all").filter(needsResearch);
   const counts = { cellar: gapCounts(cellar), all: gapCounts(all) };
-  const selected = complete ? inScope(scope) : scope === "all" ? all : cellar;
+  const chosen = complete ? inScope(scope) : scope === "all" ? all : cellar;
+  const recent = chosen.filter((g) => researchedRecently(g.wine));
+  const selected = skipRecent ? chosen.filter((g) => !researchedRecently(g.wine)) : chosen;
   const completeCount = selected.filter((g) => !needsResearch(g)).length;
   const list = selected.sort(
     (a, b) => a.wine.producer.localeCompare(b.wine.producer, "de-CH") || a.wine.name.localeCompare(b.wine.name, "de-CH"),
@@ -139,8 +153,26 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
         </span>
       </Link>
 
-      {/* key: bei Wechsel von Umfang oder Option frisch beginnen */}
-      <BatchResearch key={`${scope}:${complete}`} candidates={candidates} scope={scope} />
+      <Link href={href({ skipRecent: !skipRecent })} className="check-toggle" role="switch" aria-checked={skipRecent}>
+        <span className="check-box" aria-hidden>
+          {skipRecent ? "✓" : ""}
+        </span>
+        <span>
+          In den letzten {RECENT_DAYS} Tagen geprüfte überspringen
+          <span className="muted small">
+            {" "}
+            – {recent.length === 1 ? "1 Wein betroffen" : `${recent.length} Weine betroffen`}
+          </span>
+        </span>
+      </Link>
+
+      {/* key: bei Wechsel von Umfang oder Optionen frisch beginnen */}
+      <BatchResearch
+        key={`${scope}:${complete}:${skipRecent}`}
+        candidates={candidates}
+        scope={scope}
+        skipped={skipRecent ? recent.length : 0}
+      />
     </div>
   );
 }

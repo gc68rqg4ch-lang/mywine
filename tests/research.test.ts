@@ -106,6 +106,7 @@ installNet(net);
   assert.equal(grapeCalls.length, 1, "gleiche Sorten ohne % → % direkt ergänzt");
   assert.deepEqual(grapeCalls[0].p_shares, [{ grape: "Tinta de Toro", percent: 100, sort_order: 0, source: "research" }]);
   assert.equal(outcome.status, "filled");
+  assert.ok(Date.now() - Date.parse(String(wine.researched_at)) < 60_000, "researched_at gesetzt");
   assert.deepEqual(outcome.filled, ["Appellation", "Alkohol", "Trinkfenster 2019 (2025–2032)", "Rebsorten 2019 mit %: Tinta de Toro 100 %"]);
   const pending = () => net.tables.research_suggestions.filter((r) => r.status === "pending");
   assert.deepEqual(
@@ -176,11 +177,20 @@ installNet(net);
   assert.equal(net.tables.wine_vintages.some((v) => v.wine_id === W3), false);
   assert.equal(grapeCalls.length, before, "140 % → ohne Anteil; gleiche Sorten → nichts zu tun");
   assert.equal(net.tables.research_suggestions.length, suggestionsBefore);
+  assert.ok(net.tables.wines.find((w) => w.id === W3)!.researched_at, "researched_at auch ohne Fund gesetzt");
 
   // Wein ohne Flaschen: keine Recherche
   const count = prompts.length;
   assert.equal((await researchAndFillWine(db, W4, "all")).status, "complete");
   assert.equal(prompts.length, count);
+  assert.equal(net.tables.wines.find((w) => w.id === W4)!.researched_at, undefined, "ohne Recherche kein Datum");
+
+  // 7-Tage-Regel für „kürzlich geprüfte überspringen“
+  const { researchedRecently } = await import("@/lib/research/gaps");
+  const now = Date.parse("2026-10-27T12:00:00Z");
+  assert.equal(researchedRecently({ researched_at: "2026-10-21T12:00:01Z" }, now), true);
+  assert.equal(researchedRecently({ researched_at: "2026-10-20T11:59:00Z" }, now), false);
+  assert.equal(researchedRecently({ researched_at: null }, now), false);
   console.log("research tests ok");
 })().catch((error) => {
   console.error(error);

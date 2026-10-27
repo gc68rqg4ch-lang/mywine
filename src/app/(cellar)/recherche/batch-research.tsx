@@ -38,8 +38,20 @@ const minutes = (seconds: number) => Math.max(1, Math.round(seconds / 60));
  * Sammellauf: erst nach Bestätigung, Wein für Wein (jeder Schritt eine Server Action).
  * Abbrechen hält nach dem laufenden Wein an; Gefundenes ist da schon gespeichert.
  */
-export function BatchResearch({ candidates, scope }: { candidates: BatchCandidate[]; scope: ResearchScope }) {
+export function BatchResearch({
+  candidates: initial,
+  scope,
+  skipped = 0,
+}: {
+  candidates: BatchCandidate[];
+  scope: ResearchScope;
+  /** In den letzten 7 Tagen recherchiert – nicht in candidates. */
+  skipped?: number;
+}) {
   const router = useRouter();
+  // Liste beim Laden festhalten: nach dem Lauf lädt die Seite neu, frisch geprüfte Weine
+  // würden sonst (7-Tage-Regel) aus Liste und Zusammenfassung verschwinden.
+  const [candidates] = useState(initial);
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [phase, setPhase] = useState<"idle" | "confirm" | "running" | "stopping" | "done">("idle");
   const stop = useRef(false);
@@ -72,7 +84,13 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
   }
 
   if (candidates.length === 0) {
-    return <p className="empty">Keine Lücken – hier gibt es nichts zu recherchieren. 🎉</p>;
+    return (
+      <p className="empty">
+        {skipped
+          ? `Nichts zu tun – ${skipped === 1 ? "1 Wein wurde" : `${skipped} Weine wurden`} in den letzten 7 Tagen schon geprüft.`
+          : "Keine Lücken – hier gibt es nichts zu recherchieren. 🎉"}
+      </p>
+    );
   }
 
   const filledCount = results.reduce((s, r) => s + r.filled.length, 0);
@@ -112,6 +130,12 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
                 Kontrolle. Das dauert etwa {minutes(estimate)} {minutes(estimate) === 1 ? "Minute" : "Minuten"}. Starten?
               </strong>
             </p>
+            {skipped > 0 && (
+              <p className="small">
+                {skipped === 1 ? "1 Wein überspringe ich" : `${skipped} Weine überspringe ich`} – in den letzten 7 Tagen
+                schon geprüft.
+              </p>
+            )}
             <p className="muted small">Abweichungen lege ich als Vorschläge ab – ich überschreibe nichts.</p>
             <p className="muted small">Die Seite muss dabei offen bleiben. Gefundenes wird sofort gespeichert.</p>
             <div className="row">

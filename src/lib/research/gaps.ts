@@ -24,7 +24,16 @@ export type GapWine = {
   type: string | null;
   alcohol_content: number | null;
   grapes: string[];
+  /** Letzte erfolgreiche Recherche */
+  researched_at?: string | null;
 };
+
+export const RECENT_DAYS = 7;
+
+/** In den letzten 7 Tagen recherchiert? */
+export function researchedRecently(wine: Pick<GapWine, "researched_at">, now = Date.now()) {
+  return wine.researched_at != null && now - Date.parse(wine.researched_at) < RECENT_DAYS * 86_400_000;
+}
 export type GapItem = { wine_id: string; vintage_year: number | null; status: string };
 export type GapVintage = { wine_id: string; vintage_year: number | null; drink_from_year: number | null; drink_until_year: number | null };
 export type GapShare = { wine_id: string; vintage_year: number | null; grape: string; percent: number | null; source: string };

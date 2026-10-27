@@ -16,7 +16,7 @@ import { wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, t
 
 type Db = SupabaseClient<Database>;
 
-const WINE_COLUMNS = "id, name, producer, country, region, appellation, type, alcohol_content, grapes" as const;
+const WINE_COLUMNS = "id, name, producer, country, region, appellation, type, alcohol_content, grapes, researched_at" as const;
 
 /** Alles, was die Lückenberechnung braucht – für einen Wein oder alle Weine. */
 export async function loadGapData(db: Db, wineId?: string) {
@@ -82,7 +82,10 @@ export async function researchAndFillWine(db: Db, wineId: string, scope: Researc
     },
     vintages: gaps.vintages.map((v) => ({ year: v.year, knownGrapes: v.knownGrapes })),
   });
-  if (!found) return { status: "nothing", filled: [], suggested: 0, seconds: seconds() };
+  if (!found) {
+    await markResearched(db, wineId);
+    return { status: "nothing", filled: [], suggested: 0, seconds: seconds() };
+  }
 
   const note = sourceNote(found.sources);
   const filled: string[] = [];
@@ -155,7 +158,14 @@ export async function researchAndFillWine(db: Db, wineId: string, scope: Researc
     }
   }
 
+  await markResearched(db, wineId);
   return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, seconds: seconds() };
+}
+
+/** Nach jeder erfolgreichen Recherche – auch ohne Fund – für „kürzlich geprüfte überspringen“. */
+async function markResearched(db: Db, wineId: string) {
+  const { error } = await db.from("wines").update({ researched_at: new Date().toISOString() }).eq("id", wineId);
+  if (error) throw error;
 }
 
 /** Gespeicherte Rebsorten eines Jahrgangs: eigene, sonst die für alle Jahrgänge, sonst wines.grapes. */

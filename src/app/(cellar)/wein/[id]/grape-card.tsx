@@ -48,6 +48,7 @@ export function GrapeSection({
   sharesVintage,
   sources,
   editable,
+  researchedOn = null,
 }: {
   wineId: string;
   itemId: string;
@@ -58,6 +59,8 @@ export function GrapeSection({
   sources: GrapeSource[];
   /** Bearbeiten-Modus der Weinseite: Rebsorten von Hand bearbeiten (Nachrecherchieren gibt es immer). */
   editable: boolean;
+  /** Letzte erfolgreiche Recherche (wines.researched_at), schon formatiert. */
+  researchedOn?: string | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [rows, setRows] = useState<EditRow[]>(() => toRows(shares));
@@ -209,6 +212,9 @@ export function GrapeSection({
               </p>
             )}
             {!researching && <Notice state={researchState} />}
+            {!researching && (
+              <p className="muted small">{researchedOn ? `Zuletzt recherchiert am ${researchedOn}` : "Noch nie recherchiert"}</p>
+            )}
           </form>
         </>
       )}

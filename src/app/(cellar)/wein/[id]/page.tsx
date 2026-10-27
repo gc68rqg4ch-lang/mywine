@@ -342,6 +342,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
               sharesVintage={grapes?.vintageYear ?? null}
               sources={grapes?.sources ?? []}
               editable={editing}
+              researchedOn={formatDate(zurichDate(wine.researched_at))}
             />
           </div>
         )}
