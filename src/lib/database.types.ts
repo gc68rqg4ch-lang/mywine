@@ -1229,6 +1229,15 @@ export type Database = {
       }
     }
     Functions: {
+      change_vintage: {
+        Args: {
+          p_from: number
+          p_item_id?: string
+          p_to: number
+          p_wine_id: string
+        }
+        Returns: undefined
+      }
       open_bottle: {
         Args: {
           p_date_opened?: string
