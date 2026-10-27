@@ -32,11 +32,89 @@ export type Database = {
         }
         Relationships: []
       }
+      ingest_jobs: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          error: string | null
+          extracted: Json | null
+          id: string
+          inventory_item_id: string | null
+          matched_wine_id: string | null
+          photo_paths: string[]
+          source: string
+          status: Database["public"]["Enums"]["ingest_status"]
+          telegram_chat_id: number | null
+          telegram_message_ids: number[]
+          updated_at: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          error?: string | null
+          extracted?: Json | null
+          id?: string
+          inventory_item_id?: string | null
+          matched_wine_id?: string | null
+          photo_paths?: string[]
+          source?: string
+          status?: Database["public"]["Enums"]["ingest_status"]
+          telegram_chat_id?: number | null
+          telegram_message_ids?: number[]
+          updated_at?: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          error?: string | null
+          extracted?: Json | null
+          id?: string
+          inventory_item_id?: string | null
+          matched_wine_id?: string | null
+          photo_paths?: string[]
+          source?: string
+          status?: Database["public"]["Enums"]["ingest_status"]
+          telegram_chat_id?: number | null
+          telegram_message_ids?: number[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingest_jobs_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["inventory_item_id"]
+          },
+          {
+            foreignKeyName: "ingest_jobs_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingest_jobs_matched_wine_id_fkey"
+            columns: ["matched_wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "ingest_jobs_matched_wine_id_fkey"
+            columns: ["matched_wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_items: {
         Row: {
           bottle_size_ml: number | null
           created_at: string
           currency: string | null
+          drunk_at: string | null
           id: string
           personal_vintage_rating: number | null
           personal_wine_rating: number | null
@@ -58,6 +136,7 @@ export type Database = {
           bottle_size_ml?: number | null
           created_at?: string
           currency?: string | null
+          drunk_at?: string | null
           id?: string
           personal_vintage_rating?: number | null
           personal_wine_rating?: number | null
@@ -79,6 +158,7 @@ export type Database = {
           bottle_size_ml?: number | null
           created_at?: string
           currency?: string | null
+          drunk_at?: string | null
           id?: string
           personal_vintage_rating?: number | null
           personal_wine_rating?: number | null
@@ -239,6 +319,13 @@ export type Database = {
       }
     }
     Enums: {
+      ingest_status:
+        | "received"
+        | "processing"
+        | "needs_review"
+        | "confirmed"
+        | "discarded"
+        | "failed"
       inventory_status: "sealed" | "open" | "drunk"
       wine_type:
         | "red"
@@ -265,6 +352,14 @@ export type Enums<T extends keyof PublicSchema["Enums"]> = PublicSchema["Enums"]
 export const Constants = {
   public: {
     Enums: {
+      ingest_status: [
+        "received",
+        "processing",
+        "needs_review",
+        "confirmed",
+        "discarded",
+        "failed",
+      ],
       inventory_status: ["sealed", "open", "drunk"],
       wine_type: [
         "red",

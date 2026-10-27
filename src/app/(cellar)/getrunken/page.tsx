@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TypeDot } from "@/components/type-dot";
 import { getSession } from "@/lib/auth";
-import { drunkDate, formatBottleSize, formatDate, formatRating, wineTitle } from "@/lib/format";
+import { formatBottleSize, formatDate, formatRating, wineTitle, zurichDate } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Getrunken" };
 
@@ -12,24 +12,19 @@ export default async function DrunkBottlesPage() {
   const { data, error } = await supabase
     .from("inventory_items")
     .select(
-      "id, vintage_year, bottle_size_ml, personal_wine_rating, personal_vintage_rating, updated_at, wine:wines(name, producer, region, country, type), open:open_bottle_details(inventory_item_id)",
+      "id, vintage_year, bottle_size_ml, personal_wine_rating, personal_vintage_rating, drunk_at, wine:wines(name, producer, region, country, type)",
     )
     .eq("status", "drunk");
 
   if (error) throw error;
 
-  // Neueste zuerst. Ein Datum ist nur für in der App ausgetrunkene Flaschen bekannt
-  // (siehe drunkDate); importierte folgen danach alphabetisch.
+  // Neueste zuerst nach drunk_at (setzt die DB beim Austrinken). Importierte Zeilen
+  // haben kein drunk_at und folgen danach alphabetisch.
   const rows = (data ?? [])
     .filter((row) => row.wine)
-    .map((row) => ({
-      ...row,
-      drunkOn: drunkDate({ updated_at: row.updated_at, hasOpenDetails: Boolean(row.open) }),
-      drunkAt: row.open ? Date.parse(row.updated_at) : 0,
-    }))
     .sort(
       (a, b) =>
-        b.drunkAt - a.drunkAt ||
+        (b.drunk_at ? Date.parse(b.drunk_at) : 0) - (a.drunk_at ? Date.parse(a.drunk_at) : 0) ||
         a.wine!.producer.localeCompare(b.wine!.producer, "de-CH") ||
         a.wine!.name.localeCompare(b.wine!.name, "de-CH") ||
         (b.vintage_year ?? 0) - (a.vintage_year ?? 0),
@@ -45,7 +40,7 @@ export default async function DrunkBottlesPage() {
         <ul className="list">
           {rows.map((row) => {
             const wine = row.wine!;
-            const { drunkOn } = row;
+            const drunkOn = zurichDate(row.drunk_at);
             const wineRating = formatRating(row.personal_wine_rating);
             const vintageRating = formatRating(row.personal_vintage_rating);
             return (

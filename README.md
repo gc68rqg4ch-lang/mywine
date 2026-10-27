@@ -7,10 +7,12 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
 - **Login per Magic Link** (`/login` → Mail → `/auth/confirm`)
 - **Bestand** (`/`): ungeöffnete Positionen mit Suche, Typfilter und Kennzahlen
 - **Offene Flaschen** (`/offen`): älteste zuerst, mit Füllstand
+- **Getrunken** (`/getrunken`): neueste zuerst nach `drunk_at`, mit persönlicher Bewertung; importierte Zeilen ohne `drunk_at` folgen alphabetisch
 - **Detailseite** (`/flasche/[id]`) mit Aktionen:
   - **Öffnen** (ungeöffnet): ruft `public.open_bottle()` auf
   - **Füllstand ändern** (offen)
-  - **Ausgetrunken** (offen): `status = drunk`, Füllstand 0
+  - **Ausgetrunken** (offen): `status = drunk`, Füllstand 0; `drunk_at` setzt ein DB-Trigger
+  - Getrunkene Flaschen: nur Anzeige, keine Aktionen
 
 ### Lebenszyklus einer Flasche
 
@@ -36,6 +38,8 @@ npm run dev
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://ckwwttimhhogyzekvlad.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable Key (`sb_publishable_…`) aus Supabase → Settings → API Keys |
 | `NEXT_PUBLIC_SITE_URL` | optional; Basis-URL für den Magic-Link-Redirect. Ohne Wert wird der Host des Requests verwendet (passt für Vercel-Previews). |
+
+Schemaänderungen kommen als Datei nach `supabase/migrations/` und werden nicht von Agenten eingespielt (siehe `AGENTS.md`).
 
 DB-Typen neu generieren nach Schemaänderungen: `npx supabase gen types typescript --project-id ckwwttimhhogyzekvlad > src/lib/database.types.ts`
 

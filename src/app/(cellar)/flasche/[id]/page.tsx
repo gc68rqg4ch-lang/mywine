@@ -6,7 +6,6 @@ import { TypeDot } from "@/components/type-dot";
 import { getSession } from "@/lib/auth";
 import {
   STATUS_LABELS,
-  drunkDate,
   formatBottleSize,
   formatBottles,
   formatDate,
@@ -16,6 +15,7 @@ import {
   formatStorage,
   todayIso,
   wineTitle,
+  zurichDate,
   type InventoryStatus,
 } from "@/lib/format";
 import { OpenBottleControls, OpenBottleForm } from "./bottle-actions";
@@ -72,9 +72,7 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
     .order("vintage_year", { nullsFirst: false });
 
   const back = BACK_LINKS[item.status];
-  const drunkOn = item.status === "drunk"
-      ? drunkDate({ updated_at: item.updated_at, hasOpenDetails: Boolean(open) })
-      : null;
+  const drunkOn = item.status === "drunk" ? zurichDate(item.drunk_at) : null;
 
   return (
     <div className="stack-lg">
