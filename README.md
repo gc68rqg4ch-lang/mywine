@@ -92,6 +92,10 @@ zieht ein Trigger den Journal-Eintrag „getrunken“ mit.
   Weine. Umfang wählbar (Standard: im Keller). Start nur nach Bestätigung („Ich recherchiere jetzt X Weine. Das
   dauert etwa Y Minuten. Starten?“), dann Fortschritt „7 von 20“ mit Abbrechen (Gefundenes bleibt gespeichert)
   und eine Zusammenfassung. Die Zeitschätzung beginnt mit 60 s pro Wein und nimmt danach den gemessenen Schnitt.
+  Option „Auch vollständige Weine prüfen“ (`?vollstaendig=1`, Standard aus): dann alle Weine der Auswahl, auch
+  ohne Lücken – Abweichungen werden Vorschläge, nichts wird überschrieben. Die Bestätigung nennt beide Zahlen
+  („2 Weine mit Lücken, 2 vollständige zur Kontrolle“) und die geschätzte Dauer. Wann ein Wein zuletzt
+  recherchiert wurde, wird (noch) nicht gespeichert.
 - **Recherche pro Wein, immer vollständig** (`src/lib/research/`): ein Durchgang mit `claude-sonnet-5-5` +
   `web_search` (`researchWineWeb`) für alle leeren Angaben – Produzent, Land, Region, Appellation, Typ, Alkohol,
   Trinkfenster je Jahrgang, Rebsorten mit %. Vorhandenes wird nie überschrieben (Stammdaten nur wenn leer,

@@ -1831,3 +1831,27 @@ input[inputmode="decimal"] {
 .suggestion-field {
   font-weight: 600;
 }
+
+/* Recherche: Schalter „Auch vollständige Weine prüfen“ */
+.check-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  color: var(--text);
+}
+.check-box {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 700;
+}
+.check-toggle[aria-checked="true"] .check-box {
+  border-color: var(--accent);
+}

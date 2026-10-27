@@ -14,6 +14,8 @@ export type BatchCandidate = {
   name: string;
   years: (number | null)[];
   gaps: string[];
+  /** Ohne Lücken – nur zur Kontrolle (Abweichungen werden Vorschläge). */
+  complete: boolean;
 };
 
 /** Schätzung pro Wein, bis eigene Messwerte da sind (Websuche mit mehreren Abfragen). */
@@ -48,6 +50,8 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
   const average = measured.length ? measured.reduce((s, r) => s + r.seconds, 0) / measured.length : null;
   const todo = candidates.filter((c) => rows[c.wineId]?.state !== "done");
   const estimate = todo.length * (average ?? ESTIMATE_SECONDS);
+  const checks = todo.filter((c) => c.complete).length;
+  const withGaps = todo.length - checks;
 
   async function run() {
     stop.current = false;
@@ -83,7 +87,12 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
           <div className="row row-between">
             <span>
               {todo.length === candidates.length
-                ? `${candidates.length} Weine mit Lücken`
+                ? [
+                    withGaps ? `${withGaps} ${withGaps === 1 ? "Wein" : "Weine"} mit Lücken` : null,
+                    checks ? `${checks} ${checks === 1 ? "vollständiger" : "vollständige"} zur Kontrolle` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")
                 : `${todo.length} von ${candidates.length} Weinen noch offen`}
             </span>
             {todo.length > 0 && (
@@ -98,10 +107,12 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
           <div className="stack-sm" role="alertdialog" aria-label="Recherche starten?">
             <p>
               <strong>
-                Ich recherchiere jetzt {todo.length} {todo.length === 1 ? "Wein" : "Weine"}. Das dauert etwa{" "}
-                {minutes(estimate)} {minutes(estimate) === 1 ? "Minute" : "Minuten"}. Starten?
+                Ich recherchiere jetzt {todo.length} {todo.length === 1 ? "Wein" : "Weine"}: {withGaps}{" "}
+                {withGaps === 1 ? "Wein" : "Weine"} mit Lücken, {checks} {checks === 1 ? "vollständiger" : "vollständige"} zur
+                Kontrolle. Das dauert etwa {minutes(estimate)} {minutes(estimate) === 1 ? "Minute" : "Minuten"}. Starten?
               </strong>
             </p>
+            <p className="muted small">Abweichungen lege ich als Vorschläge ab – ich überschreibe nichts.</p>
             <p className="muted small">Die Seite muss dabei offen bleiben. Gefundenes wird sofort gespeichert.</p>
             <div className="row">
               <button type="button" className="btn btn-primary btn-sm" onClick={run}>
@@ -188,7 +199,9 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
                         : row.status === "complete"
                           ? "Schon vollständig"
                           : "Fehler – später nochmals versuchen"
-                    : `Fehlt: ${c.gaps.join(", ")}`}
+                    : c.complete
+                      ? "Vollständig – Kontrolle auf Abweichungen"
+                      : `Fehlt: ${c.gaps.join(", ")}`}
                 </span>
               </div>
             </li>

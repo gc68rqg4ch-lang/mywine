@@ -20,20 +20,27 @@ export const maxDuration = 300;
 export default async function ResearchPage({ searchParams }: PageProps<"/recherche">) {
   const params = await searchParams;
   const scope: ResearchScope = params.alle === "1" ? "all" : "cellar";
+  // „Auch vollständige Weine prüfen“: alle Weine der Auswahl, Abweichungen werden Vorschläge.
+  const complete = params.vollstaendig === "1";
+  const href = (next: { alle?: boolean; vollstaendig?: boolean }) => {
+    const q = new URLSearchParams();
+    if (next.alle ?? scope === "all") q.set("alle", "1");
+    if (next.vollstaendig ?? complete) q.set("vollstaendig", "1");
+    const query = q.toString();
+    return `/recherche${query ? `?${query}` : ""}`;
+  };
   const { supabase } = await getMemberSession();
   const [data, suggestions] = await Promise.all([loadGapData(supabase), loadPendingSuggestions(supabase)]);
   const byWine = new Map<string, Suggestion[]>();
   for (const s of suggestions) byWine.set(s.wineId, [...(byWine.get(s.wineId) ?? []), s]);
 
-  const byScope = (s: ResearchScope) =>
-    data.wines.flatMap((w) => {
-      const g = wineGaps(w, data, s);
-      return g && needsResearch(g) ? [g] : [];
-    });
-  const cellar = byScope("cellar");
-  const all = byScope("all");
+  const inScope = (s: ResearchScope) => data.wines.flatMap((w) => wineGaps(w, data, s) ?? []);
+  const cellar = inScope("cellar").filter(needsResearch);
+  const all = inScope("all").filter(needsResearch);
   const counts = { cellar: gapCounts(cellar), all: gapCounts(all) };
-  const list = (scope === "all" ? all : cellar).sort(
+  const selected = complete ? inScope(scope) : scope === "all" ? all : cellar;
+  const completeCount = selected.filter((g) => !needsResearch(g)).length;
+  const list = selected.sort(
     (a, b) => a.wine.producer.localeCompare(b.wine.producer, "de-CH") || a.wine.name.localeCompare(b.wine.name, "de-CH"),
   );
   const candidates: BatchCandidate[] = list.map((g) => ({
@@ -42,6 +49,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
     name: g.wine.name,
     years: g.vintages.map((v) => v.year),
     gaps: [...g.gaps.map((k) => GAP_LABELS[k]), ...(g.basics ? ["Land/Typ"] : [])],
+    complete: !needsResearch(g),
   }));
 
   return (
@@ -105,16 +113,34 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
       </section>
 
       <nav className="segmented" aria-label="Umfang">
-        <Link href="/recherche" className={scope === "cellar" ? "segment active" : "segment"} aria-current={scope === "cellar" ? "page" : undefined}>
+        <Link href={href({ alle: false })} className={scope === "cellar" ? "segment active" : "segment"} aria-current={scope === "cellar" ? "page" : undefined}>
           Nur im Keller ({cellar.length})
         </Link>
-        <Link href="/recherche?alle=1" className={scope === "all" ? "segment active" : "segment"} aria-current={scope === "all" ? "page" : undefined}>
+        <Link href={href({ alle: true })} className={scope === "all" ? "segment active" : "segment"} aria-current={scope === "all" ? "page" : undefined}>
           Alle Weine ({all.length})
         </Link>
       </nav>
 
-      {/* key: bei Wechsel des Umfangs frisch beginnen */}
-      <BatchResearch key={scope} candidates={candidates} scope={scope} />
+      <Link
+        href={href({ vollstaendig: !complete })}
+        className="check-toggle"
+        role="switch"
+        aria-checked={complete}
+      >
+        <span className="check-box" aria-hidden>
+          {complete ? "✓" : ""}
+        </span>
+        <span>
+          Auch vollständige Weine prüfen
+          <span className="muted small">
+            {" "}
+            – {complete ? `${completeCount} ohne Lücken zur Kontrolle dabei` : "dann suche ich bei allen Weinen nach Abweichungen"}
+          </span>
+        </span>
+      </Link>
+
+      {/* key: bei Wechsel von Umfang oder Option frisch beginnen */}
+      <BatchResearch key={`${scope}:${complete}`} candidates={candidates} scope={scope} />
     </div>
   );
 }
