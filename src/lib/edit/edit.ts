@@ -348,6 +348,33 @@ async function prepareBatch(db: Db, itemId: string, set: BatchChanges): Promise<
   }, item.vintage_year);
 }
 
+/** Gibt es am Ziel schon eine gleiche ungeöffnete Charge? (Dann führt move_bottles zusammen.) */
+async function sameBatchAt(db: Db, item: Item, room: Room) {
+  const eqOrNull = <Q extends { eq: (c: never, v: never) => Q; is: (c: never, v: null) => Q }>(q: Q, col: string, v: unknown) =>
+    v == null ? q.is(col as never, null) : q.eq(col as never, v as never);
+  let q = db
+    .from("inventory_items")
+    .select("id", { count: "exact", head: true })
+    .eq("wine_id", item.wine_id)
+    .eq("status", "sealed")
+    .eq("storage_room", room)
+    .neq("id", item.id)
+    .eq("is_gift", item.is_gift);
+  for (const [col, v] of [
+    ["vintage_year", item.vintage_year],
+    ["bottle_size_ml", item.bottle_size_ml],
+    ["purchase_price", item.purchase_price],
+    ["regular_price", item.regular_price],
+    ["purchased_at", item.purchased_at],
+    ["vendor_id", item.vendor_id],
+  ] as const) {
+    q = eqOrNull(q, col, v);
+  }
+  const { count, error } = await q;
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
 async function prepareMove(db: Db, itemId: string, room: Room, count?: number): Promise<PreparedEdit> {
   const item = await loadItem(db, itemId);
   if (!item) return fail("Diese Charge gibt es nicht mehr.");
@@ -359,6 +386,9 @@ async function prepareMove(db: Db, itemId: string, room: Room, count?: number): 
   if (!Number.isInteger(n) || n < 1 || n > total) return fail(`Anzahl: bitte 1–${total}.`);
   const partial = n < total;
   const notes = partial ? [`${bottles(total - n)} ${total - n === 1 ? "bleibt" : "bleiben"} ${inRoom(item.storage_room)}.`] : [];
+  if (item.status === "sealed" && (await sameBatchAt(db, item, room))) {
+    notes.push(`${inRoom(room).replace(/^./, (c) => c.toUpperCase())} liegt schon eine gleiche Charge – die Flaschen kommen dazu.`);
+  }
 
   return ready(
     {
@@ -372,55 +402,18 @@ async function prepareMove(db: Db, itemId: string, room: Room, count?: number): 
     },
     item.wine_id,
     async () => {
-      const place = { storage_house: item.storage_house ?? "Zuhause", storage_room: room };
-      if (!partial) {
-        const { error } = await db.from("inventory_items").update(place).eq("id", itemId);
-        if (error) throw error;
-      } else {
-        await splitAndMove(db, item, n, place);
-      }
+      // Atomar in der DB: ganz oder teilweise, mit Zusammenführen am Ziel und genau einem Journal-Eintrag.
+      const { error } = await db.rpc("move_bottles", {
+        p_item_id: itemId,
+        p_quantity: n,
+        p_house: item.storage_house ?? "Zuhause",
+        p_room: room,
+      });
+      if (error) throw error;
       return `${bottles(n)} ${intoRoom(room)} verschoben`;
     },
     item.vintage_year,
   );
-}
-
-/**
- * Teil einer Charge verschieben, ohne das Journal zu verfälschen: neue Charge mit 0
- * Flaschen am alten Ort (kein „Kauf“), alte um n verringern, dann die neue auf n Flaschen
- * am neuen Ort setzen – der Trigger schreibt genau ein „verschoben“ über n Flaschen.
- */
-async function splitAndMove(db: Db, item: Item, n: number, place: { storage_house: string; storage_room: Room }) {
-  const { data: full, error: readError } = await db.from("inventory_items").select("*").eq("id", item.id).single();
-  if (readError) throw readError;
-  const copy = { ...full } as Partial<typeof full>;
-  for (const key of ["id", "created_at", "updated_at", "drunk_at"] as const) delete copy[key];
-  const { data: created, error: insertError } = await db
-    .from("inventory_items")
-    .insert({ ...copy, wine_id: full.wine_id, quantity: 0 })
-    .select("id")
-    .single();
-  if (insertError) throw insertError;
-
-  const undo = async (restoreQuantity: boolean) => {
-    if (restoreQuantity) await db.from("inventory_items").update({ quantity: full.quantity }).eq("id", item.id);
-    await db.from("inventory_items").delete().eq("id", created.id).eq("quantity", 0);
-  };
-  const { data: reduced, error: reduceError } = await db
-    .from("inventory_items")
-    .update({ quantity: full.quantity - n })
-    .eq("id", item.id)
-    .eq("quantity", full.quantity)
-    .select("id");
-  if (reduceError || !reduced?.length) {
-    await undo(false);
-    throw reduceError ?? new Error("Die Charge hat sich inzwischen geändert.");
-  }
-  const { error: moveError } = await db.from("inventory_items").update({ quantity: n, ...place }).eq("id", created.id);
-  if (moveError) {
-    await undo(true);
-    throw moveError;
-  }
 }
 
 async function prepareBatchVintage(db: Db, itemId: string, to: number | null): Promise<PreparedEdit> {

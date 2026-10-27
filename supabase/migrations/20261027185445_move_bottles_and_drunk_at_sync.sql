@@ -1,0 +1,133 @@
+-- 1) Flaschen verschieben in einem Schritt (ganz oder teilweise).
+--    Gibt es am Ziel eine gleiche ungeöffnete Charge (Wein, Jahrgang, Grösse, Preise, Kaufdatum, Händler, Geschenk),
+--    wird dort zusammengezählt. Schreibt genau einen Journal-Eintrag "moved". Gibt die Ziel-Charge zurück.
+create or replace function public.move_bottles(
+  p_item_id uuid,
+  p_quantity integer,
+  p_house text,
+  p_room text,
+  p_compartment text default null,
+  p_location text default null
+) returns uuid
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_src public.inventory_items;
+  v_target uuid;
+  v_from text;
+  v_to text;
+  v_prev text := coalesce(current_setting('mywine.import', true), '');
+begin
+  if not private.is_member() and coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+
+  select * into v_src from public.inventory_items where id = p_item_id for update;
+  if v_src.id is null then
+    raise exception 'Charge nicht gefunden' using errcode = 'P0002';
+  end if;
+  if v_src.status = 'drunk' then
+    raise exception 'Getrunkene Flaschen lassen sich nicht verschieben' using errcode = '22023';
+  end if;
+  if p_quantity is null or p_quantity < 1 or p_quantity > v_src.quantity then
+    raise exception 'Anzahl muss zwischen 1 und % liegen', v_src.quantity using errcode = '22023';
+  end if;
+
+  v_from := concat_ws(' / ', v_src.storage_house, v_src.storage_room, v_src.storage_compartment, v_src.storage_location);
+  v_to   := concat_ws(' / ', nullif(p_house, ''), nullif(p_room, ''), nullif(p_compartment, ''), nullif(p_location, ''));
+  if v_from = v_to then
+    return v_src.id;
+  end if;
+
+  perform set_config('mywine.import', 'on', true);
+
+  -- gleiche Charge am Ziel?
+  if v_src.status = 'sealed' then
+    select i.id into v_target
+      from public.inventory_items i
+     where i.id <> v_src.id and i.status = 'sealed'
+       and i.wine_id = v_src.wine_id
+       and i.vintage_year     is not distinct from v_src.vintage_year
+       and i.bottle_size_ml   is not distinct from v_src.bottle_size_ml
+       and i.purchase_price   is not distinct from v_src.purchase_price
+       and i.regular_price    is not distinct from v_src.regular_price
+       and i.currency         is not distinct from v_src.currency
+       and i.purchased_at     is not distinct from v_src.purchased_at
+       and i.vendor_id        is not distinct from v_src.vendor_id
+       and i.is_gift          is not distinct from v_src.is_gift
+       and concat_ws(' / ', i.storage_house, i.storage_room, i.storage_compartment, i.storage_location) = v_to
+     limit 1
+     for update;
+  end if;
+
+  if v_target is not null then
+    update public.inventory_items set quantity = quantity + p_quantity where id = v_target;
+  elsif p_quantity = v_src.quantity then
+    update public.inventory_items
+       set storage_house = nullif(p_house, ''), storage_room = nullif(p_room, ''),
+           storage_compartment = nullif(p_compartment, ''), storage_location = nullif(p_location, '')
+     where id = v_src.id;
+    v_target := v_src.id;
+  else
+    insert into public.inventory_items (wine_id, vintage_year, vintage_rating, vintage_notes, quantity, bottle_size_ml,
+      purchase_price, currency, storage_house, storage_room, storage_compartment, storage_location, status,
+      personal_wine_rating, personal_vintage_rating, photo_urls, regular_price, purchased_at, vendor_id, is_gift)
+    values (v_src.wine_id, v_src.vintage_year, v_src.vintage_rating, v_src.vintage_notes, p_quantity, v_src.bottle_size_ml,
+      v_src.purchase_price, v_src.currency, nullif(p_house, ''), nullif(p_room, ''), nullif(p_compartment, ''), nullif(p_location, ''),
+      v_src.status, v_src.personal_wine_rating, v_src.personal_vintage_rating, v_src.photo_urls, v_src.regular_price,
+      v_src.purchased_at, v_src.vendor_id, v_src.is_gift)
+    returning id into v_target;
+  end if;
+
+  -- Quelle anpassen
+  if v_target <> v_src.id then
+    if p_quantity = v_src.quantity then
+      update public.inventory_events set inventory_item_id = v_target where inventory_item_id = v_src.id;
+      update public.wine_media       set inventory_item_id = v_target where inventory_item_id = v_src.id;
+      update public.wine_ratings     set inventory_item_id = v_target where inventory_item_id = v_src.id;
+      update public.wine_tastings    set inventory_item_id = v_target where inventory_item_id = v_src.id;
+      update public.ingest_jobs      set inventory_item_id = v_target where inventory_item_id = v_src.id;
+      delete from public.inventory_items where id = v_src.id;
+    else
+      update public.inventory_items set quantity = quantity - p_quantity where id = v_src.id;
+    end if;
+  end if;
+
+  insert into public.inventory_events (event_type, wine_id, vintage_year, inventory_item_id,
+    quantity, bottle_size_ml, price, currency, storage_from, storage_to)
+  values ('moved', v_src.wine_id, v_src.vintage_year, v_target,
+    p_quantity, v_src.bottle_size_ml, v_src.purchase_price, v_src.currency, v_from, v_to);
+
+  perform set_config('mywine.import', v_prev, true);
+  return v_target;
+end;
+$$;
+
+revoke all on function public.move_bottles(uuid, integer, text, text, text, text) from public, anon;
+grant execute on function public.move_bottles(uuid, integer, text, text, text, text) to authenticated, service_role;
+comment on function public.move_bottles(uuid, integer, text, text, text, text) is
+  'Flaschen ganz oder teilweise an einen anderen Lagerort verschieben, atomar; führt mit gleicher Charge am Ziel zusammen; genau ein Journal-Eintrag moved.';
+
+-- 2) "Getrunken am" ändern zieht den Journal-Eintrag "drunk" mit.
+create or replace function public.sync_drunk_event_date()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.status = 'drunk' and old.status = 'drunk'
+     and new.drunk_at is distinct from old.drunk_at and new.drunk_at is not null then
+    update public.inventory_events
+       set occurred_at = new.drunk_at
+     where id = (select e.id from public.inventory_events e
+                  where e.inventory_item_id = new.id and e.event_type = 'drunk'
+                  order by e.occurred_at desc limit 1);
+  end if;
+  return new;
+end;
+$$;
+
+create trigger inventory_items_sync_drunk_event
+after update of drunk_at on public.inventory_items
+for each row execute function public.sync_drunk_event_date();

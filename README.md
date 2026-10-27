@@ -68,8 +68,9 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
 aktuellen Stand und liefert vorher → nachher plus Hinweise; `applyEdit` prüft nochmals und führt aus – mit
 derselben Meldung („2 Flaschen ins Wohnzimmer verschoben“) in App und Bot. Die App liest ihre Formulare über
 `form.ts` und speichert über eine Server Action (`edit-actions.ts`); der Bot schlägt über Chat-Tools vor.
-Teil-Verschieben legt die neue Charge zuerst mit 0 Flaschen an, damit der Journal-Trigger kein „gekauft“,
-sondern genau ein „verschoben“ schreibt.
+Verschieben (ganz oder teilweise) läuft nur über `public.move_bottles()`: atomar, führt mit einer gleichen
+Charge am Ziel zusammen und schreibt genau einen Journal-Eintrag „verschoben“. Wird „Getrunken am“ geändert,
+zieht ein Trigger den Journal-Eintrag „getrunken“ mit.
   - `/flasche/[id]` leitet auf die Weinseite mit dem Jahrgang der Flasche weiter (Bot-Links, Lesezeichen).
 - **Weintyp-Filter:** in Bestand, Offen und Getrunken bei den Gruppierungen Land, Rebsorte, Jahrgang,
   Preisklasse (und „Getrunken am“): Alle / Rot / Weiss / … mit Trauben-Symbolen, nur vorhandene Typen

@@ -47,6 +47,23 @@ net.rpc.change_vintage = (args) => {
   rpcCalls.push(args);
   return null;
 };
+// Nachbildung von public.move_bottles: Teilmenge abbuchen, mit gleicher Charge am Ziel zusammenführen.
+net.rpc.move_bottles = (args) => {
+  rpcCalls.push(args);
+  const items = net.tables.inventory_items;
+  const src = items.find((r) => r.id === args.p_item_id)!;
+  const n = args.p_quantity as number;
+  const same = items.find((r) => r !== src && r.status === "sealed" && r.storage_room === args.p_room && r.purchase_price === src.purchase_price);
+  const target = same ?? (n === src.quantity ? src : { ...src, id: `44444444-4444-4444-8444-${String(items.length).padStart(12, "0")}`, quantity: 0, storage_room: args.p_room });
+  if (target === src) src.storage_room = args.p_room;
+  else {
+    if (!same) items.push(target);
+    target.quantity = (target.quantity as number) + n;
+    src.quantity = (src.quantity as number) - n;
+    if (src.quantity === 0) items.splice(items.indexOf(src), 1);
+  }
+  return target.id;
+};
 installNet(net);
 
 (async () => {
@@ -72,20 +89,26 @@ installNet(net);
   assert.equal(net.tables.inventory_items[0].purchase_price, 22);
   assert.match(batch.message, /^Händler Coop, Bezahlt CHF\s22\.00 gespeichert\.$/);
 
-  // Teil verschieben: neue Charge erst mit 0 Flaschen (kein „Kauf“), dann 2 Flaschen umbuchen
-  const inserts: unknown[] = [];
+  // Verschieben nur über move_bottles (atomar in der DB) – die App legt selbst keine Chargen an
+  const posts: string[] = [];
   const origFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    if ((init?.method ?? "GET") === "POST" && String(input).includes("/inventory_items")) inserts.push(JSON.parse(String(init?.body)));
+    if ((init?.method ?? "GET") === "POST") posts.push(new URL(String(input)).pathname);
     return origFetch(input, init);
   }) as typeof fetch;
   const move = await applyEdit(db, { kind: "move", itemId: I, room: "Wohnzimmer", count: 2 });
-  globalThis.fetch = origFetch;
   assert.ok(move.ok, JSON.stringify(move));
   assert.equal(move.done, "2 Flaschen ins Wohnzimmer verschoben");
-  assert.equal((inserts[0] as { quantity: number }).quantity, 0, "neue Charge entsteht mit 0 Flaschen");
-  const rows = net.tables.inventory_items.map((r) => [r.quantity, r.storage_room]);
-  assert.deepEqual(rows, [[4, "Weinkeller"], [2, "Wohnzimmer"]]);
+  assert.deepEqual(posts, ["/rest/v1/rpc/move_bottles"], "nur der RPC-Aufruf, kein eigenes Insert");
+  assert.deepEqual(rpcCalls.at(-1), { p_item_id: I, p_quantity: 2, p_house: "Zuhause", p_room: "Wohnzimmer" });
+  assert.deepEqual(net.tables.inventory_items.map((r) => [r.quantity, r.storage_room]), [[4, "Weinkeller"], [2, "Wohnzimmer"]]);
+  // Nochmals 1 Flasche: am Ziel liegt jetzt eine gleiche Charge → Hinweis, die Flasche kommt dazu
+  const again = await prepareEdit(db, { kind: "move", itemId: I, room: "Wohnzimmer", count: 1 });
+  assert.ok(again.ok && again.preview.notes.some((n) => /gleiche Charge/.test(n)), JSON.stringify(again));
+  assert.ok((await applyEdit(db, { kind: "move", itemId: I, room: "Wohnzimmer", count: 1 })).ok);
+  globalThis.fetch = origFetch;
+  assert.deepEqual(net.tables.inventory_items.map((r) => [r.quantity, r.storage_room]), [[3, "Weinkeller"], [3, "Wohnzimmer"]]);
+  assert.ok(!(await prepareEdit(db, { kind: "move", itemId: I, room: "Wohnzimmer", count: 4 })).ok, "mehr als vorhanden");
   assert.ok(!(await prepareEdit(db, { kind: "move", itemId: I, room: "Weinkeller" })).ok, "schon dort");
 
   // Jahrgang: Ziel existiert → Hinweis aufs Zusammenführen; ausführen über change_vintage
@@ -117,7 +140,7 @@ installNet(net);
   assert.ok(prepared.ok);
   await sendEditProposal(db, 111, edit, prepared.preview);
   const question = String(net.telegram.at(-1)!.body.text);
-  assert.match(question, /Charge bearbeiten: .*\n• Anzahl: 4 → 5\n\nSoll ich das so ändern\?/);
+  assert.match(question, /Charge bearbeiten: .*\n• Anzahl: 3 → 5\n\nSoll ich das so ändern\?/);
   const job = net.tables.ingest_jobs.at(-1)!;
   assert.equal(job.source, "telegram_edit");
   await handleUpdate({ update_id: 3, callback_query: { id: "cb", from: { id: 111, is_bot: false, first_name: "M" }, data: `ce:${job.id}`, message: { message_id: 9, chat: { id: 111, type: "private" }, date: 0, text: question } } } as never);

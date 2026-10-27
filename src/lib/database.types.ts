@@ -1238,6 +1238,17 @@ export type Database = {
         }
         Returns: undefined
       }
+      move_bottles: {
+        Args: {
+          p_compartment?: string
+          p_house: string
+          p_item_id: string
+          p_location?: string
+          p_quantity: number
+          p_room: string
+        }
+        Returns: string
+      }
       open_bottle: {
         Args: {
           p_date_opened?: string
