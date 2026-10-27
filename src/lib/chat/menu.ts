@@ -525,6 +525,22 @@ async function openBatch(db: AdminClient, batchId: string, back: ListRef): Promi
   return itemScreen(db, result.itemId, back, "✅ Geöffnet.");
 }
 
+/**
+ * Wein-Menü direkt unter der Bestätigung einer Erfassung: dieselben Knöpfe wie beim
+ * Jahrgang, „Öffnen“ aber mit der eben gespeicherten Charge vorausgewählt (open_bottle
+ * wie im normalen Menü).
+ */
+export async function savedWineKeyboard(
+  db: AdminClient,
+  target: { wineId: string; year: number | null; itemId: string },
+  actor: MenuActor | null,
+): Promise<TgInlineKeyboard> {
+  const screen = await actorContext.run(actor, () => vintageScreen(db, target.wineId, target.year, { kind: "none" }));
+  const open = btn("🍾 Öffnen", { op: "openBatch", batchId: target.itemId, back: { kind: "none" } });
+  const rows = screen.keyboard.inline_keyboard.filter((row) => !row.some((b) => b.text === "🍾 Öffnen"));
+  return { inline_keyboard: [[open], ...rows] };
+}
+
 // ---------------------------------------------------------------------------
 // Einstieg
 

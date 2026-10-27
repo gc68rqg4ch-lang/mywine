@@ -163,6 +163,11 @@ Ablauf: Vorder- und Rückseite als Album schicken → Fotos landen im privaten B
 Normalpreis (**[Gleich wie bezahlt] [Überspringen]**), Händler (Buttons aus `vendors`, **[Neuer Händler]**
 per Freitext oder **[Überspringen]**) → Wein anlegen oder wiederverwenden, `inventory_items` mit
 `status = sealed`, `purchased_at = heute`, `vendor_id` und den Fotos anlegen, Job auf `confirmed`.
+Die Bestätigung („Ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht. Möchtest du gleich eine öffnen oder
+bewerten?“) bringt gleich das Wein-Menü dieses Jahrgangs mit (`savedWineKeyboard`): 🍾 Öffnen mit der eben
+gespeicherten Charge vorausgewählt (über `open_bottle()` wie im normalen Menü), ⭐ Bewerten, ⭐ für die andere
+Person, 📝 Verkostung, ℹ️ Details, 📷 Foto, ✏️ Bearbeiten und der Link in die App – auch bei Text-Erfassung
+und Nachkauf.
 Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreibt keine eigenen Einträge.
 
 - **Fotos → `wine_media`:** beim Speichern je Foto eine Zeile mit `wine_id`, `vintage_year`,

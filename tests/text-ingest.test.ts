@@ -17,7 +17,10 @@ Object.assign(process.env, {
 const W = "11111111-1111-4111-8111-111111111111";
 const net: Net = {
   tables: {
-    persons: [{ id: "86c222d0-3a8c-4d5f-9564-f5654769ecd6", name: "Michel", sort_order: 0, telegram_user_id: null }],
+    persons: [
+      { id: "86c222d0-3a8c-4d5f-9564-f5654769ecd6", name: "Michel", sort_order: 0, telegram_user_id: null },
+      { id: "c7690541-4e68-4051-aa8f-6a2920fea55b", name: "Sara", sort_order: 1, telegram_user_id: null },
+    ],
     wines: [], inventory_items: [], ingest_jobs: [], vendors: [], wine_vintages: [], wine_grape_shares: [],
   },
   telegram: [],
@@ -107,7 +110,40 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   assert.deepEqual([net.tables.wine_vintages[0]?.drink_from_year, net.tables.wine_vintages[0]?.drink_until_year], [2024, 2032]);
   assert.equal(rpcCalls.length, 1, "Rebsorten gespeichert");
   assert.equal(job("aaaaaaaa-0000-4000-8000-00000000000a").status, "confirmed");
-  assert.match(lastText(), /^✅ Ich habe 6 Flaschen .* gespeichert\./);
+  // Bestätigung in der Ich-Form, darunter gleich das Wein-Menü dieses Weins und Jahrgangs
+  assert.match(lastText(), /^✅ Ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht\.\n.*\nMöchtest du gleich eine öffnen oder bewerten\?$/);
+  type Kb = { inline_keyboard: { text: string; callback_data?: string; url?: string }[][] };
+  const menu = net.telegram.at(-1)!.body.reply_markup as Kb;
+  const buttons = menu.inline_keyboard.flat();
+  for (const label of ["🍾 Öffnen", "⭐ Bewerten", "⭐ für Sara", "📝 Verkostung", "ℹ️ Details", "📷 Foto", "✏️ Bearbeiten"]) {
+    assert.ok(buttons.some((b) => b.text === label), `Knopf ${label} fehlt: ${buttons.map((b) => b.text).join(", ")}`);
+  }
+  const savedItem = net.tables.inventory_items[0];
+  const openButton = buttons.find((b) => b.text === "🍾 Öffnen")!;
+  assert.equal(openButton.callback_data, `Q:${savedItem.id}:-`, "Öffnen mit der eben gespeicherten Charge vorausgewählt");
+
+  // Öffnen aus diesem Menü: wie im normalen Menü über open_bottle, danach die offene Flasche
+  const openCalls: Record<string, unknown>[] = [];
+  net.rpc.open_bottle = (args) => {
+    openCalls.push(args);
+    const src = net.tables.inventory_items.find((r) => r.id === args.p_item_id)!;
+    src.quantity = (src.quantity as number) - 1;
+    const openId = "0b0b0b0b-0000-4000-8000-000000000001";
+    net.tables.inventory_items.push({ ...src, id: openId, quantity: 1, status: "open" });
+    (net.tables.cellar_overview ??= []).push({
+      inventory_item_id: openId, wine_id: src.wine_id, producer: "Vega Sicilia", name: "Pintia", vintage_year: 2019, type: "red",
+      status: "open", fill_level_percent: args.p_fill_level_percent, date_opened: args.p_date_opened, bottle_size_ml: 750,
+    });
+    return openId;
+  };
+  await handleUpdate(cb(openButton.callback_data!) as never);
+  assert.equal(openCalls.length, 1);
+  assert.equal(openCalls[0].p_item_id, savedItem.id); assert.equal(openCalls[0].p_fill_level_percent, 100);
+  assert.match(String(openCalls[0].p_date_opened), /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(savedItem.quantity, 5);
+  const edited = net.telegram.filter((t) => t.method === "editMessageText").at(-1)!;
+  assert.match(String(edited.body.text), /Geöffnet/);
+  assert.ok((edited.body.reply_markup as Kb).inline_keyboard.flat().some((b) => b.text === "🥃 1 Glas"), "danach das Menü der offenen Flasche");
 
   // B) Nachkauf: Wein + Jahrgang liegt schon im Keller → Rückfrage, keine Recherche der Stammdaten
   net.tables.wines.push({ id: W, name: "Pintia", producer: "Vega Sicilia", country: "Spanien", region: "Toro", appellation: null, type: "red", alcohol_content: 14.5, grapes: [] });

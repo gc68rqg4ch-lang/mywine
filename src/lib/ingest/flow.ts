@@ -5,13 +5,14 @@ import "server-only";
 // am Ende eine Zusammenfassung zeigen; dann speichern.
 
 import { after } from "next/server";
+import { savedWineKeyboard } from "@/lib/chat/menu";
 import { formatBottles, formatMoney, todayIso, wineTitle } from "@/lib/format";
 import { researchGrapeShares } from "@/lib/grapes/research";
 import { hasAnyPercent, hasCompletePercents, type GrapeShare, type GrapeSource } from "@/lib/grapes/shares";
 import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
-import { appBaseUrl } from "@/lib/telegram/config";
+import { resolveActor } from "@/lib/telegram/actor";
 import { labelKinds } from "@/lib/media/pick";
 import { saveWineMedia } from "@/lib/media/store";
 import { PHOTO_BUCKET, advanceJob, jobState, toJson, type IngestJob } from "./jobs";
@@ -297,26 +298,40 @@ export async function saveJob(job: IngestJob, chatId: number) {
       { status: "confirmed", inventory_item_id: itemId, matched_wine_id: wineId },
     );
 
-    const base = appBaseUrl();
-    const title = escapeHtml(
-      `${state.proposal.producer} – ${wineTitle({ name: state.proposal.name, vintage_year: state.proposal.vintage_year })}`,
-    );
     const prices = [
       state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
       state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
-    ].filter(Boolean);
+    ].filter((p): p is string => p != null);
     const vendorName = vendor?.name ?? state.vendor_name;
     if (vendorName) prices.push(`bei ${escapeHtml(vendorName)}`);
-    const priceLine = prices.length ? `\n${prices.join(" · ")}` : "";
-    const link = base ? `\n<a href="${base}/flasche/${itemId}">In MyWine öffnen</a>` : "";
-    const what = state.restock ? "als Nachkauf gespeichert" : "gespeichert";
-    await sendMessage(
-      chatId,
-      `✅ Ich habe ${formatBottles(state.quantity ?? 1)} ${title} · ${state.storage_room} ${what}.${priceLine}${link}`,
-    );
+    // Gleich weiter: Wein-Menü mit dieser Charge (Öffnen, Bewerten, Verkostung, …).
+    const actor = await resolveActor(db, chatId).catch(() => null);
+    const keyboard = await savedWineKeyboard(
+      db,
+      { wineId, year: state.proposal.vintage_year, itemId },
+      actor ? { personId: actor.personId, name: actor.name } : null,
+    ).catch((error: unknown) => {
+      console.error("saved wine keyboard failed", error);
+      return undefined;
+    });
+    await sendMessage(chatId, savedMessage(state, prices), keyboard);
   } catch (error) {
     await failJob(db, job.id, chatId, "Das Speichern ist mir nicht gelungen", error, state.source === "text");
   }
+}
+
+/** „Ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht. …“ (exportiert für Tests). */
+export function savedMessage(state: IngestState, prices: string[] = []) {
+  const title = escapeHtml(wineTitle({ name: state.proposal.name, vintage_year: state.proposal.vintage_year }));
+  const room = state.storage_room === "Wohnzimmer" ? "im Wohnzimmer" : `im ${state.storage_room ?? "Weinkeller"}`;
+  const n = state.quantity ?? 1;
+  return [
+    `✅ Ich habe ${formatBottles(n)} ${title} ${room} ${state.restock ? "nachgekauft und " : ""}eingebucht.`,
+    prices.length ? prices.join(" · ") : null,
+    n === 1 ? "Möchtest du sie gleich öffnen oder bewerten?" : "Möchtest du gleich eine öffnen oder bewerten?",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export async function failJob(
