@@ -188,7 +188,8 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
       ) : (
         <div className="groups">
           {groups.map((group) => (
-            <details key={group.key || "none"} className="group" open>
+            // Zugeklappt laden; bei aktiver Suche sind nur Gruppen mit Treffern da – die gehen auf.
+            <details key={`${groupBy}:${group.key || "none"}:${query}`} className="group" open={query !== ""}>
               <summary>
                 {groupBy === "typ" && <WineTypeIcon type={group.wineType ?? null} size={24} />}
                 {group.flag && (
