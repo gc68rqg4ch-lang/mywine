@@ -84,7 +84,7 @@ async function loadRatingsAndTastings(
     sameVintage(
       supabase
         .from("wine_tastings")
-        .select("id, tasted_at, wine_style, quality_level, quality_points, readiness, sat, person:persons(name)")
+        .select("id, tasted_at, quality_level, quality_points, sat, person:persons(name)")
         .eq("wine_id", wineId),
     ).order("tasted_at", { ascending: false }),
   ]);
@@ -228,17 +228,16 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
                 {tastings.map((t) => (
                   <li key={t.id}>
                     <Link href={`/flasche/${item.id}/verkostung?t=${t.id}`}>
-                      <strong>{formatDate(t.tasted_at)}</strong>
-                      {t.person ? ` · ${t.person}` : ""}
-                      <span className="item-meta">
+                      <span className="tasting-result">
                         {[
-                          t.wine_style,
                           t.quality_level,
                           t.points != null ? `${t.points.toLocaleString("de-CH")} / 4 Punkte` : null,
-                          t.readiness,
                         ]
                           .filter(Boolean)
-                          .join(" · ")}
+                          .join(" · ") || "Ohne Resultat"}
+                      </span>
+                      <span className="tasting-meta">
+                        {[formatDate(t.tasted_at), t.person].filter(Boolean).join(" · ")}
                       </span>
                     </Link>
                   </li>

@@ -887,6 +887,18 @@ input[inputmode="decimal"] {
 .tasting-list a:hover {
   border-color: var(--accent);
 }
+.tasting-result {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.tasting-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
 
 /* WSET-Verkostung (schlicht, Design folgt) */
 .sat-toolbar {
