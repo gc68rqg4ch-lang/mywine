@@ -158,6 +158,10 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Listen:** pro Wein eine Zeile mit Emoji statt Weintyp (🍷 Rot, 🥂 Weiss, 🌸 Rosé, 🍾 Schaumwein,
   🍯 Süss/Likör, 🟠 Orange), z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“; Produzent bzw. Lagerort nur, wenn nötig
   zur Unterscheidung. Darunter je Wein ein Knopf (8 pro Seite, dann „Mehr…“).
+- **ℹ️ Details** im Wein-Menü: kompakte Nachricht zum Jahrgang (Name, Produzent, Herkunft mit Flagge, Rebsorten
+  mit %, Alkohol, Trinkreife, Flaschen je Lagerort, offene Flaschen mit Füllstand, Preise mit Rabatt, Bewertungen,
+  letzte Verkostung, Link auf die Weinseite); leere Angaben fallen weg (`src/lib/chat/details.ts`). Darunter
+  dieselben Knöpfe wie im Wein-Menü.
 - **Pro Wein:** offen → 🥃 1 Glas, 🥃🥃 2 Gläser, Füllstand %, ✅ Ausgetrunken (fragt einmal nach); ungeöffnet →
   🍾 Öffnen (bei mehreren Lagerorten Ort wählen); immer ⭐ Bewertung je Person (1–5 in halben Schritten) und
   📱 In der App öffnen. Das Antippen ist die Bestätigung, es gibt keine zusätzliche Ja/Nein-Frage.

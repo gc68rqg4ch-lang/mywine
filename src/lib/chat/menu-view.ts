@@ -10,6 +10,7 @@
 //   R:<subj>:<person>:<l>     Sterne wählen               S:<subj>:<person>:<halbe>:<l>  Bewertung speichern
 //   T:<subj>:<l>              Verkostung: Weg wählen      E:<subj>:<l>            Verkostung erzählen
 //   K:<subj>:<person>:<halbe>:<l>  Rückfrage, bevor für eine andere Person bewertet wird
+//   I:<subj>:<l>              Details zum Jahrgang
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
 import { formatStarNumber, type WineType } from "@/lib/format";
@@ -84,6 +85,7 @@ export type MenuAction =
   | { op: "ratePicker"; subject: Subject; personKey: string; back: ListRef }
   | { op: "rate"; subject: Subject; personKey: string; rating: number; back: ListRef }
   | { op: "rateAsk"; subject: Subject; personKey: string; rating: number; back: ListRef }
+  | { op: "details"; subject: Subject; back: ListRef }
   | { op: "tasting"; subject: Subject; back: ListRef }
   | { op: "tell"; subject: Subject; back: ListRef };
 
@@ -170,6 +172,8 @@ export function encodeMenu(a: MenuAction): string {
       return `S:${encodeSubject(a.subject)}:${a.personKey}:${Math.round(a.rating * 2)}:${l}`;
     case "rateAsk":
       return `K:${encodeSubject(a.subject)}:${a.personKey}:${Math.round(a.rating * 2)}:${l}`;
+    case "details":
+      return `I:${encodeSubject(a.subject)}:${l}`;
     case "tasting":
       return `T:${encodeSubject(a.subject)}:${l}`;
     case "tell":
@@ -178,7 +182,7 @@ export function encodeMenu(a: MenuAction): string {
 }
 
 export function isMenuCallback(data: string | undefined) {
-  return /^[LWVOGFPDXNQRSTEK]:/.test(data ?? "");
+  return /^[LWVOGFPDXNQRSTEKI]:/.test(data ?? "");
 }
 
 export function decodeMenu(data: string | undefined): MenuAction | null {
@@ -229,11 +233,13 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
       return { op: "ratePicker", subject, personKey: f[1], back: b };
     }
     case "T":
-    case "E": {
+    case "E":
+    case "I": {
       const subject = decodeSubject(f[0]);
       const b = back(1);
       if (!subject || !b) return null;
-      return op === "T" ? { op: "tasting", subject, back: b } : { op: "tell", subject, back: b };
+      const kind = ({ T: "tasting", E: "tell", I: "details" } as const)[op];
+      return { op: kind, subject, back: b };
     }
     case "K":
     case "S": {

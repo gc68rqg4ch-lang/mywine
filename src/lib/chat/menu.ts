@@ -8,6 +8,11 @@ import { answerCallback, editMessage, escapeHtml, sendMessage, tg } from "@/lib/
 import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery, TgInlineButton, TgInlineKeyboard } from "@/lib/telegram/types";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { formatShares } from "@/lib/grapes/shares";
+import { loadGrapeShares } from "@/lib/grapes/store";
+import { wineHref } from "@/lib/cellar/wine-page";
+import { currentScore, normalizeData } from "@/lib/tasting/sat";
+import { wineDetailsText, type WineDetails } from "./details";
 import { executeProposal } from "./execute";
 import {
   FILL_STEPS,
@@ -303,7 +308,7 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
       inline_keyboard: [
         ...(sealed ? [[btn("🍾 Öffnen", { op: "open", wineId, year, back })]] : []),
         ...ratingButtons(ratings.persons, subject, back),
-        [btn("📝 Verkostung", { op: "tasting", subject, back })],
+        [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
         ...appButton(`/wein/${wineId}`),
         ...backRow(back),
       ],
@@ -337,7 +342,7 @@ async function itemScreen(db: AdminClient, itemId: string, back: ListRef, status
         [btn("🥃 1 Glas", { op: "glasses", itemId, glasses: 1, back }), btn("🥃🥃 2 Gläser", { op: "glasses", itemId, glasses: 2, back })],
         [btn("Füllstand %", { op: "fillPicker", itemId, back }), btn("✅ Ausgetrunken", { op: "drunkAsk", itemId, back })],
         ...ratingButtons(ratings.persons, subject, back),
-        [btn("📝 Verkostung", { op: "tasting", subject, back })],
+        [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
         ...appButton(`/flasche/${itemId}`),
         ...backRow(back),
       ],
@@ -397,6 +402,71 @@ async function ratePickerScreen(db: AdminClient, subject: Subject, key: string, 
     }?`,
     keyboard: ratingKeyboard(subject, key, back, subjectAction(subject, back), forOther),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Details
+
+async function loadDetails(db: AdminClient, wineId: string, year: number | null): Promise<WineDetails | null> {
+  const sameYear = <Q extends { eq: (c: "vintage_year", v: number) => Q; is: (c: "vintage_year", v: null) => Q }>(q: Q) =>
+    year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
+  const [{ data: wine, error }, grapes, vintage, bottles, ratings, persons, tasting] = await Promise.all([
+    db.from("wines").select("name, producer, type, country, region, appellation, alcohol_content, grapes").eq("id", wineId).maybeSingle(),
+    loadGrapeShares(db, wineId, year),
+    sameYear(db.from("wine_vintages").select("drink_from_year, drink_until_year").eq("wine_id", wineId)).maybeSingle(),
+    sameYear(
+      db
+        .from("cellar_overview")
+        .select("status, quantity, storage_room, bottle_size_ml, fill_level_percent, date_opened, purchase_price, regular_price, currency")
+        .eq("wine_id", wineId),
+    ),
+    sameYear(db.from("latest_wine_ratings").select("person_id, rating").eq("wine_id", wineId)),
+    db.from("persons").select("id, name").order("sort_order"),
+    sameYear(db.from("wine_tastings").select("quality_level, quality_points, sat, tasted_at").eq("wine_id", wineId))
+      .order("tasted_at", { ascending: false })
+      .limit(1),
+  ]);
+  if (error) throw error;
+  if (!wine) return null;
+  const last = tasting.data?.[0];
+  const base = appBaseUrl();
+  return {
+    name: wine.name,
+    producer: wine.producer,
+    type: wine.type,
+    year,
+    country: wine.country,
+    region: wine.region,
+    appellation: wine.appellation,
+    alcohol: wine.alcohol_content,
+    grapes: grapes?.shares.length ? formatShares(grapes.shares) : wine.grapes.join(", ") || null,
+    drinkFrom: vintage.data?.drink_from_year ?? null,
+    drinkUntil: vintage.data?.drink_until_year ?? null,
+    bottles: (bottles.data ?? []).flatMap((b) => (b.status ? [{ ...b, status: b.status, quantity: b.quantity ?? 0 }] : [])),
+    ratings: (persons.data ?? []).flatMap((p) => {
+      const r = ratings.data?.find((x) => x.person_id === p.id)?.rating;
+      return r != null ? [{ person: p.name, rating: r }] : [];
+    }),
+    lastTasting: last
+      ? { quality: last.quality_level, points: last.quality_points ?? currentScore(normalizeData(last.sat, last.tasted_at)) }
+      : null,
+    appUrl: base ? `${base}${wineHref(wineId, year)}` : null,
+  };
+}
+
+/** „ℹ️ Details“: kompakte Übersicht des Jahrgangs, darunter dieselben Knöpfe wie im Wein-Menü. */
+async function detailsScreen(db: AdminClient, subject: Subject, back: ListRef): Promise<Screen> {
+  const base = await subjectScreen(db, subject, back);
+  const target =
+    subject.kind === "vintage"
+      ? { wineId: subject.wineId, year: subject.year }
+      : await loadItem(db, subject.itemId).then((i) => (i?.wine_id ? { wineId: i.wine_id, year: i.vintage_year } : null));
+  const details = target ? await loadDetails(db, target.wineId, target.year) : null;
+  if (!details) return base;
+  const keyboard = base.keyboard.inline_keyboard.map((row) =>
+    row.map((b) => (b.text === "ℹ️ Details" ? btn("ℹ️ Weniger", subjectAction(subject, back)) : b)),
+  );
+  return { text: wineDetailsText(details), keyboard: { inline_keyboard: keyboard } };
 }
 
 // ---------------------------------------------------------------------------
@@ -483,6 +553,8 @@ async function screenForAction(
         },
       };
     }
+    case "details":
+      return { screen: await detailsScreen(db, a.subject, a.back) };
     case "tasting": {
       const base = await subjectScreen(db, a.subject, a.back);
       const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
