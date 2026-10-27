@@ -43,6 +43,25 @@ export function formatMoney(
   }).format(amount);
 }
 
+/** "24.50", "24,50", "CHF 24.-", "1'250" → Zahl; null bei ungültiger Eingabe. */
+export function parsePrice(text: string) {
+  const match = text.replace(/['’\s]/g, "").match(/(\d+(?:[.,]\d{1,2})?)/);
+  if (!match) return null;
+  const value = Number(match[1].replace(",", "."));
+  return Number.isFinite(value) && value >= 0 && value < 100_000 ? value : null;
+}
+
+/**
+ * Differenz zwischen Normalpreis und bezahltem Preis. Positiv = Rabatt,
+ * negativ = Aufpreis; null wenn ein Preis fehlt oder beide gleich sind.
+ */
+export function priceDiscount(paid: number | null | undefined, regular: number | null | undefined) {
+  if (paid == null || regular == null || regular <= 0) return null;
+  const amount = Math.round((regular - paid) * 100) / 100;
+  if (amount === 0) return null;
+  return { amount, percent: Math.round((amount / regular) * 1000) / 10 };
+}
+
 export function formatBottles(count: number) {
   return count === 1 ? "1 Flasche" : `${count} Flaschen`;
 }

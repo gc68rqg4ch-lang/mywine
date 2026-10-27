@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { todayIso } from "@/lib/format";
+import { parsePrice, todayIso } from "@/lib/format";
 
 export type ActionState = { error?: string; ok?: string } | undefined;
 
@@ -119,4 +119,41 @@ export async function markDrunk(_prev: ActionState, formData: FormData): Promise
 
   revalidatePath("/", "layout");
   redirect("/offen?ausgetrunken=1");
+}
+
+/** Leeres Feld = kein Preis (null); sonst muss die Eingabe ein gültiger Preis sein. */
+function readPrice(formData: FormData, name: string): number | null | undefined {
+  const raw = String(formData.get(name) ?? "").trim();
+  if (raw === "") return null;
+  return parsePrice(raw) ?? undefined;
+}
+
+/** Ändert bezahlten Preis und Normalpreis einer Position. */
+export async function updatePrices(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const session = await memberSession();
+  if (!session) return { error: "Kein Zugriff." };
+
+  const itemId = readItemId(formData);
+  if (!itemId) return { error: "Ungültige Position." };
+
+  const purchasePrice = readPrice(formData, "purchasePrice");
+  const regularPrice = readPrice(formData, "regularPrice");
+  if (purchasePrice === undefined || regularPrice === undefined) {
+    return { error: "Bitte Preise wie 24.50 eingeben oder das Feld leer lassen." };
+  }
+
+  const { data, error } = await session.supabase
+    .from("inventory_items")
+    .update({ purchase_price: purchasePrice, regular_price: regularPrice })
+    .eq("id", itemId)
+    .select("id");
+
+  if (error) {
+    console.error("update prices failed", error);
+    return { error: "Preise konnten nicht gespeichert werden." };
+  }
+  if (!data?.length) return { error: "Position nicht gefunden." };
+
+  revalidatePath("/", "layout");
+  return { ok: "Preise gespeichert." };
 }

@@ -121,6 +121,7 @@ export type Database = {
           photo_urls: string[]
           purchase_price: number | null
           quantity: number
+          regular_price: number | null
           status: Database["public"]["Enums"]["inventory_status"]
           storage_compartment: string | null
           storage_house: string | null
@@ -143,6 +144,7 @@ export type Database = {
           photo_urls?: string[]
           purchase_price?: number | null
           quantity?: number
+          regular_price?: number | null
           status?: Database["public"]["Enums"]["inventory_status"]
           storage_compartment?: string | null
           storage_house?: string | null
@@ -165,6 +167,7 @@ export type Database = {
           photo_urls?: string[]
           purchase_price?: number | null
           quantity?: number
+          regular_price?: number | null
           status?: Database["public"]["Enums"]["inventory_status"]
           storage_compartment?: string | null
           storage_house?: string | null
@@ -294,8 +297,10 @@ export type Database = {
           purchase_price: number | null
           quantity: number | null
           region: string | null
+          regular_price: number | null
           status: Database["public"]["Enums"]["inventory_status"] | null
           stock_value: number | null
+          stock_value_regular: number | null
           storage_compartment: string | null
           storage_house: string | null
           storage_location: string | null

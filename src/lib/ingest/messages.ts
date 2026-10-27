@@ -6,7 +6,15 @@ import type { TgInlineKeyboard } from "@/lib/telegram/types";
 import type { EnrichableField, IngestState } from "./schema";
 
 /** callback_data: "<aktion>:<jobId>[:<wert>]" – bleibt unter Telegrams 64 Bytes. */
-export type CallbackAction = "save" | "fix" | "drop" | "loc" | "qty" | "skipprice";
+export type CallbackAction =
+  | "save"
+  | "fix"
+  | "drop"
+  | "loc"
+  | "qty"
+  | "skipprice"
+  | "sameprice"
+  | "skipregular";
 
 export function callbackData(action: CallbackAction, jobId: string, value?: string) {
   return [action, jobId, value].filter(Boolean).join(":");
@@ -14,7 +22,16 @@ export function callbackData(action: CallbackAction, jobId: string, value?: stri
 
 export function parseCallbackData(data: string | undefined) {
   const [action, jobId, value] = (data ?? "").split(":");
-  const actions: CallbackAction[] = ["save", "fix", "drop", "loc", "qty", "skipprice"];
+  const actions: CallbackAction[] = [
+    "save",
+    "fix",
+    "drop",
+    "loc",
+    "qty",
+    "skipprice",
+    "sameprice",
+    "skipregular",
+  ];
   if (!actions.includes(action as CallbackAction) || !/^[0-9a-f-]{36}$/.test(jobId ?? "")) {
     return null;
   }
@@ -106,18 +123,20 @@ export function priceKeyboard(jobId: string): TgInlineKeyboard {
   };
 }
 
+export function regularPriceKeyboard(jobId: string, paid: number | null): TgInlineKeyboard {
+  const row = [{ text: "Überspringen", callback_data: callbackData("skipregular", jobId) }];
+  if (paid != null) {
+    row.unshift({ text: "Gleich wie bezahlt", callback_data: callbackData("sameprice", jobId) });
+  }
+  return { inline_keyboard: [row] };
+}
+
 export const HELP_TEXT = [
   "Schick mir <b>Vorder- und Rückseite</b> einer Flasche als Album (beide Fotos zusammen auswählen).",
   "Ich erkenne den Wein, du bestätigst oder korrigierst, danach frage ich Lagerort, Anzahl und Preis ab.",
 ].join("\n");
 
-/** "24.50", "24,50", "CHF 24.-" → 24.5; null bei ungültiger Eingabe. */
-export function parsePrice(text: string) {
-  const match = text.replace(/['’\s]/g, "").match(/(\d+(?:[.,]\d{1,2})?)/);
-  if (!match) return null;
-  const value = Number(match[1].replace(",", "."));
-  return Number.isFinite(value) && value >= 0 && value < 100_000 ? value : null;
-}
+export { parsePrice } from "@/lib/format";
 
 export function parseQuantity(text: string) {
   const match = text.trim().match(/^(\d{1,3})\b/);

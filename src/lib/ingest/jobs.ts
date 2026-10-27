@@ -139,7 +139,7 @@ export async function findJobAwaitingText(db: AdminClient, chatId: number) {
     .select("*")
     .eq("telegram_chat_id", chatId)
     .eq("status", "needs_review")
-    .in("extracted->>step", ["correcting", "quantity", "price"])
+    .in("extracted->>step", ["correcting", "quantity", "price", "regular_price"])
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();

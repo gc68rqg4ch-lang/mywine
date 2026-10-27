@@ -10,7 +10,6 @@ import {
   formatBottles,
   formatDate,
   formatDaysSince,
-  formatMoney,
   formatRating,
   formatStorage,
   todayIso,
@@ -19,6 +18,7 @@ import {
   type InventoryStatus,
 } from "@/lib/format";
 import { OpenBottleControls, OpenBottleForm } from "./bottle-actions";
+import { PriceCard } from "./price-card";
 
 const BACK_LINKS: Record<InventoryStatus, { href: string; label: string }> = {
   sealed: { href: "/", label: "Bestand" },
@@ -129,7 +129,6 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
             />
             <Detail label="Flaschengrösse" value={formatBottleSize(item.bottle_size_ml)} />
             <Detail label="Lagerort" value={formatStorage(item)} />
-            <Detail label="Kaufpreis" value={formatMoney(item.purchase_price, item.currency)} />
             <Detail label="Jahrgang" value={item.vintage_rating} />
             <Detail label="Jahrgangsnotiz" value={item.vintage_notes} />
             <Detail label="Bewertung Wein" value={formatRating(item.personal_wine_rating)} />
@@ -160,6 +159,12 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
         </section>
 
         <div className="stack">
+          <PriceCard
+            itemId={item.id}
+            purchasePrice={item.purchase_price}
+            regularPrice={item.regular_price}
+            currency={item.currency}
+          />
           {item.status === "sealed" && item.quantity > 0 && (
             <OpenBottleForm itemId={item.id} quantity={item.quantity} today={todayIso()} />
           )}

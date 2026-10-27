@@ -1,7 +1,7 @@
 import "server-only";
 
 import { after } from "next/server";
-import { formatBottles, wineTitle } from "@/lib/format";
+import { formatBottles, formatMoney, wineTitle } from "@/lib/format";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import {
   answerCallback,
@@ -36,6 +36,7 @@ import {
   parsePrice,
   parseQuantity,
   priceKeyboard,
+  regularPriceKeyboard,
   proposalMessage,
   quantityKeyboard,
   reviewKeyboard,
@@ -277,7 +278,7 @@ async function handleCallback(cb: TgCallbackQuery) {
       const next = await advanceJob(
         db,
         job,
-        ["review", "correcting", "location", "quantity", "price"],
+        ["review", "correcting", "location", "quantity", "price", "regular_price"],
         { step: "done" },
         { status: "discarded" },
       );
@@ -317,7 +318,21 @@ async function handleCallback(cb: TgCallbackQuery) {
     case "skipprice": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
-      await setPriceAndSave(db, job, chatId, null);
+      await setPaidPrice(db, job, chatId, null);
+      return;
+    }
+
+    case "sameprice": {
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await setRegularPriceAndSave(db, job, chatId, state.price ?? null);
+      return;
+    }
+
+    case "skipregular": {
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await setRegularPriceAndSave(db, job, chatId, null);
       return;
     }
   }
@@ -328,24 +343,37 @@ async function setQuantity(db: AdminClient, job: IngestJob, chatId: number, quan
   if (!next) return;
   await sendMessage(
     chatId,
-    `${formatBottles(quantity)}. Preis pro Flasche in CHF?`,
+    `${formatBottles(quantity)}. Was hast du bezahlt? (CHF pro Flasche)`,
     priceKeyboard(job.id),
   );
 }
 
-async function setPriceAndSave(
+async function setPaidPrice(db: AdminClient, job: IngestJob, chatId: number, price: number | null) {
+  const next = await advanceJob(db, job, "price", { step: "regular_price", price });
+  if (!next) return;
+  await sendMessage(
+    chatId,
+    "Normalpreis? (oder überspringen)",
+    regularPriceKeyboard(job.id, price),
+  );
+}
+
+async function setRegularPriceAndSave(
   db: AdminClient,
   job: IngestJob,
   chatId: number,
-  price: number | null,
+  regularPrice: number | null,
 ) {
-  const saving = await advanceJob(db, job, "price", { step: "saving", price });
+  const saving = await advanceJob(db, job, "regular_price", {
+    step: "saving",
+    regular_price: regularPrice,
+  });
   if (!saving) return;
   after(() => saveJob(saving, chatId));
 }
 
 // ---------------------------------------------------------------------------
-// Textantworten (Korrektur, Anzahl, Preis)
+// Textantworten (Korrektur, Anzahl, Preise)
 
 async function handleText(msg: TgMessage) {
   const chatId = msg.chat.id;
@@ -385,7 +413,16 @@ async function handleText(msg: TgMessage) {
         await sendMessage(chatId, "Bitte einen Preis wie <i>24.50</i> schreiben oder „Überspringen“ tippen.");
         return;
       }
-      await setPriceAndSave(db, job, chatId, price);
+      await setPaidPrice(db, job, chatId, price);
+      return;
+    }
+    case "regular_price": {
+      const regularPrice = parsePrice(text);
+      if (regularPrice == null) {
+        await sendMessage(chatId, "Bitte einen Preis wie <i>29.90</i> schreiben oder einen Button tippen.");
+        return;
+      }
+      await setRegularPriceAndSave(db, job, chatId, regularPrice);
       return;
     }
   }
@@ -441,6 +478,7 @@ async function saveJob(job: IngestJob, chatId: number) {
       proposal: state.proposal,
       quantity: state.quantity ?? 1,
       price: state.price ?? null,
+      regularPrice: state.regular_price ?? null,
       storageRoom: state.storage_room ?? "Weinkeller",
       photoPaths: job.photo_paths,
     });
@@ -457,10 +495,15 @@ async function saveJob(job: IngestJob, chatId: number) {
     const title = escapeHtml(
       `${state.proposal.producer} – ${wineTitle({ name: state.proposal.name, vintage_year: state.proposal.vintage_year })}`,
     );
+    const prices = [
+      state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
+      state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
+    ].filter(Boolean);
+    const priceLine = prices.length ? `\n${prices.join(" · ")}` : "";
     const link = base ? `\n<a href="${base}/flasche/${itemId}">In MyWine öffnen</a>` : "";
     await sendMessage(
       chatId,
-      `✅ Gespeichert: ${formatBottles(state.quantity ?? 1)} ${title} · ${state.storage_room}${link}`,
+      `✅ Gespeichert: ${formatBottles(state.quantity ?? 1)} ${title} · ${state.storage_room}${priceLine}${link}`,
     );
   } catch (error) {
     await failJob(db, job.id, chatId, "Speichern ist fehlgeschlagen", error);

@@ -48,6 +48,7 @@ export type IngestStep =
   | "location"
   | "quantity"
   | "price"
+  | "regular_price"
   | "saving"
   | "done";
 
@@ -64,7 +65,10 @@ export type IngestState = {
   };
   storage_room?: StorageRoom;
   quantity?: number;
+  /** Bezahlter Preis pro Flasche (purchase_price). */
   price?: number | null;
+  /** Normalpreis pro Flasche (regular_price). */
+  regular_price?: number | null;
 };
 
 export function missingEnrichableFields(p: WineProposal): EnrichableField[] {

@@ -359,8 +359,14 @@ input[type="range"] {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+@media (min-width: 720px) {
+  .stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .stat {
@@ -672,4 +678,35 @@ input[type="range"] {
 .item-rating-sub {
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.row-between {
+  justify-content: space-between;
+}
+
+.price-inputs {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 480px) {
+  .price-inputs {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+input[inputmode="decimal"] {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.discount {
+  color: var(--ok-text);
+  font-weight: 600;
 }

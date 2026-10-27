@@ -37,6 +37,24 @@ function matches(row: Row, query: string) {
     .every((term) => haystack.includes(term));
 }
 
+function sumByCurrency(rows: Row[], value: (row: Row) => number | null) {
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    const v = value(row);
+    if (v == null) continue;
+    const currency = row.currency ?? "CHF";
+    totals.set(currency, (totals.get(currency) ?? 0) + v);
+  }
+  return totals;
+}
+
+function formatTotals(totals: Map<string, number>) {
+  return (
+    [...totals].map(([currency, v]) => formatMoney(v, currency, { whole: true })).join(" + ") ||
+    "–"
+  );
+}
+
 export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   const params = await searchParams;
   const query = typeof params.q === "string" ? params.q.trim() : "";
@@ -63,12 +81,9 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   );
 
   const bottles = rows.reduce((sum, r) => sum + (r.quantity ?? 0), 0);
-  const valueByCurrency = new Map<string, number>();
-  for (const r of rows) {
-    if (r.stock_value == null) continue;
-    const cur = r.currency ?? "CHF";
-    valueByCurrency.set(cur, (valueByCurrency.get(cur) ?? 0) + r.stock_value);
-  }
+  const cellarValue = sumByCurrency(rows, (r) => r.stock_value);
+  // stock_value_regular nimmt den Normalpreis, sonst den bezahlten Preis (View).
+  const regularValue = sumByCurrency(rows, (r) => r.stock_value_regular);
   const presentTypes = (Object.keys(WINE_TYPE_LABELS) as WineType[]).filter((t) =>
     all.some((r) => r.type === t),
   );
@@ -86,10 +101,12 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
           <span className="stat-label">Positionen</span>
         </div>
         <div className="stat">
-          <span className="stat-value">
-            {[...valueByCurrency].map(([cur, v]) => formatMoney(v, cur, { whole: true })).join(" + ") || "–"}
-          </span>
-          <span className="stat-label">Einkaufswert</span>
+          <span className="stat-value">{formatTotals(cellarValue)}</span>
+          <span className="stat-label">Kellerwert (bezahlt)</span>
+        </div>
+        <div className="stat">
+          <span className="stat-value">{formatTotals(regularValue)}</span>
+          <span className="stat-label">Normalwert</span>
         </div>
       </section>
 

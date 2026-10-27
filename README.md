@@ -5,7 +5,8 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
 ## Funktionen (Meilenstein 1)
 
 - **Login per Magic Link** (`/login` → Mail → `/auth/confirm`)
-- **Bestand** (`/`): ungeöffnete Positionen mit Suche, Typfilter und Kennzahlen
+- **Bestand** (`/`): ungeöffnete Positionen mit Suche, Typfilter und Kennzahlen (Kellerwert = bezahlt,
+  Normalwert = Normalpreis bzw. bezahlter Preis, falls kein Normalpreis erfasst ist)
 - **Offene Flaschen** (`/offen`): älteste zuerst, mit Füllstand
 - **Getrunken** (`/getrunken`): neueste zuerst nach `drunk_at`, mit persönlicher Bewertung; importierte Zeilen ohne `drunk_at` folgen alphabetisch
 - **Detailseite** (`/flasche/[id]`) mit Aktionen:
@@ -13,6 +14,7 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
   - **Füllstand ändern** (offen)
   - **Ausgetrunken** (offen): `status = drunk`, Füllstand 0; `drunk_at` setzt ein DB-Trigger
   - Getrunkene Flaschen: nur Anzeige, keine Aktionen
+  - **Preise** (alle Status): bezahlter Preis und Normalpreis bearbeitbar, Rabatt in CHF und %
 
 ### Lebenszyklus einer Flasche
 
@@ -80,7 +82,8 @@ supabase/migrations/            Migrationen, die zusätzlich zum Import-Schema a
 
 Ablauf: Vorder- und Rückseite als Album schicken → Fotos landen im privaten Bucket `wine-photos`
 (`telegram/<job-id>/<message-id>.jpg`) und in einer Zeile in `ingest_jobs` → Erkennung → Vorschlag mit
-**[Speichern] [Korrigieren] [Verwerfen]** → Lagerort (Weinkeller / Wohnzimmer), Anzahl, Preis → Wein anlegen
+**[Speichern] [Korrigieren] [Verwerfen]** → Lagerort (Weinkeller / Wohnzimmer), Anzahl, bezahlter Preis,
+Normalpreis (**[Gleich wie bezahlt] [Überspringen]**) → Wein anlegen
 oder wiederverwenden, `inventory_items` mit `status = sealed` und den Fotos anlegen, Job auf `confirmed`.
 
 - **Erkennung:** `claude-haiku-5-5` mit beiden Bildern und strukturierter JSON-Ausgabe; bei Konfidenz < 0.7

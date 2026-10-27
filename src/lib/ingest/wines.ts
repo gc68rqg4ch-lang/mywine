@@ -88,6 +88,7 @@ export async function createInventoryItem(
     proposal: WineProposal;
     quantity: number;
     price: number | null;
+    regularPrice: number | null;
     storageRoom: StorageRoom;
     photoPaths: string[];
   },
@@ -100,6 +101,7 @@ export async function createInventoryItem(
       bottle_size_ml: input.proposal.bottle_size_ml,
       quantity: input.quantity,
       purchase_price: input.price,
+      regular_price: input.regularPrice,
       currency: "CHF",
       storage_house: "Zuhause",
       storage_room: input.storageRoom,
