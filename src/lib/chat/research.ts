@@ -6,6 +6,7 @@ import "server-only";
 // Knöpfe: rs:<vorschlag>:y|n
 
 import { after } from "next/server";
+import { apiProblemForBot } from "@/lib/ai/api-errors";
 import { wineHref } from "@/lib/cellar/wine-page";
 import type { SuggestionField } from "@/lib/research/compare";
 import { decideSuggestion, loadPendingSuggestions, type Suggestion } from "@/lib/research/suggestions";
@@ -83,7 +84,8 @@ export async function runBotResearch(chatId: number, wineId: string, year: numbe
     for (const s of suggestions) await sendMessage(chatId, suggestionQuestion(s), keyboard(s.id));
   } catch (error) {
     console.error("bot research failed", wineId, error);
-    await sendMessage(chatId, "❌ Die Recherche hat leider nicht geklappt. Versuch es bitte später nochmals.").catch(() => undefined);
+    const text = apiProblemForBot(error) ?? "❌ Die Recherche hat leider nicht geklappt. Versuch es bitte später nochmals.";
+    await sendMessage(chatId, escapeHtml(text)).catch(() => undefined);
   }
 }
 

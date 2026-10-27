@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { usageLimit } from "@/lib/ai/api-errors";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { FALLBACK_MODEL, RECOGNITION_MODEL, SONNET_FALLBACK, anthropic } from "@/lib/ingest/recognize";
@@ -111,6 +112,7 @@ export async function extractTasting(data: SatData, text: string): Promise<Extra
     return await extractWith(RECOGNITION_MODEL, data, text);
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) throw error;
+    if (usageLimit(error)) throw error;
     console.warn("tasting: escalating to", FALLBACK_MODEL, error instanceof Error ? error.message : error);
     return await extractWith(FALLBACK_MODEL, data, text);
   }

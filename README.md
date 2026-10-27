@@ -104,6 +104,11 @@ zieht ein Trigger den Journal-Eintrag „getrunken“ mit.
   Trinkfenster nur leere Teile, Rebsorten nur ohne % bzw. ganz fehlend, manuelle bleiben); Rebsorten mit
   `source = research`. Gilt für 🔎 Nachrecherchieren auf der Weinseite (ohne Rückfrage, alle Jahrgänge mit
   Flaschen), den Sammellauf und die Erfassung im Bot. `wines.grapes` bleibt vorerst bestehen.
+- **API-Fehler** (`src/lib/ai/api-errors.ts`): Das Nutzungslimit (400 „reached your specified API usage
+  limits“) wird erkannt – der Sammellauf stoppt sofort und meldet „Das monatliche API-Limit ist erreicht. Wieder
+  verfügbar am …“ (Datum aus der Meldung), ebenso Nachrecherchieren auf der Weinseite und der Bot in der Ich-Form
+  (Recherche, Chat, Erfassung, Verkostung; kein zweiter Versuch mit Sonnet). Andere API-Fehler: Der Sammellauf
+  hält nach 3 Fehlern in Folge an und zeigt den Fehler. Bereits Gefundenes bleibt gespeichert.
 - **Abweichungen = Vorschläge** (`research_suggestions`): Die Recherche liefert immer alle Angaben. Leeres
   wird direkt gefüllt; weicht ein gefundener Wert vom gespeicherten ab, wird nichts überschrieben, sondern ein
   Vorschlag angelegt (Felder wie in der Check-Liste der Tabelle, `grapes` als `[{grape, percent}]`). Toleranzen:

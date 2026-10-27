@@ -5,6 +5,7 @@ import "server-only";
 // am Ende eine Zusammenfassung zeigen; dann speichern.
 
 import { after } from "next/server";
+import { apiProblemForBot } from "@/lib/ai/api-errors";
 import { savedWineKeyboard } from "@/lib/chat/menu";
 import type { Database } from "@/lib/database.types";
 import { formatBottles, formatMoney, todayIso, wineTitle } from "@/lib/format";
@@ -378,6 +379,12 @@ export async function failJob(
     .update({ status: "failed", error: detail.slice(0, 1000) })
     .eq("id", jobId);
   const retry = fromText ? "Schreib mir den Eintrag bitte nochmals." : "Schick mir die Fotos bitte nochmals.";
+  // API-Limit oder anderer API-Fehler: klar sagen, statt „nochmals schicken“ zu empfehlen.
+  const api = apiProblemForBot(error);
+  if (api) {
+    await sendMessage(chatId, escapeHtml(api)).catch(() => undefined);
+    return;
+  }
   await sendMessage(chatId, `❌ ${escapeHtml(message)}. ${retry}`).catch(() => undefined);
 }
 

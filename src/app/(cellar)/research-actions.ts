@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import type { ResearchScope } from "@/lib/research/gaps";
 import { decideSuggestion } from "@/lib/research/suggestions";
 import { researchAndFillWine, type ResearchOutcome } from "@/lib/research/wine";
+import { apiProblem } from "@/lib/ai/api-errors";
 import type { ActionState } from "./actions";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -19,7 +20,14 @@ export async function researchWine(wineId: string, scope: ResearchScope): Promis
     return outcome;
   } catch (error) {
     console.error("wine research failed", wineId, error);
-    return { status: "error", filled: [], suggested: 0, seconds: 0 };
+    const problem = apiProblem(error);
+    return {
+      status: "error",
+      filled: [],
+      suggested: 0,
+      seconds: 0,
+      error: problem ?? { kind: "other", message: "Die Recherche ist fehlgeschlagen." },
+    };
   }
 }
 
@@ -41,6 +49,8 @@ export async function researchWineFromPage(_prev: ActionState, formData: FormDat
     case "nothing":
       return { ok: "Ich habe nichts Neues gefunden – deine Angaben stimmen mit der Recherche überein." };
     default:
+      if (outcome.error?.kind === "usage_limit") return { error: outcome.error.message };
+      if (outcome.error?.kind === "api") return { error: `${outcome.error.message} Bitte später nochmals versuchen.` };
       return { error: "Die Recherche ist fehlgeschlagen. Bitte später nochmals versuchen." };
   }
 }

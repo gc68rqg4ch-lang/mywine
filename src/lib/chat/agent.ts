@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { usageLimit } from "@/lib/ai/api-errors";
 import { todayIso } from "@/lib/format";
 import { FALLBACK_MODEL, RECOGNITION_MODEL, SONNET_FALLBACK, anthropic } from "@/lib/ingest/recognize";
 import type { AdminClient } from "@/lib/supabase/admin";
@@ -96,6 +97,8 @@ export async function answerChat(db: AdminClient, history: ChatTurn[], text: str
   } catch (error) {
     // Fehlender/ungültiger API-Key: Sonnet hilft nicht weiter.
     if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) throw error;
+    // Nutzungslimit gilt für alle Modelle – ein zweiter Versuch mit Sonnet bringt nichts.
+    if (usageLimit(error)) throw error;
     console.warn("chat: escalating to", FALLBACK_MODEL, error instanceof Error ? error.message : error);
     return await runWith(FALLBACK_MODEL, db, history, text, actor);
   }

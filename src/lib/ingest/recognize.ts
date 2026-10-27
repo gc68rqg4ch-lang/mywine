@@ -3,6 +3,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { usageLimit } from "@/lib/ai/api-errors";
 import { strictSchemaProblems } from "@/lib/ai/schema-limits";
 import { hasCompletePercents, normalizeGrapeShares, type GrapeShare } from "@/lib/grapes/shares";
 import {
@@ -358,7 +359,7 @@ export async function parseTextEntry(text: string): Promise<{ proposal: WineProp
   try {
     parsed = await run(RECOGNITION_MODEL);
   } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) throw error;
+    if (error instanceof Anthropic.AuthenticationError || usageLimit(error)) throw error;
     parsed = await run(FALLBACK_MODEL);
   }
   const { purchase, ...wine } = parsed;

@@ -32,6 +32,9 @@ const ICON: Record<ResearchOutcome["status"] | "waiting" | "running", string> = 
   error: "⚠️",
 };
 
+/** Andere Fehler: nach so vielen in Folge anhalten. */
+const MAX_FAILURES_IN_A_ROW = 3;
+
 const minutes = (seconds: number) => Math.max(1, Math.round(seconds / 60));
 
 /**
@@ -55,6 +58,8 @@ export function BatchResearch({
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [phase, setPhase] = useState<"idle" | "confirm" | "running" | "stopping" | "done">("idle");
   const stop = useRef(false);
+  // Grund für einen automatischen Stopp (API-Limit oder 3 Fehler in Folge).
+  const [halt, setHalt] = useState<string | null>(null);
 
   const done = candidates.filter((c) => rows[c.wineId]?.state === "done");
   const results = done.map((c) => rows[c.wineId] as Extract<Row, { state: "done" }>);
@@ -67,7 +72,9 @@ export function BatchResearch({
 
   async function run() {
     stop.current = false;
+    setHalt(null);
     setPhase("running");
+    let failures = 0;
     for (const c of todo) {
       if (stop.current) break;
       setRows((r) => ({ ...r, [c.wineId]: { state: "running" } }));
@@ -78,6 +85,16 @@ export function BatchResearch({
         outcome = { status: "error", filled: [], suggested: 0, seconds: 0 };
       }
       setRows((r) => ({ ...r, [c.wineId]: { state: "done", ...outcome } }));
+      // API-Limit: sofort aufhören – jeder weitere Wein würde gleich scheitern.
+      if (outcome.error?.kind === "usage_limit") {
+        setHalt(outcome.error.message);
+        break;
+      }
+      failures = outcome.status === "error" ? failures + 1 : 0;
+      if (failures >= MAX_FAILURES_IN_A_ROW) {
+        setHalt(`Angehalten nach ${MAX_FAILURES_IN_A_ROW} Fehlern in Folge: ${outcome.error?.message ?? "unbekannter Fehler"}`);
+        break;
+      }
     }
     setPhase("done");
     router.refresh();
@@ -178,6 +195,11 @@ export function BatchResearch({
           </div>
         )}
 
+        {phase === "done" && halt && (
+          <p className="notice notice-error" role="alert">
+            ⛔ {halt} Bereits Gefundenes ist gespeichert.
+          </p>
+        )}
         {phase === "done" && (
           <div className="stack-sm" role="status">
             <strong>
@@ -222,7 +244,7 @@ export function BatchResearch({
                         ? "Nichts Neues gefunden"
                         : row.status === "complete"
                           ? "Schon vollständig"
-                          : "Fehler – später nochmals versuchen"
+                          : (row.error?.message ?? "Fehler – später nochmals versuchen")
                     : c.complete
                       ? "Vollständig – Kontrolle auf Abweichungen"
                       : `Fehlt: ${c.gaps.join(", ")}`}

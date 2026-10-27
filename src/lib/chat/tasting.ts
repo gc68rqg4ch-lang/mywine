@@ -1,6 +1,7 @@
 import "server-only";
 
 import { after } from "next/server";
+import { apiProblemForBot } from "@/lib/ai/api-errors";
 import type { Json } from "@/lib/database.types";
 import { formatShares } from "@/lib/grapes/shares";
 import { loadGrapeShares } from "@/lib/grapes/store";
@@ -286,7 +287,8 @@ export async function handleTastingText(jobId: string, draft: TastingDraft, chat
     } catch (error) {
       console.error("tasting extraction failed", error);
       await saveDraft(db, jobId, { ...draft, step: "text" }).catch(() => undefined);
-      await sendMessage(chatId, "❌ Das konnte ich nicht zuordnen. Schreib es bitte nochmals – oder tippe ✖️ Abbrechen.").catch(
+      const limit = apiProblemForBot(error);
+      await sendMessage(chatId, limit ? e(limit) : "❌ Das konnte ich nicht zuordnen. Schreib es bitte nochmals – oder tippe ✖️ Abbrechen.").catch(
         () => undefined,
       );
     }

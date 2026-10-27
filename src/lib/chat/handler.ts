@@ -1,6 +1,7 @@
 import "server-only";
 
 import { after } from "next/server";
+import { apiProblemForBot } from "@/lib/ai/api-errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { answerCallback, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
 import type { Actor } from "@/lib/telegram/actor";
@@ -79,7 +80,8 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
     ]);
   } catch (error) {
     console.error("chat reply failed", error);
-    await sendMessage(chatId, "❌ Da ist mir etwas schiefgelaufen. Versuch es bitte nochmals.").catch(() => undefined);
+    const text = apiProblemForBot(error) ?? "❌ Da ist mir etwas schiefgelaufen. Versuch es bitte nochmals.";
+    await sendMessage(chatId, escapeHtml(text)).catch(() => undefined);
   }
 }
 

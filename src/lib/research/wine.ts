@@ -42,6 +42,8 @@ export type ResearchOutcome = {
   filled: string[];
   /** Neue bzw. aktualisierte Vorschläge (Abweichungen) – nichts überschrieben. */
   suggested: number;
+  /** Bei status „error“: was schiefging (Nutzungslimit → Lauf sofort stoppen). */
+  error?: { kind: "usage_limit" | "api" | "other"; message: string };
   seconds: number;
 };
 
