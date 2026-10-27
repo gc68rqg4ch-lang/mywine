@@ -1,7 +1,7 @@
 import "server-only";
 
 import { after } from "next/server";
-import { formatBottles, formatMoney, wineTitle } from "@/lib/format";
+import { formatBottles, formatMoney, todayIso, wineTitle } from "@/lib/format";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import {
   answerCallback,
@@ -37,6 +37,8 @@ import {
   parseQuantity,
   priceKeyboard,
   regularPriceKeyboard,
+  skipVendorKeyboard,
+  vendorKeyboard,
   proposalMessage,
   quantityKeyboard,
   reviewKeyboard,
@@ -56,7 +58,14 @@ import {
   type GrapeSource,
 } from "@/lib/grapes/shares";
 import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
-import { createInventoryItem, findWine, mergeWithKnownWine, resolveWine } from "./wines";
+import {
+  createInventoryItem,
+  findWine,
+  listVendors,
+  mergeWithKnownWine,
+  resolveVendor,
+  resolveWine,
+} from "./wines";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Grenze der Claude API pro Bild
 const IMAGE_TYPES = {
@@ -336,7 +345,7 @@ async function handleCallback(cb: TgCallbackQuery) {
       const next = await advanceJob(
         db,
         job,
-        ["review", "correcting", "location", "quantity", "price", "regular_price"],
+        ["review", "correcting", "location", "quantity", "price", "regular_price", "vendor", "vendor_new"],
         { step: "done" },
         { status: "discarded" },
       );
@@ -383,14 +392,42 @@ async function handleCallback(cb: TgCallbackQuery) {
     case "sameprice": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
-      await setRegularPriceAndSave(db, job, chatId, state.price ?? null);
+      await setRegularPrice(db, job, chatId, state.price ?? null);
       return;
     }
 
     case "skipregular": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
-      await setRegularPriceAndSave(db, job, chatId, null);
+      await setRegularPrice(db, job, chatId, null);
+      return;
+    }
+
+    case "vendor": {
+      const index = Number(parsed.value);
+      const vendorId = Number.isInteger(index) ? state.vendor_options?.[index] : undefined;
+      await answerCallback(cb.id);
+      if (!vendorId) return;
+      const { data: vendor } = await db.from("vendors").select("id, name").eq("id", vendorId).maybeSingle();
+      if (!vendor) return;
+      await clearKeyboard(chatId, messageId);
+      await setVendorAndSave(db, job, chatId, vendor);
+      return;
+    }
+
+    case "newvendor": {
+      const next = await advanceJob(db, job, "vendor", { step: "vendor_new" });
+      await answerCallback(cb.id);
+      if (!next) return;
+      await clearKeyboard(chatId, messageId);
+      await sendMessage(chatId, "Wie heisst der Händler?", skipVendorKeyboard(job.id));
+      return;
+    }
+
+    case "skipvendor": {
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await setVendorAndSave(db, job, chatId, null);
       return;
     }
   }
@@ -416,15 +453,37 @@ async function setPaidPrice(db: AdminClient, job: IngestJob, chatId: number, pri
   );
 }
 
-async function setRegularPriceAndSave(
+async function setRegularPrice(
   db: AdminClient,
   job: IngestJob,
   chatId: number,
   regularPrice: number | null,
 ) {
-  const saving = await advanceJob(db, job, "regular_price", {
-    step: "saving",
+  const vendors = await listVendors(db);
+  const next = await advanceJob(db, job, "regular_price", {
+    step: "vendor",
     regular_price: regularPrice,
+    vendor_options: vendors.map((v) => v.id),
+  });
+  if (!next) return;
+  await sendMessage(
+    chatId,
+    vendors.length ? "Händler? (Button oder Namen schreiben)" : "Händler? (Namen schreiben oder überspringen)",
+    vendorKeyboard(job.id, vendors),
+  );
+}
+
+/** Händler setzen (null = überspringen) und speichern. */
+async function setVendorAndSave(
+  db: AdminClient,
+  job: IngestJob,
+  chatId: number,
+  vendor: { id: string; name: string } | null,
+) {
+  const saving = await advanceJob(db, job, ["vendor", "vendor_new"], {
+    step: "saving",
+    vendor_id: vendor?.id ?? null,
+    vendor_name: vendor?.name ?? null,
   });
   if (!saving) return;
   after(() => saveJob(saving, chatId));
@@ -480,7 +539,18 @@ async function handleText(msg: TgMessage) {
         await sendMessage(chatId, "Bitte einen Preis wie <i>29.90</i> schreiben oder einen Button tippen.");
         return;
       }
-      await setRegularPriceAndSave(db, job, chatId, regularPrice);
+      await setRegularPrice(db, job, chatId, regularPrice);
+      return;
+    }
+    case "vendor":
+    case "vendor_new": {
+      const name = text.replace(/\s+/g, " ").trim();
+      if (name.length < 2 || name.length > 80) {
+        await sendMessage(chatId, "Bitte den Namen des Händlers schreiben (2–80 Zeichen) oder „Überspringen“ tippen.");
+        return;
+      }
+      const vendor = await resolveVendor(db, name);
+      await setVendorAndSave(db, job, chatId, vendor);
       return;
     }
   }
@@ -550,6 +620,9 @@ async function saveJob(job: IngestJob, chatId: number) {
       quantity: state.quantity ?? 1,
       price: state.price ?? null,
       regularPrice: state.regular_price ?? null,
+      vendorId: state.vendor_id ?? null,
+      // Kaufdatum = Tag der Erfassung. Das Journal (inventory_events) schreibt die DB per Trigger.
+      purchasedAt: todayIso(),
       storageRoom: state.storage_room ?? "Weinkeller",
       photoPaths: job.photo_paths,
     });
@@ -570,6 +643,7 @@ async function saveJob(job: IngestJob, chatId: number) {
       state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
       state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
     ].filter(Boolean);
+    if (state.vendor_name) prices.push(`bei ${escapeHtml(state.vendor_name)}`);
     const priceLine = prices.length ? `\n${prices.join(" · ")}` : "";
     const link = base ? `\n<a href="${base}/flasche/${itemId}">In MyWine öffnen</a>` : "";
     await sendMessage(

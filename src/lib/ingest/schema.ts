@@ -62,6 +62,8 @@ export type IngestStep =
   | "quantity"
   | "price"
   | "regular_price"
+  | "vendor"
+  | "vendor_new"
   | "saving"
   | "done";
 
@@ -87,6 +89,10 @@ export type IngestState = {
   price?: number | null;
   /** Normalpreis pro Flasche (regular_price). */
   regular_price?: number | null;
+  /** Händler-IDs in der Reihenfolge der Buttons (callback_data enthält nur den Index). */
+  vendor_options?: string[];
+  vendor_id?: string | null;
+  vendor_name?: string | null;
 };
 
 export function missingEnrichableFields(p: WineProposal): EnrichableField[] {

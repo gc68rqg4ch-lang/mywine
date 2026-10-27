@@ -88,6 +88,8 @@ export async function createInventoryItem(
     quantity: number;
     price: number | null;
     regularPrice: number | null;
+    vendorId: string | null;
+    purchasedAt: string;
     storageRoom: StorageRoom;
     photoPaths: string[];
   },
@@ -101,6 +103,8 @@ export async function createInventoryItem(
       quantity: input.quantity,
       purchase_price: input.price,
       regular_price: input.regularPrice,
+      purchased_at: input.purchasedAt,
+      vendor_id: input.vendorId,
       currency: "CHF",
       storage_house: "Zuhause",
       storage_room: input.storageRoom,
@@ -111,4 +115,42 @@ export async function createInventoryItem(
     .single();
   if (error) throw error;
   return data.id;
+}
+
+/** Händler für die Buttons: aktive, alphabetisch (höchstens zwölf). */
+export async function listVendors(db: AdminClient) {
+  const { data, error } = await db
+    .from("vendors")
+    .select("id, name")
+    .eq("archived", false)
+    .order("name")
+    .limit(12);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Händler per Name finden (ohne Gross-/Kleinschreibung) oder neu anlegen. */
+export async function resolveVendor(db: AdminClient, rawName: string) {
+  const name = rawName.trim().replace(/\s+/g, " ");
+  const find = async () => {
+    const { data, error } = await db
+      .from("vendors")
+      .select("id, name")
+      .ilike("name", exactILike(name))
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  };
+  const existing = await find();
+  if (existing) return existing;
+
+  const { data, error } = await db.from("vendors").insert({ name }).select("id, name").single();
+  // Unique-Index vendors_name_uq: parallel angelegt → den vorhandenen nehmen.
+  if (error?.code === "23505") {
+    const again = await find();
+    if (again) return again;
+  }
+  if (error) throw error;
+  return data;
 }

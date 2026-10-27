@@ -15,7 +15,10 @@ export type CallbackAction =
   | "qty"
   | "skipprice"
   | "sameprice"
-  | "skipregular";
+  | "skipregular"
+  | "vendor"
+  | "newvendor"
+  | "skipvendor";
 
 export function callbackData(action: CallbackAction, jobId: string, value?: string) {
   return [action, jobId, value].filter(Boolean).join(":");
@@ -32,6 +35,9 @@ export function parseCallbackData(data: string | undefined) {
     "skipprice",
     "sameprice",
     "skipregular",
+    "vendor",
+    "newvendor",
+    "skipvendor",
   ];
   if (!actions.includes(action as CallbackAction) || !/^[0-9a-f-]{36}$/.test(jobId ?? "")) {
     return null;
@@ -134,6 +140,25 @@ export function regularPriceKeyboard(jobId: string, paid: number | null): TgInli
     row.unshift({ text: "Gleich wie bezahlt", callback_data: callbackData("sameprice", jobId) });
   }
   return { inline_keyboard: [row] };
+}
+
+/** Händler als Buttons (je zwei pro Zeile), dazu „Neuer Händler“ und „Überspringen“. */
+export function vendorKeyboard(jobId: string, vendors: { name: string }[]): TgInlineKeyboard {
+  const rows: TgInlineKeyboard["inline_keyboard"] = [];
+  vendors.forEach((vendor, index) => {
+    const button = { text: vendor.name, callback_data: callbackData("vendor", jobId, String(index)) };
+    if (index % 2 === 0) rows.push([button]);
+    else rows[rows.length - 1].push(button);
+  });
+  rows.push([
+    { text: "➕ Neuer Händler", callback_data: callbackData("newvendor", jobId) },
+    { text: "Überspringen", callback_data: callbackData("skipvendor", jobId) },
+  ]);
+  return { inline_keyboard: rows };
+}
+
+export function skipVendorKeyboard(jobId: string): TgInlineKeyboard {
+  return { inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipvendor", jobId) }]] };
 }
 
 export const HELP_TEXT = [

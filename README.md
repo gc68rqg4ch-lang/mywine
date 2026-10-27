@@ -96,8 +96,10 @@ supabase/migrations/            Migrationen, die zusätzlich zum Import-Schema a
 Ablauf: Vorder- und Rückseite als Album schicken → Fotos landen im privaten Bucket `wine-photos`
 (`telegram/<job-id>/<message-id>.jpg`) und in einer Zeile in `ingest_jobs` → Erkennung → Vorschlag mit
 **[Speichern] [Korrigieren] [Verwerfen]** → Lagerort (Weinkeller / Wohnzimmer), Anzahl, bezahlter Preis,
-Normalpreis (**[Gleich wie bezahlt] [Überspringen]**) → Wein anlegen
-oder wiederverwenden, `inventory_items` mit `status = sealed` und den Fotos anlegen, Job auf `confirmed`.
+Normalpreis (**[Gleich wie bezahlt] [Überspringen]**), Händler (Buttons aus `vendors`, **[Neuer Händler]**
+per Freitext oder **[Überspringen]**) → Wein anlegen oder wiederverwenden, `inventory_items` mit
+`status = sealed`, `purchased_at = heute`, `vendor_id` und den Fotos anlegen, Job auf `confirmed`.
+Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreibt keine eigenen Einträge.
 
 - **Erkennung:** `claude-haiku-5-5` mit beiden Bildern und strukturierter JSON-Ausgabe; bei Konfidenz < 0.7
   nochmals mit `claude-sonnet-5-5` (mit serverseitigem Fallback bei Ablehnungen).
