@@ -14,11 +14,16 @@ import {
 import { daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
 import type { AdminClient } from "@/lib/supabase/admin";
+import type { Edit, EditPreview } from "@/lib/edit/types";
+import { editTools, resolvePerson } from "./edit-tools";
 import type { WineRef } from "./menu";
 import { daysLabel, openBottleLine, typeEmoji } from "./menu-view";
-import { fillAfterGlasses, personKey, type Proposal } from "./proposals";
+import { personKey, type Proposal } from "./proposals";
 
-export type PendingProposal = { proposal: Proposal; text: string };
+export type PendingProposal =
+  | { proposal: Proposal; text: string }
+  /** Bearbeitung über das gemeinsame Modul (liegt bis zur Antwort in ingest_jobs). */
+  | { edit: Edit; preview: EditPreview; text: string };
 
 const WINE_TYPES = ["red", "white", "rose", "sparkling", "sweet", "fortified", "orange"] as const;
 const DRINK_STATUSES = ["overdue", "ready", "wait", "unknown"] as const;
@@ -98,12 +103,6 @@ function describeWine(w: CellarWine) {
         .map((l) => ({ room: place(l), sealed: l.sealed, open: l.open })),
     })),
   };
-}
-
-async function loadPersons(db: AdminClient) {
-  const { data, error } = await db.from("persons").select("id, name").order("sort_order");
-  if (error) throw error;
-  return data ?? [];
 }
 
 /**
@@ -267,7 +266,7 @@ export function chatTools(
       run: async ({ wine_id, query }) => {
         let q = db
           .from("wine_tastings")
-          .select("wine_id, vintage_year, tasted_at, wine_style, quality_level, quality_points, readiness, notes, person:persons(name)");
+          .select("id, wine_id, vintage_year, tasted_at, wine_style, quality_level, quality_points, readiness, notes, person:persons(name)");
         if (wine_id) q = q.eq("wine_id", wine_id);
         else if (query) {
           const ids = await findWineIds(db, query);
@@ -278,6 +277,7 @@ export function chatTools(
         const names = await wineNames(db, (data ?? []).map((r) => r.wine_id));
         return json(
           (data ?? []).map((r) => ({
+            tasting_id: r.id,
             wine: title({ ...names.get(r.wine_id), vintage_year: r.vintage_year }),
             tasted_at: r.tasted_at,
             person: r.person?.name ?? null,
@@ -347,45 +347,14 @@ export function chatTools(
     betaZodTool({
       name: "start_wine_entry",
       description:
-        "Startet die Erfassung eines neuen Weins bzw. Kaufs aus Text (ohne Foto), z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“. Der Bot recherchiert dann wie bei Fotos und fragt Fehlendes nach.",
+        "Startet die Erfassung eines neuen Weins bzw. Kaufs aus Text (ohne Foto), z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“. Danach recherchierst du wie bei Fotos und fragst Fehlendes nach (läuft automatisch).",
       inputSchema: z.object({
         description: z.string().min(2).max(2000).describe("Die Angaben der Person zum Kauf, möglichst wörtlich"),
       }),
       run: async ({ description }) => {
         if (newEntries.length) return "Es läuft schon eine Erfassung.";
         newEntries.push(description);
-        return "Erfassung gestartet – der Bot meldet sich mit Rückfragen. Antworte höchstens mit einem kurzen Satz.";
-      },
-    }),
-
-    betaZodTool({
-      name: "propose_fill_level",
-      description:
-        "Schlägt einen neuen Füllstand für eine offene Flasche vor (ändert noch nichts). Entweder `percent` (neuer Stand) oder `glasses` (getrunkene Gläser à 150 ml, relativ zur Flaschengrösse).",
-      inputSchema: z.object({
-        inventory_item_id: z.uuid().describe("Aus list_open_bottles"),
-        percent: z.number().int().min(0).max(100).optional(),
-        glasses: z.number().min(0.5).max(20).optional(),
-      }),
-      run: async ({ inventory_item_id, percent, glasses }) => {
-        if ((percent == null) === (glasses == null)) return "Fehler: genau eines von percent oder glasses angeben.";
-        const { data: r, error } = await db
-          .from("cellar_overview")
-          .select("producer, name, vintage_year, status, bottle_size_ml, fill_level_percent")
-          .eq("inventory_item_id", inventory_item_id)
-          .maybeSingle();
-        if (error) throw error;
-        if (!r || r.status !== "open") return "Fehler: Diese Flasche ist nicht offen. Prüfe list_open_bottles.";
-        const current = r.fill_level_percent ?? 100;
-        const next = percent ?? fillAfterGlasses(current, glasses!, r.bottle_size_ml ?? 750);
-        if (next === 0) {
-          return propose({ kind: "drunk", itemId: inventory_item_id }, `${title(r)} ist danach leer – als ausgetrunken markieren`);
-        }
-        const how = glasses != null ? ` (${glasses.toLocaleString("de-CH")} Glas/Gläser à 150 ml)` : "";
-        return propose(
-          { kind: "fill", itemId: inventory_item_id, percent: next },
-          `Füllstand ${title(r)}: ${current} % → ${next} %${how}`,
-        );
+        return "Erfassung gestartet – ich melde mich gleich mit Rückfragen. Antworte höchstens mit einem kurzen Satz, z. B. „Ich recherchiere den Wein und melde mich gleich.“";
       },
     }),
 
@@ -459,12 +428,8 @@ export function chatTools(
       }),
       run: async ({ wine_id, vintage_year, person, rating }) => {
         if (!isValidRating(rating)) return "Fehler: Bewertung nur in halben Schritten von 0 bis 5.";
-        const persons = await loadPersons(db);
-        const wanted = person?.trim() || actor?.name || "";
-        const match = person?.trim()
-          ? persons.find((p) => p.name.toLowerCase() === wanted.toLowerCase())
-          : (persons.find((p) => p.id === actor?.personId) ?? persons.find((p) => p.name === wanted));
-        if (!match) return `Fehler: Unbekannte Person. Möglich: ${persons.map((p) => p.name).join(", ")}.`;
+        const { match, names } = await resolvePerson(db, actor, person);
+        if (!match) return `Fehler: Unbekannte Person. Möglich: ${names.join(", ")}.`;
         const { data: wine, error } = await db.from("wines").select("producer, name").eq("id", wine_id).maybeSingle();
         if (error) throw error;
         if (!wine) return "Fehler: Wein nicht gefunden.";
@@ -475,6 +440,7 @@ export function chatTools(
         );
       },
     }),
+    ...editTools(db, pending, actor),
   ];
 }
 

@@ -45,6 +45,7 @@ export function GrapeSection({
   shares,
   sharesVintage,
   sources,
+  editable,
 }: {
   itemId: string;
   itemVintage: number | null;
@@ -52,6 +53,8 @@ export function GrapeSection({
   /** Jahrgang der angezeigten Angaben; null = gilt für alle Jahrgänge. */
   sharesVintage: number | null;
   sources: GrapeSource[];
+  /** Bearbeiten-Modus der Weinseite: „Bearbeiten“ und „Nachrecherchieren“ anbieten. */
+  editable: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [rows, setRows] = useState<EditRow[]>(() => toRows(shares));
@@ -86,7 +89,7 @@ export function GrapeSection({
     <div className="stack">
       <div className="row row-between">
         <h3 className="subsection-title">Rebsorten</h3>
-        {!editing && (
+        {editable && !editing && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={startEditing}>
             Bearbeiten
           </button>
@@ -186,24 +189,26 @@ export function GrapeSection({
           )}
           <Notice state={saveState} />
 
-          <form action={researchAction} className="stack-sm">
-            <input type="hidden" name="itemId" value={itemId} />
-            <div className="row row-between">
-              <button type="submit" className="btn btn-sm" disabled={researching}>
-                {researching ? "Recherchiere …" : "🔎 Nachrecherchieren"}
-              </button>
-              <Link href="/recherche" className="small link">
-                Sammellauf für alle Weine
-              </Link>
-            </div>
-            {researching && (
-              <p className="muted small" role="status">
-                Suche Anteile für {itemVintage != null ? `Jahrgang ${itemVintage}` : "diesen Wein"} im Web – das
-                kann bis zu einer Minute dauern.
-              </p>
-            )}
-            {!researching && <Notice state={researchState} />}
-          </form>
+          {editable && (
+            <form action={researchAction} className="stack-sm">
+              <input type="hidden" name="itemId" value={itemId} />
+              <div className="row row-between">
+                <button type="submit" className="btn btn-sm" disabled={researching}>
+                  {researching ? "Recherchiere …" : "🔎 Nachrecherchieren"}
+                </button>
+                <Link href="/recherche" className="small link">
+                  Sammellauf für alle Weine
+                </Link>
+              </div>
+              {researching && (
+                <p className="muted small" role="status">
+                  Suche Anteile für {itemVintage != null ? `Jahrgang ${itemVintage}` : "diesen Wein"} im Web – das
+                  kann bis zu einer Minute dauern.
+                </p>
+              )}
+              {!researching && <Notice state={researchState} />}
+            </form>
+          )}
         </>
       )}
     </div>

@@ -18,6 +18,7 @@ import { PHOTO_BUCKET, advanceJob, jobState, toJson, type IngestJob } from "./jo
 import {
   confirmKeyboard,
   locationKeyboard,
+  vintageKeyboard,
   priceKeyboard,
   quantityKeyboard,
   regularPriceKeyboard,
@@ -27,7 +28,7 @@ import {
   wineSummaryLines,
 } from "./messages";
 import { enrichFromWeb, parseTextEntry } from "./recognize";
-import type { IngestState, IngestStep, WineProposal } from "./schema";
+import { needsVintage, type IngestState, type IngestStep, type WineProposal } from "./schema";
 import {
   createInventoryItem,
   findWine,
@@ -92,6 +93,7 @@ export async function resolveGrapes(
 
 /** Nächster Schritt: die erste noch fehlende Kaufangabe, sonst Zusammenfassung (Text) bzw. Speichern. */
 export function nextPurchaseStep(state: IngestState): IngestStep {
+  if (needsVintage(state)) return "vintage";
   if (state.storage_room === undefined) return "location";
   if (state.quantity === undefined) return "quantity";
   if (state.price === undefined) return "price";
@@ -127,6 +129,17 @@ export async function advanceTo(
 async function askFor(job: IngestJob, chatId: number, vendors: { id: string; name: string }[]) {
   const state = jobState(job)!;
   switch (state.step) {
+    case "vintage": {
+      const guess = state.proposal.vintage_year;
+      await sendMessage(
+        chatId,
+        guess != null
+          ? `📅 Ich habe den Jahrgang <b>${guess}</b> gelesen, bin mir aber nicht sicher. Stimmt das? Sonst schreib mir die richtige Jahreszahl.`
+          : "📅 Welcher Jahrgang ist es? Schreib mir die Jahreszahl – oder tippe „Ohne Jahrgang (NV)“.",
+        vintageKeyboard(job.id, guess),
+      );
+      return;
+    }
     case "location":
       await sendMessage(chatId, "Wo lagerst du die Flaschen?", locationKeyboard(job.id));
       return;
@@ -296,13 +309,13 @@ export async function saveJob(job: IngestJob, chatId: number) {
     if (vendorName) prices.push(`bei ${escapeHtml(vendorName)}`);
     const priceLine = prices.length ? `\n${prices.join(" · ")}` : "";
     const link = base ? `\n<a href="${base}/flasche/${itemId}">In MyWine öffnen</a>` : "";
-    const kind = state.restock ? "Nachkauf gespeichert" : "Gespeichert";
+    const what = state.restock ? "als Nachkauf gespeichert" : "gespeichert";
     await sendMessage(
       chatId,
-      `✅ ${kind}: ${formatBottles(state.quantity ?? 1)} ${title} · ${state.storage_room}${priceLine}${link}`,
+      `✅ Ich habe ${formatBottles(state.quantity ?? 1)} ${title} · ${state.storage_room} ${what}.${priceLine}${link}`,
     );
   } catch (error) {
-    await failJob(db, job.id, chatId, "Speichern ist fehlgeschlagen", error, state.source === "text");
+    await failJob(db, job.id, chatId, "Das Speichern ist mir nicht gelungen", error, state.source === "text");
   }
 }
 
@@ -320,7 +333,7 @@ export async function failJob(
     .from("ingest_jobs")
     .update({ status: "failed", error: detail.slice(0, 1000) })
     .eq("id", jobId);
-  const retry = fromText ? "Bitte schreib den Eintrag nochmals." : "Bitte schick die Fotos nochmals.";
+  const retry = fromText ? "Schreib mir den Eintrag bitte nochmals." : "Schick mir die Fotos bitte nochmals.";
   await sendMessage(chatId, `❌ ${escapeHtml(message)}. ${retry}`).catch(() => undefined);
 }
 
@@ -446,7 +459,14 @@ export async function processTextJob(jobId: string, chatId: number, text: string
       ...(p.regular_price > 0 ? { regular_price: p.regular_price } : {}),
       ...(p.vendor.trim() ? { vendor_name: p.vendor.trim().replace(/\s+/g, " ").slice(0, 80) } : {}),
     };
-    const step: IngestStep = restockCandidate ? "restock" : !proposal.producer ? "producer" : nextPurchaseStep(base);
+    // Jahrgang zuerst: davon hängt ab, ob es ein Nachkauf ist.
+    const step: IngestStep = needsVintage(base)
+      ? "vintage"
+      : restockCandidate
+        ? "restock"
+        : !proposal.producer
+          ? "producer"
+          : nextPurchaseStep(base);
     const vendors = step === "vendor" ? await listVendors(db) : [];
     const state: IngestState = { ...base, step, ...(step === "vendor" ? { vendor_options: vendors.map((v) => v.id) } : {}) };
 
@@ -462,7 +482,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     if (step === "restock") {
       await sendMessage(
         chatId,
-        "Diesen Wein mit diesem Jahrgang hast du schon im Keller. Nachkauf zu bestehendem Wein? (Sonst mit genauerem Namen neu schreiben.)",
+        "Diesen Wein mit diesem Jahrgang hast du schon im Keller. Ist es ein Nachkauf? (Sonst schreib ihn mir mit genauerem Namen neu.)",
         restockKeyboard(jobId),
       );
     } else if (step === "producer") {
@@ -473,6 +493,34 @@ export async function processTextJob(jobId: string, chatId: number, text: string
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erfassung ist fehlgeschlagen", error, true);
   }
+}
+
+/**
+ * Antwort auf die Jahrgangsfrage (Zahl oder „ohne Jahrgang“). Bei der Text-Erfassung
+ * danach wie sonst: Nachkauf? Produzent? Dann die Kaufangaben.
+ */
+export async function setVintage(db: AdminClient, job: IngestJob, chatId: number, year: number | null) {
+  const state = jobState(job)!;
+  const patch: Partial<IngestState> = {
+    proposal: { ...state.proposal, vintage_year: year },
+    vintage_confirmed: true,
+    vintage_uncertain: false,
+  };
+  if (state.source === "text" && !state.restock) {
+    if (job.matched_wine_id && (await inStock(db, job.matched_wine_id, year))) {
+      const next = await advanceJob(db, job, "vintage", { ...patch, step: "restock" });
+      if (next) {
+        await sendMessage(chatId, "Diesen Wein mit diesem Jahrgang hast du schon im Keller. Ist es ein Nachkauf?", restockKeyboard(job.id));
+      }
+      return;
+    }
+    if (!state.proposal.producer) {
+      const next = await advanceJob(db, job, "vintage", { ...patch, step: "producer" });
+      if (next) await sendMessage(chatId, "Von welchem Produzenten ist der Wein?");
+      return;
+    }
+  }
+  await advanceTo(db, job, chatId, "vintage", patch);
 }
 
 /** [Ja, Nachkauf]: nur eine neue Charge zum bestehenden Wein. */
@@ -491,7 +539,7 @@ export async function setProducer(db: AdminClient, job: IngestJob, chatId: numbe
     if (next) {
       await sendMessage(
         chatId,
-        "Diesen Wein mit diesem Jahrgang hast du schon im Keller. Nachkauf zu bestehendem Wein?",
+        "Diesen Wein mit diesem Jahrgang hast du schon im Keller. Ist es ein Nachkauf?",
         restockKeyboard(job.id),
       );
     }

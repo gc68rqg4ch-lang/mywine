@@ -37,6 +37,9 @@ export const RecognitionSchema = WineProposalSchema.extend({
     .string()
     .nullable()
     .describe("Kurz auf Deutsch, was unsicher oder unleserlich war; sonst null"),
+  vintage_certain: z
+    .boolean()
+    .describe("true nur, wenn der Jahrgang eindeutig lesbar auf dem Etikett steht; false bei fehlendem, verdecktem oder geratenem Jahrgang"),
   image_sides: z
     .array(z.enum(["front", "back", "other"]))
     .describe("Pro Foto in der gesendeten Reihenfolge: front = Vorderetikett, back = Rückenetikett, other = anderes"),
@@ -69,6 +72,8 @@ export type IngestStep =
   | "restock"
   /** Text-Erfassung: Produzent fehlt noch. */
   | "producer"
+  /** Jahrgang fehlt oder ist unsicher: Zahl oder „Ohne Jahrgang (NV)“. */
+  | "vintage"
   | "review"
   | "correcting"
   | "location"
@@ -93,6 +98,10 @@ export type IngestState = {
   drink_from_year?: number | null;
   drink_until_year?: number | null;
   proposal: WineProposal;
+  /** Der Jahrgang wurde erkannt, aber nicht sicher gelesen → nachfragen. */
+  vintage_uncertain?: boolean;
+  /** Die Person hat den Jahrgang bestätigt (auch „ohne Jahrgang“). */
+  vintage_confirmed?: boolean;
   recognition: {
     model: string;
     confidence: number;
@@ -166,4 +175,19 @@ export function normalizeProposal(p: WineProposal): WineProposal {
 
 export function grapeNames(p: Pick<WineProposal, "grape_shares">) {
   return p.grape_shares.map((s) => s.grape);
+}
+
+/** Jahrgang ist Pflicht: fehlt er oder ist er unsicher, wird nachgefragt (ausser schon bestätigt). */
+export function needsVintage(state: Pick<IngestState, "proposal" | "vintage_uncertain" | "vintage_confirmed">) {
+  return !state.vintage_confirmed && (state.proposal.vintage_year == null || state.vintage_uncertain === true);
+}
+
+/** Antwort auf die Jahrgangsfrage: „2019“ → 2019, „NV“/„ohne“ → null, sonst undefined. */
+export function parseVintageAnswer(text: string): number | null | undefined {
+  const t = text.trim().toLowerCase();
+  if (/^(nv|n\.v\.|ohne( jahrgang)?|kein(en)? jahrgang)$/.test(t)) return null;
+  const m = t.match(/^(?:jahrgang\s*)?(\d{4})$/);
+  if (!m) return undefined;
+  const year = Number(m[1]);
+  return year >= 1800 && year <= new Date().getFullYear() + 1 ? year : undefined;
 }

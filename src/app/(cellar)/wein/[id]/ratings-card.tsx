@@ -15,14 +15,15 @@ export type PersonRating = {
 export function PersonRatings({
   itemId,
   ratings,
-  today,
   ownPersonId = null,
+  editable = false,
 }: {
   itemId: string;
   ratings: PersonRating[];
-  today: string;
   /** Angemeldete Person: steht zuerst und ist markiert; die anderen bleiben bewertbar. */
   ownPersonId?: string | null;
+  /** Bearbeiten-Modus: Bewertungen löschen (samt Verlauf, mit Rückfrage). */
+  editable?: boolean;
 }) {
   const ordered = [...ratings].sort((a, b) => Number(b.personId === ownPersonId) - Number(a.personId === ownPersonId));
   const [pending, startTransition] = useTransition();
@@ -70,14 +71,16 @@ export function PersonRatings({
                 <span className="rating-value">
                   {value != null ? value.toLocaleString("de-CH") : "–"}
                 </span>
-                {value != null && (r.personId in local || r.ratedAt === today) && (
+                {editable && value != null && (
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
-                    onClick={() => update(r.personId, null)}
+                    onClick={() => {
+                      if (window.confirm(`Bewertung von ${r.name} löschen (auch frühere)?`)) update(r.personId, null);
+                    }}
                     disabled={pending}
-                    aria-label={`Heutige Bewertung von ${r.name} entfernen`}
-                    title="Heutige Bewertung entfernen"
+                    aria-label={`Bewertung von ${r.name} löschen`}
+                    title="Bewertung löschen"
                   >
                     ✕
                   </button>

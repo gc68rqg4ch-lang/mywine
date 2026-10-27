@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
 import { todayIso } from "@/lib/format";
-import { isValidRating, saveRating } from "@/lib/ratings";
+import { applyEdit } from "@/lib/edit/edit";
 import { tastingRow } from "@/lib/tasting/store";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,34 +61,28 @@ export async function saveTasting(input: {
 export async function deleteTasting(itemId: string, tastingId: string) {
   const ctx = await loadItem(itemId);
   if (!ctx || !UUID_RE.test(tastingId)) return { ok: false as const, error: "Kein Zugriff." };
-  const { error } = await ctx.session.supabase.from("wine_tastings").delete().eq("id", tastingId);
-  if (error) {
-    console.error("delete tasting failed", error);
-    return { ok: false as const, error: "Löschen fehlgeschlagen." };
-  }
+  const result = await applyEdit(ctx.session.supabase, { kind: "deleteTasting", tastingId });
+  if (!result.ok) return { ok: false as const, error: result.error };
   revalidatePath(`/wein/${ctx.item.wine_id}`);
   return { ok: true as const };
 }
 
-/** Subjektive Bewertung einer Person für Wein + Jahrgang der Flasche (siehe saveRating). */
+/**
+ * Bewertung einer Person für Wein + Jahrgang der Flasche setzen; null löscht sie samt
+ * Verlauf (gemeinsames Bearbeiten-Modul, wie im Bot).
+ */
 export async function setRating(itemId: string, personId: string, rating: number | null) {
   const ctx = await loadItem(itemId);
   if (!ctx || !UUID_RE.test(personId)) return { ok: false as const, error: "Kein Zugriff." };
-  if (rating != null && !isValidRating(rating)) {
-    return { ok: false as const, error: "Bewertung muss zwischen 0 und 5 in halben Schritten liegen." };
-  }
-
-  try {
-    await saveRating(
-      ctx.session.supabase,
-      { wineId: ctx.item.wine_id, vintageYear: ctx.item.vintage_year, itemId: ctx.item.id },
-      personId,
-      rating,
-    );
-  } catch (error) {
-    console.error("set rating failed", error);
-    return { ok: false as const, error: "Bewertung konnte nicht gespeichert werden." };
-  }
+  const result = await applyEdit(ctx.session.supabase, {
+    kind: "rating",
+    wineId: ctx.item.wine_id,
+    year: ctx.item.vintage_year,
+    personId,
+    rating,
+    itemId: ctx.item.id,
+  });
+  if (!result.ok) return { ok: false as const, error: result.error };
   revalidatePath(`/wein/${ctx.item.wine_id}`);
   return { ok: true as const };
 }

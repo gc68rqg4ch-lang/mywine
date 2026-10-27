@@ -45,6 +45,7 @@ Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine le
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira), orange.
 - bottle_size_ml: aus der Füllmenge (75 cl = 750, 37,5 cl = 375, 1,5 l = 1500).
 - grape_shares: Rebsorten, die auf dem Etikett stehen; percent nur, wenn der Anteil aufgedruckt ist (z. B. "85 % Tempranillo"), sonst null. Bei reinsortigen Weinen ("100 % Merlot" oder Sortenbezeichnung wie "Pinot Noir") ist percent 100.
+- vintage_certain: true nur, wenn der Jahrgang klar auf dem Etikett steht. Fehlt er oder ist er unleserlich, ist vintage_year null bzw. vintage_certain false – rate keinen Jahrgang.
 - image_sides: für jedes Foto in Reihenfolge, ob es das Vorderetikett (front), das Rückenetikett (back) oder etwas anderes (other) zeigt.
 - confidence: wie sicher Name, Produzent und Jahrgang stimmen (1.0 = klar lesbar, unter 0.7 = geraten oder unleserlich).`;
 
@@ -89,6 +90,8 @@ export type RecognitionResult = {
   confidence: number;
   notes: string | null;
   imageSides: Recognition["image_sides"] | null;
+  /** Jahrgang eindeutig gelesen; sonst fragt der Bot nach. */
+  vintageCertain: boolean;
 };
 
 /** Etikett erkennen: zuerst Haiku, bei Konfidenz < 0.7 nochmals mit Sonnet. */
@@ -101,13 +104,14 @@ export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionR
     result = await recognizeWith(model, images);
   }
 
-  const { confidence, uncertain_notes, image_sides, ...proposal } = result;
+  const { confidence, uncertain_notes, image_sides, vintage_certain, ...proposal } = result;
   return {
     proposal: normalizeProposal(proposal),
     model,
     confidence: Math.min(1, Math.max(0, confidence)),
     notes: uncertain_notes?.trim() || null,
     imageSides: image_sides.length === images.length ? image_sides : null,
+    vintageCertain: vintage_certain && proposal.vintage_year != null,
   };
 }
 

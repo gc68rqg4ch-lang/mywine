@@ -12,7 +12,8 @@ import { executeProposal } from "./execute";
 import { appendHistory, clearHistory, loadHistory } from "./history";
 import { wineButtons } from "./menu";
 import { MAIN_KEYBOARD } from "./menu-view";
-import { REJECT_DATA, confirmKeyboard, decodeProposal } from "./proposals";
+import { answerEditProposal, sendEditProposal } from "./edits";
+import { REJECT_DATA, confirmKeyboard, decodeEditCallback, decodeProposal } from "./proposals";
 
 const MAX_INPUT = 2000;
 
@@ -53,10 +54,11 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
       await sendMessage(chatId, escapeHtml(reply.text || "Hier:"), buttons ?? MAIN_KEYBOARD);
     }
     for (const p of reply.proposals) {
-      await sendMessage(chatId, `❓ ${escapeHtml(p.text)}?`, confirmKeyboard(p.proposal));
+      if ("edit" in p) await sendEditProposal(db, chatId, p.edit, p.preview);
+      else await sendMessage(chatId, `❓ ${escapeHtml(p.text)}?`, confirmKeyboard(p.proposal));
     }
 
-    const remembered = [reply.text, ...reply.proposals.map((p) => `[Vorschlag mit Ja/Nein-Buttons: ${p.text}]`)]
+    const remembered = [reply.text, ...reply.proposals.map((p) => `[Vorschlag mit Ja/Nein-Knöpfen: ${p.text}]`)]
       .filter(Boolean)
       .join("\n");
     await appendHistory(db, chatId, [
@@ -65,7 +67,7 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
     ]);
   } catch (error) {
     console.error("chat reply failed", error);
-    await sendMessage(chatId, "❌ Da ist etwas schiefgelaufen. Bitte versuch es nochmals.").catch(() => undefined);
+    await sendMessage(chatId, "❌ Da ist mir etwas schiefgelaufen. Versuch es bitte nochmals.").catch(() => undefined);
   }
 }
 
@@ -92,10 +94,24 @@ export async function handleChatCallback(cb: TgCallbackQuery) {
     return;
   }
   const db = createAdminClient();
+
+  const edit = decodeEditCallback(cb.data);
+  if (edit) {
+    try {
+      const note = await answerEditProposal(db, chatId, edit.jobId, edit.confirm);
+      await answerCallback(cb.id, note ?? undefined);
+    } catch (error) {
+      console.error("edit proposal failed", error);
+      await answerCallback(cb.id);
+      await sendMessage(chatId, "❌ Das hat nicht geklappt – ich habe nichts geändert. Versuch es bitte nochmals.");
+    }
+    return;
+  }
+
   const question = cb.message?.text?.replace(/^❓\s*/, "").replace(/\?$/, "") ?? "Vorschlag";
 
   if (cb.data === REJECT_DATA) {
-    await answerCallback(cb.id, "Nichts geändert.");
+    await answerCallback(cb.id, "Okay, ich lasse alles, wie es ist.");
     await appendHistory(db, chatId, [{ role: "assistant", content: `[Abgelehnt, nichts geändert: ${question}]` }]);
     return;
   }
@@ -116,6 +132,6 @@ export async function handleChatCallback(cb: TgCallbackQuery) {
     ]);
   } catch (error) {
     console.error("chat proposal failed", error);
-    await sendMessage(chatId, "❌ Das hat nicht geklappt – nichts geändert. Bitte versuch es nochmals.");
+    await sendMessage(chatId, "❌ Das hat nicht geklappt – ich habe nichts geändert. Versuch es bitte nochmals.");
   }
 }

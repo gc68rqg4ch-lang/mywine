@@ -11,6 +11,7 @@
 //   T:<subj>:<l>              Verkostung: Weg wählen      E:<subj>:<l>            Verkostung erzählen
 //   K:<subj>:<person>:<halbe>:<l>  Rückfrage, bevor für eine andere Person bewertet wird
 //   I:<subj>:<l>              Details zum Jahrgang        M:<subj>:<l>            Fotos nachreichen (📷 Foto)
+//   B:<subj>:<l>              Bearbeiten: was ändern?     U:<subj>:<bereich>:<l>  Bereich gewählt (EDIT_AREAS)
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
 import { formatStarNumber, type WineType } from "@/lib/format";
@@ -88,7 +89,20 @@ export type MenuAction =
   | { op: "details"; subject: Subject; back: ListRef }
   | { op: "tasting"; subject: Subject; back: ListRef }
   | { op: "tell"; subject: Subject; back: ListRef }
-  | { op: "photo"; subject: Subject; back: ListRef };
+  | { op: "photo"; subject: Subject; back: ListRef }
+  | { op: "edit"; subject: Subject; back: ListRef }
+  | { op: "editArea"; subject: Subject; area: EditArea; back: ListRef };
+
+/** Bereiche von „✏️ Bearbeiten“ (Kürzel im callback_data). */
+export const EDIT_AREAS = {
+  w: "🍷 Wein",
+  j: "📅 Jahrgang & Trinkfenster",
+  c: "📦 Chargen & Lagerort",
+  g: "🍇 Rebsorten",
+  b: "⭐ Bewertungen",
+  v: "📝 Verkostungen",
+} as const;
+export type EditArea = keyof typeof EDIT_AREAS;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const KEY_RE = /^[0-9a-f]{8}$/;
@@ -181,11 +195,15 @@ export function encodeMenu(a: MenuAction): string {
       return `E:${encodeSubject(a.subject)}:${l}`;
     case "photo":
       return `M:${encodeSubject(a.subject)}:${l}`;
+    case "edit":
+      return `B:${encodeSubject(a.subject)}:${l}`;
+    case "editArea":
+      return `U:${encodeSubject(a.subject)}:${a.area}:${l}`;
   }
 }
 
 export function isMenuCallback(data: string | undefined) {
-  return /^[LWVOGFPDXNQRSTEKIM]:/.test(data ?? "");
+  return /^[LWVOGFPDXNQRSTEKIMBU]:/.test(data ?? "");
 }
 
 export function decodeMenu(data: string | undefined): MenuAction | null {
@@ -238,12 +256,19 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
     case "T":
     case "E":
     case "I":
-    case "M": {
+    case "M":
+    case "B": {
       const subject = decodeSubject(f[0]);
       const b = back(1);
       if (!subject || !b) return null;
-      const kind = ({ T: "tasting", E: "tell", I: "details", M: "photo" } as const)[op];
+      const kind = ({ T: "tasting", E: "tell", I: "details", M: "photo", B: "edit" } as const)[op];
       return { op: kind, subject, back: b };
+    }
+    case "U": {
+      const subject = decodeSubject(f[0]);
+      const b = back(2);
+      if (!subject || !b || !(f[1] in EDIT_AREAS)) return null;
+      return { op: "editArea", subject, area: f[1] as EditArea, back: b };
     }
     case "K":
     case "S": {

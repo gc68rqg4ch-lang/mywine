@@ -2,13 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
-import {
-  formatShares,
-  normalizeGrapeShares,
-  percentSum,
-  type GrapeShare,
-} from "@/lib/grapes/shares";
-import { replaceGrapeShares, researchAndStore, type ResearchOutcome } from "@/lib/grapes/store";
+import { applyEdit } from "@/lib/edit/edit";
+import { formatShares, type GrapeShare } from "@/lib/grapes/shares";
+import { researchAndStore, type ResearchOutcome } from "@/lib/grapes/store";
 import type { ActionState } from "./actions";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,7 +34,7 @@ function parsePercent(raw: string): number | null | undefined {
   return Number.isFinite(value) && value > 0 && value <= 100 ? value : undefined;
 }
 
-/** Speichert die Rebsorten einer Position für ihren Jahrgang (source = manual). */
+/** Speichert die Rebsorten einer Position für ihren Jahrgang (source = manual, gemeinsames Modul). */
 export async function saveGrapeShares(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const ctx = await loadItemWine(String(formData.get("itemId") ?? ""));
   if (!ctx) return { error: "Kein Zugriff oder Position nicht gefunden." };
@@ -60,25 +56,15 @@ export async function saveGrapeShares(_prev: ActionState, formData: FormData): P
     if (percent === undefined) return { error: `Ungültiger Anteil bei ${grape} (1–100 %).` };
     shares.push({ grape, percent });
   }
-  if (percentSum(shares) > 100.5) {
-    return { error: `Die Anteile ergeben ${percentSum(shares).toLocaleString("de-CH")} % – höchstens 100 %.` };
-  }
-
-  try {
-    await replaceGrapeShares(ctx.session.supabase, {
-      wineId: ctx.wine.id,
-      vintageYear: ctx.vintageYear,
-      shares: normalizeGrapeShares(shares),
-      source: "manual",
-      keepManual: false,
-    });
-  } catch (error) {
-    console.error("save grape shares failed", error);
-    return { error: "Rebsorten konnten nicht gespeichert werden." };
-  }
-
+  const result = await applyEdit(ctx.session.supabase, {
+    kind: "grapes",
+    wineId: ctx.wine.id,
+    year: ctx.vintageYear,
+    shares,
+  });
+  if (!result.ok) return { error: result.error };
   revalidatePath("/", "layout");
-  return { ok: "Rebsorten gespeichert." };
+  return { ok: result.message };
 }
 
 const OUTCOME_TEXT: Record<ResearchOutcome["status"], string> = {

@@ -16,8 +16,11 @@ import { wineDetailsText, type WineDetails } from "./details";
 import { discardAttach, startAttach } from "@/lib/ingest/attach";
 import { startDescribe } from "@/lib/ingest/flow";
 import { DESCRIBE_TEXT, cancelKeyboard } from "@/lib/ingest/messages";
+import { editAreaText, editContextNote } from "./edit-menu";
 import { executeProposal } from "./execute";
+import { appendHistory } from "./history";
 import {
+  EDIT_AREAS,
   FILL_STEPS,
   MAIN_KEYBOARD,
   PAGE_SIZE,
@@ -35,6 +38,7 @@ import {
   typeEmoji,
   typeInfo,
   uniqueNames,
+  type EditArea,
   type ListRef,
   type MenuAction,
   type OpenBottleRow,
@@ -312,7 +316,7 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
         ...(sealed ? [[btn("🍾 Öffnen", { op: "open", wineId, year, back })]] : []),
         ...ratingButtons(ratings.persons, subject, back),
         [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
-        [btn("📷 Foto", { op: "photo", subject, back })],
+        [btn("📷 Foto", { op: "photo", subject, back }), btn("✏️ Bearbeiten", { op: "edit", subject, back })],
         ...appButton(`/wein/${wineId}`),
         ...backRow(back),
       ],
@@ -347,7 +351,7 @@ async function itemScreen(db: AdminClient, itemId: string, back: ListRef, status
         [btn("Füllstand %", { op: "fillPicker", itemId, back }), btn("✅ Ausgetrunken", { op: "drunkAsk", itemId, back })],
         ...ratingButtons(ratings.persons, subject, back),
         [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
-        [btn("📷 Foto", { op: "photo", subject, back })],
+        [btn("📷 Foto", { op: "photo", subject, back }), btn("✏️ Bearbeiten", { op: "edit", subject, back })],
         ...appButton(`/flasche/${itemId}`),
         ...backRow(back),
       ],
@@ -382,6 +386,13 @@ function subjectAction(subject: Subject, back: ListRef): MenuAction {
   return subject.kind === "item"
     ? { op: "item", itemId: subject.itemId, back }
     : { op: "vintage", wineId: subject.wineId, year: subject.year, back };
+}
+
+/** Wein und Jahrgang zu einem Menü-Ziel (Jahrgang oder offene Flasche). */
+async function subjectTarget(db: AdminClient, subject: Subject) {
+  if (subject.kind === "vintage") return { wineId: subject.wineId, year: subject.year };
+  const item = await loadItem(db, subject.itemId);
+  return item?.wine_id ? { wineId: item.wine_id, year: item.vintage_year } : null;
 }
 
 function subjectScreen(db: AdminClient, subject: Subject, back: ListRef, status?: string) {
@@ -565,6 +576,36 @@ async function screenForAction(
       const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
       return { screen: await tastingStartScreen(db, a.subject, a.back, header) };
     }
+    case "edit":
+    case "editArea": {
+      const target = await subjectTarget(db, a.subject);
+      if (!target) return { screen: await subjectScreen(db, a.subject, a.back, "Wein nicht gefunden.") };
+      const base = await subjectScreen(db, a.subject, a.back);
+      const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
+      const areas = Object.entries(EDIT_AREAS) as [EditArea, string][];
+      if (a.op === "edit") {
+        const rows = [];
+        for (let i = 0; i < areas.length; i += 2) {
+          rows.push(areas.slice(i, i + 2).map(([area, label]) => btn(label, { op: "editArea", subject: a.subject, area, back: a.back })));
+        }
+        return {
+          screen: {
+            text: `${header}\n✏️ Was möchtest du ändern?`,
+            keyboard: { inline_keyboard: [...rows, [btn("‹ Zurück", subjectAction(a.subject, a.back))]] },
+          },
+        };
+      }
+      const title = header.replace(/<[^>]+>/g, "");
+      await appendHistory(db, ctx.chatId, [
+        { role: "assistant", content: editContextNote(target.wineId, target.year, a.area, title) },
+      ]);
+      return {
+        screen: {
+          text: `${header}\n<b>${EDIT_AREAS[a.area]}</b>\n${await editAreaText(db, target.wineId, target.year, a.area)}`,
+          keyboard: { inline_keyboard: [[btn("‹ Andere Angabe", { op: "edit", subject: a.subject, back: a.back })]] },
+        },
+      };
+    }
     case "photo": {
       // Bei einer offenen Flasche hängen die Fotos an ihr, sonst nur an Wein und Jahrgang.
       const s = a.subject;
@@ -669,9 +710,9 @@ export async function handleMenuCallback(cb: TgCallbackQuery, actor: MenuActor) 
     await editMessage(chatId, messageId, screen.text, screen.keyboard);
   } catch (error) {
     console.error("menu callback failed", cb.data, error);
-    await answerCallback(cb.id, "Das hat nicht geklappt.");
+    await answerCallback(cb.id, "Das hat leider nicht geklappt.");
     const back = "back" in action ? action.back : { kind: "none" as const };
-    await editMessage(chatId, messageId, "❌ Das hat nicht geklappt – bitte nochmals versuchen.", {
+    await editMessage(chatId, messageId, "❌ Das hat leider nicht geklappt – versuch es bitte nochmals.", {
       inline_keyboard: backRow(back),
     }).catch(() => undefined);
   }

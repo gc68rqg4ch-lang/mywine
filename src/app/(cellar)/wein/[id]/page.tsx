@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { viewerPhoto } from "@/components/cellar/wine-card";
+import { PhotoGallery } from "@/components/photo-viewer";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
 import { DRINK_STATUS_LABELS, countryFlag } from "@/lib/cellar/overview";
@@ -29,6 +30,7 @@ import { loadGrapeShares } from "@/lib/grapes/store";
 import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
+import { BatchEditor, VintageEditForm, WineEditForm } from "./edit-sections";
 import { GrapeSection } from "./grape-card";
 import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
@@ -64,7 +66,7 @@ async function loadItems(supabase: Supabase, wineId: string) {
   const { data, error } = await supabase
     .from("cellar_overview")
     .select(
-      "inventory_item_id, vintage_year, status, quantity, bottle_size_ml, storage_house, storage_room, purchase_price, regular_price, currency, purchased_at, vendor_name, fill_level_percent, date_opened, drunk_at, personal_wine_rating, vintage_rating",
+      "inventory_item_id, vintage_year, status, quantity, bottle_size_ml, storage_house, storage_room, purchase_price, regular_price, currency, purchased_at, vendor_name, is_gift, fill_level_percent, date_opened, drunk_at, personal_wine_rating, vintage_rating",
     )
     .eq("wine_id", wineId);
   if (error) throw error;
@@ -108,6 +110,11 @@ async function loadRatingsAndTastings(supabase: Supabase, wineId: string, vintag
   return { ratings, tastings, vintage: vintage.data };
 }
 
+async function loadVendorNames(supabase: Supabase) {
+  const { data } = await supabase.from("vendors").select("name").eq("archived", false).order("name");
+  return (data ?? []).map((v) => v.name);
+}
+
 function Detail({ label, value }: { label: string; value: ReactNode }) {
   if (value == null || value === "") return null;
   return (
@@ -134,10 +141,13 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const inVintage = items.filter((i) => i.vintage_year === year);
   const anchor = anchorItem(inVintage);
 
-  const [{ ratings, tastings, vintage }, grapes, photos] = await Promise.all([
+  // Bearbeiten-Modus (?bearbeiten=1): Formulare statt Anzeige, alle über das gemeinsame Modul.
+  const editing = query.bearbeiten === "1";
+  const [{ ratings, tastings, vintage }, grapes, photos, vendors] = await Promise.all([
     loadRatingsAndTastings(supabase, wine.id, year),
     loadGrapeShares(supabase, wine.id, year),
     loadVintagePhotos(supabase, wine.id, year, inVintage.map((i) => i.inventory_item_id)),
+    editing ? loadVendorNames(supabase) : Promise.resolve([] as string[]),
   ]);
 
   const sealed = inVintage.filter((i) => i.status === "sealed" && i.quantity > 0);
@@ -168,6 +178,24 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const back = BACK_LINKS[typeof query.von === "string" ? query.von : ""] ?? BACK_LINKS.bestand;
   const yearLabel = year ?? "o. J.";
   const tastingItem = (itemId: string | null) => itemId ?? anchor?.inventory_item_id;
+
+  const von = typeof query.von === "string" ? { von: query.von } : undefined;
+  const editHref = wineHref(wine.id, year, { ...von, bearbeiten: "1" });
+  const viewHref = wineHref(wine.id, year, von);
+
+  // Bearbeiten: je Charge bzw. Flasche ein Formular (ungeöffnet, offen, getrunken).
+  const batchColumn = (
+    <div className="wine-col wine-col-open">
+      {[...sealed, ...open, ...drunk].map((b) => (
+        <BatchEditor key={b.inventory_item_id} batch={b} vendors={vendors} />
+      ))}
+      {inVintage.length === 0 && (
+        <section className="card">
+          <p className="muted">Keine Flaschen dieses Jahrgangs.</p>
+        </section>
+      )}
+    </div>
+  );
 
   // Spalte 1: Flasche öffnen (Chargen mit Preisen), offene und getrunkene Flaschen.
   const openColumn = (
@@ -232,30 +260,53 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     <div className="wine-col wine-col-wine">
       <section className="card stack">
         <h2 className="section-title">Zum Wein</h2>
-        <dl className="details">
-          <Detail label="Typ" value={<WineTypeIcon type={wine.type} withLabel />} />
-          <Detail label="Land" value={wine.country ? `${flag ? `${flag} ` : ""}${wine.country}` : null} />
-          <Detail label="Region" value={wine.region} />
-          <Detail label="Appellation" value={wine.appellation} />
-          <Detail
-            label="Alkohol"
-            value={wine.alcohol_content != null ? `${wine.alcohol_content.toLocaleString("de-CH")} %` : null}
-          />
-          <Detail label="Flasche" value={sizes} />
-          <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
-          <Detail label="Notiz" value={vintage?.notes} />
-        </dl>
+        {editing ? (
+          <WineEditForm wine={wine} />
+        ) : (
+          <dl className="details">
+            <Detail label="Typ" value={<WineTypeIcon type={wine.type} withLabel />} />
+            <Detail label="Land" value={wine.country ? `${flag ? `${flag} ` : ""}${wine.country}` : null} />
+            <Detail label="Region" value={wine.region} />
+            <Detail label="Appellation" value={wine.appellation} />
+            <Detail
+              label="Alkohol"
+              value={wine.alcohol_content != null ? `${wine.alcohol_content.toLocaleString("de-CH")} %` : null}
+            />
+            <Detail label="Flasche" value={sizes} />
+            <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
+            <Detail label="Notiz" value={vintage?.notes} />
+          </dl>
+        )}
+        {editing && (
+          <div className="stack section-divider">
+            <h3 className="subsection-title">Jahrgang & Trinkfenster</h3>
+            <VintageEditForm
+              key={`${year}:${vintage?.drink_from_year}:${vintage?.drink_until_year}`}
+              wineId={wine.id}
+              year={year}
+              otherYears={options.map((o) => o.year).filter((y) => y !== year)}
+              drinkFrom={vintage?.drink_from_year ?? null}
+              drinkUntil={vintage?.drink_until_year ?? null}
+            />
+          </div>
+        )}
         <div className="stack section-divider">
           <h3 className="subsection-title">Fotos</h3>
-          <WinePhotos
-            // Neu mounten, wenn sich Jahrgang oder Fotos ändern (vorgeschlagene Art passt dann wieder).
-            key={`${year}:${photos.length}`}
-            wineId={wine.id}
-            vintageYear={year}
-            itemId={anchor?.inventory_item_id ?? null}
-            photos={photos.map(viewerPhoto)}
-            alt={`${wine.name} ${yearLabel}`}
-          />
+          {editing ? (
+            <WinePhotos
+              // Neu mounten, wenn sich Jahrgang oder Fotos ändern (vorgeschlagene Art passt dann wieder).
+              key={`${year}:${photos.length}`}
+              wineId={wine.id}
+              vintageYear={year}
+              itemId={anchor?.inventory_item_id ?? null}
+              photos={photos.map(viewerPhoto)}
+              alt={`${wine.name} ${yearLabel}`}
+            />
+          ) : photos.length ? (
+            <PhotoGallery photos={photos.map(viewerPhoto)} alt={`${wine.name} ${yearLabel}`} />
+          ) : (
+            <p className="muted small">Noch keine Fotos – unter ✏️ Bearbeiten hinzufügen.</p>
+          )}
         </div>
         {anchor && (
           <div className="section-divider">
@@ -267,6 +318,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
               shares={grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }))}
               sharesVintage={grapes?.vintageYear ?? null}
               sources={grapes?.sources ?? []}
+              editable={editing}
             />
           </div>
         )}
@@ -293,8 +345,8 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             key={String(year)}
             itemId={anchor.inventory_item_id}
             ratings={ratings}
-            today={today}
             ownPersonId={person?.id ?? null}
+            editable={editing}
           />
         )}
         {legacyRating != null && <p className="muted small">Frühere Bewertung (Import): {formatRating(legacyRating)}</p>}
@@ -346,6 +398,11 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
           Flasche als ausgetrunken markiert. Zum Wohl!
         </p>
       )}
+      {typeof query.ok === "string" && (
+        <p className="notice notice-ok" role="status">
+          {query.ok}
+        </p>
+      )}
       {query.verkostung && (
         <p className="notice notice-ok" role="status">
           Verkostung gespeichert.
@@ -367,12 +424,24 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             {open.length > 0 && <span className="muted">+{open.length} offen</span>}
           </div>
         </div>
+        <div className="row">
+          {editing ? (
+            <Link href={viewHref} className="btn btn-primary btn-sm">
+              ✓ Fertig
+            </Link>
+          ) : (
+            <Link href={editHref} className="btn btn-sm">
+              ✏️ Bearbeiten
+            </Link>
+          )}
+          {editing && <span className="muted small">Jede Angabe einzeln speichern – „Abbrechen“ setzt sie zurück.</span>}
+        </div>
         {options.length > 1 && (
           <nav className="segmented vintage-switch" aria-label="Jahrgang">
             {options.map((o) => (
               <Link
                 key={String(o.year)}
-                href={wineHref(wine.id, o.year, typeof query.von === "string" ? { von: query.von } : undefined)}
+                href={wineHref(wine.id, o.year, editing ? { ...von, bearbeiten: "1" } : von)}
                 className={o.year === year ? "segment active" : "segment"}
                 aria-current={o.year === year ? "page" : undefined}
                 replace
@@ -388,7 +457,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
       </header>
 
       <div className="wine-columns">
-        {openColumn}
+        {editing ? batchColumn : openColumn}
         {wineColumn}
         {ratingsColumn}
       </div>

@@ -43,7 +43,7 @@ import {
   recognizeLabel,
   type LabelImage,
 } from "./recognize";
-import type { IngestState, StorageRoom, WineProposal } from "./schema";
+import { parseVintageAnswer, type IngestState, type StorageRoom, type WineProposal } from "./schema";
 import { handleChatCallback, handleChatMessage, resetChat } from "@/lib/chat/handler";
 import { isChatCallback } from "@/lib/chat/proposals";
 import { handleMenuCallback, sendMainMenu } from "@/lib/chat/menu";
@@ -64,6 +64,7 @@ import {
   failJob,
   resolveGrapes,
   setProducer,
+  setVintage,
   startTextIngest,
 } from "./flow";
 
@@ -86,7 +87,7 @@ export async function handleUpdate(update: TgUpdate) {
   if (update.callback_query) {
     const cb = update.callback_query;
     if (!actor) {
-      await answerCallback(cb.id, `Nicht freigeschaltet. Deine ID ist ${from.id}.`);
+      await answerCallback(cb.id, `Ich kenne dich noch nicht – deine Telegram-ID ist ${from.id}.`);
       return;
     }
     await handleCallback(cb, actor);
@@ -98,7 +99,7 @@ export async function handleUpdate(update: TgUpdate) {
   if (!actor) {
     // Unbekannte bekommen nur ihre ID (für die Freischaltung), sonst nichts – und nur im Einzelchat.
     if (msg.chat.type === "private") {
-      await sendMessage(msg.chat.id, `Nicht freigeschaltet. Deine ID ist <code>${from.id}</code>.`);
+      await sendMessage(msg.chat.id, `Ich kenne dich noch nicht – deine Telegram-ID ist <code>${from.id}</code>.`);
     }
     return;
   }
@@ -117,7 +118,7 @@ async function handlePhoto(msg: TgMessage) {
   const chatId = msg.chat.id;
   const file = pickImage(msg);
   if (!file) {
-    await sendMessage(chatId, "Bitte schick Fotos (JPEG, PNG oder WebP, max. 5 MB).");
+    await sendMessage(chatId, "Schick mir bitte Fotos (JPEG, PNG oder WebP, höchstens 5 MB).");
     return;
   }
 
@@ -133,7 +134,7 @@ async function handlePhoto(msg: TgMessage) {
       .upload(`${photoFolder(attach.id)}/${msg.message_id}.${ext}`, bytes, { contentType: IMAGE_TYPES[ext], upsert: true });
     if (error) throw error;
     if (!(await noteAttachPhoto(db, attach.id, chatId))) {
-      await sendMessage(chatId, "Dieses Foto kam zu spät – die Fotos werden schon zugeordnet.");
+      await sendMessage(chatId, "Dieses Foto kam zu spät – ich ordne die Fotos schon zu.");
     }
     return;
   }
@@ -239,6 +240,8 @@ async function processJob(jobId: string, chatId: number) {
     const state: IngestState = {
       step: "review",
       proposal,
+      // Jahrgang nicht sicher gelesen → vor dem Speichern nachfragen.
+      ...(proposal.vintage_year != null && !recognition.vintageCertain ? { vintage_uncertain: true } : {}),
       grape_source: grapes.source,
       drink_from_year: web?.drink.from ?? null,
       drink_until_year: web?.drink.until ?? null,
@@ -315,7 +318,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
   const job = await loadJob(db, parsed.jobId, chatId);
   const state = job ? jobState(job) : null;
   if (!job || !state || job.status !== "needs_review") {
-    await answerCallback(cb.id, "Dieser Eintrag ist abgeschlossen.");
+    await answerCallback(cb.id, "Diesen Eintrag habe ich schon abgeschlossen.");
     await clearKeyboard(chatId, messageId);
     return;
   }
@@ -323,7 +326,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
   switch (parsed.action) {
     case "save": {
       if (!state.proposal.name || !state.proposal.producer) {
-        await answerCallback(cb.id, "Name und Produzent fehlen – bitte zuerst korrigieren.");
+        await answerCallback(cb.id, "Mir fehlen Name und Produzent – bitte zuerst korrigieren.");
         return;
       }
       await answerCallback(cb.id);
@@ -352,6 +355,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
           "describe",
           "restock",
           "producer",
+          "vintage",
           "review",
           "correcting",
           "location",
@@ -369,7 +373,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       if (!next) return;
       await clearKeyboard(chatId, messageId);
       await deleteJobPhotos(db, job.photo_paths);
-      await sendMessage(chatId, "🗑️ Verworfen.");
+      await sendMessage(chatId, "🗑️ Verworfen – ich habe nichts gespeichert.");
       return;
     }
 
@@ -441,6 +445,15 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       return;
     }
 
+    case "vint": {
+      const year = parsed.value === "nv" ? null : Number(parsed.value);
+      if (year !== null && !(Number.isInteger(year) && year >= 1800 && year <= 2100)) return answerCallback(cb.id);
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await setVintage(db, job, chatId, year);
+      return;
+    }
+
     case "restock": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
@@ -450,7 +463,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
 
     case "confirm": {
       const ok = await confirmAndSave(db, job, chatId);
-      await answerCallback(cb.id, ok ? "Wird gespeichert …" : undefined);
+      await answerCallback(cb.id, ok ? "Ich speichere …" : undefined);
       if (ok) await clearKeyboard(chatId, messageId);
       return;
     }
@@ -503,24 +516,33 @@ async function handleText(msg: TgMessage, actor: Actor) {
       await startTextIngest(chatId, text, job.id);
       return;
     }
+    case "vintage": {
+      const year = parseVintageAnswer(text);
+      if (year === undefined) {
+        await sendMessage(chatId, "Schreib mir bitte nur die Jahreszahl (z. B. <i>2019</i>) – oder tippe „Ohne Jahrgang (NV)“.");
+        return;
+      }
+      await setVintage(db, job, chatId, year);
+      return;
+    }
     case "producer": {
       const producer = text.replace(/\s+/g, " ").trim();
       if (producer.length < 2 || producer.length > 120) {
-        await sendMessage(chatId, "Bitte den Namen des Produzenten schreiben.");
+        await sendMessage(chatId, "Schreib mir bitte den Namen des Produzenten.");
         return;
       }
       await setProducer(db, job, chatId, producer);
       return;
     }
     case "correcting": {
-      await sendMessage(chatId, "✏️ Übernehme die Korrektur …");
+      await sendMessage(chatId, "✏️ Ich übernehme die Korrektur …");
       after(() => correctJob(job, state, chatId, text));
       return;
     }
     case "quantity": {
       const quantity = parseQuantity(text);
       if (!quantity) {
-        await sendMessage(chatId, "Bitte eine Anzahl zwischen 1 und 999 schreiben.");
+        await sendMessage(chatId, "Schreib mir bitte eine Anzahl zwischen 1 und 999.");
         return;
       }
       await advanceTo(db, job, chatId, "quantity", { quantity });
@@ -529,7 +551,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "price": {
       const price = parsePrice(text);
       if (price == null) {
-        await sendMessage(chatId, "Bitte einen Preis wie <i>24.50</i> schreiben oder „Überspringen“ tippen.");
+        await sendMessage(chatId, "Schreib mir bitte einen Preis wie <i>24.50</i> – oder tippe „Überspringen“.");
         return;
       }
       await advanceTo(db, job, chatId, "price", { price });
@@ -538,7 +560,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "regular_price": {
       const regularPrice = parsePrice(text);
       if (regularPrice == null) {
-        await sendMessage(chatId, "Bitte einen Preis wie <i>29.90</i> schreiben oder einen Button tippen.");
+        await sendMessage(chatId, "Schreib mir bitte einen Preis wie <i>29.90</i> – oder tippe einen Knopf.");
         return;
       }
       await advanceTo(db, job, chatId, "regular_price", { regular_price: regularPrice });
@@ -548,7 +570,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "vendor_new": {
       const name = text.replace(/\s+/g, " ").trim();
       if (name.length < 2 || name.length > 80) {
-        await sendMessage(chatId, "Bitte den Namen des Händlers schreiben (2–80 Zeichen) oder „Überspringen“ tippen.");
+        await sendMessage(chatId, "Schreib mir bitte den Namen des Händlers (2–80 Zeichen) – oder tippe „Überspringen“.");
         return;
       }
       const vendor = await resolveVendor(db, name);
@@ -606,6 +628,10 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
         grape_source: grapeSource,
         drink_from_year: drink.from,
         drink_until_year: drink.until,
+        // Jahrgang in der Korrektur genannt: gilt als bestätigt.
+        ...(proposal.vintage_year != null && proposal.vintage_year !== state.proposal.vintage_year
+          ? { vintage_confirmed: true, vintage_uncertain: false }
+          : {}),
       },
       { matched_wine_id: known?.id ?? null },
     );
@@ -614,6 +640,6 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
   } catch (error) {
     console.error("correction failed", error);
     // Der Job bleibt im Korrekturmodus – die nächste Textantwort ist ein neuer Versuch.
-    await sendMessage(chatId, "Das konnte ich nicht übernehmen. Bitte formuliere die Korrektur nochmals.");
+    await sendMessage(chatId, "Das konnte ich nicht übernehmen. Formulier die Korrektur bitte nochmals.");
   }
 }

@@ -1709,3 +1709,32 @@ input[inputmode="decimal"] {
   padding-top: 16px;
   border-top: 1px solid var(--border);
 }
+
+/* Bearbeiten-Modus der Weinseite */
+
+.edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px 12px;
+}
+.edit-grid .field {
+  margin-left: 0;
+}
+.edit-grid .field-wide {
+  grid-column: 1 / -1;
+}
+.field-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  min-height: 44px;
+}
+.field-check input {
+  width: 20px;
+  height: 20px;
+}
+.edit-form + .edit-form {
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}

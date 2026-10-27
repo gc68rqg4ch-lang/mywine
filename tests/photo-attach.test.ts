@@ -73,7 +73,7 @@ const label = (color: string) => sharp({ create: { width: 600, height: 900, chan
   }
   assert.equal(net.tables.inventory_items.length, 1);
   assert.equal(jobs().find((j) => j.id === a)!.status, "confirmed");
-  assert.match(lastText(), /✅ Gespeichert: Vorderseite, Rückseite · Vega Sicilia – Pintia 2019/);
+  assert.match(lastText(), /✅ Ich habe Vorderseite, Rückseite gespeichert · Vega Sicilia – Pintia 2019/);
   const [oldFront, oldBack] = media();
 
   // B) Einzelfoto: Seite wählen; Vorderseite gibt es schon → Rückfrage → ersetzen
@@ -81,14 +81,14 @@ const label = (color: string) => sharp({ create: { width: 600, height: 900, chan
   assert.equal(jobs().find((j) => j.id === b)!.extracted.step, "side");
   assert.match(lastText(), /Vorderseite oder die Rückseite/);
   await handleUpdate(cb(`A:f:${b}`));
-  assert.match(lastText(), /gibt es schon: Vorderseite\. Durch die neuen Fotos ersetzen\?/);
+  assert.match(lastText(), /habe ich schon: Vorderseite\. Soll ich sie durch die neuen Fotos ersetzen\?/);
   assert.equal(media().length, 2, "vor der Antwort bleibt alles");
   await handleUpdate(cb(`A:r:${b}`));
   assert.deepEqual(media().map((m) => m.kind).sort(), ["label_back", "label_front"]);
   assert.ok(!media().some((m) => m.id === oldFront.id), "alte Vorderseite ersetzt");
   assert.ok(media().some((m) => m.id === oldBack.id), "Rückseite bleibt");
   assert.ok(!net.storage!.has(`wine-photos/${oldFront.storage_path}`) && !net.storage!.has(`wine-photos/${oldFront.thumb_path}`), "Datei und Vorschaubild gelöscht");
-  assert.match(lastText(), /✅ Ersetzt: Vorderseite/);
+  assert.match(lastText(), /✅ Ich habe Vorderseite ersetzt/);
   // Doppelter Tipp ändert nichts mehr
   await handleUpdate(cb(`A:r:${b}`));
   assert.equal(media().length, 2);

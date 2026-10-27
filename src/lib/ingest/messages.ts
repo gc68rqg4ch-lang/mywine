@@ -1,6 +1,6 @@
 import "server-only";
 
-import { formatBottleSize, formatBottles, formatMoney, wineTitle, wineTypeLabel } from "@/lib/format";
+import { formatBottleSize, formatBottles, formatMoney, wineTypeLabel } from "@/lib/format";
 import { formatShares } from "@/lib/grapes/shares";
 import { escapeHtml } from "@/lib/telegram/api";
 import type { TgInlineKeyboard } from "@/lib/telegram/types";
@@ -20,7 +20,8 @@ export type CallbackAction =
   | "newvendor"
   | "skipvendor"
   | "restock"
-  | "confirm";
+  | "confirm"
+  | "vint";
 
 export function callbackData(action: CallbackAction, jobId: string, value?: string) {
   return [action, jobId, value].filter(Boolean).join(":");
@@ -42,6 +43,7 @@ export function parseCallbackData(data: string | undefined) {
     "skipvendor",
     "restock",
     "confirm",
+    "vint",
   ];
   if (!actions.includes(action as CallbackAction) || !/^[0-9a-f-]{36}$/.test(jobId ?? "")) {
     return null;
@@ -65,7 +67,8 @@ export function proposalMessage(state: IngestState, matched: boolean) {
   const r = state.recognition;
   const lines = [
     `🍷 <b>${e(p.producer ?? "Produzent unbekannt")}</b>`,
-    `${e(p.name ?? "Name unbekannt")} ${p.vintage_year ?? "(ohne Jahrgang)"}`,
+    `${e(p.name ?? "Name unbekannt")}${p.vintage_year != null ? ` ${p.vintage_year}` : ""}`,
+    vintageLine(state),
     "",
     `Typ: ${e(p.type ? wineTypeLabel(p.type) : "–")}`,
     `Herkunft: ${e([p.country, p.region, p.appellation].filter(Boolean).join(" · ") || "–")}`,
@@ -77,18 +80,18 @@ export function proposalMessage(state: IngestState, matched: boolean) {
   ];
   if (r.notes) lines.push(`<i>Unsicher: ${e(r.notes)}</i>`);
   const grapeNote = {
-    research: "🍇 <i>Rebsorten für diesen Jahrgang recherchiert</i>",
-    existing: "🍇 <i>Rebsorten aus deinem Keller übernommen</i>",
+    research: "🍇 <i>Die Rebsorten habe ich für diesen Jahrgang recherchiert</i>",
+    existing: "🍇 <i>Die Rebsorten habe ich aus deinem Keller übernommen</i>",
   }[state.grape_source as string];
   if (grapeNote && p.grape_shares.length) lines.push(grapeNote);
-  if (matched) lines.push("✅ <i>Diesen Wein gibt es schon – er wird wiederverwendet.</i>");
+  if (matched) lines.push("✅ <i>Diesen Wein kenne ich schon – ich lege nur eine neue Charge an.</i>");
   if (r.enriched_fields.length) {
     lines.push(
-      `🔎 <i>Per Websuche ergänzt: ${r.enriched_fields.map((f) => FIELD_LABELS[f]).join(", ")}</i>`,
+      `🔎 <i>Im Web ergänzt habe ich: ${r.enriched_fields.map((f) => FIELD_LABELS[f]).join(", ")}</i>`,
     );
   }
   if (!p.name || !p.producer) {
-    lines.push("", "⚠️ Name und Produzent werden zum Speichern gebraucht – bitte korrigieren.");
+    lines.push("", "⚠️ Zum Speichern brauche ich Name und Produzent – bitte korrigieren.");
   }
   return lines.join("\n");
 }
@@ -167,12 +170,13 @@ export function skipVendorKeyboard(jobId: string): TgInlineKeyboard {
 }
 
 export const HELP_TEXT = [
+  "Ich bin Antoine, dein Kellermeister. 🍷",
   "Unten findest du das Menü: <b>🍷 Offen</b>, <b>📦 Bestand</b>, <b>⏰ Trinkreif</b>, <b>📷 Neuer Wein</b>.",
-  "Tipp auf einen Wein für Gläser, Füllstand, Öffnen, Ausgetrunken und Bewertungen.",
+  "Tipp auf einen Wein für Gläser, Füllstand, Öffnen, Ausgetrunken, Bewertungen und ✏️ Bearbeiten.",
   "",
-  "📷 Neuer Wein: Vorder- und Rückseite als Album schicken.",
-  "💬 Oder einfach schreiben, z. B. <i>Welche Rioja habe ich noch?</i> oder <i>Sara gibt dem Pintia 4,5 Sterne.</i>",
-  "/reset vergisst den Gesprächsverlauf, /id zeigt deine Telegram-ID.",
+  "📷 Neuer Wein: Schick mir Vorder- und Rückseite als Album – oder beschreib ihn mir.",
+  "💬 Oder schreib mir einfach, z. B. <i>Welche Rioja habe ich noch?</i>, <i>Sara gibt dem Pintia 4,5 Sterne</i> oder <i>Verschieb 2 Flaschen Pintia ins Wohnzimmer</i>.",
+  "Mit /reset vergesse ich unseren Gesprächsverlauf, /id zeigt dir deine Telegram-ID.",
 ].join("\n");
 
 export { parsePrice } from "@/lib/format";
@@ -207,6 +211,27 @@ export function restockKeyboard(jobId: string): TgInlineKeyboard {
   };
 }
 
+/** Jahrgangsfrage: erkannten Jahrgang bestätigen oder „ohne Jahrgang“. */
+export function vintageKeyboard(jobId: string, guess: number | null): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        ...(guess != null ? [{ text: `✅ ${guess} stimmt`, callback_data: callbackData("vint", jobId, String(guess)) }] : []),
+        { text: "Ohne Jahrgang (NV)", callback_data: callbackData("vint", jobId, "nv") },
+      ],
+      [{ text: "✖️ Abbrechen", callback_data: callbackData("drop", jobId) }],
+    ],
+  };
+}
+
+/** Jahrgang für Zusammenfassungen: Zahl, „ohne (NV)“ oder offen. */
+export function vintageLine(state: IngestState) {
+  const year = state.proposal.vintage_year;
+  if (state.vintage_uncertain && !state.vintage_confirmed) return `📅 Jahrgang: ${year ?? "?"} (unsicher – ich frage gleich nach)`;
+  if (year != null) return `📅 Jahrgang: ${year}`;
+  return state.vintage_confirmed ? "📅 Jahrgang: ohne (NV)" : "📅 Jahrgang: fehlt noch – ich frage gleich nach";
+}
+
 export function confirmKeyboard(jobId: string): TgInlineKeyboard {
   return {
     inline_keyboard: [
@@ -226,7 +251,8 @@ export function wineSummaryLines(state: IngestState) {
       ? `Trinkreife ${state.drink_from_year ?? "?"}–${state.drink_until_year ?? "?"}`
       : null;
   return [
-    `🍷 <b>${e([p.producer, wineTitle({ name: p.name, vintage_year: p.vintage_year })].filter(Boolean).join(" – "))}</b>${state.restock ? " <i>(Nachkauf)</i>" : ""}`,
+    `🍷 <b>${e([p.producer, [p.name, p.vintage_year].filter(Boolean).join(" ")].filter(Boolean).join(" – "))}</b>${state.restock ? " <i>(Nachkauf)</i>" : ""}`,
+    vintageLine(state),
     e(
       [
         p.type ? wineTypeLabel(p.type) : null,
@@ -269,7 +295,7 @@ export function textSummaryMessage(state: IngestState) {
     e(purchase),
     prices ? e(prices) : null,
     "",
-    state.restock ? "Als neue Charge zum bestehenden Wein speichern?" : "Speichern?",
+    state.restock ? "Soll ich das als neue Charge zum bestehenden Wein speichern?" : "Soll ich das so speichern?",
   ]
     .filter((l) => l != null && l !== undefined)
     .join("\n");

@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { wineHref } from "@/lib/cellar/wine-page";
-import { parsePrice, todayIso } from "@/lib/format";
+import { applyEdit } from "@/lib/edit/edit";
+import { todayIso } from "@/lib/format";
 
 export type ActionState = { error?: string; ok?: string } | undefined;
 
@@ -60,7 +61,7 @@ export async function openBottle(_prev: ActionState, formData: FormData): Promis
   redirect(opened ? wineHref(opened.wine_id, opened.vintage_year, { geoeffnet: "1" }) : "/offen");
 }
 
-/** Setzt den Füllstand einer offenen Flasche. */
+/** Setzt den Füllstand einer offenen Flasche (gemeinsames Bearbeiten-Modul). */
 export async function updateFillLevel(
   _prev: ActionState,
   formData: FormData,
@@ -73,29 +74,10 @@ export async function updateFillLevel(
   if (!itemId) return { error: "Ungültige Position." };
   if (fillLevel == null) return { error: "Füllstand muss zwischen 0 und 100 % liegen." };
 
-  const { data: item, error: itemError } = await session.supabase
-    .from("inventory_items")
-    .select("status")
-    .eq("id", itemId)
-    .maybeSingle();
-
-  if (itemError || !item) return { error: "Position nicht gefunden." };
-  if (item.status !== "open") return { error: "Nur offene Flaschen haben einen Füllstand." };
-
-  const { error } = await session.supabase
-    .from("open_bottle_details")
-    .upsert(
-      { inventory_item_id: itemId, fill_level_percent: fillLevel },
-      { onConflict: "inventory_item_id" },
-    );
-
-  if (error) {
-    console.error("update fill level failed", error);
-    return { error: "Füllstand konnte nicht gespeichert werden." };
-  }
-
+  const result = await applyEdit(session.supabase, { kind: "openBottle", itemId, fill: fillLevel });
+  if (!result.ok) return { error: result.error };
   revalidatePath("/", "layout");
-  return { ok: `Füllstand auf ${fillLevel} % gesetzt.` };
+  return { ok: result.message };
 }
 
 /** Markiert eine offene Flasche als ausgetrunken. */
@@ -126,41 +108,4 @@ export async function markDrunk(_prev: ActionState, formData: FormData): Promise
 
   revalidatePath("/", "layout");
   redirect(wineHref(updated[0].wine_id, updated[0].vintage_year, { ausgetrunken: "1" }));
-}
-
-/** Leeres Feld = kein Preis (null); sonst muss die Eingabe ein gültiger Preis sein. */
-function readPrice(formData: FormData, name: string): number | null | undefined {
-  const raw = String(formData.get(name) ?? "").trim();
-  if (raw === "") return null;
-  return parsePrice(raw) ?? undefined;
-}
-
-/** Ändert bezahlten Preis und Normalpreis einer Position. */
-export async function updatePrices(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const session = await memberSession();
-  if (!session) return { error: "Kein Zugriff." };
-
-  const itemId = readItemId(formData);
-  if (!itemId) return { error: "Ungültige Position." };
-
-  const purchasePrice = readPrice(formData, "purchasePrice");
-  const regularPrice = readPrice(formData, "regularPrice");
-  if (purchasePrice === undefined || regularPrice === undefined) {
-    return { error: "Bitte Preise wie 24.50 eingeben oder das Feld leer lassen." };
-  }
-
-  const { data, error } = await session.supabase
-    .from("inventory_items")
-    .update({ purchase_price: purchasePrice, regular_price: regularPrice })
-    .eq("id", itemId)
-    .select("id");
-
-  if (error) {
-    console.error("update prices failed", error);
-    return { error: "Preise konnten nicht gespeichert werden." };
-  }
-  if (!data?.length) return { error: "Position nicht gefunden." };
-
-  revalidatePath("/", "layout");
-  return { ok: "Preise gespeichert." };
 }

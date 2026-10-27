@@ -37,7 +37,7 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
   links Öffnen mit Bewertungen darunter, rechts „Zum Wein“; iPhone eine Spalte (Öffnen, Zum Wein, Bewertungen).
   Alles Jahrgangsabhängige folgt der Auswahl.
   1. **Flasche öffnen** (gibt es offene Flaschen, steht die Kachel „Offen“ darüber): Chargen mit Lagerort, Anzahl, bezahltem Preis, Normalpreis und Rabatt in % (je Charge
-     „Bearbeiten“); Füllstand, Datum, Knopf → `public.open_bottle()` mit der `inventory_item`-ID der Charge.
+     im Bearbeiten-Modus); Füllstand, Datum, Knopf → `public.open_bottle()` mit der `inventory_item`-ID der Charge.
      Darunter offene Flaschen (Füllstand, **Ausgetrunken**; `drunk_at` setzt die DB) und getrunkene Flaschen,
      jeweils mit Preis. Ohne ungeöffnete Flasche fehlt nur der Öffnen-Bereich.
   2. **Zum Wein** (eine Kachel, Abschnitte mit Trennlinie): Stammdaten (Typ, Land, Region, Appellation, Alkohol, Fotos), Rebsorten mit Prozentanteil aus
@@ -53,6 +53,23 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
      `latest_wine_ratings`; pro Person und Tag eine, ältere als Verlauf) sowie objektiv die WSET-Verkostungen mit
      „Neue Verkostung“ und Liste.
   - Jahrgangsbezogene Aktionen hängen an einer Flasche des Jahrgangs (offen vor ungeöffnet vor getrunken).
+  - **✏️ Bearbeiten** (`?bearbeiten=1`): Formulare statt Anzeige, jedes mit Speichern/Abbrechen – Wein (Name,
+    Produzent, Typ, Land, Region, Appellation, Alkohol; gleicher Name + Produzent wie ein anderer Wein wird
+    abgelehnt), Jahrgang (über `public.change_vintage()`, ganzer Jahrgang samt Bewertungen, Verkostungen,
+    Rebsorten, Fotos; bestehender Ziel-Jahrgang → Rückfrage und Zusammenführen) und Trinkfenster, je Charge
+    Anzahl, Flaschengrösse, Lagerort (auch nur ein Teil der Flaschen), Kaufdatum, Händler, Geschenk, Preise,
+    Jahrgang nur dieser Charge und Löschen (Rückfrage); offene Flasche: Füllstand, „Geöffnet am“; getrunkene:
+    „Getrunken am“, zurück auf offen. Rebsorten (Bearbeiten, Nachrecherchieren), Fotos (hinzufügen, ersetzen,
+    löschen) und Bewertungen löschen gibt es nur hier; in der Anzeige bleiben Öffnen, Füllstand und Sterne.
+
+### Gemeinsames Bearbeiten-Modul (App und Bot)
+
+`src/lib/edit/`: Jede Änderung ist ein `Edit` (`types.ts`, JSON-tauglich). `prepareEdit` prüft gegen den
+aktuellen Stand und liefert vorher → nachher plus Hinweise; `applyEdit` prüft nochmals und führt aus – mit
+derselben Meldung („2 Flaschen ins Wohnzimmer verschoben“) in App und Bot. Die App liest ihre Formulare über
+`form.ts` und speichert über eine Server Action (`edit-actions.ts`); der Bot schlägt über Chat-Tools vor.
+Teil-Verschieben legt die neue Charge zuerst mit 0 Flaschen an, damit der Journal-Trigger kein „gekauft“,
+sondern genau ein „verschoben“ schreibt.
   - `/flasche/[id]` leitet auf die Weinseite mit dem Jahrgang der Flasche weiter (Bot-Links, Lesezeichen).
 - **Weintyp-Filter:** in Bestand, Offen und Getrunken bei den Gruppierungen Land, Rebsorte, Jahrgang,
   Preisklasse (und „Getrunken am“): Alle / Rot / Weiss / … mit Trauben-Symbolen, nur vorhandene Typen
@@ -163,7 +180,7 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.
 - **Zugang:** Webhook prüft `X-Telegram-Bot-Api-Secret-Token`. Freigeschaltet sind alle Telegram-User, deren ID in
   `persons.telegram_user_id` steht; `TELEGRAM_ALLOWED_USER_ID` gilt als Rückfall für Michel. Unbekannte bekommen im
-  Einzelchat nur „Nicht freigeschaltet. Deine ID ist …“, sonst nichts. `/id` zeigt die eigene ID.
+  Einzelchat nur „Ich kenne dich noch nicht – deine Telegram-ID ist …“, sonst nichts. `/id` zeigt die eigene ID.
 - **Wer schreibt:** Der Bot spricht die Person mit Namen an; Bewertungen und Verkostungen gehen an sie. Im Menü
   heisst das „⭐ Bewerten“; für die andere Person („⭐ für Sara“) fragt er vor dem Speichern nach. Der
   Gesprächsverlauf ist pro Chat getrennt. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.
@@ -178,6 +195,12 @@ zuerst). Ablauf in `src/lib/ingest/attach.ts`, `ingest_jobs.source = 'telegram_a
 - Album: erstes Foto Vorderseite, zweites Rückseite. Einzelfoto: Frage [Vorderseite] [Rückseite].
 - Gibt es die Seite für den Jahrgang schon: Rückfrage [🔁 Ersetzen] [✖️ Abbrechen]. Ersetzen speichert erst die
   neuen Fotos und löscht dann die alten samt Dateien. Abbrechen löscht die geschickten Fotos.
+
+### Jahrgang ist Pflicht (Foto und Text)
+
+Fehlt der Jahrgang oder hat die Erkennung ihn nicht sicher gelesen (`vintage_certain`), fragt der Bot vor den
+Kaufangaben nach: Jahreszahl schreiben, „✅ 2019 stimmt“ oder „Ohne Jahrgang (NV)“. Der Jahrgang steht immer
+im Vorschlag bzw. in der Zusammenfassung.
 
 ### Erfassung per Text (ohne Foto)
 
@@ -237,11 +260,18 @@ Antwort nochmals mit `claude-sonnet-5-5`.
 - **Lesen:** Bestand suchen (`cellar_wine_summary` / `cellar_wines` inkl. Lagerorte), offene Flaschen mit
   Füllstand und Tagen seit dem Öffnen, Trinkreife, Bewertungen (`latest_wine_ratings`), Verkostungen
   (`wine_tastings`), letzte Journal-Einträge (`inventory_events`).
-- **Ändern – nur nach [Ja]:** Füllstand (ein Glas ≈ 150 ml, Prozent relativ zur Flaschengrösse; leer =
-  ausgetrunken), Flasche öffnen über `open_bottle()` (bei mehreren Lagerorten/Grössen fragt der Bot nach),
-  ausgetrunken markieren, Bewertung für Michel oder Sara. Der Vorschlag steckt vollständig im
-  `callback_data` des [Ja]-Buttons und wird beim Klick gegen den aktuellen Zustand geprüft; ein zweiter Klick
-  bewirkt nichts.
+- **Ändern – nur nach [Ja]:** Flasche öffnen über `open_bottle()`, ausgetrunken markieren, Bewertung (kurze
+  Vorschläge stecken ganz im `callback_data`) sowie alles, was die App bearbeiten kann – über das gemeinsame
+  Modul (`edit-tools.ts`: `get_wine_details`, `list_batches`, `propose_wine_edit`, `propose_vintage_change`,
+  `propose_drink_window`, `propose_batch_edit`, `propose_move`, `propose_delete_batch`,
+  `propose_open_bottle_edit` (auch Gläser à 150 ml), `propose_drunk_bottle_edit`, `propose_grapes`,
+  `propose_delete_rating`, `propose_tasting_edit`, `propose_delete_tasting`). Diese Vorschläge zeigen vorher →
+  nachher und liegen bis zur Antwort in `ingest_jobs` (`source = telegram_edit`, Knöpfe `ce:`/`cn:<job>`).
+  Beim Klick wird gegen den aktuellen Stand geprüft; ein zweiter Klick bewirkt nichts. Passen mehrere Weine
+  oder Chargen, fragt Antoine nach. Jahrgänge in den Tools: 0 = ohne Jahrgang (keine nullable-Felder).
+- **✏️ Bearbeiten im Wein-Menü:** fragt nach dem Bereich (Wein, Jahrgang & Trinkfenster, Chargen & Lagerort,
+  Rebsorten, Bewertungen, Verkostungen), zeigt den aktuellen Stand und erwartet die Änderung als Text.
+- **Ich-Form:** Der Bot heisst Antoine, spricht in der Ich-Form und duzt („Ich habe 2 Flaschen verschoben“).
 - **Verlauf:** die letzten 10 Nachrichten pro Chat in `telegram_chat_messages` (nur Text); `/reset` löscht ihn.
   Ohne diese Tabelle läuft der Chat ohne Gedächtnis.
 

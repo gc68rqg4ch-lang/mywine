@@ -382,7 +382,7 @@ export async function handleTastingCallback(cb: TgCallbackQuery) {
         await editMessage(
           chatId,
           messageId,
-          `✅ Verkostung gespeichert: <b>${e(draft.title)}</b>${name ? ` · ${e(name)}` : ""}\n${e(summary.result)}`,
+          `✅ Ich habe die Verkostung gespeichert: <b>${e(draft.title)}</b>${name ? ` · ${e(name)}` : ""}\n${e(summary.result)}`,
           { inline_keyboard: url ? [[{ text: "📱 In der App bearbeiten", url }]] : [] },
         );
         return;

@@ -1,0 +1,28 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
+import { wineHref } from "@/lib/cellar/wine-page";
+import { applyEdits } from "@/lib/edit/edit";
+import { editsFromForm } from "@/lib/edit/form";
+import type { ActionState } from "./actions";
+
+/**
+ * Alle Bearbeiten-Formulare der Weinseite: Formular → Bearbeitung(en) → gemeinsames
+ * Modul (gleiche Prüfungen und Meldungen wie im Bot).
+ */
+export async function saveEdit(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const session = await getSession();
+  if (!session.isMember) return { error: "Kein Zugriff." };
+  const edits = editsFromForm(formData);
+  if ("error" in edits) return { error: edits.error };
+  const result = await applyEdits(session.supabase, edits);
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/", "layout");
+  // Jahrgang umbenannt: die Seite zeigt danach den neuen Jahrgang (der alte gibt es nicht mehr).
+  if (edits.some((e) => e.kind === "vintage") && result.wineId) {
+    redirect(wineHref(result.wineId, result.year ?? null, { bearbeiten: "1", ok: result.message }));
+  }
+  return { ok: result.message };
+}

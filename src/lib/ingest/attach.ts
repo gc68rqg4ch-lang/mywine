@@ -129,7 +129,7 @@ export async function startAttach(
     .single();
   if (jobError) throw jobError;
   return {
-    text: `📷 Fotos für <b>${e(draft.title)}</b>\nSchick Vorder- und Rückseite als Album – die Vorderseite zuerst. Es wird keine neue Flasche angelegt.`,
+    text: `📷 Fotos für <b>${e(draft.title)}</b>\nSchick mir Vorder- und Rückseite als Album – die Vorderseite zuerst. Ich ordne sie diesem Jahrgang zu und lege keine neue Flasche an.`,
     keyboard: { inline_keyboard: [cancelRow(job.id)] },
   };
 }
@@ -227,7 +227,7 @@ async function decide(db: AdminClient, job: IngestJob, chatId: number, kinds: Me
     const what = [...new Set(existing.map((r) => MEDIA_KIND_LABELS[r.kind]))].join(" und ");
     await sendMessage(
       chatId,
-      `📷 Für <b>${e(s.title)}</b> gibt es schon: ${e(what)}. Durch die neuen Fotos ersetzen?`,
+      `📷 Für <b>${e(s.title)}</b> habe ich schon: ${e(what)}. Soll ich sie durch die neuen Fotos ersetzen?`,
       replaceKeyboard(job.id),
     );
     return;
@@ -267,7 +267,7 @@ async function saveAttach(db: AdminClient, job: IngestJob, chatId: number, repla
     const base = appBaseUrl();
     const link = base ? `\n<a href="${base}${wineHref(s.wineId, s.vintageYear)}">In MyWine öffnen</a>` : "";
     const saved = kinds.map((k) => MEDIA_KIND_LABELS[k]).join(", ");
-    await sendMessage(chatId, `✅ ${replace ? "Ersetzt" : "Gespeichert"}: ${e(saved)} · ${e(s.title)}${link}`);
+    await sendMessage(chatId, `✅ Ich habe ${e(saved)} ${replace ? "ersetzt" : "gespeichert"} · ${e(s.title)}${link}`);
   } catch (err) {
     await failAttach(db, job.id, chatId, err);
   }
@@ -277,7 +277,7 @@ async function failAttach(db: AdminClient, jobId: string, chatId: number, error:
   console.error("attaching photos failed", error);
   const detail = error instanceof Error ? error.message : String(error);
   await db.from("ingest_jobs").update({ status: "failed", error: detail.slice(0, 1000) }).eq("id", jobId);
-  await sendMessage(chatId, "❌ Die Fotos konnten nicht gespeichert werden. Bitte über „📷 Foto“ nochmals versuchen.").catch(
+  await sendMessage(chatId, "❌ Ich konnte die Fotos nicht speichern. Versuch es bitte nochmals über „📷 Foto“.").catch(
     () => undefined,
   );
 }
@@ -313,7 +313,7 @@ export async function handleAttachCallback(cb: TgCallbackQuery) {
       await answerCallback(cb.id, next ? "Abgebrochen" : undefined);
       if (!next) return;
       await deleteJobPhotos(db, job.photo_paths);
-      await editMessage(chatId, messageId, `📷 Abgebrochen – ${e(s.title)} bleibt unverändert.`);
+      await editMessage(chatId, messageId, `📷 Abgebrochen – ich lasse ${e(s.title)}, wie es ist.`);
       return;
     }
     case "f":
@@ -328,7 +328,7 @@ export async function handleAttachCallback(cb: TgCallbackQuery) {
       const next = await advance(db, job, ["confirm"], { step: "saving" });
       await answerCallback(cb.id);
       if (!next) return;
-      await editMessage(chatId, messageId, `📷 Wird ersetzt …`);
+      await editMessage(chatId, messageId, `📷 Ich ersetze die Fotos …`);
       await saveAttach(db, next, chatId, true);
       return;
     }

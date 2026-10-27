@@ -35,8 +35,25 @@ export function encodeProposal(p: Proposal) {
 
 export const REJECT_DATA = "cx";
 
+/**
+ * Bearbeitungen (Wein, Charge, Jahrgang …) passen nicht in 64 Bytes: Sie liegen bis zur
+ * Antwort in ingest_jobs (source = telegram_edit); die Knöpfe tragen nur die Job-ID.
+ */
+export const editYes = (jobId: string) => `ce:${jobId}`;
+export const editNo = (jobId: string) => `cn:${jobId}`;
+
+export function decodeEditCallback(data: string | undefined) {
+  const [tag, id] = (data ?? "").split(":");
+  if ((tag !== "ce" && tag !== "cn") || !UUID_RE.test(id ?? "")) return null;
+  return { confirm: tag === "ce", jobId: id };
+}
+
+export function editKeyboard(jobId: string): TgInlineKeyboard {
+  return { inline_keyboard: [[{ text: "Ja", callback_data: editYes(jobId) }, { text: "Nein", callback_data: editNo(jobId) }]] };
+}
+
 export function isChatCallback(data: string | undefined) {
-  return data === REJECT_DATA || /^c[fodr]:/.test(data ?? "");
+  return data === REJECT_DATA || /^c[fodrne]:/.test(data ?? "");
 }
 
 export function decodeProposal(data: string | undefined): Proposal | null {

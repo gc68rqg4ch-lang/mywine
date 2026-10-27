@@ -63,11 +63,15 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   const { handleUpdate } = await import("@/lib/ingest/bot");
 
   // Reine Schrittfolge: nur Fehlendes, am Ende Zusammenfassung (Text) bzw. Speichern (Foto)
-  const s0 = { source: "text" } as IngestState;
+  const s0 = { source: "text", proposal: { vintage_year: 2019 } } as IngestState;
   assert.equal(nextPurchaseStep(s0), "location");
+  // Jahrgang ist Pflicht: fehlt er oder ist er unsicher, kommt er zuerst – ausser schon bestätigt (auch NV)
+  assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: null } } as IngestState), "vintage");
+  assert.equal(nextPurchaseStep({ ...s0, vintage_uncertain: true }), "vintage");
+  assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: null }, vintage_confirmed: true } as IngestState), "location");
   assert.equal(nextPurchaseStep({ ...s0, storage_room: "Weinkeller", quantity: 6, price: 66 }), "regular_price");
   assert.equal(nextPurchaseStep({ ...s0, storage_room: "Weinkeller", quantity: 6, price: 66, regular_price: null, vendor_name: "X" }), "confirm");
-  assert.equal(nextPurchaseStep({ storage_room: "Weinkeller", quantity: 1, price: null, regular_price: null, vendor_id: null } as IngestState), "saving");
+  assert.equal(nextPurchaseStep({ ...s0, source: undefined, storage_room: "Weinkeller", quantity: 1, price: null, regular_price: null, vendor_id: null }), "saving");
 
   // A) Neuer Wein: Produzent, Herkunft, Trinkreife und Rebsorten per Recherche; nur Normalpreis fehlt
   parseResult = empty({ quantity: 6, storage_room: "Weinkeller", price: 66, vendor: "Mövenpick" }, { name: "Pintia", vintage_year: 2019 });
@@ -89,7 +93,7 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   assert.equal(st.step, "confirm"); assert.equal(st.regular_price, 72);
   const summary = lastText().replace(/ /g, " ");
   console.log(summary + "\n");
-  assert.match(summary, /Zusammenfassung[\s\S]*6 Flaschen · Weinkeller[\s\S]*bezahlt CHF 66.00 · Normalpreis CHF 72.00 · bei Mövenpick[\s\S]*Speichern\?/);
+  assert.match(summary, /Zusammenfassung[\s\S]*6 Flaschen · Weinkeller[\s\S]*bezahlt CHF 66.00 · Normalpreis CHF 72.00 · bei Mövenpick[\s\S]*so speichern\?/);
   const keyboard = net.telegram.at(-1)!.body.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] };
   assert.deepEqual(keyboard.inline_keyboard[0].map((b) => b.text), ["✅ Ja", "✖️ Nein"]);
 
@@ -103,7 +107,7 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   assert.deepEqual([net.tables.wine_vintages[0]?.drink_from_year, net.tables.wine_vintages[0]?.drink_until_year], [2024, 2032]);
   assert.equal(rpcCalls.length, 1, "Rebsorten gespeichert");
   assert.equal(job("aaaaaaaa-0000-4000-8000-00000000000a").status, "confirmed");
-  assert.match(lastText(), /^✅ Gespeichert: 6 Flaschen/);
+  assert.match(lastText(), /^✅ Ich habe 6 Flaschen .* gespeichert\./);
 
   // B) Nachkauf: Wein + Jahrgang liegt schon im Keller → Rückfrage, keine Recherche der Stammdaten
   net.tables.wines.push({ id: W, name: "Pintia", producer: "Vega Sicilia", country: "Spanien", region: "Toro", appellation: null, type: "red", alcohol_content: 14.5, grapes: [] });
@@ -117,7 +121,7 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   st = state("bbbbbbbb-0000-4000-8000-00000000000b");
   assert.deepEqual(claudeCalls, ["parse", "grapes"], "bekannter Wein: keine Stammdaten-Recherche");
   assert.equal(st.step, "restock"); assert.equal(job("bbbbbbbb-0000-4000-8000-00000000000b").matched_wine_id, W);
-  assert.match(lastText(), /Nachkauf zu bestehendem Wein\?/);
+  assert.match(lastText(), /Ist es ein Nachkauf\?/);
   await handleUpdate(cb("restock:bbbbbbbb-0000-4000-8000-00000000000b") as never);
   st = state("bbbbbbbb-0000-4000-8000-00000000000b");
   assert.equal(st.restock, true); assert.equal(st.step, "location", "Lagerort fehlt noch, Anzahl nicht");
@@ -129,5 +133,30 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   const describe = net.tables.ingest_jobs.find((j) => (j.extracted as IngestState).step === "describe")!;
   assert.equal(describe.source, "text"); assert.equal(describe.status, "needs_review");
   assert.match(lastText(), /beschreib den Wein/);
+
+  // D) Ohne Jahrgang: Rückfrage (Zahl oder „Ohne Jahrgang (NV)“), Jahrgang steht in der Zusammenfassung
+  parseResult = empty({ quantity: 2, storage_room: "Weinkeller", price: 30, regular_price: 30, vendor: "Coop" }, { name: "Pintia", producer: "Vega Sicilia" });
+  newJob("dddddddd-0000-4000-8000-00000000000d");
+  await processTextJob("dddddddd-0000-4000-8000-00000000000d", 111, "Pintia, 2 Flaschen, Weinkeller, 30 Franken bei Coop");
+  st = state("dddddddd-0000-4000-8000-00000000000d");
+  assert.equal(st.step, "vintage");
+  assert.ok(net.telegram.some((t) => String(t.body.text).includes("📅 Jahrgang: fehlt noch")), "Zusammenfassung nennt den fehlenden Jahrgang");
+  assert.match(lastText(), /Welcher Jahrgang/);
+  const vintageButtons = (net.telegram.at(-1)!.body.reply_markup as { inline_keyboard: { text: string }[][] }).inline_keyboard.flat().map((b) => b.text);
+  assert.ok(vintageButtons.includes("Ohne Jahrgang (NV)"));
+  await handleUpdate(msg("irgendwann") as never);
+  assert.match(lastText(), /nur die Jahreszahl/);
+  await handleUpdate(msg("2017") as never);
+  st = state("dddddddd-0000-4000-8000-00000000000d");
+  assert.equal(st.proposal.vintage_year, 2017); assert.equal(st.vintage_confirmed, true);
+  assert.equal(st.step, "confirm", "danach direkt die Zusammenfassung – alles andere stand im Text");
+  assert.match(lastText(), /📅 Jahrgang: 2017/);
+
+  newJob("eeeeeeee-0000-4000-8000-00000000000e");
+  await processTextJob("eeeeeeee-0000-4000-8000-00000000000e", 111, "Pintia, 2 Flaschen, Weinkeller, 30 Franken bei Coop");
+  await handleUpdate(cb("vint:eeeeeeee-0000-4000-8000-00000000000e:nv") as never);
+  st = state("eeeeeeee-0000-4000-8000-00000000000e");
+  assert.equal(st.proposal.vintage_year, null); assert.equal(st.step, "confirm");
+  assert.match(lastText(), /📅 Jahrgang: ohne \(NV\)/);
   console.log("text ingest tests ok");
 })().catch((e) => { console.error(e); process.exit(1); });
