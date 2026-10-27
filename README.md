@@ -15,6 +15,10 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
   - **Ausgetrunken** (offen): `status = drunk`, Füllstand 0; `drunk_at` setzt ein DB-Trigger
   - Getrunkene Flaschen: nur Anzeige, keine Aktionen
   - **Preise** (alle Status): bezahlter Preis und Normalpreis bearbeitbar, Rabatt in CHF und %
+  - **Rebsorten** mit Prozentanteil aus `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“),
+    bearbeitbar (`source = manual`) und per **Nachrecherchieren** neu recherchierbar
+- **Rebsorten nachrecherchieren** (`/recherche`): Sammellauf für alle Weine + Jahrgänge ohne Prozentangaben, mit
+  Fortschrittsanzeige; manuell gepflegte Angaben werden übersprungen. `wines.grapes` bleibt vorerst bestehen.
 
 ### Lebenszyklus einer Flasche
 
@@ -75,6 +79,7 @@ src/
   app/api/telegram/             Webhook (route.ts) und Webhook-Registrierung (setup/route.ts)
   lib/ingest/                   Bot-Logik: Album/Jobs, Claude-Erkennung, Abgleich, Speichern
   lib/telegram/                 Telegram Bot API (fetch), Konfiguration
+  lib/grapes/                   Rebsorten-Anteile: Helfer, Recherche, Speichern (wine_grape_shares)
 supabase/migrations/            Migrationen, die zusätzlich zum Import-Schema angelegt wurden
 ```
 
@@ -92,6 +97,9 @@ oder wiederverwenden, `inventory_items` mit `status = sealed` und den Fotos anle
   werden wiederverwendet und ihre Stammdaten übernommen.
 - **Websuche:** nur für unbekannte Weine mit fehlenden Feldern (Land, Region, Appellation, Typ, Trauben,
   Alkohol) – `claude-sonnet-5-5` mit `web_search`. Name, Produzent und Jahrgang kommen immer vom Etikett.
+- **Rebsorten:** Prozentanteile vom Etikett (`source = label`); fehlen sie, recherchiert `claude-sonnet-5-5` per
+  `web_search` die Anteile für den konkreten Jahrgang (`source = research`, gleiche Logik wie `/recherche`).
+  Ohne belegte Prozente werden nur die Rebsorten gespeichert. Manuelle Angaben werden nie überschrieben.
 - **Korrigieren:** Freitext-Antwort, die per `claude-haiku-5-5` in den Vorschlag übernommen wird.
 - **Album:** Telegram schickt jedes Foto einzeln. Alle Fotos eines Albums landen über eine aus
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.

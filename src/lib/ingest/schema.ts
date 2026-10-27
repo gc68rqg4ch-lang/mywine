@@ -1,7 +1,16 @@
 import { z } from "zod";
 import { Constants } from "@/lib/database.types";
+import { normalizeGrapeShares, type GrapeSource } from "@/lib/grapes/shares";
 
 const wineType = z.enum(Constants.public.Enums.wine_type);
+
+export const GrapeShareSchema = z.object({
+  grape: z.string().describe("Rebsorte, z. B. Tempranillo"),
+  percent: z
+    .number()
+    .nullable()
+    .describe("Anteil in Prozent für genau diesen Wein und Jahrgang; null wenn nicht belegt"),
+});
 
 /** Weindaten, wie sie vom Etikett gelesen bzw. korrigiert werden. */
 export const WineProposalSchema = z.object({
@@ -12,7 +21,9 @@ export const WineProposalSchema = z.object({
   region: z.string().nullable().describe("Weinbauregion, z. B. Rioja, Bordeaux, California"),
   appellation: z.string().nullable().describe("Herkunftsbezeichnung/Appellation, z. B. Napa Valley, Priorat DOQ"),
   type: wineType.nullable().describe("red, white, rose, sparkling, sweet, fortified oder orange"),
-  grapes: z.array(z.string()).describe("Rebsorten, leer wenn unbekannt"),
+  grape_shares: z
+    .array(GrapeShareSchema)
+    .describe("Rebsorten mit Anteil; percent nur, wenn der Anteil angegeben ist, sonst null"),
   alcohol_content: z.number().nullable().describe("Alkoholgehalt in Volumenprozent, z. B. 13.5"),
   bottle_size_ml: z.number().int().nullable().describe("Flaschengrösse in ml, z. B. 750 für 75 cl"),
 });
@@ -29,13 +40,15 @@ export const RecognitionSchema = WineProposalSchema.extend({
 });
 export type Recognition = z.infer<typeof RecognitionSchema>;
 
-/** Felder, die eine Websuche ergänzen darf (nie Name/Produzent/Jahrgang vom Etikett). */
+/**
+ * Felder, die eine Websuche ergänzen darf (nie Name/Produzent/Jahrgang vom Etikett).
+ * Rebsorten recherchiert eine eigene Suche mit Prozentanteilen (lib/grapes/research).
+ */
 export const ENRICHABLE_FIELDS = [
   "country",
   "region",
   "appellation",
   "type",
-  "grapes",
   "alcohol_content",
 ] as const;
 export type EnrichableField = (typeof ENRICHABLE_FIELDS)[number];
@@ -63,6 +76,11 @@ export type IngestState = {
     enriched_fields: EnrichableField[];
     sources: string[];
   };
+  /**
+   * Herkunft der Rebsorten im Vorschlag: label/research/manual werden beim Speichern
+   * in wine_grape_shares geschrieben, "existing" = schon in der DB, null = keine.
+   */
+  grape_source?: GrapeSource | "existing" | null;
   storage_room?: StorageRoom;
   quantity?: number;
   /** Bezahlter Preis pro Flasche (purchase_price). */
@@ -72,9 +90,7 @@ export type IngestState = {
 };
 
 export function missingEnrichableFields(p: WineProposal): EnrichableField[] {
-  return ENRICHABLE_FIELDS.filter((field) =>
-    field === "grapes" ? p.grapes.length === 0 : p[field] == null,
-  );
+  return ENRICHABLE_FIELDS.filter((field) => p[field] == null);
 }
 
 /** Strings trimmen, leere Werte zu null, Zahlen auf plausible Bereiche prüfen. */
@@ -94,9 +110,13 @@ export function normalizeProposal(p: WineProposal): WineProposal {
     region: text(p.region),
     appellation: text(p.appellation),
     type: p.type,
-    grapes: [...new Set(p.grapes.map((g) => g.trim()).filter(Boolean))],
+    grape_shares: normalizeGrapeShares(p.grape_shares),
     alcohol_content:
       alcohol != null && alcohol >= 0 && alcohol <= 25 ? Math.round(alcohol * 10) / 10 : null,
     bottle_size_ml: size != null && size > 0 && size <= 30000 ? size : null,
   };
+}
+
+export function grapeNames(p: Pick<WineProposal, "grape_shares">) {
+  return p.grape_shares.map((s) => s.grape);
 }

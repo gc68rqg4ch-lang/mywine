@@ -42,6 +42,7 @@ Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine le
 - country: auf Deutsch (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira), orange.
 - bottle_size_ml: aus der Füllmenge (75 cl = 750, 37,5 cl = 375, 1,5 l = 1500).
+- grape_shares: Rebsorten, die auf dem Etikett stehen; percent nur, wenn der Anteil aufgedruckt ist (z. B. "85 % Tempranillo"), sonst null. Bei reinsortigen Weinen ("100 % Merlot" oder Sortenbezeichnung wie "Pinot Noir") ist percent 100.
 - confidence: wie sicher Name, Produzent und Jahrgang stimmen (1.0 = klar lesbar, unter 0.7 = geraten oder unleserlich).`;
 
 function imageBlocks(images: LabelImage[]): Anthropic.Beta.BetaContentBlockParam[] {
@@ -104,52 +105,37 @@ export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionR
   };
 }
 
-const REPORT_TOOL_NAME = "report_wine_details";
-
-const EnrichmentSchema = WineProposalSchema.pick({
-  country: true,
-  region: true,
-  appellation: true,
-  type: true,
-  grapes: true,
-  alcohol_content: true,
-}).extend({ sources: z.array(z.string()).describe("URLs der verwendeten Quellen") });
-
-const REPORT_INPUT_SCHEMA = z.toJSONSchema(EnrichmentSchema, {
-  target: "draft-7",
-}) as Anthropic.Beta.BetaTool.InputSchema;
-// Das Tool-Schema braucht nur type/properties/required – ohne "$schema"-Schlüssel.
-delete REPORT_INPUT_SCHEMA.$schema;
+/** JSON-Schema für ein striktes Tool aus einem Zod-Schema (ohne "$schema"-Schlüssel). */
+function toolInputSchema(schema: z.ZodType) {
+  const json = z.toJSONSchema(schema, { target: "draft-7" }) as Anthropic.Beta.BetaTool.InputSchema;
+  delete json.$schema;
+  return json;
+}
 
 /**
- * Ergänzt fehlende Felder per Websuche (Sonnet 5.5 + web_search). Das Ergebnis
- * meldet Claude über ein striktes Tool, damit es schemakonform ist.
+ * Web-Recherche mit Sonnet 5.5 + web_search. Claude meldet das Ergebnis über ein
+ * striktes Tool, damit es schemakonform ist. null, wenn kein Ergebnis kam.
  */
-export async function enrichFromWeb(
-  proposal: WineProposal,
-): Promise<{ proposal: WineProposal; filled: EnrichableField[]; sources: string[] }> {
-  const missing = missingEnrichableFields(proposal);
-  if (missing.length === 0 || !proposal.name || !proposal.producer) {
-    return { proposal, filled: [], sources: [] };
-  }
-
+export async function webResearch<T>(options: {
+  prompt: string;
+  toolName: string;
+  toolDescription: string;
+  schema: z.ZodType<T>;
+  maxSearches: number;
+}): Promise<T | null> {
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     {
       role: "user",
-      content: `Suche im Web nach diesem Wein und ergänze die fehlenden Angaben: ${missing.join(", ")}.
-Bekannte Angaben (vom Etikett, nicht ändern): ${JSON.stringify(proposal)}
-Nutze bevorzugt die Website des Produzenten oder seriöse Händler. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null.
-Land auf Deutsch. Rufe am Ende genau einmal ${REPORT_TOOL_NAME} auf.`,
+      content: `${options.prompt}\nRufe am Ende genau einmal ${options.toolName} auf.`,
     },
   ];
-
   const tools: Anthropic.Beta.BetaToolUnion[] = [
-    { type: "web_search_20260209", name: "web_search", max_uses: 4 },
+    { type: "web_search_20260209", name: "web_search", max_uses: options.maxSearches },
     {
-      name: REPORT_TOOL_NAME,
-      description: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
+      name: options.toolName,
+      description: options.toolDescription,
       strict: true,
-      input_schema: REPORT_INPUT_SCHEMA,
+      input_schema: toolInputSchema(options.schema),
     },
   ];
 
@@ -163,50 +149,68 @@ Land auf Deutsch. Rufe am Ende genau einmal ${REPORT_TOOL_NAME} auf.`,
       ...SONNET_FALLBACK,
     });
 
-    if (response.stop_reason === "refusal") break;
+    if (response.stop_reason === "refusal") return null;
 
     const report = response.content.find(
       (block): block is Anthropic.Beta.BetaToolUseBlock =>
-        block.type === "tool_use" && block.name === REPORT_TOOL_NAME,
+        block.type === "tool_use" && block.name === options.toolName,
     );
     if (report) {
-      const parsed = EnrichmentSchema.safeParse(report.input);
-      if (!parsed.success) break;
-      return mergeEnrichment(proposal, missing, parsed.data);
+      const parsed = options.schema.safeParse(report.input);
+      return parsed.success ? parsed.data : null;
     }
 
     // Serverseitige Suchschleife pausiert: Antwort unverändert zurückgeben und fortsetzen.
-    if (response.stop_reason !== "pause_turn") break;
+    if (response.stop_reason !== "pause_turn") return null;
     messages.push({ role: "assistant", content: response.content });
   }
-
-  return { proposal, filled: [], sources: [] };
+  return null;
 }
 
-function mergeEnrichment(
+export function cleanSources(sources: string[]) {
+  return sources.filter((s) => /^https?:\/\//.test(s)).slice(0, 5);
+}
+
+const EnrichmentSchema = WineProposalSchema.pick({
+  country: true,
+  region: true,
+  appellation: true,
+  type: true,
+  alcohol_content: true,
+}).extend({ sources: z.array(z.string()).describe("URLs der verwendeten Quellen") });
+
+/** Ergänzt fehlende Stammdaten (Land, Region, Appellation, Typ, Alkohol) per Websuche. */
+export async function enrichFromWeb(
   proposal: WineProposal,
-  missing: EnrichableField[],
-  found: { sources: string[] } & Pick<WineProposal, EnrichableField>,
-) {
+): Promise<{ proposal: WineProposal; filled: EnrichableField[]; sources: string[] }> {
+  const missing = missingEnrichableFields(proposal);
+  if (missing.length === 0 || !proposal.name || !proposal.producer) {
+    return { proposal, filled: [], sources: [] };
+  }
+
+  // Rebsorten recherchiert researchGrapeShares separat.
+  const known = { ...proposal, grape_shares: undefined };
+  const found = await webResearch({
+    prompt: `Suche im Web nach diesem Wein und ergänze die fehlenden Angaben: ${missing.join(", ")}.
+Bekannte Angaben (vom Etikett, nicht ändern): ${JSON.stringify(known)}
+Nutze bevorzugt die Website des Produzenten oder seriöse Händler. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null.
+Land auf Deutsch.`,
+    toolName: "report_wine_details",
+    toolDescription: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
+    schema: EnrichmentSchema,
+    maxSearches: 4,
+  });
+  if (!found) return { proposal, filled: [], sources: [] };
+
   const merged: WineProposal = { ...proposal };
   const filled: EnrichableField[] = [];
   for (const field of missing) {
-    const value = found[field];
-    if (field === "grapes") {
-      if (found.grapes.length) {
-        merged.grapes = found.grapes;
-        filled.push(field);
-      }
-    } else if (value != null) {
-      (merged as Record<EnrichableField, unknown>)[field] = value;
+    if (found[field] != null) {
+      (merged as Record<EnrichableField, unknown>)[field] = found[field];
       filled.push(field);
     }
   }
-  return {
-    proposal: normalizeProposal(merged),
-    filled,
-    sources: found.sources.filter((s) => /^https?:\/\//.test(s)).slice(0, 5),
-  };
+  return { proposal: normalizeProposal(merged), filled, sources: cleanSources(found.sources) };
 }
 
 /** Übernimmt eine Freitext-Korrektur in den Vorschlag (Haiku, strukturierte Ausgabe). */

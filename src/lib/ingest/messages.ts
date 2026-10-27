@@ -1,6 +1,7 @@
 import "server-only";
 
 import { formatBottleSize, wineTypeLabel } from "@/lib/format";
+import { formatShares } from "@/lib/grapes/shares";
 import { escapeHtml } from "@/lib/telegram/api";
 import type { TgInlineKeyboard } from "@/lib/telegram/types";
 import type { EnrichableField, IngestState } from "./schema";
@@ -43,7 +44,6 @@ const FIELD_LABELS: Record<EnrichableField, string> = {
   region: "Region",
   appellation: "Appellation",
   type: "Typ",
-  grapes: "Trauben",
   alcohol_content: "Alkohol",
 };
 
@@ -58,13 +58,18 @@ export function proposalMessage(state: IngestState, matched: boolean) {
     "",
     `Typ: ${e(p.type ? wineTypeLabel(p.type) : "–")}`,
     `Herkunft: ${e([p.country, p.region, p.appellation].filter(Boolean).join(" · ") || "–")}`,
-    `Trauben: ${e(p.grapes.join(", ") || "–")}`,
+    `Trauben: ${e(formatShares(p.grape_shares) || "–")}`,
     `Alkohol: ${p.alcohol_content != null ? `${p.alcohol_content.toLocaleString("de-CH")} %` : "–"}`,
     `Flasche: ${e(formatBottleSize(p.bottle_size_ml) ?? "–")}`,
     "",
     `<i>Erkennung: ${Math.round(r.confidence * 100)} % (${e(modelLabel(r.model))})</i>`,
   ];
   if (r.notes) lines.push(`<i>Unsicher: ${e(r.notes)}</i>`);
+  const grapeNote = {
+    research: "🍇 <i>Rebsorten für diesen Jahrgang recherchiert</i>",
+    existing: "🍇 <i>Rebsorten aus deinem Keller übernommen</i>",
+  }[state.grape_source as string];
+  if (grapeNote && p.grape_shares.length) lines.push(grapeNote);
   if (matched) lines.push("✅ <i>Diesen Wein gibt es schon – er wird wiederverwendet.</i>");
   if (r.enriched_fields.length) {
     lines.push(

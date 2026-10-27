@@ -48,6 +48,14 @@ import {
   type LabelImage,
 } from "./recognize";
 import type { IngestState, StorageRoom, WineProposal } from "./schema";
+import { researchGrapeShares } from "@/lib/grapes/research";
+import {
+  hasAnyPercent,
+  hasCompletePercents,
+  type GrapeShare,
+  type GrapeSource,
+} from "@/lib/grapes/shares";
+import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
 import { createInventoryItem, findWine, mergeWithKnownWine, resolveWine } from "./wines";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Grenze der Claude API pro Bild
@@ -170,29 +178,35 @@ async function processJob(jobId: string, chatId: number) {
     };
 
     // Zuerst gegen bestehende Weine abgleichen; nur unbekannte Weine per Websuche ergänzen.
+    // Rebsorten mit Prozent für den Jahrgang laufen parallel dazu.
     const known = await findWine(db, proposal.name, proposal.producer);
-    if (known) {
-      proposal = mergeWithKnownWine(proposal, known);
-    } else {
-      const web = await enrichFromWeb(proposal).catch((error) => {
-        console.error("web enrichment failed", error);
-        return null;
-      });
-      if (web) {
-        proposal = web.proposal;
-        enriched = { filled: web.filled, sources: web.sources };
-      }
+    if (known) proposal = mergeWithKnownWine(proposal, known);
+
+    const [web, grapes] = await Promise.all([
+      known
+        ? null
+        : enrichFromWeb(proposal).catch((error) => {
+            console.error("web enrichment failed", error);
+            return null;
+          }),
+      resolveGrapes(db, proposal, known?.id ?? null),
+    ]);
+    if (web) {
+      proposal = web.proposal;
+      enriched = { filled: web.filled, sources: web.sources };
     }
+    proposal = { ...proposal, grape_shares: grapes.shares };
 
     const state: IngestState = {
       step: "review",
       proposal,
+      grape_source: grapes.source,
       recognition: {
         model: recognition.model,
         confidence: recognition.confidence,
         notes: recognition.notes,
         enriched_fields: enriched.filled,
-        sources: enriched.sources,
+        sources: [...enriched.sources, ...grapes.sources].slice(0, 8),
       },
     };
 
@@ -211,6 +225,50 @@ async function processJob(jobId: string, chatId: number) {
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }
+}
+
+type ResolvedGrapes = {
+  shares: GrapeShare[];
+  source: Exclude<IngestState["grape_source"], undefined>;
+  sources: string[];
+};
+
+/**
+ * Rebsorten für den Vorschlag: vollständige Prozente vom Etikett, sonst bereits
+ * gespeicherte Prozente des bekannten Weins für diesen Jahrgang, sonst Recherche.
+ * Findet die Recherche keine Prozente, gewinnen die Rebsorten vom Etikett.
+ */
+async function resolveGrapes(
+  db: AdminClient,
+  proposal: WineProposal,
+  knownWineId: string | null,
+): Promise<ResolvedGrapes> {
+  const label = proposal.grape_shares;
+  if (hasCompletePercents(label)) return { shares: label, source: "label", sources: [] };
+
+  const stored = knownWineId
+    ? await loadGrapeShares(db, knownWineId, proposal.vintage_year).catch(() => null)
+    : null;
+  if (stored && stored.vintageYear === proposal.vintage_year && hasAnyPercent(stored.shares)) {
+    return { shares: stored.shares, source: "existing", sources: [] };
+  }
+
+  if (proposal.name && proposal.producer) {
+    const research = await researchGrapeShares(
+      { ...proposal, name: proposal.name, producer: proposal.producer },
+      label.map((s) => s.grape),
+    ).catch((error) => {
+      console.error("grape research failed", error);
+      return null;
+    });
+    if (research && (hasAnyPercent(research.shares) || label.length === 0)) {
+      return { shares: research.shares, source: "research", sources: research.sources };
+    }
+  }
+
+  if (label.length) return { shares: label, source: "label", sources: [] };
+  if (stored) return { shares: stored.shares, source: "existing", sources: [] };
+  return { shares: [], source: null, sources: [] };
 }
 
 async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[]> {
@@ -433,14 +491,17 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
   try {
     let proposal: WineProposal = await applyCorrection(state.proposal, correction);
     let enriched = state.recognition;
+    let grapeSource = state.grape_source ?? null;
+    const grapesCorrected =
+      JSON.stringify(proposal.grape_shares) !== JSON.stringify(state.proposal.grape_shares);
+    if (grapesCorrected) grapeSource = "manual";
+    const otherWine =
+      proposal.name !== state.proposal.name || proposal.producer !== state.proposal.producer;
 
     const known = await findWine(db, proposal.name, proposal.producer);
     if (known) {
       proposal = mergeWithKnownWine(proposal, known);
-    } else if (
-      proposal.name !== state.proposal.name ||
-      proposal.producer !== state.proposal.producer
-    ) {
+    } else if (otherWine) {
       // Anderer Wein als zuvor: fehlende Angaben nochmals per Websuche ergänzen.
       const web = await enrichFromWeb(proposal).catch(() => null);
       if (web) {
@@ -449,11 +510,20 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
       }
     }
 
+    // Anderer Wein oder Jahrgang ohne eigene Rebsorten-Korrektur: Rebsorten neu bestimmen.
+    if (!grapesCorrected && (otherWine || proposal.vintage_year !== state.proposal.vintage_year)) {
+      // Rebsorten vom Etikett bleiben gültig, recherchierte gehörten zum alten Wein.
+      const labelGrapes = state.grape_source === "label" ? proposal.grape_shares : [];
+      const grapes = await resolveGrapes(db, { ...proposal, grape_shares: labelGrapes }, known?.id ?? null);
+      proposal = { ...proposal, grape_shares: grapes.shares };
+      grapeSource = grapes.source;
+    }
+
     const next = await advanceJob(
       db,
       job,
       "correcting",
-      { step: "review", proposal, recognition: enriched },
+      { step: "review", proposal, recognition: enriched, grape_source: grapeSource },
       { matched_wine_id: known?.id ?? null },
     );
     if (!next) return;
@@ -473,6 +543,7 @@ async function saveJob(job: IngestJob, chatId: number) {
   const state = jobState(job)!;
   try {
     const wineId = await resolveWine(db, state.proposal, job.matched_wine_id);
+    await storeGrapes(db, wineId, state);
     const itemId = await createInventoryItem(db, {
       wineId,
       proposal: state.proposal,
@@ -507,6 +578,26 @@ async function saveJob(job: IngestJob, chatId: number) {
     );
   } catch (error) {
     await failJob(db, job.id, chatId, "Speichern ist fehlgeschlagen", error);
+  }
+}
+
+/** Rebsorten des Vorschlags in wine_grape_shares speichern (Jahrgang des Eintrags). */
+async function storeGrapes(db: AdminClient, wineId: string, state: IngestState) {
+  const source = state.grape_source;
+  const shares = state.proposal.grape_shares;
+  if (!shares.length || !source || source === "existing") return;
+  try {
+    await replaceGrapeShares(db, {
+      wineId,
+      vintageYear: state.proposal.vintage_year,
+      shares,
+      source: source satisfies GrapeSource,
+      // Recherche/Etikett überschreiben keine manuell gepflegten Angaben.
+      keepManual: source !== "manual",
+    });
+  } catch (error) {
+    // Die Flasche trotzdem speichern; Rebsorten lassen sich nachrecherchieren.
+    console.error("storing grape shares failed", error);
   }
 }
 

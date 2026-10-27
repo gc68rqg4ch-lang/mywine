@@ -136,6 +136,12 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
         )}
       </form>
 
+      <p className="small">
+        <Link href="/recherche" className="link">
+          🍇 Rebsorten-Anteile nachrecherchieren
+        </Link>
+      </p>
+
       {rows.length === 0 ? (
         <p className="empty">
           {filtered ? "Keine Weine passen zu diesem Filter." : "Keine ungeöffneten Flaschen im Keller."}

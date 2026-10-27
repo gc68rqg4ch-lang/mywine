@@ -2,7 +2,7 @@ import "server-only";
 
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { Tables } from "@/lib/database.types";
-import type { StorageRoom, WineProposal } from "./schema";
+import { grapeNames, type StorageRoom, type WineProposal } from "./schema";
 
 type Wine = Tables<"wines">;
 
@@ -38,7 +38,6 @@ export function mergeWithKnownWine(proposal: WineProposal, wine: Wine): WineProp
     region: wine.region ?? proposal.region,
     appellation: wine.appellation ?? proposal.appellation,
     type: wine.type ?? proposal.type,
-    grapes: wine.grapes.length ? wine.grapes : proposal.grapes,
     alcohol_content: wine.alcohol_content ?? proposal.alcohol_content,
   };
 }
@@ -66,7 +65,7 @@ export async function resolveWine(
       region: proposal.region,
       appellation: proposal.appellation,
       type: proposal.type,
-      grapes: proposal.grapes,
+      grapes: grapeNames(proposal),
       alcohol_content: proposal.alcohol_content,
     })
     .select("id")

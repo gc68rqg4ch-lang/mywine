@@ -18,7 +18,12 @@ import {
   type InventoryStatus,
 } from "@/lib/format";
 import { OpenBottleControls, OpenBottleForm } from "./bottle-actions";
+import { loadGrapeShares } from "@/lib/grapes/store";
+import { GrapeCard } from "./grape-card";
 import { PriceCard } from "./price-card";
+
+// Server Actions dieser Seite (z. B. Nachrecherchieren mit Websuche) brauchen Zeit.
+export const maxDuration = 300;
 
 const BACK_LINKS: Record<InventoryStatus, { href: string; label: string }> = {
   sealed: { href: "/", label: "Bestand" },
@@ -88,6 +93,7 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
     .order("vintage_year", { nullsFirst: false });
 
   const photoUrls = await resolvePhotoUrls(supabase, item.photo_urls);
+  const grapes = await loadGrapeShares(supabase, wine.id, item.vintage_year);
   const back = BACK_LINKS[item.status];
   const drunkOn = item.status === "drunk" ? zurichDate(item.drunk_at) : null;
 
@@ -122,7 +128,6 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
             <Detail label="Land" value={wine.country} />
             <Detail label="Region" value={wine.region} />
             <Detail label="Appellation" value={wine.appellation} />
-            <Detail label="Trauben" value={wine.grapes.length ? wine.grapes.join(", ") : null} />
             <Detail
               label="Alkohol"
               value={wine.alcohol_content != null ? `${wine.alcohol_content.toLocaleString("de-CH")} %` : null}
@@ -159,6 +164,15 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
         </section>
 
         <div className="stack">
+          <GrapeCard
+            // Neu mounten, wenn sich die gespeicherten Angaben ändern.
+            key={JSON.stringify(grapes)}
+            itemId={item.id}
+            itemVintage={item.vintage_year}
+            shares={grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }))}
+            sharesVintage={grapes?.vintageYear ?? null}
+            sources={grapes?.sources ?? []}
+          />
           <PriceCard
             itemId={item.id}
             purchasePrice={item.purchase_price}
