@@ -3,6 +3,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { strictSchemaProblems } from "@/lib/ai/schema-limits";
 import { hasCompletePercents, normalizeGrapeShares, type GrapeShare } from "@/lib/grapes/shares";
 import {
   GrapeShareSchema,
@@ -141,13 +142,16 @@ export async function webResearch<T>(options: {
       content: `${options.prompt}\nRufe am Ende genau einmal ${options.toolName} auf.`,
     },
   ];
+  const inputSchema = toolInputSchema(options.schema);
+  const problems = strictSchemaProblems(inputSchema);
+  if (problems.length) throw new Error(`Schema für ${options.toolName} nicht strict-tauglich: ${problems.join(", ")}`);
   const tools: Anthropic.Beta.BetaToolUnion[] = [
     { type: "web_search_20260209", name: "web_search", max_uses: options.maxSearches },
     {
       name: options.toolName,
       description: options.toolDescription,
       strict: true,
-      input_schema: toolInputSchema(options.schema),
+      input_schema: inputSchema,
     },
   ];
 
@@ -198,9 +202,11 @@ export const EnrichmentSchema = WineProposalSchema.pick({
   vintages: z
     .array(
       z.object({
-        vintage_year: z.number().int().describe("Jahrgang wie angefragt; 0 = ohne Jahrgang"),
-        drink_from_year: z.number().int().nullable().describe("Trinkfenster ab (Jahr) für diesen Jahrgang"),
-        drink_until_year: z.number().int().nullable().describe("Trinkfenster bis (Jahr) für diesen Jahrgang"),
+        // Keine .int()/.min()/.max(): strict Tools kennen minimum/maximum nicht (400). Die
+        // Wertebereiche prüft researchWineWeb nach der Antwort und verwirft Ungültiges.
+        vintage_year: z.number().describe("Jahrgang wie angefragt (ganze Zahl); 0 = ohne Jahrgang"),
+        drink_from_year: z.number().nullable().describe("Trinkfenster ab (Jahr, ganze Zahl) für diesen Jahrgang"),
+        drink_until_year: z.number().nullable().describe("Trinkfenster bis (Jahr, ganze Zahl) für diesen Jahrgang"),
         grapes: z.array(GrapeShareSchema).describe("Rebsorten dieses Jahrgangs, wichtigste zuerst; leer wenn unbekannt"),
         percentages_for_vintage: z
           .boolean()
@@ -213,7 +219,16 @@ export const EnrichmentSchema = WineProposalSchema.pick({
 
 export type DrinkWindow = { from: number | null; until: number | null };
 
-const plausibleYear = (y: number | null | undefined) => (y != null && y >= 1800 && y <= 2200 ? y : null);
+/** Jahr nur, wenn ganzzahlig und 1800–2100; sonst verworfen. */
+const plausibleYear = (y: number | null | undefined) =>
+  y != null && Number.isInteger(y) && y >= 1800 && y <= 2100 ? y : null;
+
+/** Antwort der Recherche prüfen: ungültige Werte verwerfen statt speichern. */
+function validField(field: EnrichableField, value: unknown) {
+  if (value == null) return false;
+  if (field === "alcohol_content") return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 25;
+  return typeof value === "string" ? value.trim().length > 0 && value.length <= 200 : true;
+}
 
 const FIELD_NAMES: Record<EnrichableField, string> = {
   producer: "Produzent",
@@ -280,11 +295,12 @@ Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech
 
   const fields: WineResearch["fields"] = {};
   for (const field of input.missing) {
-    if (found[field] != null) (fields as Record<EnrichableField, unknown>)[field] = found[field];
+    if (validField(field, found[field])) (fields as Record<EnrichableField, unknown>)[field] = found[field];
   }
   const result: WineResearch["vintages"] = [];
   for (const v of vintages) {
     const hit = found.vintages.find((x) => (x.vintage_year === 0 ? null : x.vintage_year) === v.year);
+    // Prozente ausserhalb 0–100 verwirft normalizeGrapeShares (dann ohne Anteil).
     if (!hit) continue;
     const from = v.window ? plausibleYear(hit.drink_from_year) : null;
     const until = v.window ? plausibleYear(hit.drink_until_year) : null;

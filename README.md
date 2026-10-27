@@ -98,6 +98,10 @@ zieht ein Trigger den Journal-Eintrag „getrunken“ mit.
   Trinkfenster nur leere Teile, Rebsorten nur ohne % bzw. ganz fehlend, manuelle bleiben); Rebsorten mit
   `source = research`. Gilt für 🔎 Nachrecherchieren auf der Weinseite (ohne Rückfrage, alle Jahrgänge mit
   Flaschen), den Sammellauf und die Erfassung im Bot. `wines.grapes` bleibt vorerst bestehen.
+- **Strict-Schemas:** Die Recherche meldet ihr Ergebnis über ein strict-Tool. Strict kennt keine Grenzen wie
+  `minimum`/`maximum` (entstehen auch durch `z.number().int()`), `minLength`/`maxLength`, `maxItems` usw. –
+  Wertebereiche (Alkohol 0–25 %, Jahre 1800–2100, Prozente 0–100) prüft der Code nach der Antwort und verwirft
+  Ungültiges. `strictSchemaProblems` (`src/lib/ai/schema-limits.ts`) prüft das vor jedem Aufruf und im Test.
 
 ### Lebenszyklus einer Flasche
 

@@ -2,8 +2,9 @@
 // Dieser Test prüft alle Schemas des Bots, damit das nicht unbemerkt wieder passiert.
 // Ausführen: npm test
 import assert from "node:assert/strict";
+import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { MAX_UNION_PARAMS, countUnionParams } from "@/lib/ai/schema-limits";
+import { MAX_UNION_PARAMS, countUnionParams, strictSchemaProblems } from "@/lib/ai/schema-limits";
 import { NOT_MENTIONED, extractionSchema, toExtraction } from "@/lib/tasting/extract";
 import { EnrichmentSchema, toolInputSchema } from "@/lib/ingest/recognize";
 import { GrapeResearchSchema } from "@/lib/grapes/research";
@@ -27,6 +28,36 @@ const counts: [string, number][] = [
 ];
 console.log(counts.map(([n, c]) => `${n}: ${c}`).join("\n"));
 for (const [name, count] of counts) assert.ok(count <= MAX_UNION_PARAMS, `${name}: ${count} > ${MAX_UNION_PARAMS}`);
+// Strict: Schlüsselwörter, die die API bei strict ablehnt (400 „properties maximum, minimum are not
+// supported“) – minimum/maximum (auch aus z.number().int()), exclusive*, multipleOf, min/maxLength,
+// maxItems, minItems > 1, fremde formats, Regex mit Rückverweis/Lookaround/Wortgrenze, additionalProperties ≠ false.
+assert.deepEqual(
+  strictSchemaProblems({ type: "object", additionalProperties: false, properties: { minimum: { type: "integer", minimum: 0 }, s: { type: "string", maxLength: 3, pattern: "^a\\bb$" }, a: { type: "array", minItems: 2, items: {} } } }),
+  [".properties.minimum.minimum", ".properties.s.maxLength", ".properties.s.pattern", ".properties.a.minItems=2"],
+  "Prüfer erkennt die Schlüsselwörter (Feldnamen zählen nicht)",
+);
+// So entstand der Fehler: z.number().int() erzeugt minimum/maximum (sichere Ganzzahl-Grenzen).
+assert.ok(strictSchemaProblems(toolInputSchema(z.object({ year: z.number().int() }))).length > 0);
+const strictSchemas: [string, unknown][] = [
+  ["Websuche Stammdaten (strict Tool)", toolInputSchema(EnrichmentSchema)],
+  ["Websuche Rebsorten (strict Tool)", toolInputSchema(GrapeResearchSchema)],
+  ...SAT_TYPES.map(({ type }) => [`Verkostung ${type} (strukturierte Ausgabe)`, outputFormat(extractionSchema(type))] as [string, unknown]),
+  ["Foto-Erkennung (strukturierte Ausgabe)", outputFormat(RecognitionSchema)],
+  ["Foto-Korrektur (strukturierte Ausgabe)", outputFormat(WineProposalSchema)],
+  ["Erfassung per Text (strukturierte Ausgabe)", outputFormat(TextEntrySchema)],
+];
+for (const [name, schema] of strictSchemas) {
+  const problems = strictSchemaProblems(schema);
+  assert.deepEqual(problems, [], `${name}: bei strict nicht unterstützt: ${problems.join(", ")}`);
+}
+// Chat-Tools sind nicht strict (dort sind Grenzen wie maxLength erlaubt). Melden, und sicherstellen,
+// dass keines strict wird, solange es solche Schlüsselwörter enthält.
+for (const tool of chatTools({} as never, []) as { name: string; strict?: boolean; input_schema: unknown }[]) {
+  const problems = strictSchemaProblems(tool.input_schema);
+  if (problems.length) console.log(`Hinweis ${tool.name} (nicht strict): ${problems.length} Schlüsselwörter, die strict nicht kennt`);
+  assert.ok(!tool.strict || problems.length === 0, `${tool.name} ist strict, enthält aber ${problems.join(", ")}`);
+}
+
 // Reserve: die Verkostung braucht gar keine Union-Typen mehr
 for (const { type } of SAT_TYPES) assert.equal(countUnionParams(outputFormat(extractionSchema(type))), 0, type);
 
