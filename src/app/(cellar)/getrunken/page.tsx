@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GroupedList } from "@/components/cellar/grouped-list";
-import { ListControls, readListParams } from "@/components/cellar/list-controls";
+import { ListControls, applyTypeFilter, readListParams } from "@/components/cellar/list-controls";
 import { BottleCount, WineCard } from "@/components/cellar/wine-card";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getSession } from "@/lib/auth";
@@ -15,6 +15,7 @@ import {
 } from "@/lib/cellar/overview";
 import { buildDrunkEntries, drunkTotals, type DrunkBottle, type DrunkEntry, type RatingRow } from "@/lib/cellar/lists";
 import { formatDate, formatStarNumber, todayIso } from "@/lib/format";
+import { wineHref } from "@/lib/cellar/wine-page";
 import { loadGrapeNames } from "@/lib/grapes/store";
 import { getLocationFilter, withLocation } from "@/lib/location";
 
@@ -29,7 +30,7 @@ function ratingsText(e: DrunkEntry) {
 
 export default async function DrunkBottlesPage({ searchParams }: PageProps<"/getrunken">) {
   const params = await searchParams;
-  const { query, groupBy } = readListParams(params, GROUPINGS);
+  const { query, groupBy, type } = readListParams(params, GROUPINGS);
   const { supabase } = await getSession();
   const { filter } = await getLocationFilter();
   const year = todayIso().slice(0, 4);
@@ -85,7 +86,8 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
 
   const entries = buildDrunkEntries(bottles, grapes, ratingsByWine, (persons.data ?? []).map((p) => p.name));
   const visible = query ? entries.filter((e) => matchesQuery(e, query)) : entries;
-  const groups = groupWines(visible, groupBy);
+  const { types, filtered } = applyTypeFilter(visible, type);
+  const groups = groupWines(filtered, groupBy);
   const totals = drunkTotals(entries, year);
   const hidden = withoutRoom.count ?? 0;
 
@@ -106,7 +108,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
           <h2 className="tile-title">Lieblingsweine</h2>
           {totals.favorites.length === 0 && <p className="tile-line muted">Noch keine Bewertungen</p>}
           {totals.favorites.map((e) => (
-            <Link key={e.wine_id} href={`/flasche/${e.latestItemId}`} className="tile-line tile-open">
+            <Link key={e.wine_id} href={wineHref(e.wine_id, e.latestVintage, { von: "getrunken" })} className="tile-line tile-open">
               <WineTypeIcon type={e.type} size={16} />
               <span className="tile-open-name">{e.name}</span>
               <span className="muted">{formatStarNumber(Math.round(e.score! * 2) / 2)} ★</span>
@@ -118,7 +120,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
           <h2 className="tile-title">Zuletzt getrunken</h2>
           {totals.recent.length === 0 && <p className="tile-line muted">–</p>}
           {totals.recent.map((e) => (
-            <Link key={e.wine_id} href={`/flasche/${e.latestItemId}`} className="tile-line tile-open">
+            <Link key={e.wine_id} href={wineHref(e.wine_id, e.latestVintage, { von: "getrunken" })} className="tile-line tile-open">
               <WineTypeIcon type={e.type} size={16} />
               <span className="tile-open-name">{e.name}</span>
               <span className="muted">{formatDate(e.lastDrunk)}</span>
@@ -127,7 +129,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
         </div>
       </section>
 
-      <ListControls basePath="/getrunken" groupBy={groupBy} groupings={GROUPINGS} query={query} />
+      <ListControls basePath="/getrunken" groupBy={groupBy} groupings={GROUPINGS} query={query} type={type} types={types} />
 
       <GroupedList
         groups={groups}
@@ -137,7 +139,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
         itemKey={({ wine }) => wine.wine_id}
         renderItem={({ wine, bottles, vintages }) => (
           <WineCard
-            href={`/flasche/${wine.latestItemId}`}
+            href={wineHref(wine.wine_id, vintages.length === 1 ? vintages[0] : wine.latestVintage, { von: "getrunken" })}
             type={wine.type}
             producer={wine.producer}
             title={wine.name}

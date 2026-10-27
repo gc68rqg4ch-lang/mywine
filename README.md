@@ -15,8 +15,6 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
   (Flaschen, Weine, Jahrgänge, Kellerwert bezahlt/normal), offene Flaschen (Tage seit Öffnen), Käufe des
   Jahres (aus dem Journal `inventory_events`) und Trinkreife. Weintypen als Trauben-Symbole
   (`src/components/wine-type-icon.tsx`); Logik in `src/lib/cellar/overview.ts`.
-- **Weinseite** (`/wein/[id]`): Aufteilung nach Jahrgang (Flaschen, Ø Preis, Preisklasse, Trinkreife,
-  Bewertungen) und nach Lagerort, dazu alle Flaschen inkl. getrunkener – immer ungefiltert.
 - **Offen** (`/offen`) und **Getrunken** (`/getrunken`) sind wie der Bestand aufgebaut und nutzen dieselben
   Komponenten (`src/components/cellar/`: Suche/Gruppierung, einklappbare Gruppen, Weinkarte) und dieselbe
   Gruppierungslogik (`groupWines` über `Groupable`-Einträge, `src/lib/cellar/lists.ts`); die Lagerort-Wahl gilt.
@@ -24,20 +22,27 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
     längsten offen, Ø Füllstand.
   - Getrunken: ein Eintrag pro Wein mit Anzahl, letztem Trinkdatum (`drunk_at`) und neuester Bewertung je Person
     (sonst die alte Import-Bewertung); zusätzliche Gruppierung „Getrunken am“ (Jahr, darin Monate). Kacheln:
-    getrunken dieses Jahr, Lieblingsweine (beste Bewertungen), zuletzt getrunken. Die Karte führt zur zuletzt
-    getrunkenen Flasche.
+    getrunken dieses Jahr, Lieblingsweine (beste Bewertungen), zuletzt getrunken.
   - Flaschen ohne Lagerort (Import) erscheinen nur unter „Alle“; die Kachel nennt ihre Anzahl.
-- **Detailseite** (`/flasche/[id]`) mit Aktionen:
-  - **Öffnen** (ungeöffnet): ruft `public.open_bottle()` auf
-  - **Füllstand ändern** (offen)
-  - **Ausgetrunken** (offen): `status = drunk`, Füllstand 0; `drunk_at` setzt ein DB-Trigger
-  - Getrunkene Flaschen: nur Anzeige, keine Aktionen
-  - **Preise** (alle Status): bezahlter Preis und Normalpreis bearbeitbar, Rabatt in CHF und %
+- **Weinseite** (`/wein/[id]?jahrgang=2019`): eine Seite pro Wein, Ziel aller Klicks aus Bestand, Offen und
+  Getrunken (`wineHref` in `src/lib/cellar/wine-page.ts`). Jahrgang-Umschalter oben bei mehreren Jahrgängen
+  (`ohne` = ohne Jahrgang); alles Jahrgangsabhängige folgt der Auswahl. Kacheln in einem Raster mit bis zu
+  3 Spalten (breit: Öffnen, Verkostungen, Rebsorten; schmal: Bewertung, Preise, Lagerorte, Trinkreife,
+  Stammdaten, Getrunken); `tileSpans()` verteilt die Breiten so, dass keine Lücken bleiben. iPhone: 1 Spalte.
+  - **Öffnen & offene Flaschen:** Lagerort bzw. Charge wählen → `public.open_bottle()` mit deren
+    `inventory_item`-ID; offene Flaschen mit Füllstand ändern und **Ausgetrunken** (`drunk_at` setzt die DB)
+  - **Lagerorte** je Charge mit Flaschenzahl und Preis; **Preise** je Charge bearbeitbar (Rabatt in CHF und %)
   - **Rebsorten** mit Prozentanteil aus `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“),
     bearbeitbar (`source = manual`) und per **Nachrecherchieren** neu recherchierbar
   - **Bewertung** pro Person (`persons`) mit halben Sternen 0–5 in `wine_ratings`; angezeigt wird die
     neueste je Person (`latest_wine_ratings`). Pro Person und Tag eine Bewertung, ältere bleiben als Verlauf.
-  - **Verkostungen (WSET)**: Liste für Wein + Jahrgang, „Neue Verkostung“ öffnet das Formular
+  - **Verkostungen (WSET)**, **Trinkreife** (Fenster aus `wine_vintages`, dazu die letzte Verkostung),
+    Stammdaten mit Fotos, getrunkene Flaschen
+  - Jahrgangsbezogene Aktionen hängen an einer Flasche des Jahrgangs (offen vor ungeöffnet vor getrunken).
+  - `/flasche/[id]` leitet auf die Weinseite mit dem Jahrgang der Flasche weiter (Bot-Links, Lesezeichen).
+- **Weintyp-Filter:** in Bestand, Offen und Getrunken bei den Gruppierungen Land, Rebsorte, Jahrgang,
+  Preisklasse (und „Getrunken am“): Alle / Rot / Weiss / … mit Trauben-Symbolen, nur vorhandene Typen
+  (`?typ=`), zusätzlich zur Lagerort-Wahl.
 - **WSET-Verkostung** (`/flasche/[id]/verkostung`, bearbeiten mit `?t=<id>`): Nachbau des
   [Verkostungs-Tools](https://gc68rqg4ch-lang.github.io/WSET-Verkostungs-tool/) mit gleichen Feldern, Optionen,
   Aromen-Lexikon und Punkte-Logik (`src/lib/tasting/sat.ts`). Gespeichert in `wine_tastings`: Stil, Qualität,

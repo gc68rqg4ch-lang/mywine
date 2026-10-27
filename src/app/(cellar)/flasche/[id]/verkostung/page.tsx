@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { wineHref } from "@/lib/cellar/wine-page";
 import { todayIso, wineTitle } from "@/lib/format";
 import { formatShares } from "@/lib/grapes/shares";
 import { loadGrapeShares } from "@/lib/grapes/store";
@@ -64,7 +65,7 @@ export default async function TastingPage({ params, searchParams }: PageProps<"/
 
   return (
     <div className="stack-lg">
-      <Link href={`/flasche/${item.id}`} className="back">
+      <Link href={wineHref(wine.id, item.vintage_year)} className="back">
         ← {wine.producer} · {wineTitle({ name: wine.name, vintage_year: item.vintage_year })}
       </Link>
       <div className="stack-sm">

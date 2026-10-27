@@ -8,17 +8,35 @@ function inputValue(price: number | null) {
   return price == null ? "" : price.toFixed(2);
 }
 
-export function PriceCard({
-  itemId,
-  purchasePrice,
-  regularPrice,
-  currency,
-}: {
+export type ChargePrice = {
   itemId: string;
+  /** Bezeichnung bei mehreren Chargen, z. B. „Weinkeller · 6 Fl.“ */
+  label: string;
   purchasePrice: number | null;
   regularPrice: number | null;
   currency: string | null;
-}) {
+};
+
+/** Preise des gewählten Jahrgangs – je Charge bearbeitbar. */
+export function PricesCard({ charges }: { charges: ChargePrice[] }) {
+  return (
+    <section className="card stack">
+      <h2 className="section-title">Preise</h2>
+      {charges.map((c) => (
+        <PriceEntry key={c.itemId} {...c} showLabel={charges.length > 1} />
+      ))}
+    </section>
+  );
+}
+
+function PriceEntry({
+  itemId,
+  label,
+  showLabel,
+  purchasePrice,
+  regularPrice,
+  currency,
+}: ChargePrice & { showLabel: boolean }) {
   const [editing, setEditing] = useState(false);
   const [state, action, pending] = useActionState(
     async (prev: ActionState, formData: FormData) => {
@@ -33,9 +51,9 @@ export function PriceCard({
   const discount = priceDiscount(purchasePrice, regularPrice);
 
   return (
-    <section className="card stack">
+    <div className="stack-sm price-entry">
       <div className="row row-between">
-        <h2 className="section-title">Preise</h2>
+        <span className="subsection-title">{showLabel ? label : "Pro Flasche"}</span>
         {!editing && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>
             Bearbeiten
@@ -107,6 +125,6 @@ export function PriceCard({
           {state.ok}
         </p>
       )}
-    </section>
+    </div>
   );
 }

@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GroupedList } from "@/components/cellar/grouped-list";
-import { ListControls, readListParams } from "@/components/cellar/list-controls";
+import { ListControls, applyTypeFilter, readListParams } from "@/components/cellar/list-controls";
 import { WineCard } from "@/components/cellar/wine-card";
 import { FillGauge } from "@/components/fill-gauge";
 import { getSession } from "@/lib/auth";
 import { BASE_GROUPINGS, groupWines, matchesQuery, originLabel } from "@/lib/cellar/overview";
 import { openTotals, toOpenEntry } from "@/lib/cellar/lists";
 import { formatBottleSize, formatDaysSince } from "@/lib/format";
+import { wineHref } from "@/lib/cellar/wine-page";
 import { loadGrapeNames } from "@/lib/grapes/store";
 import { getLocationFilter, withLocation } from "@/lib/location";
 
@@ -15,7 +16,7 @@ export const metadata: Metadata = { title: "Offene Flaschen" };
 
 export default async function OpenBottlesPage({ searchParams }: PageProps<"/offen">) {
   const params = await searchParams;
-  const { query, groupBy } = readListParams(params, BASE_GROUPINGS);
+  const { query, groupBy, type } = readListParams(params, BASE_GROUPINGS);
   const { supabase } = await getSession();
   const { filter } = await getLocationFilter();
 
@@ -46,18 +47,13 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
   const grapes = await loadGrapeNames(supabase, rows.map((r) => ({ id: r.wine_id, grapes: r.grapes })));
   const entries = rows.map((r) => toOpenEntry(r, grapes.get(r.wine_id) ?? []));
   const visible = query ? entries.filter((e) => matchesQuery(e, query)) : entries;
-  const groups = groupWines(visible, groupBy);
+  const { types, filtered } = applyTypeFilter(visible, type);
+  const groups = groupWines(filtered, groupBy);
   const totals = openTotals(entries);
   const hidden = withoutRoom.count ?? 0;
 
   return (
     <div className="stack-lg">
-      {params.ausgetrunken && (
-        <p className="notice notice-ok" role="status">
-          Flasche als ausgetrunken markiert. Zum Wohl!
-        </p>
-      )}
-
       <section className="tiles tiles-3" aria-label="Übersicht">
         <div className="tile">
           <h2 className="tile-title">Offen</h2>
@@ -70,7 +66,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
         </div>
 
         {totals.longest ? (
-          <Link href={`/flasche/${totals.longest.itemId}`} className="tile tile-link">
+          <Link href={wineHref(totals.longest.wine_id, totals.longest.vintages[0], { von: "offen" })} className="tile tile-link">
             <h2 className="tile-title">Am längsten offen</h2>
             <p className="tile-big">
               {totals.longest.days} <span>Tage</span>
@@ -94,7 +90,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
         </div>
       </section>
 
-      <ListControls basePath="/offen" groupBy={groupBy} groupings={BASE_GROUPINGS} query={query} />
+      <ListControls basePath="/offen" groupBy={groupBy} groupings={BASE_GROUPINGS} query={query} type={type} types={types} />
 
       <GroupedList
         groups={groups}
@@ -104,7 +100,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
         itemKey={({ wine }) => wine.itemId}
         renderItem={({ wine }) => (
           <WineCard
-            href={`/flasche/${wine.itemId}`}
+            href={wineHref(wine.wine_id, wine.vintages[0], { von: "offen" })}
             type={wine.type}
             producer={wine.producer}
             title={wine.name}

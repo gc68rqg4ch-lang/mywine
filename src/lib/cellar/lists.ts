@@ -97,6 +97,8 @@ export type DrunkEntry = Groupable & {
   /** Letztes Trinkdatum (YYYY-MM-DD, Zürich); null bei importierten Flaschen. */
   lastDrunk: string | null;
   latestItemId: string;
+  /** Jahrgang der zuletzt getrunkenen Flasche (für den Link auf die Weinseite). */
+  latestVintage: number | null;
   ratings: PersonRating[];
   legacyRating: number | null;
   /** Für „Lieblingsweine“: Mittel der Personen-Bewertungen, sonst alte Bewertung. */
@@ -147,6 +149,7 @@ export function buildDrunkEntries(
       bottles: units.reduce((s, u) => s + u.count, 0),
       lastDrunk: zurichDate(latest.drunk_at),
       latestItemId: latest.itemId,
+      latestVintage: latest.vintage_year,
       ratings,
       legacyRating,
       score,

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GroupedList } from "@/components/cellar/grouped-list";
-import { ListControls, readListParams } from "@/components/cellar/list-controls";
+import { ListControls, applyTypeFilter, readListParams } from "@/components/cellar/list-controls";
 import { BottleCount, WineCard } from "@/components/cellar/wine-card";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getSession } from "@/lib/auth";
@@ -21,6 +21,7 @@ import {
   type LocationFilter,
 } from "@/lib/cellar/overview";
 import { daysSince, formatMoney, todayIso } from "@/lib/format";
+import { wineHref } from "@/lib/cellar/wine-page";
 import { getLocationFilter, withLocation } from "@/lib/location";
 
 export const metadata: Metadata = { title: "Bestand" };
@@ -35,7 +36,7 @@ function storagePattern(filter: NonNullable<LocationFilter>) {
 
 export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   const params = await searchParams;
-  const { query, groupBy } = readListParams(params, BASE_GROUPINGS);
+  const { query, groupBy, type } = readListParams(params, BASE_GROUPINGS);
 
   const { supabase } = await getSession();
   const { filter, selected } = await getLocationFilter();
@@ -69,7 +70,8 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   );
   const inStock = wines.filter((w) => w.sealed > 0);
   const visible = query ? inStock.filter((w) => matchesQuery(w, query)) : inStock;
-  const groups = groupWines(visible, groupBy);
+  const { types, filtered } = applyTypeFilter(visible, type);
+  const groups = groupWines(filtered, groupBy);
 
   const totals = cellarTotals(wines);
   const drink = drinkCounts(wines);
@@ -146,7 +148,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
         </div>
       </section>
 
-      <ListControls basePath="/" groupBy={groupBy} groupings={BASE_GROUPINGS} query={query} />
+      <ListControls basePath="/" groupBy={groupBy} groupings={BASE_GROUPINGS} query={query} type={type} types={types} />
 
       <GroupedList
         groups={groups}
@@ -156,7 +158,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
         itemKey={({ wine }) => wine.wine_id}
         renderItem={({ wine, bottles, vintages }) => (
           <WineCard
-            href={`/wein/${wine.wine_id}`}
+            href={wineHref(wine.wine_id, vintages.length === 1 ? vintages[0] : undefined, { von: "bestand" })}
             type={wine.type}
             producer={wine.producer}
             title={wine.name}

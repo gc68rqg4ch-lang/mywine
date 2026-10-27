@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { wineHref } from "@/lib/cellar/wine-page";
 import { parsePrice, todayIso } from "@/lib/format";
 
 export type ActionState = { error?: string; ok?: string } | undefined;
@@ -49,8 +50,14 @@ export async function openBottle(_prev: ActionState, formData: FormData): Promis
     return { error: "Die Flasche konnte nicht geöffnet werden." };
   }
 
+  const { data: opened } = await session.supabase
+    .from("inventory_items")
+    .select("wine_id, vintage_year")
+    .eq("id", openId)
+    .single();
+
   revalidatePath("/", "layout");
-  redirect(`/flasche/${openId}?geoeffnet=1`);
+  redirect(opened ? wineHref(opened.wine_id, opened.vintage_year, { geoeffnet: "1" }) : "/offen");
 }
 
 /** Setzt den Füllstand einer offenen Flasche. */
@@ -104,7 +111,7 @@ export async function markDrunk(_prev: ActionState, formData: FormData): Promise
     .update({ status: "drunk" })
     .eq("id", itemId)
     .eq("status", "open")
-    .select("id");
+    .select("id, wine_id, vintage_year");
 
   if (error) {
     console.error("mark drunk failed", error);
@@ -118,7 +125,7 @@ export async function markDrunk(_prev: ActionState, formData: FormData): Promise
     .eq("inventory_item_id", itemId);
 
   revalidatePath("/", "layout");
-  redirect("/offen?ausgetrunken=1");
+  redirect(wineHref(updated[0].wine_id, updated[0].vintage_year, { ausgetrunken: "1" }));
 }
 
 /** Leeres Feld = kein Preis (null); sonst muss die Eingabe ein gültiger Preis sein. */

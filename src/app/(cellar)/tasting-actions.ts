@@ -54,7 +54,7 @@ export async function saveTasting(input: {
     return { ok: false, error: "Die Verkostung konnte nicht gespeichert werden." };
   }
 
-  revalidatePath(`/flasche/${ctx.item.id}`);
+  revalidatePath(`/wein/${ctx.item.wine_id}`);
   return { ok: true, id: data.id };
 }
 
@@ -66,7 +66,7 @@ export async function deleteTasting(itemId: string, tastingId: string) {
     console.error("delete tasting failed", error);
     return { ok: false as const, error: "Löschen fehlgeschlagen." };
   }
-  revalidatePath(`/flasche/${ctx.item.id}`);
+  revalidatePath(`/wein/${ctx.item.wine_id}`);
   return { ok: true as const };
 }
 
@@ -89,6 +89,6 @@ export async function setRating(itemId: string, personId: string, rating: number
     console.error("set rating failed", error);
     return { ok: false as const, error: "Bewertung konnte nicht gespeichert werden." };
   }
-  revalidatePath(`/flasche/${ctx.item.id}`);
+  revalidatePath(`/wein/${ctx.item.wine_id}`);
   return { ok: true as const };
 }
