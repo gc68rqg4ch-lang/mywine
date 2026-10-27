@@ -58,6 +58,8 @@ import {
   type GrapeSource,
 } from "@/lib/grapes/shares";
 import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
+import { handleChatCallback, handleChatMessage, resetChat } from "@/lib/chat/handler";
+import { isChatCallback } from "@/lib/chat/proposals";
 import {
   createInventoryItem,
   findWine,
@@ -298,6 +300,10 @@ async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[
 // Buttons
 
 async function handleCallback(cb: TgCallbackQuery) {
+  if (isChatCallback(cb.data)) {
+    await handleChatCallback(cb);
+    return;
+  }
   const parsed = parseCallbackData(cb.data);
   const chatId = cb.message?.chat.id;
   const messageId = cb.message?.message_id;
@@ -496,16 +502,22 @@ async function handleText(msg: TgMessage) {
   const chatId = msg.chat.id;
   const text = msg.text!.trim();
 
+  if (/^\/(reset|vergessen)\b/i.test(text)) {
+    await resetChat(chatId);
+    return;
+  }
   if (text.startsWith("/")) {
     await sendMessage(chatId, HELP_TEXT);
     return;
   }
 
+  // Wartet ein Foto-Eintrag auf eine Eingabe (Anzahl, Preis, …), geht der Text dorthin;
+  // sonst ist es eine Frage oder Anweisung an den Chat-Modus.
   const db = createAdminClient();
   const job = await findJobAwaitingText(db, chatId);
   const state = job ? jobState(job) : null;
   if (!job || !state) {
-    await sendMessage(chatId, HELP_TEXT);
+    await handleChatMessage(chatId, text);
     return;
   }
 

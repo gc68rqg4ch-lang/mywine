@@ -19,13 +19,13 @@ export const MIN_CONFIDENCE = 0.7;
 
 // Sonnet 5.5 kann bei Sicherheitsklassifikatoren ablehnen; die serverseitige
 // Fallback-Kette springt dann automatisch auf ein passendes Modell.
-const SONNET_FALLBACK: { betas: Anthropic.Beta.AnthropicBeta[]; fallbacks: "default" } = {
+export const SONNET_FALLBACK: { betas: Anthropic.Beta.AnthropicBeta[]; fallbacks: "default" } = {
   betas: ["server-side-fallback-2026-07-01"],
   fallbacks: "default",
 };
 
 let client: Anthropic | null = null;
-function anthropic() {
+export function anthropic() {
   client ??= new Anthropic(); // liest ANTHROPIC_API_KEY
   return client;
 }

@@ -95,6 +95,7 @@ src/
   app/(cellar)/                 geschützter Bereich: Bestand, Offen, Getrunken, Detail, Server Actions
   app/api/telegram/             Webhook (route.ts) und Webhook-Registrierung (setup/route.ts)
   lib/ingest/                   Bot-Logik: Album/Jobs, Claude-Erkennung, Abgleich, Speichern
+  lib/chat/                     Chat-Modus: Werkzeuge, Vorschläge mit Ja/Nein, Verlauf
   lib/telegram/                 Telegram Bot API (fetch), Konfiguration
   lib/cellar/overview.ts        Bestandsübersicht: Weine, Lagerort-Filter, Gruppen, Kennzahlen
   lib/location.ts               Lagerort-Auswahl (Cookie) und Query-Filter
@@ -102,7 +103,7 @@ src/
 supabase/migrations/            Migrationen, die zusätzlich zum Import-Schema angelegt wurden
 ```
 
-## Telegram-Bot (Foto-Erfassung)
+## Telegram-Bot (Foto-Erfassung und Chat)
 
 Ablauf: Vorder- und Rückseite als Album schicken → Fotos landen im privaten Bucket `wine-photos`
 (`telegram/<job-id>/<message-id>.jpg`) und in einer Zeile in `ingest_jobs` → Erkennung → Vorschlag mit
@@ -128,6 +129,23 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.
 - **Sicherheit:** Webhook prüft `X-Telegram-Bot-Api-Secret-Token`, verarbeitet nur Updates von
   `TELEGRAM_ALLOWED_USER_ID`. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.
+
+### Chat-Modus (Textnachrichten)
+
+Freier Text (wenn kein Foto-Eintrag gerade auf Anzahl, Preis usw. wartet) geht an Claude mit Werkzeugen
+über die Datenbank (`src/lib/chat/`): zuerst `claude-haiku-5-5`, bei Ablehnung, Fehler oder abgeschnittener
+Antwort nochmals mit `claude-sonnet-5-5`.
+
+- **Lesen:** Bestand suchen (`cellar_wine_summary` / `cellar_wines` inkl. Lagerorte), offene Flaschen mit
+  Füllstand und Tagen seit dem Öffnen, Trinkreife, Bewertungen (`latest_wine_ratings`), Verkostungen
+  (`wine_tastings`), letzte Journal-Einträge (`inventory_events`).
+- **Ändern – nur nach [Ja]:** Füllstand (ein Glas ≈ 150 ml, Prozent relativ zur Flaschengrösse; leer =
+  ausgetrunken), Flasche öffnen über `open_bottle()` (bei mehreren Lagerorten/Grössen fragt der Bot nach),
+  ausgetrunken markieren, Bewertung für Michel oder Sara. Der Vorschlag steckt vollständig im
+  `callback_data` des [Ja]-Buttons und wird beim Klick gegen den aktuellen Zustand geprüft; ein zweiter Klick
+  bewirkt nichts.
+- **Verlauf:** die letzten 10 Nachrichten pro Chat in `telegram_chat_messages` (nur Text); `/reset` löscht ihn.
+  Ohne diese Tabelle läuft der Chat ohne Gedächtnis.
 
 | Variable (Vercel) | Zweck |
 | --- | --- |

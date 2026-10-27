@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { Json } from "@/lib/database.types";
 import { getSession } from "@/lib/auth";
 import { todayIso } from "@/lib/format";
+import { isValidRating, saveRating } from "@/lib/ratings";
 import {
   QUALITY_OPTIONS,
   READINESS_OPTIONS,
@@ -103,55 +104,22 @@ export async function deleteTasting(itemId: string, tastingId: string) {
   return { ok: true as const };
 }
 
-/**
- * Subjektive Bewertung einer Person (0–5 in halben Schritten) für Wein + Jahrgang.
- * Pro Person und Tag gibt es eine Bewertung: am selben Tag wird sie überschrieben,
- * an einem neuen Tag kommt eine neue hinzu (Verlauf bleibt erhalten).
- * rating = null entfernt die heutige Bewertung.
- */
+/** Subjektive Bewertung einer Person für Wein + Jahrgang der Flasche (siehe saveRating). */
 export async function setRating(itemId: string, personId: string, rating: number | null) {
   const ctx = await loadItem(itemId);
   if (!ctx || !UUID_RE.test(personId)) return { ok: false as const, error: "Kein Zugriff." };
-  if (rating != null && !(rating >= 0 && rating <= 5 && Number.isInteger(rating * 2))) {
+  if (rating != null && !isValidRating(rating)) {
     return { ok: false as const, error: "Bewertung muss zwischen 0 und 5 in halben Schritten liegen." };
   }
 
-  const { supabase } = ctx.session;
-  const today = todayIso();
-  let query = supabase
-    .from("wine_ratings")
-    .select("id")
-    .eq("wine_id", ctx.item.wine_id)
-    .eq("person_id", personId)
-    .eq("rated_at", today);
-  query = ctx.item.vintage_year == null
-    ? query.is("vintage_year", null)
-    : query.eq("vintage_year", ctx.item.vintage_year);
-  const { data: existing, error: findError } = await query.order("created_at", { ascending: false });
-  if (findError) return { ok: false as const, error: "Bewertung konnte nicht gelesen werden." };
-
-  const todayId = existing?.[0]?.id;
-  let error;
-  if (rating == null) {
-    if (!todayId) return { ok: true as const };
-    ({ error } = await supabase.from("wine_ratings").delete().eq("id", todayId));
-  } else if (todayId) {
-    ({ error } = await supabase
-      .from("wine_ratings")
-      .update({ rating, inventory_item_id: ctx.item.id })
-      .eq("id", todayId));
-  } else {
-    ({ error } = await supabase.from("wine_ratings").insert({
-      wine_id: ctx.item.wine_id,
-      vintage_year: ctx.item.vintage_year,
-      person_id: personId,
+  try {
+    await saveRating(
+      ctx.session.supabase,
+      { wineId: ctx.item.wine_id, vintageYear: ctx.item.vintage_year, itemId: ctx.item.id },
+      personId,
       rating,
-      rated_at: today,
-      inventory_item_id: ctx.item.id,
-      source: "manual",
-    }));
-  }
-  if (error) {
+    );
+  } catch (error) {
     console.error("set rating failed", error);
     return { ok: false as const, error: "Bewertung konnte nicht gespeichert werden." };
   }

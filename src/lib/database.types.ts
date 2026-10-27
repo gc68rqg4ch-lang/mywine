@@ -527,6 +527,30 @@ export type Database = {
           },
         ]
       }
+      telegram_chat_messages: {
+        Row: {
+          chat_id: number
+          content: string
+          created_at: string
+          id: number
+          role: string
+        }
+        Insert: {
+          chat_id: number
+          content: string
+          created_at?: string
+          id?: never
+          role: string
+        }
+        Update: {
+          chat_id?: number
+          content?: string
+          created_at?: string
+          id?: never
+          role?: string
+        }
+        Relationships: []
+      }
       vendors: {
         Row: {
           archived: boolean
