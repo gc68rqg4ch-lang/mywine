@@ -98,6 +98,16 @@ zieht ein Trigger den Journal-Eintrag „getrunken“ mit.
   Trinkfenster nur leere Teile, Rebsorten nur ohne % bzw. ganz fehlend, manuelle bleiben); Rebsorten mit
   `source = research`. Gilt für 🔎 Nachrecherchieren auf der Weinseite (ohne Rückfrage, alle Jahrgänge mit
   Flaschen), den Sammellauf und die Erfassung im Bot. `wines.grapes` bleibt vorerst bestehen.
+- **Abweichungen = Vorschläge** (`research_suggestions`): Die Recherche liefert immer alle Angaben. Leeres
+  wird direkt gefüllt; weicht ein gefundener Wert vom gespeicherten ab, wird nichts überschrieben, sondern ein
+  Vorschlag angelegt (Felder wie in der Check-Liste der Tabelle, `grapes` als `[{grape, percent}]`). Toleranzen:
+  Alkohol ±0.2, Rebsorten-% ±2 pro Sorte, Texte ohne Gross-/Kleinschreibung und Akzente. Ein offener Vorschlag
+  fürs gleiche Feld wird aktualisiert (erst lesen, kein Upsert – Ausdrucks-Index); früher abgelehnte Werte kommen
+  nicht wieder. Rebsorten ohne % mit gleichen Sorten bekommen die % direkt. Entscheiden: auf der Weinseite
+  (Box „Ich habe Abweichungen gefunden“ in „Zum Wein“), oben auf `/recherche` („Offene Vorschläge (N)“, nach Wein
+  gruppiert) und im Bot. [Übernehmen] schreibt über das gemeinsame Bearbeiten-Modul (Rebsorten über
+  `replace_grape_shares`, `source = research`) und setzt `status`, `decided_at`, `decided_by`; [Behalten] lehnt ab.
+  Code: `src/lib/research/compare.ts` (Vergleich), `suggestions.ts` (Speichern/Entscheiden).
 - **Strict-Schemas:** Die Recherche meldet ihr Ergebnis über ein strict-Tool. Strict kennt keine Grenzen wie
   `minimum`/`maximum` (entstehen auch durch `z.number().int()`), `minLength`/`maxLength`, `maxItems` usw. –
   Wertebereiche (Alkohol 0–25 %, Jahre 1800–2100, Prozente 0–100) prüft der Code nach der Antwort und verwirft
@@ -209,7 +219,10 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Zugang:** Webhook prüft `X-Telegram-Bot-Api-Secret-Token`. Freigeschaltet sind alle Telegram-User, deren ID in
   `persons.telegram_user_id` steht; `TELEGRAM_ALLOWED_USER_ID` gilt als Rückfall für Michel. Unbekannte bekommen im
   Einzelchat nur „Ich kenne dich noch nicht – deine Telegram-ID ist …“, sonst nichts. `/id` zeigt die eigene ID.
-- **ℹ️ Details** nennt vorhandene Dokumente mit Anzahl und Link zur Weinseite.
+- **ℹ️ Details** nennt vorhandene Dokumente und offene Recherche-Vorschläge mit Link zur Weinseite.
+- **🔎 Nachrecherchieren** (unter ✏️ Bearbeiten im Wein-Menü oder per Chat, Tool `research_wine`): ich
+  recherchiere in ~1 Minute, melde, was ich ergänzt habe, und frage bei jeder Abweichung einzeln nach („Ich habe
+  beim Alkohol 14.5 % gefunden, bei dir steht 15 %. Übernehmen?“ [Ja] [Nein], Knöpfe `rs:<id>:y|n`).
 - **Wer schreibt:** Der Bot spricht die Person mit Namen an; Bewertungen und Verkostungen gehen an sie. Im Menü
   heisst das „⭐ Bewerten“; für die andere Person („⭐ für Sara“) fragt er vor dem Speichern nach. Der
   Gesprächsverlauf ist pro Chat getrennt. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.

@@ -9,8 +9,10 @@ import type { Database } from "@/lib/database.types";
 import { formatShares, hasAnyPercent } from "@/lib/grapes/shares";
 import { replaceGrapeShares } from "@/lib/grapes/store";
 import { researchWineWeb } from "@/lib/ingest/recognize";
+import { recordSuggestion } from "./suggestions";
 import type { EnrichableField } from "@/lib/ingest/schema";
-import { needsResearch, wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
+import { grapesOnlyAddPercent, sameGrapes, sameValue, sourceNote, type SuggestionField } from "./compare";
+import { wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
 
 type Db = SupabaseClient<Database>;
 
@@ -38,6 +40,8 @@ export type ResearchOutcome = {
   status: "filled" | "nothing" | "complete" | "error";
   /** Was ergänzt wurde, z. B. „Region“, „Trinkfenster 2019“, „Rebsorten 2019 mit %“. */
   filled: string[];
+  /** Neue bzw. aktualisierte Vorschläge (Abweichungen) – nichts überschrieben. */
+  suggested: number;
   seconds: number;
 };
 
@@ -49,20 +53,23 @@ const FIELD_LABELS: Record<EnrichableField, string> = {
   type: "Typ",
   alcohol_content: "Alkohol",
 };
+const WINE_FIELDS = ["producer", "country", "region", "appellation", "type", "alcohol_content"] as const;
 
 const yearLabel = (year: number | null) => (year == null ? "NV" : String(year));
 
-/** Recherchiert einen Wein und ergänzt die Lücken (Jahrgänge im gewählten Umfang). */
+/**
+ * Recherchiert einen Wein (immer alle Angaben) und wertet aus: Leeres wird direkt gefüllt,
+ * Abweichungen werden zu Vorschlägen (research_suggestions) – nie überschrieben.
+ * Jahrgänge: die mit Flaschen im gewählten Umfang (sonst alle mit Flaschen).
+ */
 export async function researchAndFillWine(db: Db, wineId: string, scope: ResearchScope): Promise<ResearchOutcome> {
   const started = Date.now();
   const seconds = () => Math.round((Date.now() - started) / 1000);
   const data = await loadGapData(db, wineId);
   const wine = data.wines[0];
-  // Ein einzelner Wein ohne Flaschen im Keller: alle Jahrgänge mit Flaschen nehmen.
   const gaps: WineGaps | null = wine ? (wineGaps(wine, data, scope) ?? wineGaps(wine, data, "all")) : null;
-  if (!wine || !gaps || !needsResearch(gaps)) return { status: "complete", filled: [], seconds: seconds() };
+  if (!wine || !gaps) return { status: "complete", filled: [], suggested: 0, seconds: seconds() };
 
-  const missing = (["country", "region", "appellation", "type", "alcohol_content"] as const).filter((f) => wine[f] == null);
   const found = await researchWineWeb({
     wine: {
       name: wine.name,
@@ -73,39 +80,56 @@ export async function researchAndFillWine(db: Db, wineId: string, scope: Researc
       type: wine.type as Database["public"]["Enums"]["wine_type"] | null,
       alcohol_content: wine.alcohol_content,
     },
-    missing,
-    vintages: gaps.vintages.map((v) => ({ year: v.year, window: v.window, grapes: v.grapes, knownGrapes: v.knownGrapes })),
+    vintages: gaps.vintages.map((v) => ({ year: v.year, knownGrapes: v.knownGrapes })),
   });
-  if (!found) return { status: "nothing", filled: [], seconds: seconds() };
+  if (!found) return { status: "nothing", filled: [], suggested: 0, seconds: seconds() };
 
+  const note = sourceNote(found.sources);
   const filled: string[] = [];
+  let suggested = 0;
+  const suggest = async (field: SuggestionField, year: number | null, current: unknown, value: unknown) => {
+    const r = await recordSuggestion(db, { wineId, year, field, current, suggested: value, note });
+    if (r !== "skipped") suggested++;
+  };
 
-  // Stammdaten: nur leere Felder (die Bedingung „is null“ schützt vor gleichzeitigen Änderungen).
-  for (const field of missing) {
+  // Stammdaten: Leeres füllen („is null“ schützt vor gleichzeitigen Änderungen), Abweichendes vorschlagen.
+  for (const field of WINE_FIELDS) {
     const value = found.fields[field];
     if (value == null) continue;
-    const { data: updated, error } = await db
-      .from("wines")
-      .update({ [field]: value } as Database["public"]["Tables"]["wines"]["Update"])
-      .eq("id", wineId)
-      .is(field, null)
-      .select("id");
-    if (error) throw error;
-    if (updated?.length) filled.push(FIELD_LABELS[field]);
+    const current = wine[field];
+    if (current == null) {
+      const { data: updated, error } = await db
+        .from("wines")
+        .update({ [field]: value } as Database["public"]["Tables"]["wines"]["Update"])
+        .eq("id", wineId)
+        .is(field, null)
+        .select("id");
+      if (error) throw error;
+      if (updated?.length) filled.push(FIELD_LABELS[field]);
+    } else if (!sameValue(field, current, value)) {
+      await suggest(field, null, current, value);
+    }
   }
 
   for (const v of found.vintages) {
     const gap = gaps.vintages.find((g) => g.year === v.year);
     if (!gap) continue;
 
-    // Trinkfenster: leere Teile ergänzen, vorhandene behalten.
-    if (gap.window && (v.drink.from != null || v.drink.until != null)) {
-      let q = db.from("wine_vintages").select("id, drink_from_year, drink_until_year").eq("wine_id", wineId);
-      q = v.year == null ? q.is("vintage_year", null) : q.eq("vintage_year", v.year);
-      const { data: row, error } = await q.maybeSingle();
+    // Trinkfenster: leere Teile ergänzen, abweichende vorschlagen.
+    if (v.year != null && (v.drink.from != null || v.drink.until != null)) {
+      const { data: row, error } = await db
+        .from("wine_vintages")
+        .select("id, drink_from_year, drink_until_year")
+        .eq("wine_id", wineId)
+        .eq("vintage_year", v.year)
+        .maybeSingle();
       if (error) throw error;
-      const from = row?.drink_from_year ?? v.drink.from;
-      const until = row?.drink_until_year ?? v.drink.until;
+      let from = row?.drink_from_year ?? null;
+      let until = row?.drink_until_year ?? null;
+      if (from == null && v.drink.from != null) from = v.drink.from;
+      else if (from != null && v.drink.from != null && from !== v.drink.from) await suggest("drink_from_year", v.year, from, v.drink.from);
+      if (until == null && v.drink.until != null) until = v.drink.until;
+      else if (until != null && v.drink.until != null && until !== v.drink.until) await suggest("drink_until_year", v.year, until, v.drink.until);
       const changed = from !== (row?.drink_from_year ?? null) || until !== (row?.drink_until_year ?? null);
       if (changed && (from == null || until == null || from <= until)) {
         const { error: saveError } = row
@@ -116,20 +140,31 @@ export async function researchAndFillWine(db: Db, wineId: string, scope: Researc
       }
     }
 
-    // Rebsorten: mit % ersetzen die Angaben ohne % dieses Jahrgangs; ohne % nur, wenn es gar keine gibt.
-    if (gap.grapes && v.grapes.length && (hasAnyPercent(v.grapes) || gap.grapesMissing)) {
-      const result = await replaceGrapeShares(db, {
-        wineId,
-        vintageYear: v.year,
-        shares: v.grapes,
-        source: "research",
-        keepManual: true,
-      });
-      if (result === "saved") {
-        filled.push(`Rebsorten ${yearLabel(v.year)}${hasAnyPercent(v.grapes) ? " mit %" : ""}: ${formatShares(v.grapes)}`);
+    // Rebsorten: keine → direkt; ohne % und gleiche Sorten → % direkt ergänzen; sonst Abweichung → Vorschlag.
+    if (v.grapes.length) {
+      const stored = effectiveGrapes(data, wine, v.year);
+      const direct = (stored.shares.length === 0 || grapesOnlyAddPercent(stored.shares, v.grapes)) && !stored.manual;
+      if (direct) {
+        const result = await replaceGrapeShares(db, { wineId, vintageYear: v.year, shares: v.grapes, source: "research", keepManual: true });
+        if (result === "saved") {
+          filled.push(`Rebsorten ${yearLabel(v.year)}${hasAnyPercent(v.grapes) ? " mit %" : ""}: ${formatShares(v.grapes)}`);
+        }
+      } else if (!sameGrapes(stored.shares, v.grapes)) {
+        await suggest("grapes", v.year, stored.shares, v.grapes);
       }
     }
   }
 
-  return { status: filled.length ? "filled" : "nothing", filled, seconds: seconds() };
+  return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, seconds: seconds() };
+}
+
+/** Gespeicherte Rebsorten eines Jahrgangs: eigene, sonst die für alle Jahrgänge, sonst wines.grapes. */
+function effectiveGrapes(data: { shares: GapShare[] }, wine: GapWine, year: number | null) {
+  const specific = year == null ? [] : data.shares.filter((s) => s.wine_id === wine.id && s.vintage_year === year);
+  const general = data.shares.filter((s) => s.wine_id === wine.id && s.vintage_year == null);
+  const rows = specific.length ? specific : general;
+  if (rows.length) {
+    return { shares: rows.map((r) => ({ grape: r.grape, percent: r.percent })), manual: rows.some((r) => r.source === "manual") };
+  }
+  return { shares: wine.grapes.map((grape) => ({ grape, percent: null })), manual: false };
 }

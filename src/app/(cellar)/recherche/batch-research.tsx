@@ -59,7 +59,7 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
       try {
         outcome = await researchWine(c.wineId, scope);
       } catch {
-        outcome = { status: "error", filled: [], seconds: 0 };
+        outcome = { status: "error", filled: [], suggested: 0, seconds: 0 };
       }
       setRows((r) => ({ ...r, [c.wineId]: { state: "done", ...outcome } }));
     }
@@ -72,6 +72,7 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
   }
 
   const filledCount = results.reduce((s, r) => s + r.filled.length, 0);
+  const suggestedCount = results.reduce((s, r) => s + (r.suggested ?? 0), 0);
   const tally = (status: ResearchOutcome["status"]) => results.filter((r) => r.status === status).length;
   const running = phase === "running" || phase === "stopping";
 
@@ -149,7 +150,8 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
               {done.length < candidates.length ? " (abgebrochen)" : ""}.
             </strong>
             <p>
-              {filledCount} Angaben ergänzt · ✅ {tally("filled")} mit Ergänzungen · ❔ {tally("nothing")} nichts gefunden
+              {filledCount} Angaben ergänzt · {suggestedCount} Abweichungen als Vorschlag (oben) · ✅ {tally("filled")} mit
+              Ergebnis · ❔ {tally("nothing")} nichts Neues
               {tally("error") ? ` · ⚠️ ${tally("error")} Fehler` : ""}
               {average ? ` · Ø ${Math.round(average)} s pro Wein` : ""}
             </p>
@@ -178,7 +180,9 @@ export function BatchResearch({ candidates, scope }: { candidates: BatchCandidat
                 <span className="item-meta">
                   {row.state === "done"
                     ? row.status === "filled"
-                      ? `Ergänzt: ${row.filled.join(" · ")}`
+                      ? [row.filled.length ? `Ergänzt: ${row.filled.join(" · ")}` : null, row.suggested ? `${row.suggested} Abweichung(en) als Vorschlag` : null]
+                          .filter(Boolean)
+                          .join(" · ")
                       : row.status === "nothing"
                         ? "Nichts Neues gefunden"
                         : row.status === "complete"

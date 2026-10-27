@@ -1799,3 +1799,35 @@ input[inputmode="decimal"] {
 .batch-item .item-meta {
   white-space: normal;
 }
+
+/* Vorschläge aus der Recherche */
+.suggestions {
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.suggestion-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.suggestion-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.suggestion-list li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.suggestion-field {
+  font-weight: 600;
+}

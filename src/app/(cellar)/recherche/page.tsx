@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getMemberSession } from "@/lib/auth";
 import { GAP_KEYS, GAP_LABELS, gapCounts, needsResearch, wineGaps, type ResearchScope } from "@/lib/research/gaps";
+import { ResearchSuggestions } from "@/components/research-suggestions";
+import { wineHref } from "@/lib/cellar/wine-page";
+import { loadPendingSuggestions, type Suggestion } from "@/lib/research/suggestions";
 import { loadGapData } from "@/lib/research/wine";
 import { BatchResearch, type BatchCandidate } from "./batch-research";
 
@@ -18,7 +21,9 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const params = await searchParams;
   const scope: ResearchScope = params.alle === "1" ? "all" : "cellar";
   const { supabase } = await getMemberSession();
-  const data = await loadGapData(supabase);
+  const [data, suggestions] = await Promise.all([loadGapData(supabase), loadPendingSuggestions(supabase)]);
+  const byWine = new Map<string, Suggestion[]>();
+  for (const s of suggestions) byWine.set(s.wineId, [...(byWine.get(s.wineId) ?? []), s]);
 
   const byScope = (s: ResearchScope) =>
     data.wines.flatMap((w) => {
@@ -49,6 +54,27 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
           nie.
         </p>
       </div>
+
+      {suggestions.length > 0 && (
+        <section className="card stack" aria-labelledby="vorschlaege">
+          <h2 className="section-title" id="vorschlaege">
+            Offene Vorschläge ({suggestions.length})
+          </h2>
+          <p className="muted small">
+            Hier weicht die Recherche von deinen Angaben ab. Ich habe nichts überschrieben – du entscheidest pro Zeile.
+          </p>
+          {[...byWine.entries()].map(([wineId, list]) => (
+            <div key={wineId} className="stack-sm">
+              <Link href={wineHref(wineId)} className="link">
+                <strong>
+                  {list[0].wine?.producer} – {list[0].wine?.name}
+                </strong>
+              </Link>
+              <ResearchSuggestions suggestions={list} title={list.length === 1 ? "1 Abweichung" : `${list.length} Abweichungen`} />
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="card stack">
         <h2 className="section-title">Was fehlt?</h2>

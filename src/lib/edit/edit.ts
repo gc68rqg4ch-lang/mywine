@@ -576,7 +576,8 @@ async function prepareGrapes(db: Db, edit: Extract<Edit, { kind: "grapes" }>): P
     },
     edit.wineId,
     async () => {
-      await replaceGrapeShares(db, { wineId: edit.wineId, vintageYear: edit.year, shares, source: "manual", keepManual: false });
+      // Von Hand: manual; übernommener Recherche-Vorschlag: research (über replace_grape_shares).
+      await replaceGrapeShares(db, { wineId: edit.wineId, vintageYear: edit.year, shares, source: edit.source ?? "manual", keepManual: false });
       return `die Rebsorten gespeichert (${formatShares(shares) || "keine"})`;
     },
     edit.year,

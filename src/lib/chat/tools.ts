@@ -115,6 +115,8 @@ export function chatTools(
   wineRefs: WineRef[] = [],
   actor: { personId: string | null; name: string } | null = null,
   newEntries: string[] = [],
+  /** Weine, die nach der Antwort recherchiert werden sollen (research_wine). */
+  researchRequests: { wineId: string; year: number | null }[] = [],
 ) {
   const propose = (proposal: Proposal, text: string) => {
     if (pending.length >= 3) return "Zu viele Vorschläge auf einmal – bitte erst die offenen bestätigen lassen.";
@@ -441,6 +443,21 @@ export function chatTools(
       },
     }),
     ...editTools(db, pending, actor),
+
+    betaZodTool({
+      name: "research_wine",
+      description:
+        "Recherchiert einen Wein im Web (dauert etwa eine Minute, läuft nach deiner Antwort): Leeres wird ergänzt, Abweichungen von den gespeicherten Angaben fragst du danach einzeln mit [Ja] [Nein] nach. Für „recherchier mal …“, „stimmt der Alkohol?“ u. ä.",
+      inputSchema: z.object({
+        wine_id: z.uuid(),
+        vintage_year: z.number().int().min(0).optional().describe("Jahrgang für den Link; 0 = ohne Jahrgang"),
+      }),
+      run: async ({ wine_id, vintage_year }) => {
+        if (researchRequests.length) return "Es läuft schon eine Recherche – eine nach der anderen.";
+        researchRequests.push({ wineId: wine_id, year: vintage_year ? vintage_year : null });
+        return "Recherche gestartet. Antworte höchstens mit einem kurzen Satz wie „Ich recherchiere den Wein und melde mich gleich.“";
+      },
+    }),
   ];
 }
 

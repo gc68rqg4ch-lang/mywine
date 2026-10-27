@@ -47,6 +47,7 @@ import {
 import { parseVintageAnswer, type IngestState, type StorageRoom, type WineProposal } from "./schema";
 import { handleChatCallback, handleChatMessage, resetChat } from "@/lib/chat/handler";
 import { isChatCallback } from "@/lib/chat/proposals";
+import { handleResearchCallback, isResearchCallback } from "@/lib/chat/research";
 import { handleMenuCallback, sendMainMenu } from "@/lib/chat/menu";
 import {
   findTastingAwaitingText,
@@ -289,6 +290,10 @@ async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[
 // Buttons
 
 async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
+  if (isResearchCallback(cb.data)) {
+    await handleResearchCallback(cb, actor);
+    return;
+  }
   if (isAttachCallback(cb.data)) {
     await handleAttachCallback(cb);
     return;

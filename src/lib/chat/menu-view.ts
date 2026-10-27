@@ -12,6 +12,7 @@
 //   K:<subj>:<person>:<halbe>:<l>  Rückfrage, bevor für eine andere Person bewertet wird
 //   I:<subj>:<l>              Details zum Jahrgang        M:<subj>:<l>            Fotos nachreichen (📷 Foto)
 //   B:<subj>:<l>              Bearbeiten: was ändern?     U:<subj>:<bereich>:<l>  Bereich gewählt (EDIT_AREAS)
+//   H:<subj>:<l>              Nachrecherchieren (Abweichungen danach mit [Ja] [Nein])
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
 import { formatStarNumber, type WineType } from "@/lib/format";
@@ -91,6 +92,7 @@ export type MenuAction =
   | { op: "tell"; subject: Subject; back: ListRef }
   | { op: "photo"; subject: Subject; back: ListRef }
   | { op: "edit"; subject: Subject; back: ListRef }
+  | { op: "research"; subject: Subject; back: ListRef }
   | { op: "editArea"; subject: Subject; area: EditArea; back: ListRef };
 
 /** Bereiche von „✏️ Bearbeiten“ (Kürzel im callback_data). */
@@ -197,13 +199,15 @@ export function encodeMenu(a: MenuAction): string {
       return `M:${encodeSubject(a.subject)}:${l}`;
     case "edit":
       return `B:${encodeSubject(a.subject)}:${l}`;
+    case "research":
+      return `H:${encodeSubject(a.subject)}:${l}`;
     case "editArea":
       return `U:${encodeSubject(a.subject)}:${a.area}:${l}`;
   }
 }
 
 export function isMenuCallback(data: string | undefined) {
-  return /^[LWVOGFPDXNQRSTEKIMBU]:/.test(data ?? "");
+  return /^[LWVOGFPDXNQRSTEKIMBUH]:/.test(data ?? "");
 }
 
 export function decodeMenu(data: string | undefined): MenuAction | null {
@@ -257,11 +261,12 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
     case "E":
     case "I":
     case "M":
-    case "B": {
+    case "B":
+    case "H": {
       const subject = decodeSubject(f[0]);
       const b = back(1);
       if (!subject || !b) return null;
-      const kind = ({ T: "tasting", E: "tell", I: "details", M: "photo", B: "edit" } as const)[op];
+      const kind = ({ T: "tasting", E: "tell", I: "details", M: "photo", B: "edit", H: "research" } as const)[op];
       return { op: kind, subject, back: b };
     }
     case "U": {

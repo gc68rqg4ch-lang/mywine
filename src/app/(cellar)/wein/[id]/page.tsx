@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { viewerPhoto } from "@/components/cellar/wine-card";
 import { PhotoGallery } from "@/components/photo-viewer";
+import { ResearchSuggestions } from "@/components/research-suggestions";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
 import { DRINK_STATUS_LABELS, countryFlag } from "@/lib/cellar/overview";
@@ -28,6 +29,7 @@ import {
 } from "@/lib/format";
 import { loadGrapeShares } from "@/lib/grapes/store";
 import { loadDocuments } from "@/lib/media/documents";
+import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
@@ -152,6 +154,10 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     editing ? loadVendorNames(supabase) : Promise.resolve([] as string[]),
     loadDocuments(supabase, wine.id, year),
   ]);
+  const suggestions = await loadPendingSuggestions(supabase, { wineId: wine.id, year }).catch((error) => {
+    console.error("loading suggestions failed", error);
+    return [];
+  });
 
   const sealed = inVintage.filter((i) => i.status === "sealed" && i.quantity > 0);
   const open = inVintage.filter((i) => i.status === "open");
@@ -263,6 +269,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     <div className="wine-col wine-col-wine">
       <section className="card stack">
         <h2 className="section-title">Zum Wein</h2>
+        {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}
         {editing ? (
           <WineEditForm wine={wine} />
         ) : (

@@ -13,6 +13,7 @@ import { appendHistory, clearHistory, loadHistory } from "./history";
 import { wineButtons } from "./menu";
 import { MAIN_KEYBOARD } from "./menu-view";
 import { answerEditProposal, sendEditProposal } from "./edits";
+import { startBotResearch } from "./research";
 import { REJECT_DATA, confirmKeyboard, decodeEditCallback, decodeProposal } from "./proposals";
 
 const MAX_INPUT = 2000;
@@ -41,6 +42,17 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
       await appendHistory(db, chatId, [
         { role: "user", content: text },
         { role: "assistant", content: `[Erfassung eines neuen Weins gestartet: ${reply.newEntry}]` },
+      ]);
+      return;
+    }
+
+    // Recherche: kurze Antwort, das Ergebnis kommt in ~1 Minute als eigene Nachrichten.
+    if (reply.research) {
+      await sendMessage(chatId, escapeHtml(reply.text || "🔎 Ich recherchiere den Wein und melde mich gleich."));
+      await startBotResearch(chatId, reply.research.wineId, reply.research.year, false);
+      await appendHistory(db, chatId, [
+        { role: "user", content: text },
+        { role: "assistant", content: `[Recherche gestartet für wine_id=${reply.research.wineId}]` },
       ]);
       return;
     }

@@ -64,7 +64,7 @@ export type Edit =
   /** Getrunkene Flasche wieder auf offen (mit Füllstand). */
   | { kind: "reopen"; itemId: string; fill: number }
   /** Rebsorten mit % für einen Jahrgang (manuell). */
-  | { kind: "grapes"; wineId: string; year: number | null; shares: GrapeShare[] }
+  | { kind: "grapes"; wineId: string; year: number | null; shares: GrapeShare[]; source?: "manual" | "research" }
   /** Bewertung setzen (rating) oder löschen (null, inkl. Verlauf). */
   | { kind: "rating"; wineId: string; year: number | null; personId: string; rating: number | null; itemId?: string | null }
   /** Verkostung: Datum, Person, Notizen. */

@@ -160,9 +160,12 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   await processTextJob("bbbbbbbb-0000-4000-8000-00000000000b", 111, "Pintia 2018, 3 Flaschen");
   st = state("bbbbbbbb-0000-4000-8000-00000000000b");
   assert.deepEqual(claudeCalls, ["parse", "enrich"], "bekannter Wein: ein Durchgang nur für seine Lücken");
-  const knownPrompt = enrichPrompts.at(-1)!.split("Bekannte Angaben")[0];
-  assert.match(knownPrompt, /- Appellation/); assert.doesNotMatch(knownPrompt, /- Region|- Land|- Alkohol/, "Vorhandenes wird nicht gesucht");
+  const knownPrompt = enrichPrompts.at(-1)!;
+  assert.match(knownPrompt, /Produzent, Land, Region, Appellation, Typ, Alkohol/, "die Recherche liefert immer alles");
   assert.match(knownPrompt, /Jahrgang 2018: Trinkfenster ab\/bis, Rebsorten mit Prozent/);
+  // Bei der Erfassung gehen Etikett bzw. bekannter Wein vor: nur Leeres (Appellation) übernommen
+  const known = state("bbbbbbbb-0000-4000-8000-00000000000b").proposal;
+  assert.deepEqual([known.region, known.alcohol_content, known.appellation], ["Toro", 14.5, "DO Toro"]);
   assert.equal(st.step, "restock"); assert.equal(job("bbbbbbbb-0000-4000-8000-00000000000b").matched_wine_id, W);
   assert.match(lastText(), /Ist es ein Nachkauf\?/);
   await handleUpdate(cb("restock:bbbbbbbb-0000-4000-8000-00000000000b") as never);

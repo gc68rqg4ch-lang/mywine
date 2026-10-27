@@ -11,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { formatShares } from "@/lib/grapes/shares";
 import { loadGrapeShares } from "@/lib/grapes/store";
 import { countDocuments } from "@/lib/media/documents";
+import { countPendingSuggestions } from "@/lib/research/suggestions";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { wineDetailsText, type WineDetails } from "./details";
@@ -18,6 +19,7 @@ import { discardAttach, startAttach } from "@/lib/ingest/attach";
 import { startDescribe } from "@/lib/ingest/flow";
 import { DESCRIBE_TEXT, cancelKeyboard } from "@/lib/ingest/messages";
 import { editAreaText, editContextNote } from "./edit-menu";
+import { startBotResearch } from "./research";
 import { executeProposal } from "./execute";
 import { appendHistory } from "./history";
 import {
@@ -427,7 +429,7 @@ async function ratePickerScreen(db: AdminClient, subject: Subject, key: string, 
 async function loadDetails(db: AdminClient, wineId: string, year: number | null): Promise<WineDetails | null> {
   const sameYear = <Q extends { eq: (c: "vintage_year", v: number) => Q; is: (c: "vintage_year", v: null) => Q }>(q: Q) =>
     year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
-  const [{ data: wine, error }, grapes, vintage, bottles, ratings, persons, tasting, documents] = await Promise.all([
+  const [{ data: wine, error }, grapes, vintage, bottles, ratings, persons, tasting, documents, suggestions] = await Promise.all([
     db.from("wines").select("name, producer, type, country, region, appellation, alcohol_content, grapes").eq("id", wineId).maybeSingle(),
     loadGrapeShares(db, wineId, year),
     sameYear(db.from("wine_vintages").select("drink_from_year, drink_until_year").eq("wine_id", wineId)).maybeSingle(),
@@ -443,6 +445,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
       .order("tasted_at", { ascending: false })
       .limit(1),
     countDocuments(db, wineId, year).catch(() => 0),
+    countPendingSuggestions(db, wineId).catch(() => 0),
   ]);
   if (error) throw error;
   if (!wine) return null;
@@ -470,6 +473,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
       : null,
     appUrl: base ? `${base}${wineHref(wineId, year)}` : null,
     documents,
+    suggestions,
   };
 }
 
@@ -552,7 +556,7 @@ async function claim(chatId: number, messageId: number) {
   );
 }
 
-const CLAIMED_OPS = new Set<MenuAction["op"]>(["glasses", "drunk", "open", "openBatch"]);
+const CLAIMED_OPS = new Set<MenuAction["op"]>(["glasses", "drunk", "open", "openBatch", "research"]);
 
 /** Nächstes Menü zu einem Knopf (führt Aktionen aus); exportiert für Tests. */
 export async function screenFor(
@@ -610,7 +614,13 @@ async function screenForAction(
         return {
           screen: {
             text: `${header}\n✏️ Was möchtest du ändern?`,
-            keyboard: { inline_keyboard: [...rows, [btn("‹ Zurück", subjectAction(a.subject, a.back))]] },
+            keyboard: {
+              inline_keyboard: [
+                ...rows,
+                [btn("🔎 Nachrecherchieren", { op: "research", subject: a.subject, back: a.back })],
+                [btn("‹ Zurück", subjectAction(a.subject, a.back))],
+              ],
+            },
           },
         };
       }
@@ -624,6 +634,12 @@ async function screenForAction(
           keyboard: { inline_keyboard: [[btn("‹ Andere Angabe", { op: "edit", subject: a.subject, back: a.back })]] },
         },
       };
+    }
+    case "research": {
+      const target = await subjectTarget(db, a.subject);
+      if (!target) return { screen: await subjectScreen(db, a.subject, a.back, "Wein nicht gefunden.") };
+      await startBotResearch(ctx.chatId, target.wineId, target.year, false);
+      return { screen: await subjectScreen(db, a.subject, a.back, "🔎 Ich recherchiere – das dauert etwa eine Minute, ich melde mich gleich."), toast: "Recherche läuft" };
     }
     case "photo": {
       // Bei einer offenen Flasche hängen die Fotos an ihr, sonst nur an Wein und Jahrgang.

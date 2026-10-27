@@ -37,6 +37,8 @@ export type WineDetails = {
   appUrl: string | null;
   /** Anzahl PDFs (Jahrgang und ohne Jahrgang); anschauen auf der Weinseite. */
   documents?: number;
+  /** Offene Vorschläge aus der Recherche (Abweichungen). */
+  suggestions?: number;
 };
 
 const e = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -111,6 +113,9 @@ export function wineDetailsText(d: WineDetails) {
     tasting && `📝 ${e(tasting)}`,
     d.documents
       ? `📄 ${d.documents === 1 ? "1 Dokument" : `${d.documents} Dokumente`}${d.appUrl ? ` – <a href="${d.appUrl}">auf der Weinseite</a>` : ""}`
+      : null,
+    d.suggestions
+      ? `🔎 ${d.suggestions === 1 ? "1 offener Vorschlag" : `${d.suggestions} offene Vorschläge`} aus der Recherche${d.appUrl ? ` – <a href="${d.appUrl}">auf der Weinseite entscheiden</a>` : ""}`
       : null,
     d.appUrl && `<a href="${d.appUrl}">In der App öffnen</a>`,
   ];
