@@ -828,3 +828,189 @@ input[inputmode="decimal"] {
 .batch-item .item-meta {
   white-space: normal;
 }
+
+/* Sterne (halbe Schritte) */
+.stars {
+  display: inline-flex;
+  gap: 2px;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.star {
+  position: relative;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+}
+.star-base {
+  color: var(--border);
+}
+.star-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.star-hit {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 50%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.star-hit-left {
+  left: 0;
+}
+.star-hit-right {
+  right: 0;
+}
+.star-hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.rating-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rating-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.rating-name {
+  min-width: 4.5em;
+  font-weight: 600;
+}
+.rating-value {
+  min-width: 2em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tasting-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tasting-list a {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.tasting-list a:hover {
+  border-color: var(--accent);
+}
+
+/* WSET-Verkostung (schlicht, Design folgt) */
+.sat-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  background: var(--bg);
+}
+.sat .card {
+  padding: 0;
+  overflow: hidden;
+}
+.sat .card > .section-title,
+.sat .card > p {
+  padding: 12px 16px 0;
+}
+.sat .card.stack {
+  padding: 16px;
+}
+.sat .card.stack > .section-title {
+  padding: 0;
+}
+.sat-row {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sat-row:last-child {
+  border-bottom: 0;
+}
+.sat-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.sat-hint {
+  display: block;
+  font-weight: normal;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+}
+.sat-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.sat-meta input,
+.sat textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.sat textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+.sat-aromas {
+  border-top: 1px solid var(--border);
+}
+.sat-aromas > summary {
+  cursor: pointer;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--surface-2);
+}
+.sat-aromas > p {
+  padding: 6px 16px 0;
+}
+.sat-score {
+  padding: 14px 16px;
+  background: var(--surface-2);
+}
+.sat-score-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+.sat-score-quality {
+  margin-left: 10px;
+  font-weight: 700;
+}
+@media (max-width: 650px) {
+  .sat-row,
+  .sat-meta {
+    grid-template-columns: 1fr;
+  }
+}

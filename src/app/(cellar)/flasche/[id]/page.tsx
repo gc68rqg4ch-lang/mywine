@@ -19,7 +19,9 @@ import {
 } from "@/lib/format";
 import { OpenBottleControls, OpenBottleForm } from "./bottle-actions";
 import { loadGrapeShares } from "@/lib/grapes/store";
+import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { GrapeCard } from "./grape-card";
+import { RatingsCard, type PersonRating } from "./ratings-card";
 import { PriceCard } from "./price-card";
 
 // Server Actions dieser Seite (z. B. Nachrecherchieren mit Websuche) brauchen Zeit.
@@ -66,6 +68,41 @@ async function resolvePhotoUrls(
   return [...signed, ...external];
 }
 
+/** Neueste Bewertung je Person sowie Verkostungen für Wein + Jahrgang. */
+async function loadRatingsAndTastings(
+  supabase: Awaited<ReturnType<typeof getSession>>["supabase"],
+  wineId: string,
+  vintageYear: number | null,
+) {
+  const sameVintage = <Q extends { eq: (c: "vintage_year", v: number) => Q; is: (c: "vintage_year", v: null) => Q }>(
+    q: Q,
+  ) => (vintageYear == null ? q.is("vintage_year", null) : q.eq("vintage_year", vintageYear));
+
+  const [persons, latest, tastingRows] = await Promise.all([
+    supabase.from("persons").select("id, name").order("sort_order").order("name"),
+    sameVintage(supabase.from("latest_wine_ratings").select("person_id, rating, rated_at").eq("wine_id", wineId)),
+    sameVintage(
+      supabase
+        .from("wine_tastings")
+        .select("id, tasted_at, wine_style, quality_level, quality_points, readiness, sat, person:persons(name)")
+        .eq("wine_id", wineId),
+    ).order("tasted_at", { ascending: false }),
+  ]);
+
+  const ratings: PersonRating[] = (persons.data ?? []).map((p) => {
+    const r = (latest.data ?? []).find((l) => l.person_id === p.id);
+    return { personId: p.id, name: p.name, rating: r?.rating ?? null, ratedAt: r?.rated_at ?? null };
+  });
+
+  const tastings = (tastingRows.data ?? []).map((t) => ({
+    ...t,
+    person: t.person?.name ?? null,
+    // Halbe Punkte stehen nur in sat, solange quality_points smallint ist.
+    points: t.quality_points ?? currentScore(normalizeData(t.sat, t.tasted_at)),
+  }));
+  return { ratings, tastings };
+}
+
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
   if (value == null || value === "") return null;
   return (
@@ -78,7 +115,7 @@ function Detail({ label, value }: { label: string; value: React.ReactNode }) {
 
 export default async function BottlePage({ params, searchParams }: PageProps<"/flasche/[id]">) {
   const { id } = await params;
-  const { geoeffnet } = await searchParams;
+  const { geoeffnet, verkostung } = await searchParams;
   const item = await loadItem(id);
   if (!item || !item.wine) notFound();
 
@@ -94,6 +131,7 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
 
   const photoUrls = await resolvePhotoUrls(supabase, item.photo_urls);
   const grapes = await loadGrapeShares(supabase, wine.id, item.vintage_year);
+  const { ratings, tastings } = await loadRatingsAndTastings(supabase, wine.id, item.vintage_year);
   const back = BACK_LINKS[item.status];
   const drunkOn = item.status === "drunk" ? zurichDate(item.drunk_at) : null;
 
@@ -102,6 +140,12 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
       <Link href={back.href} className="back">
         ← {back.label}
       </Link>
+
+      {verkostung && (
+        <p className="notice notice-ok" role="status">
+          Verkostung gespeichert.
+        </p>
+      )}
 
       {geoeffnet && (
         <p className="notice notice-ok" role="status">
@@ -164,6 +208,39 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
         </section>
 
         <div className="stack">
+          <RatingsCard itemId={item.id} ratings={ratings} today={todayIso()} />
+          <section className="card stack">
+            <div className="row row-between">
+              <h2 className="section-title">Verkostungen (WSET)</h2>
+              <Link href={`/flasche/${item.id}/verkostung`} className="btn btn-sm btn-primary">
+                Neue Verkostung
+              </Link>
+            </div>
+            {tastings.length === 0 ? (
+              <p className="muted">Noch keine Verkostung für diesen Jahrgang.</p>
+            ) : (
+              <ul className="tasting-list">
+                {tastings.map((t) => (
+                  <li key={t.id}>
+                    <Link href={`/flasche/${item.id}/verkostung?t=${t.id}`}>
+                      <strong>{formatDate(t.tasted_at)}</strong>
+                      {t.person ? ` · ${t.person}` : ""}
+                      <span className="item-meta">
+                        {[
+                          t.wine_style,
+                          t.quality_level,
+                          t.points != null ? `${t.points.toLocaleString("de-CH")} / 4 Punkte` : null,
+                          t.readiness,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
           <GrapeCard
             // Neu mounten, wenn sich die gespeicherten Angaben ändern.
             key={JSON.stringify(grapes)}
