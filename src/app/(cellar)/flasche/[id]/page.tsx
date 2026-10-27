@@ -45,6 +45,22 @@ export async function generateMetadata({ params }: PageProps<"/flasche/[id]">): 
   return { title: item ? wineTitle({ name: item.wine?.name, vintage_year: item.vintage_year }) : "Flasche" };
 }
 
+/**
+ * photo_urls enthält externe https-URLs oder Pfade im privaten Bucket wine-photos
+ * (vom Telegram-Bot). Für Letztere signierte URLs erzeugen.
+ */
+async function resolvePhotoUrls(
+  supabase: Awaited<ReturnType<typeof getSession>>["supabase"],
+  entries: string[],
+) {
+  const external = entries.filter((e) => e.startsWith("https://"));
+  const paths = entries.filter((e) => !/^[a-z]+:\/\//i.test(e));
+  if (paths.length === 0) return external;
+  const { data } = await supabase.storage.from("wine-photos").createSignedUrls(paths, 60 * 60);
+  const signed = (data ?? []).flatMap((d) => (d.signedUrl ? [d.signedUrl] : []));
+  return [...signed, ...external];
+}
+
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
   if (value == null || value === "") return null;
   return (
@@ -71,6 +87,7 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
     .neq("inventory_item_id", item.id)
     .order("vintage_year", { nullsFirst: false });
 
+  const photoUrls = await resolvePhotoUrls(supabase, item.photo_urls);
   const back = BACK_LINKS[item.status];
   const drunkOn = item.status === "drunk" ? zurichDate(item.drunk_at) : null;
 
@@ -132,14 +149,12 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
               </>
             )}
           </dl>
-          {item.photo_urls.length > 0 && (
+          {photoUrls.length > 0 && (
             <div className="photos">
-              {item.photo_urls
-                .filter((url) => url.startsWith("https://"))
-                .map((url) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={url} src={url} alt={`Foto ${wine.name}`} loading="lazy" />
-                ))}
+              {photoUrls.map((url) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={url} src={url} alt={`Foto ${wine.name}`} loading="lazy" />
+              ))}
             </div>
           )}
         </section>

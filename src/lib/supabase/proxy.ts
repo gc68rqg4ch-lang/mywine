@@ -3,7 +3,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/database.types";
 import { supabasePublishableKey, supabaseUrl } from "./env";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+// /api/telegram: Webhook ohne Cookies (prüft selbst das Secret); die Setup-Route
+// prüft die Session selbst.
+const PUBLIC_PATHS = ["/login", "/auth", "/api/telegram"];
 
 /**
  * Erneuert die Supabase-Session bei jedem Request und leitet nicht

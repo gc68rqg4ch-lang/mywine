@@ -69,10 +69,38 @@ src/
   lib/auth.ts                   getSession() inkl. Mitgliedschaftsprüfung
   app/login/                    Magic-Link-Formular
   app/auth/confirm/route.ts     Callback (PKCE-Code oder token_hash)
-  app/(cellar)/                 geschützter Bereich: Bestand, Offen, Detail, Server Actions
+  app/(cellar)/                 geschützter Bereich: Bestand, Offen, Getrunken, Detail, Server Actions
+  app/api/telegram/             Webhook (route.ts) und Webhook-Registrierung (setup/route.ts)
+  lib/ingest/                   Bot-Logik: Album/Jobs, Claude-Erkennung, Abgleich, Speichern
+  lib/telegram/                 Telegram Bot API (fetch), Konfiguration
 supabase/migrations/            Migrationen, die zusätzlich zum Import-Schema angelegt wurden
 ```
 
-## Ausblick
+## Telegram-Bot (Foto-Erfassung)
 
-Telegram-Bot: Front- und Rückseiten-Foto → Weinerkennung über die Claude API → Bestätigung per Inline-Buttons → Eintrag in `wines`/`inventory_items`.
+Ablauf: Vorder- und Rückseite als Album schicken → Fotos landen im privaten Bucket `wine-photos`
+(`telegram/<job-id>/<message-id>.jpg`) und in einer Zeile in `ingest_jobs` → Erkennung → Vorschlag mit
+**[Speichern] [Korrigieren] [Verwerfen]** → Lagerort (Weinkeller / Wohnzimmer), Anzahl, Preis → Wein anlegen
+oder wiederverwenden, `inventory_items` mit `status = sealed` und den Fotos anlegen, Job auf `confirmed`.
+
+- **Erkennung:** `claude-haiku-5-5` mit beiden Bildern und strukturierter JSON-Ausgabe; bei Konfidenz < 0.7
+  nochmals mit `claude-sonnet-5-5` (mit serverseitigem Fallback bei Ablehnungen).
+- **Abgleich:** danach gegen bestehende Weine (Name + Produzent, ohne Gross-/Kleinschreibung). Bekannte Weine
+  werden wiederverwendet und ihre Stammdaten übernommen.
+- **Websuche:** nur für unbekannte Weine mit fehlenden Feldern (Land, Region, Appellation, Typ, Trauben,
+  Alkohol) – `claude-sonnet-5-5` mit `web_search`. Name, Produzent und Jahrgang kommen immer vom Etikett.
+- **Korrigieren:** Freitext-Antwort, die per `claude-haiku-5-5` in den Vorschlag übernommen wird.
+- **Album:** Telegram schickt jedes Foto einzeln. Alle Fotos eines Albums landen über eine aus
+  `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.
+- **Sicherheit:** Webhook prüft `X-Telegram-Bot-Api-Secret-Token`, verarbeitet nur Updates von
+  `TELEGRAM_ALLOWED_USER_ID`. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.
+
+| Variable (Vercel) | Zweck |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN` | Token von @BotFather |
+| `TELEGRAM_WEBHOOK_SECRET` | frei gewähltes Secret (Buchstaben, Ziffern, `_`, `-`; bis 256 Zeichen) |
+| `TELEGRAM_ALLOWED_USER_ID` | deine numerische Telegram-User-ID |
+| `ANTHROPIC_API_KEY` | Claude API |
+| `SUPABASE_SECRET_KEY` | Secret Key (`sb_secret_…`) – umgeht RLS, nur serverseitig |
+
+**Webhook registrieren:** nach dem Deployment eingeloggt `https://<produktion>/api/telegram/setup` öffnen.
