@@ -435,6 +435,77 @@ export type Database = {
         }
         Relationships: []
       }
+      research_suggestions: {
+        Row: {
+          created_at: string
+          current_value: Json | null
+          decided_at: string | null
+          decided_by: string | null
+          field: string
+          id: string
+          source_note: string | null
+          status: string
+          suggested_value: Json
+          vintage_year: number | null
+          wine_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_value?: Json | null
+          decided_at?: string | null
+          decided_by?: string | null
+          field: string
+          id?: string
+          source_note?: string | null
+          status?: string
+          suggested_value: Json
+          vintage_year?: number | null
+          wine_id: string
+        }
+        Update: {
+          created_at?: string
+          current_value?: Json | null
+          decided_at?: string | null
+          decided_by?: string | null
+          field?: string
+          id?: string
+          source_note?: string | null
+          status?: string
+          suggested_value?: Json
+          vintage_year?: number | null
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_suggestions_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "persons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "research_suggestions_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "research_suggestions_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "research_suggestions_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tags: {
         Row: {
           color: string | null
