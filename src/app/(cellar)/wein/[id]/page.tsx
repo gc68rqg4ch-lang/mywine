@@ -326,6 +326,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         {anchor && (
           <div className="section-divider">
             <GrapeSection
+              wineId={wine.id}
               // Neu mounten, wenn sich Jahrgang oder gespeicherte Angaben ändern.
               key={JSON.stringify([year, grapes])}
               itemId={anchor.inventory_item_id}

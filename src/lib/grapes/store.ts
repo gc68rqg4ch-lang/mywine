@@ -2,8 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-import { researchGrapeShares, type WineForResearch } from "./research";
-import { hasAnyPercent, isGrapeSource, type GrapeShare, type GrapeSource } from "./shares";
+import { isGrapeSource, type GrapeShare, type GrapeSource } from "./shares";
 
 type Db = SupabaseClient<Database>;
 
@@ -89,43 +88,6 @@ export async function replaceGrapeShares(
   });
   if (error) throw error;
   return "saved";
-}
-
-export type ResearchOutcome = {
-  status: "with_percent" | "without_percent" | "nothing_found" | "kept_manual";
-  shares: GrapeShare[];
-};
-
-/**
- * Nachrecherchieren für einen Wein + Jahrgang und das Ergebnis speichern
- * (source = research). Findet die Recherche nichts, bleibt alles wie es ist.
- */
-export async function researchAndStore(
-  db: Db,
-  wine: WineForResearch & { id: string },
-  options: { keepManual: boolean },
-): Promise<ResearchOutcome> {
-  const current = await loadGrapeShares(db, wine.id, wine.vintage_year);
-  if (options.keepManual && current?.vintageYear === wine.vintage_year && current.sources.includes("manual")) {
-    return { status: "kept_manual", shares: current.shares };
-  }
-
-  const result = await researchGrapeShares(wine, current?.shares.map((s) => s.grape) ?? []);
-  if (!result) return { status: "nothing_found", shares: current?.shares ?? [] };
-
-  const saved = await replaceGrapeShares(db, {
-    wineId: wine.id,
-    vintageYear: wine.vintage_year,
-    shares: result.shares,
-    source: "research",
-    keepManual: options.keepManual,
-  });
-  if (saved === "kept_manual") return { status: "kept_manual", shares: current?.shares ?? [] };
-
-  return {
-    status: hasAnyPercent(result.shares) ? "with_percent" : "without_percent",
-    shares: result.shares,
-  };
 }
 
 /**

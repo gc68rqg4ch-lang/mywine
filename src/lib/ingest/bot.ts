@@ -10,6 +10,7 @@ import {
   sendMessage,
 } from "@/lib/telegram/api";
 import { resolveActor, type Actor } from "@/lib/telegram/actor";
+import type { GrapeShare } from "@/lib/grapes/shares";
 import type { TgCallbackQuery, TgMessage, TgUpdate } from "@/lib/telegram/types";
 import {
   ALBUM_QUIET_MS,
@@ -222,19 +223,17 @@ async function processJob(jobId: string, chatId: number) {
     const known = await findWine(db, proposal.name, proposal.producer);
     if (known) proposal = mergeWithKnownWine(proposal, known);
 
-    const [web, grapes] = await Promise.all([
-      known
-        ? null
-        : enrichFromWeb(proposal).catch((error) => {
-            console.error("web enrichment failed", error);
-            return null;
-          }),
-      resolveGrapes(db, proposal, known?.id ?? null),
-    ]);
+    // Ein Durchgang für alles, was fehlt (Stammdaten, Trinkfenster, Rebsorten mit %) –
+    // auch bei bekannten Weinen; Vorhandenes bleibt.
+    const web = await enrichFromWeb(proposal).catch((error) => {
+      console.error("web enrichment failed", error);
+      return null;
+    });
     if (web) {
       proposal = web.proposal;
       enriched = { filled: web.filled, sources: web.sources };
     }
+    const grapes = await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
     proposal = { ...proposal, grape_shares: grapes.shares };
 
     const state: IngestState = {
@@ -593,6 +592,7 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
       proposal.name !== state.proposal.name || proposal.producer !== state.proposal.producer;
 
     const known = await findWine(db, proposal.name, proposal.producer);
+    let researchedGrapes: { shares: GrapeShare[]; sources: string[] } | null | undefined;
     // Trinkfenster gehört zum Wein und Jahrgang: bei einem anderen neu bestimmen.
     let drink = { from: state.drink_from_year ?? null, until: state.drink_until_year ?? null };
     if (otherWine || proposal.vintage_year !== state.proposal.vintage_year) drink = { from: null, until: null };
@@ -605,6 +605,7 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
         proposal = web.proposal;
         enriched = { ...enriched, enriched_fields: web.filled, sources: web.sources };
         drink = web.drink;
+        researchedGrapes = web.grapes;
       }
     }
 
@@ -612,7 +613,7 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
     if (!grapesCorrected && (otherWine || proposal.vintage_year !== state.proposal.vintage_year)) {
       // Rebsorten vom Etikett bleiben gültig, recherchierte gehörten zum alten Wein.
       const labelGrapes = state.grape_source === "label" ? proposal.grape_shares : [];
-      const grapes = await resolveGrapes(db, { ...proposal, grape_shares: labelGrapes }, known?.id ?? null);
+      const grapes = await resolveGrapes(db, { ...proposal, grape_shares: labelGrapes }, known?.id ?? null, researchedGrapes);
       proposal = { ...proposal, grape_shares: grapes.shares };
       grapeSource = grapes.source;
     }

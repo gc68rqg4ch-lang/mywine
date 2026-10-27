@@ -3,151 +3,194 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { researchGrapesForWine, type BatchResult } from "../grape-actions";
+import { wineHref } from "@/lib/cellar/wine-page";
+import type { ResearchScope } from "@/lib/research/gaps";
+import type { ResearchOutcome } from "@/lib/research/wine";
+import { researchWine } from "../research-actions";
 
 export type BatchCandidate = {
-  key: string;
   wineId: string;
-  vintageYear: number | null;
   producer: string;
   name: string;
+  years: (number | null)[];
+  gaps: string[];
 };
 
-type RowState = "waiting" | "running" | BatchResult["status"];
+/** Schätzung pro Wein, bis eigene Messwerte da sind (Websuche mit mehreren Abfragen). */
+const ESTIMATE_SECONDS = 60;
 
-const STATUS_ICON: Record<RowState, string> = {
+type Row = { state: "waiting" | "running" } | ({ state: "done" } & ResearchOutcome);
+
+const ICON: Record<ResearchOutcome["status"] | "waiting" | "running", string> = {
   waiting: "·",
   running: "⏳",
-  with_percent: "✅",
-  without_percent: "➖",
-  nothing_found: "❔",
-  kept_manual: "✋",
+  filled: "✅",
+  nothing: "❔",
+  complete: "✔️",
   error: "⚠️",
 };
 
-const STATUS_LABEL: Record<RowState, string> = {
-  waiting: "wartet",
-  running: "läuft",
-  with_percent: "mit Anteilen",
-  without_percent: "ohne Anteile",
-  nothing_found: "nichts gefunden",
-  kept_manual: "manuell, übersprungen",
-  error: "Fehler",
-};
+const minutes = (seconds: number) => Math.max(1, Math.round(seconds / 60));
 
-export function BatchResearch({ candidates }: { candidates: BatchCandidate[] }) {
+/**
+ * Sammellauf: erst nach Bestätigung, Wein für Wein (jeder Schritt eine Server Action).
+ * Abbrechen hält nach dem laufenden Wein an; Gefundenes ist da schon gespeichert.
+ */
+export function BatchResearch({ candidates, scope }: { candidates: BatchCandidate[]; scope: ResearchScope }) {
   const router = useRouter();
-  const [states, setStates] = useState<Record<string, { state: RowState; summary?: string }>>({});
-  const [running, setRunning] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  // Ref für die laufende Schleife, State für die Anzeige.
-  const stopRequested = useRef(false);
+  const [rows, setRows] = useState<Record<string, Row>>({});
+  const [phase, setPhase] = useState<"idle" | "confirm" | "running" | "stopping" | "done">("idle");
+  const stop = useRef(false);
 
-  const finished = candidates.filter((c) => {
-    const s = states[c.key]?.state;
-    return s && s !== "waiting" && s !== "running";
-  });
-  const counts = finished.reduce<Partial<Record<RowState, number>>>((acc, c) => {
-    const s = states[c.key].state;
-    acc[s] = (acc[s] ?? 0) + 1;
-    return acc;
-  }, {});
-  const progress = candidates.length ? Math.round((finished.length / candidates.length) * 100) : 0;
+  const done = candidates.filter((c) => rows[c.wineId]?.state === "done");
+  const results = done.map((c) => rows[c.wineId] as Extract<Row, { state: "done" }>);
+  const measured = results.filter((r) => r.status !== "error" && r.seconds > 0);
+  const average = measured.length ? measured.reduce((s, r) => s + r.seconds, 0) / measured.length : null;
+  const todo = candidates.filter((c) => rows[c.wineId]?.state !== "done");
+  const estimate = todo.length * (average ?? ESTIMATE_SECONDS);
 
-  async function start() {
-    stopRequested.current = false;
-    setStopping(false);
-    setRunning(true);
-    for (const candidate of candidates) {
-      if (stopRequested.current) break;
-      const previous = states[candidate.key]?.state;
-      if (previous && previous !== "waiting" && previous !== "error") continue; // schon erledigt
-
-      setStates((s) => ({ ...s, [candidate.key]: { state: "running" } }));
-      let result: BatchResult;
+  async function run() {
+    stop.current = false;
+    setPhase("running");
+    for (const c of todo) {
+      if (stop.current) break;
+      setRows((r) => ({ ...r, [c.wineId]: { state: "running" } }));
+      let outcome: ResearchOutcome;
       try {
-        result = await researchGrapesForWine(candidate.wineId, candidate.vintageYear);
+        outcome = await researchWine(c.wineId, scope);
       } catch {
-        result = { status: "error", summary: "Verbindung unterbrochen." };
+        outcome = { status: "error", filled: [], seconds: 0 };
       }
-      setStates((s) => ({ ...s, [candidate.key]: { state: result.status, summary: result.summary } }));
+      setRows((r) => ({ ...r, [c.wineId]: { state: "done", ...outcome } }));
     }
-    setRunning(false);
-    setStopping(false);
+    setPhase("done");
     router.refresh();
   }
 
   if (candidates.length === 0) {
-    return <p className="empty">Alle Weine haben bereits Prozentangaben oder manuelle Rebsorten. 🎉</p>;
+    return <p className="empty">Keine Lücken – hier gibt es nichts zu recherchieren. 🎉</p>;
   }
+
+  const filledCount = results.reduce((s, r) => s + r.filled.length, 0);
+  const tally = (status: ResearchOutcome["status"]) => results.filter((r) => r.status === status).length;
+  const running = phase === "running" || phase === "stopping";
 
   return (
     <div className="stack">
       <section className="card stack">
-        <div className="row row-between">
-          <strong>
-            {finished.length} / {candidates.length} erledigt
-          </strong>
-          {running ? (
-            <button type="button" className="btn btn-sm" onClick={() => {
-                stopRequested.current = true;
-                setStopping(true);
-              }}>
-              Anhalten
-            </button>
-          ) : (
-            <button type="button" className="btn btn-primary btn-sm" onClick={start}>
-              {finished.length ? "Fortsetzen" : `Recherche für ${candidates.length} Weine starten`}
-            </button>
-          )}
-        </div>
-        <div
-          className="progress"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={progress}
-          aria-label="Fortschritt"
-        >
-          <span style={{ width: `${progress}%` }} />
-        </div>
-        {finished.length > 0 && (
-          <p className="muted small">
-            {(Object.keys(counts) as RowState[])
-              .map((s) => `${STATUS_ICON[s]} ${counts[s]} ${STATUS_LABEL[s]}`)
-              .join(" · ")}
-          </p>
+        {phase === "idle" && (
+          <div className="row row-between">
+            <span>
+              {todo.length === candidates.length
+                ? `${candidates.length} Weine mit Lücken`
+                : `${todo.length} von ${candidates.length} Weinen noch offen`}
+            </span>
+            {todo.length > 0 && (
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => setPhase("confirm")}>
+                🔎 Recherche starten …
+              </button>
+            )}
+          </div>
         )}
-        {running && stopping && (
-          <p className="muted small">Wird nach dem laufenden Wein angehalten …</p>
+
+        {phase === "confirm" && (
+          <div className="stack-sm" role="alertdialog" aria-label="Recherche starten?">
+            <p>
+              <strong>
+                Ich recherchiere jetzt {todo.length} {todo.length === 1 ? "Wein" : "Weine"}. Das dauert etwa{" "}
+                {minutes(estimate)} {minutes(estimate) === 1 ? "Minute" : "Minuten"}. Starten?
+              </strong>
+            </p>
+            <p className="muted small">Die Seite muss dabei offen bleiben. Gefundenes wird sofort gespeichert.</p>
+            <div className="row">
+              <button type="button" className="btn btn-primary btn-sm" onClick={run}>
+                Starten
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPhase("idle")}>
+                Abbrechen
+              </button>
+            </div>
+          </div>
         )}
-        <p className="muted small">Pro Wein dauert die Recherche etwa 20–60 Sekunden. Die Seite muss offen bleiben.</p>
+
+        {running && (
+          <div className="stack-sm">
+            <div className="row row-between">
+              <strong role="status">
+                {done.length} von {candidates.length}
+              </strong>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={phase === "stopping"}
+                onClick={() => {
+                  stop.current = true;
+                  setPhase("stopping");
+                }}
+              >
+                Abbrechen
+              </button>
+            </div>
+            <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={candidates.length} aria-valuenow={done.length} aria-label="Fortschritt">
+              <span style={{ width: `${Math.round((done.length / candidates.length) * 100)}%` }} />
+            </div>
+            <p className="muted small">
+              {phase === "stopping"
+                ? "Ich halte nach dem laufenden Wein an – Gefundenes bleibt gespeichert."
+                : `Noch etwa ${minutes(estimate)} Min.${average ? ` (Ø ${Math.round(average)} s pro Wein)` : ""}`}
+            </p>
+          </div>
+        )}
+
+        {phase === "done" && (
+          <div className="stack-sm" role="status">
+            <strong>
+              Fertig: {done.length} von {candidates.length} Weinen recherchiert
+              {done.length < candidates.length ? " (abgebrochen)" : ""}.
+            </strong>
+            <p>
+              {filledCount} Angaben ergänzt · ✅ {tally("filled")} mit Ergänzungen · ❔ {tally("nothing")} nichts gefunden
+              {tally("error") ? ` · ⚠️ ${tally("error")} Fehler` : ""}
+              {average ? ` · Ø ${Math.round(average)} s pro Wein` : ""}
+            </p>
+            {todo.length > 0 && (
+              <button type="button" className="btn btn-sm" onClick={() => setPhase("confirm")}>
+                Restliche {todo.length} recherchieren …
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       <ul className="batch-list">
         {candidates.map((c) => {
-          const row = states[c.key] ?? { state: "waiting" as RowState };
+          const row = rows[c.wineId] ?? { state: "waiting" as const };
+          const icon = row.state === "done" ? ICON[row.status] : ICON[row.state];
+          const years = c.years.map((y) => y ?? "NV").join(", ");
           return (
-            <li key={c.key} className="batch-item">
-              <span aria-label={STATUS_LABEL[row.state]} title={STATUS_LABEL[row.state]}>
-                {STATUS_ICON[row.state]}
-              </span>
+            <li key={c.wineId} className="batch-item">
+              <span aria-hidden>{icon}</span>
               <div className="item-main">
                 <span className="item-producer">{c.producer}</span>
-                <span className="item-title">
-                  {c.name} {c.vintageYear ?? "o. J."}
+                <Link href={wineHref(c.wineId)} className="item-title link">
+                  {c.name} <span className="muted small">{years}</span>
+                </Link>
+                <span className="item-meta">
+                  {row.state === "done"
+                    ? row.status === "filled"
+                      ? `Ergänzt: ${row.filled.join(" · ")}`
+                      : row.status === "nothing"
+                        ? "Nichts Neues gefunden"
+                        : row.status === "complete"
+                          ? "Schon vollständig"
+                          : "Fehler – später nochmals versuchen"
+                    : `Fehlt: ${c.gaps.join(", ")}`}
                 </span>
-                {row.summary && <span className="item-meta">{row.summary}</span>}
               </div>
             </li>
           );
         })}
       </ul>
-      <p className="small">
-        <Link href="/" className="link">
-          ← Zum Bestand
-        </Link>
-      </p>
     </div>
   );
 }

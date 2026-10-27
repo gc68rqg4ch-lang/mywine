@@ -3,7 +3,9 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { hasCompletePercents, normalizeGrapeShares, type GrapeShare } from "@/lib/grapes/shares";
 import {
+  GrapeShareSchema,
   RecognitionSchema,
   TextEntrySchema,
   WineProposalSchema,
@@ -181,6 +183,10 @@ export function cleanSources(sources: string[]) {
   return sources.filter((s) => /^https?:\/\//.test(s)).slice(0, 5);
 }
 
+/**
+ * Ergebnis der Web-Recherche zu einem Wein – in einem Durchgang: Stammdaten und je
+ * Jahrgang Trinkfenster und Rebsorten mit %. vintage_year 0 = ohne Jahrgang.
+ */
 export const EnrichmentSchema = WineProposalSchema.pick({
   producer: true,
   country: true,
@@ -189,8 +195,19 @@ export const EnrichmentSchema = WineProposalSchema.pick({
   type: true,
   alcohol_content: true,
 }).extend({
-  drink_from_year: z.number().int().nullable().describe("Trinkfenster ab (Jahr) für diesen Jahrgang"),
-  drink_until_year: z.number().int().nullable().describe("Trinkfenster bis (Jahr) für diesen Jahrgang"),
+  vintages: z
+    .array(
+      z.object({
+        vintage_year: z.number().int().describe("Jahrgang wie angefragt; 0 = ohne Jahrgang"),
+        drink_from_year: z.number().int().nullable().describe("Trinkfenster ab (Jahr) für diesen Jahrgang"),
+        drink_until_year: z.number().int().nullable().describe("Trinkfenster bis (Jahr) für diesen Jahrgang"),
+        grapes: z.array(GrapeShareSchema).describe("Rebsorten dieses Jahrgangs, wichtigste zuerst; leer wenn unbekannt"),
+        percentages_for_vintage: z
+          .boolean()
+          .describe("true, wenn die Prozente ausdrücklich für diesen Jahrgang belegt sind oder der Wein reinsortig ist"),
+      }),
+    )
+    .describe("Je angefragtem Jahrgang ein Eintrag"),
   sources: z.array(z.string()).describe("URLs der verwendeten Quellen"),
 });
 
@@ -198,48 +215,125 @@ export type DrinkWindow = { from: number | null; until: number | null };
 
 const plausibleYear = (y: number | null | undefined) => (y != null && y >= 1800 && y <= 2200 ? y : null);
 
-/**
- * Ergänzt fehlende Stammdaten (Produzent, Land, Region, Appellation, Typ, Alkohol) und
- * das Trinkfenster des Jahrgangs per Websuche.
- */
-export async function enrichFromWeb(
-  proposal: WineProposal,
-): Promise<{ proposal: WineProposal; filled: EnrichableField[]; sources: string[]; drink: DrinkWindow }> {
-  const none = { proposal, filled: [], sources: [], drink: { from: null, until: null } };
-  const missing = missingEnrichableFields(proposal);
-  const wantsWindow = proposal.vintage_year != null;
-  if ((missing.length === 0 && !wantsWindow) || !proposal.name) return none;
+const FIELD_NAMES: Record<EnrichableField, string> = {
+  producer: "Produzent",
+  country: "Land",
+  region: "Region",
+  appellation: "Appellation",
+  type: "Typ",
+  alcohol_content: "Alkohol",
+};
 
-  // Rebsorten recherchiert researchGrapeShares separat.
-  const known = { ...proposal, grape_shares: undefined };
-  const wanted = [...missing, ...(wantsWindow ? [`Trinkfenster (ab/bis) für Jahrgang ${proposal.vintage_year}`] : [])];
+export type ResearchVintage = {
+  year: number | null;
+  /** Trinkfenster fehlt (ganz oder teilweise). */
+  window: boolean;
+  /** Rebsorten bzw. deren Prozente fehlen. */
+  grapes: boolean;
+  knownGrapes: string[];
+};
+
+export type WineResearch = {
+  /** Gefundene Werte nur für die angefragten (leeren) Felder. */
+  fields: Partial<Pick<WineProposal, EnrichableField>>;
+  vintages: { year: number | null; drink: DrinkWindow; grapes: GrapeShare[] }[];
+  sources: string[];
+};
+
+/**
+ * Web-Recherche für einen Wein in einem Durchgang (Sonnet + web_search): leere
+ * Stammdaten und je Jahrgang Trinkfenster und Rebsorten mit %. Vorhandenes wird nur als
+ * Kontext mitgegeben, nie geändert. null, wenn nichts gesucht werden muss oder nichts kam.
+ */
+export async function researchWineWeb(input: {
+  wine: Pick<WineProposal, "name" | EnrichableField>;
+  missing: EnrichableField[];
+  vintages: ResearchVintage[];
+}): Promise<WineResearch | null> {
+  const vintages = input.vintages.filter((v) => (v.window && v.year != null) || v.grapes);
+  if (!input.wine.name || (!input.missing.length && !vintages.length)) return null;
+
+  const label = (year: number | null) => (year == null ? "ohne Jahrgang (NV) – als 0 melden" : String(year));
+  const wanted = [
+    ...input.missing.map((f) => FIELD_NAMES[f]),
+    ...vintages.map(
+      (v) =>
+        `Jahrgang ${label(v.year)}: ${[v.window && v.year != null ? "Trinkfenster ab/bis" : null, v.grapes ? `Rebsorten mit Prozent${v.knownGrapes.length ? ` (bekannt: ${v.knownGrapes.join(", ")})` : ""}` : null]
+          .filter(Boolean)
+          .join(", ")}`,
+    ),
+  ];
   const found = await webResearch({
-    prompt: `Suche im Web nach diesem Wein und ergänze die fehlenden Angaben: ${wanted.join(", ")}.
-Bekannte Angaben (nicht ändern): ${JSON.stringify(known)}
-Nutze bevorzugt die Website des Produzenten oder seriöse Händler und Kritiker. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null.
-Land auf Deutsch.`,
+    prompt: `Recherchiere diesen Wein im Web und ergänze nur die fehlenden Angaben:
+${wanted.map((w) => `- ${w}`).join("\n")}
+Bekannte Angaben (nicht ändern, nur als Kontext): ${JSON.stringify(input.wine)}
+Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech Sheet) des Produzenten, sonst seriöse Händler oder Fachpresse. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null bzw. leere Liste.
+- Für jeden genannten Jahrgang genau einen Eintrag in vintages.
+- Rebsorten: percent nur, wenn eine Quelle den Anteil für genau diesen Jahrgang belegt (Cuvées ändern sich); reinsortig = 100; sonst Rebsorten mit percent null. Internationale Schreibweise (Cabernet Sauvignon, Tempranillo …).
+- Land auf Deutsch.`,
     toolName: "report_wine_details",
     toolDescription: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
     schema: EnrichmentSchema,
-    maxSearches: 4,
+    maxSearches: Math.min(8, 3 + vintages.length),
+  });
+  if (!found) return null;
+
+  const fields: WineResearch["fields"] = {};
+  for (const field of input.missing) {
+    if (found[field] != null) (fields as Record<EnrichableField, unknown>)[field] = found[field];
+  }
+  const result: WineResearch["vintages"] = [];
+  for (const v of vintages) {
+    const hit = found.vintages.find((x) => (x.vintage_year === 0 ? null : x.vintage_year) === v.year);
+    if (!hit) continue;
+    const from = v.window ? plausibleYear(hit.drink_from_year) : null;
+    const until = v.window ? plausibleYear(hit.drink_until_year) : null;
+    let grapes = v.grapes ? normalizeGrapeShares(hit.grapes) : [];
+    const singleVarietal = grapes.length === 1 && grapes[0].percent === 100;
+    if (!hit.percentages_for_vintage && !singleVarietal) grapes = grapes.map((g) => ({ ...g, percent: null }));
+    result.push({
+      year: v.year,
+      drink: from == null || until == null || from <= until ? { from, until } : { from: null, until: null },
+      grapes,
+    });
+  }
+  return { fields, vintages: result, sources: cleanSources(found.sources) };
+}
+
+/**
+ * Erfassung (Bot): leere Stammdaten, Trinkfenster und Rebsorten mit % des Jahrgangs in
+ * einem Durchgang. Vorhandene Angaben bleiben. grapes = null: keine gesucht/gefunden.
+ */
+export async function enrichFromWeb(proposal: WineProposal): Promise<{
+  proposal: WineProposal;
+  filled: EnrichableField[];
+  sources: string[];
+  drink: DrinkWindow;
+  grapes: { shares: GrapeShare[]; sources: string[] } | null;
+}> {
+  const none = { proposal, filled: [], sources: [], drink: { from: null, until: null }, grapes: null };
+  const missing = missingEnrichableFields(proposal);
+  const found = await researchWineWeb({
+    wine: proposal,
+    missing,
+    vintages: [
+      {
+        year: proposal.vintage_year,
+        window: proposal.vintage_year != null,
+        grapes: !hasCompletePercents(proposal.grape_shares),
+        knownGrapes: proposal.grape_shares.map((g) => g.grape),
+      },
+    ],
   });
   if (!found) return none;
-
-  const merged: WineProposal = { ...proposal };
-  const filled: EnrichableField[] = [];
-  for (const field of missing) {
-    if (found[field] != null) {
-      (merged as Record<EnrichableField, unknown>)[field] = found[field];
-      filled.push(field);
-    }
-  }
-  const from = plausibleYear(found.drink_from_year);
-  const until = plausibleYear(found.drink_until_year);
+  const merged: WineProposal = { ...proposal, ...found.fields };
+  const vintage = found.vintages[0];
   return {
     proposal: normalizeProposal(merged),
-    filled,
-    sources: cleanSources(found.sources),
-    drink: wantsWindow && (from == null || until == null || from <= until) ? { from, until } : { from: null, until: null },
+    filled: missing.filter((f) => found.fields[f] != null),
+    sources: found.sources,
+    drink: vintage?.drink ?? { from: null, until: null },
+    grapes: vintage?.grapes.length ? { shares: vintage.grapes, sources: found.sources } : null,
   };
 }
 

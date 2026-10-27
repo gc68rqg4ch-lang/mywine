@@ -31,12 +31,16 @@ const rpcCalls: Record<string, unknown>[] = [];
 net.rpc.replace_grape_shares = (args) => { rpcCalls.push(args); return []; };
 let parseResult: Record<string, unknown> = {};
 const claudeCalls: string[] = [];
+const enrichPrompts: string[] = [];
 net.claude = (body) => {
   const tools = (body.tools as { name?: string }[] | undefined)?.map((t) => t.name) ?? [];
   if ((body.output_config as { format?: unknown } | undefined)?.format) { claudeCalls.push("parse"); return claudeText(parseResult); }
   if (tools.includes("report_wine_details")) {
     claudeCalls.push("enrich");
-    return claudeTool("report_wine_details", { producer: "Vega Sicilia", country: "Spanien", region: "Toro", appellation: "DO Toro", type: "red", alcohol_content: 14.5, drink_from_year: 2024, drink_until_year: 2032, sources: ["https://pintia.example"] });
+    enrichPrompts.push(String((body.messages as { content: string }[])[0].content));
+    // Ein Durchgang: Stammdaten und je Jahrgang Trinkfenster und Rebsorten mit %
+    const vintage = (year: number) => ({ vintage_year: year, drink_from_year: 2024, drink_until_year: 2032, grapes: [{ grape: "Tinta de Toro", percent: 100 }], percentages_for_vintage: true });
+    return claudeTool("report_wine_details", { producer: "Vega Sicilia", country: "Spanien", region: "Toro", appellation: "DO Toro", type: "red", alcohol_content: 14.5, vintages: [2019, 2018, 2017, 0].map(vintage), sources: ["https://pintia.example"] });
   }
   if (tools.includes("report_grape_shares")) {
     claudeCalls.push("grapes");
@@ -81,7 +85,7 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   newJob("aaaaaaaa-0000-4000-8000-00000000000a");
   await processTextJob("aaaaaaaa-0000-4000-8000-00000000000a", 111, "Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick");
   let st = state("aaaaaaaa-0000-4000-8000-00000000000a");
-  assert.deepEqual(claudeCalls, ["parse", "enrich", "grapes"]);
+  assert.deepEqual(claudeCalls, ["parse", "enrich"], "Stammdaten, Trinkfenster und Rebsorten in einem Durchgang");
   assert.equal(job("aaaaaaaa-0000-4000-8000-00000000000a").status, "needs_review"); assert.equal(st.step, "regular_price");
   assert.equal(st.proposal.producer, "Vega Sicilia"); assert.equal(st.proposal.country, "Spanien"); assert.equal(st.proposal.type, "red");
   assert.deepEqual(st.proposal.grape_shares, [{ grape: "Tinta de Toro", percent: 100 }]);
@@ -155,7 +159,10 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   newJob("bbbbbbbb-0000-4000-8000-00000000000b");
   await processTextJob("bbbbbbbb-0000-4000-8000-00000000000b", 111, "Pintia 2018, 3 Flaschen");
   st = state("bbbbbbbb-0000-4000-8000-00000000000b");
-  assert.deepEqual(claudeCalls, ["parse", "grapes"], "bekannter Wein: keine Stammdaten-Recherche");
+  assert.deepEqual(claudeCalls, ["parse", "enrich"], "bekannter Wein: ein Durchgang nur für seine Lücken");
+  const knownPrompt = enrichPrompts.at(-1)!.split("Bekannte Angaben")[0];
+  assert.match(knownPrompt, /- Appellation/); assert.doesNotMatch(knownPrompt, /- Region|- Land|- Alkohol/, "Vorhandenes wird nicht gesucht");
+  assert.match(knownPrompt, /Jahrgang 2018: Trinkfenster ab\/bis, Rebsorten mit Prozent/);
   assert.equal(st.step, "restock"); assert.equal(job("bbbbbbbb-0000-4000-8000-00000000000b").matched_wine_id, W);
   assert.match(lastText(), /Ist es ein Nachkauf\?/);
   await handleUpdate(cb("restock:bbbbbbbb-0000-4000-8000-00000000000b") as never);

@@ -9,7 +9,8 @@ import {
   type GrapeSource,
 } from "@/lib/grapes/shares";
 import type { ActionState } from "../../actions";
-import { researchGrapesForItem, saveGrapeShares } from "../../grape-actions";
+import { saveGrapeShares } from "../../grape-actions";
+import { researchWineFromPage } from "../../research-actions";
 
 type EditRow = { key: number; grape: string; percent: string };
 
@@ -40,6 +41,7 @@ function Notice({ state }: { state: ActionState }) {
 
 /** Abschnitt „Rebsorten“ in der Kachel „Zum Wein“. */
 export function GrapeSection({
+  wineId,
   itemId,
   itemVintage,
   shares,
@@ -47,6 +49,7 @@ export function GrapeSection({
   sources,
   editable,
 }: {
+  wineId: string;
   itemId: string;
   itemVintage: number | null;
   shares: GrapeShare[];
@@ -67,7 +70,7 @@ export function GrapeSection({
     },
     undefined,
   );
-  const [researchState, researchAction, researching] = useActionState(researchGrapesForItem, undefined);
+  const [researchState, researchAction, researching] = useActionState(researchWineFromPage, undefined);
 
   const startEditing = () => {
     setRows(toRows(shares));
@@ -190,7 +193,7 @@ export function GrapeSection({
           <Notice state={saveState} />
 
           <form action={researchAction} className="stack-sm">
-            <input type="hidden" name="itemId" value={itemId} />
+            <input type="hidden" name="wineId" value={wineId} />
             <div className="row row-between">
               <button type="submit" className="btn btn-sm" disabled={researching}>
                 {researching ? "Recherchiere …" : "🔎 Nachrecherchieren"}
@@ -201,8 +204,8 @@ export function GrapeSection({
             </div>
             {researching && (
               <p className="muted small" role="status">
-                Suche Anteile für {itemVintage != null ? `Jahrgang ${itemVintage}` : "diesen Wein"} im Web – das
-                kann bis zu einer Minute dauern.
+                Ich ergänze alle leeren Angaben dieses Weins (Herkunft, Alkohol, Trinkfenster, Rebsorten mit %) – das
+                kann ein bis zwei Minuten dauern.
               </p>
             )}
             {!researching && <Notice state={researchState} />}

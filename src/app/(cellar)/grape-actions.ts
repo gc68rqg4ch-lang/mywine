@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
 import { applyEdit } from "@/lib/edit/edit";
-import { formatShares, type GrapeShare } from "@/lib/grapes/shares";
-import { researchAndStore, type ResearchOutcome } from "@/lib/grapes/store";
+import type { GrapeShare } from "@/lib/grapes/shares";
 import type { ActionState } from "./actions";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -65,72 +64,4 @@ export async function saveGrapeShares(_prev: ActionState, formData: FormData): P
   if (!result.ok) return { error: result.error };
   revalidatePath("/", "layout");
   return { ok: result.message };
-}
-
-const OUTCOME_TEXT: Record<ResearchOutcome["status"], string> = {
-  with_percent: "Rebsorten mit Anteilen gefunden und gespeichert.",
-  without_percent: "Rebsorten gefunden, aber keine Anteile für diesen Jahrgang – ohne Prozent gespeichert.",
-  nothing_found: "Nichts gefunden – die bisherigen Angaben bleiben.",
-  kept_manual: "Manuelle Angaben vorhanden – nicht überschrieben.",
-};
-
-/** Nachrecherchieren für eine Position (Button auf der Detailseite). */
-export async function researchGrapesForItem(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const ctx = await loadItemWine(String(formData.get("itemId") ?? ""));
-  if (!ctx) return { error: "Kein Zugriff oder Position nicht gefunden." };
-
-  try {
-    // Ausdrücklich angestossen: ersetzt auch manuelle Angaben für diesen Jahrgang.
-    const outcome = await researchAndStore(
-      ctx.session.supabase,
-      { ...ctx.wine, vintage_year: ctx.vintageYear },
-      { keepManual: false },
-    );
-    revalidatePath("/", "layout");
-    return outcome.status === "nothing_found"
-      ? { error: OUTCOME_TEXT.nothing_found }
-      : { ok: OUTCOME_TEXT[outcome.status] };
-  } catch (error) {
-    console.error("grape research failed", error);
-    return { error: "Die Recherche ist fehlgeschlagen. Bitte später nochmals versuchen." };
-  }
-}
-
-export type BatchResult = { status: ResearchOutcome["status"] | "error"; summary: string };
-
-/** Ein Schritt des Sammellaufs: ein Wein + Jahrgang. Manuelle Angaben bleiben. */
-export async function researchGrapesForWine(
-  wineId: string,
-  vintageYear: number | null,
-): Promise<BatchResult> {
-  const session = await memberSession();
-  if (!session || !UUID_RE.test(wineId)) return { status: "error", summary: "Kein Zugriff." };
-  if (vintageYear != null && !(Number.isInteger(vintageYear) && vintageYear >= 1800 && vintageYear <= 2100)) {
-    return { status: "error", summary: "Ungültiger Jahrgang." };
-  }
-
-  const { data: wine } = await session.supabase
-    .from("wines")
-    .select("id, name, producer, country, region, appellation")
-    .eq("id", wineId)
-    .maybeSingle();
-  if (!wine) return { status: "error", summary: "Wein nicht gefunden." };
-
-  try {
-    const outcome = await researchAndStore(
-      session.supabase,
-      { ...wine, vintage_year: vintageYear },
-      { keepManual: true },
-    );
-    return {
-      status: outcome.status,
-      summary: formatShares(outcome.shares) || OUTCOME_TEXT[outcome.status],
-    };
-  } catch (error) {
-    console.error("batch grape research failed", wineId, vintageYear, error);
-    return { status: "error", summary: "Recherche fehlgeschlagen." };
-  }
 }

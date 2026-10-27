@@ -6,6 +6,7 @@ import "server-only";
 
 import { after } from "next/server";
 import { savedWineKeyboard } from "@/lib/chat/menu";
+import type { Database } from "@/lib/database.types";
 import { formatBottles, formatMoney, todayIso, wineTitle } from "@/lib/format";
 import { researchGrapeShares } from "@/lib/grapes/research";
 import { hasAnyPercent, hasCompletePercents, type GrapeShare, type GrapeSource } from "@/lib/grapes/shares";
@@ -60,6 +61,8 @@ export async function resolveGrapes(
   db: AdminClient,
   proposal: WineProposal,
   knownWineId: string | null,
+  /** Rebsorten aus der gemeinsamen Recherche (enrichFromWeb); undefined = selbst recherchieren. */
+  researched?: { shares: GrapeShare[]; sources: string[] } | null,
 ): Promise<ResolvedGrapes> {
   const label = proposal.grape_shares;
   if (hasCompletePercents(label)) return { shares: label, source: "label", sources: [] };
@@ -71,7 +74,11 @@ export async function resolveGrapes(
     return { shares: stored.shares, source: "existing", sources: [] };
   }
 
-  if (proposal.name && proposal.producer) {
+  if (researched !== undefined) {
+    if (researched && (hasAnyPercent(researched.shares) || label.length === 0)) {
+      return { shares: researched.shares, source: "research", sources: researched.sources };
+    }
+  } else if (proposal.name && proposal.producer) {
     const research = await researchGrapeShares(
       { ...proposal, name: proposal.name, producer: proposal.producer },
       label.map((s) => s.grape),
@@ -211,6 +218,27 @@ async function storeDrinkWindow(db: AdminClient, wineId: string, state: IngestSt
   }
 }
 
+/** Leere Stammdaten eines bestehenden Weins aus der Recherche ergänzen – nie überschreiben. */
+async function fillWineGaps(db: AdminClient, wineId: string, p: WineProposal) {
+  try {
+    const { data: wine } = await db
+      .from("wines")
+      .select("country, region, appellation, type, alcohol_content")
+      .eq("id", wineId)
+      .maybeSingle();
+    if (!wine) return;
+    const patch: Database["public"]["Tables"]["wines"]["Update"] = {};
+    if (wine.country == null && p.country != null) patch.country = p.country;
+    if (wine.region == null && p.region != null) patch.region = p.region;
+    if (wine.appellation == null && p.appellation != null) patch.appellation = p.appellation;
+    if (wine.type == null && p.type != null) patch.type = p.type;
+    if (wine.alcohol_content == null && p.alcohol_content != null) patch.alcohol_content = p.alcohol_content;
+    if (Object.keys(patch).length) await db.from("wines").update(patch).eq("id", wineId);
+  } catch (error) {
+    console.error("filling wine gaps failed", error);
+  }
+}
+
 /** Rebsorten des Vorschlags in wine_grape_shares speichern (Jahrgang des Eintrags). */
 async function storeGrapes(db: AdminClient, wineId: string, state: IngestState) {
   const source = state.grape_source;
@@ -271,6 +299,7 @@ export async function saveJob(job: IngestJob, chatId: number) {
   try {
     // Nachkauf: immer der bestehende Wein, nur eine neue Charge.
     const wineId = await resolveWine(db, state.proposal, job.matched_wine_id);
+    await fillWineGaps(db, wineId, state.proposal);
     await storeGrapes(db, wineId, state);
     await storeDrinkWindow(db, wineId, state);
     // Händler aus dem Text erst jetzt anlegen bzw. zuordnen.
@@ -440,22 +469,23 @@ export async function processTextJob(jobId: string, chatId: number, text: string
 
     let enriched: IngestState["recognition"] = { model: "text", confidence: 1, notes: null, enriched_fields: [], sources: [] };
     let drink = { from: null as number | null, until: null as number | null };
+    // Ein Durchgang für alles, was fehlt – auch bei bekannten Weinen (deren Lücken).
+    const web = await enrichFromWeb(proposal).catch((error) => {
+      console.error("web enrichment failed", error);
+      return null;
+    });
+    if (web) {
+      proposal = web.proposal;
+      enriched = { ...enriched, enriched_fields: web.filled, sources: web.sources };
+      drink = web.drink;
+    }
     if (!known) {
-      const web = await enrichFromWeb(proposal).catch((error) => {
-        console.error("web enrichment failed", error);
-        return null;
-      });
-      if (web) {
-        proposal = web.proposal;
-        enriched = { ...enriched, enriched_fields: web.filled, sources: web.sources };
-        drink = web.drink;
-      }
       // Den recherchierten Produzenten gibt es vielleicht schon im Keller.
       known = await findWine(db, proposal.name, proposal.producer);
       if (known) proposal = mergeWithKnownWine(proposal, known);
     }
 
-    const grapes = await resolveGrapes(db, proposal, known?.id ?? null);
+    const grapes = await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
     proposal = { ...proposal, grape_shares: grapes.shares };
 
     const p = parsed.purchase;

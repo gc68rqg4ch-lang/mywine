@@ -1768,3 +1768,34 @@ input[inputmode="decimal"] {
   min-height: 36px;
   overflow-wrap: anywhere;
 }
+
+/* Recherche: Übersicht der Lücken */
+.gap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.gap-table th,
+.gap-table td {
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+.gap-table th[scope="row"],
+.gap-table thead th:first-child {
+  text-align: left;
+  font-weight: 500;
+}
+.gap-table thead th {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.gap-table .gap-total th,
+.gap-table .gap-total td {
+  font-weight: 700;
+  border-bottom: 0;
+}
+.batch-item .item-meta {
+  white-space: normal;
+}

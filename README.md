@@ -50,8 +50,8 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
      Jahrgang mit 📄 und Dateiname; Antippen öffnet das PDF über eine signierte URL in einem neuen Tab. Im
      Bearbeiten-Modus hochladen (max. 10 MB; der Browser lädt direkt in den Bucket, weil Vercel nur 4.5 MB pro
      Request annimmt – der Server prüft danach Ort, Typ und Grösse und trägt das Dokument ein) und löschen mit
-     Rückfrage (Datei serverseitig mitgelöscht). **Nachrecherchieren** der Rebsorten und der Link zum
-     Sammellauf (`/recherche`) stehen auch in der normalen Ansicht; `/recherche` ist zudem in der Navigation (🔎). Je Foto
+     Rückfrage (Datei serverseitig mitgelöscht). **Nachrecherchieren** (ergänzt alle leeren Angaben des Weins,
+     ohne Rückfrage) und der Link zum Sammellauf (`/recherche`) stehen auch in der normalen Ansicht; `/recherche` ist zudem in der Navigation (🔎). Je Foto
      **Ersetzen** und **Löschen** mit Rückfrage; eine neue Vorder-/Rückseite ersetzt die vorhandene (ebenfalls
      nach Rückfrage). Gelöscht werden Zeile, Original und Vorschaubild – die Dateien über den Admin-Client
      (Mitglieder dürfen im Bucket nur lesen und hochladen), erst nach Prüfung der Mitgliedschaft.
@@ -86,8 +86,18 @@ zieht ein Trigger den Journal-Eintrag „getrunken“ mit.
   Aromen-Lexikon und Punkte-Logik (`src/lib/tasting/sat.ts`). Gespeichert in `wine_tastings`: Stil, Qualität,
   Punkte (in halben Schritten) und Trinkreife als Spalten, das komplette Formular als JSON in `sat`
   (Schlüssel wie im Tool).
-- **Rebsorten nachrecherchieren** (`/recherche`): Sammellauf für alle Weine + Jahrgänge ohne Prozentangaben, mit
-  Fortschrittsanzeige; manuell gepflegte Angaben werden übersprungen. `wines.grapes` bleibt vorerst bestehen.
+- **Recherche** (`/recherche`, 🔎 in der Navigation – öffnet nur die Seite, startet nie etwas): zuerst die
+  Übersicht, wie viele Weine welche Lücke haben (Rebsorten ohne %, Rebsorten fehlen, Alkohol, Trinkfenster,
+  Region/Appellation) – jeweils „im Keller“ (ungeöffnete oder offene Flaschen) und „alle“ – mit der Liste der
+  Weine. Umfang wählbar (Standard: im Keller). Start nur nach Bestätigung („Ich recherchiere jetzt X Weine. Das
+  dauert etwa Y Minuten. Starten?“), dann Fortschritt „7 von 20“ mit Abbrechen (Gefundenes bleibt gespeichert)
+  und eine Zusammenfassung. Die Zeitschätzung beginnt mit 60 s pro Wein und nimmt danach den gemessenen Schnitt.
+- **Recherche pro Wein, immer vollständig** (`src/lib/research/`): ein Durchgang mit `claude-sonnet-5-5` +
+  `web_search` (`researchWineWeb`) für alle leeren Angaben – Produzent, Land, Region, Appellation, Typ, Alkohol,
+  Trinkfenster je Jahrgang, Rebsorten mit %. Vorhandenes wird nie überschrieben (Stammdaten nur wenn leer,
+  Trinkfenster nur leere Teile, Rebsorten nur ohne % bzw. ganz fehlend, manuelle bleiben); Rebsorten mit
+  `source = research`. Gilt für 🔎 Nachrecherchieren auf der Weinseite (ohne Rückfrage, alle Jahrgänge mit
+  Flaschen), den Sammellauf und die Erfassung im Bot. `wines.grapes` bleibt vorerst bestehen.
 
 ### Lebenszyklus einer Flasche
 
@@ -180,10 +190,12 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
   nochmals mit `claude-sonnet-5-5` (mit serverseitigem Fallback bei Ablehnungen).
 - **Abgleich:** danach gegen bestehende Weine (Name + Produzent, ohne Gross-/Kleinschreibung). Bekannte Weine
   werden wiederverwendet und ihre Stammdaten übernommen.
-- **Websuche:** nur für unbekannte Weine mit fehlenden Feldern (Land, Region, Appellation, Typ, Trauben,
-  Alkohol) – `claude-sonnet-5-5` mit `web_search`. Name, Produzent und Jahrgang kommen immer vom Etikett.
-- **Rebsorten:** Prozentanteile vom Etikett (`source = label`); fehlen sie, recherchiert `claude-sonnet-5-5` per
-  `web_search` die Anteile für den konkreten Jahrgang (`source = research`, gleiche Logik wie `/recherche`).
+- **Websuche:** ein Durchgang für alles, was fehlt – auch bei bekannten Weinen: Produzent, Land, Region,
+  Appellation, Typ, Alkohol, Trinkfenster des Jahrgangs und Rebsorten mit % (`enrichFromWeb` über
+  `researchWineWeb`, dieselbe Recherche wie `/recherche`). Name und Jahrgang kommen immer vom Etikett bzw. Text;
+  bei bekannten Weinen werden beim Speichern nur leere Stammdaten ergänzt.
+- **Rebsorten:** Prozentanteile vom Etikett (`source = label`); sonst gespeicherte des bekannten Weins; sonst die
+  aus der Recherche (`source = research`).
   Ohne belegte Prozente werden nur die Rebsorten gespeichert. Manuelle Angaben werden nie überschrieben.
   Gespeichert wird atomar über `public.replace_grape_shares(wine_id, vintage_year, shares)` – auch von der
   Detailseite und vom Sammellauf.
