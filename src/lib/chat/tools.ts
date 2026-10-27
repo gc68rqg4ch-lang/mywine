@@ -115,6 +115,7 @@ export function chatTools(
   pending: PendingProposal[],
   wineRefs: WineRef[] = [],
   actor: { personId: string | null; name: string } | null = null,
+  newEntries: string[] = [],
 ) {
   const propose = (proposal: Proposal, text: string) => {
     if (pending.length >= 3) return "Zu viele Vorschläge auf einmal – bitte erst die offenen bestätigen lassen.";
@@ -340,6 +341,20 @@ export function chatTools(
           else if (w.wine_id) wineRefs.push({ wineId: w.wine_id, year: w.vintage_year ?? null });
         }
         return `${wines.length} Knöpfe werden unter der Antwort angezeigt.`;
+      },
+    }),
+
+    betaZodTool({
+      name: "start_wine_entry",
+      description:
+        "Startet die Erfassung eines neuen Weins bzw. Kaufs aus Text (ohne Foto), z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“. Der Bot recherchiert dann wie bei Fotos und fragt Fehlendes nach.",
+      inputSchema: z.object({
+        description: z.string().min(2).max(2000).describe("Die Angaben der Person zum Kauf, möglichst wörtlich"),
+      }),
+      run: async ({ description }) => {
+        if (newEntries.length) return "Es läuft schon eine Erfassung.";
+        newEntries.push(description);
+        return "Erfassung gestartet – der Bot meldet sich mit Rückfragen. Antworte höchstens mit einem kurzen Satz.";
       },
     }),
 

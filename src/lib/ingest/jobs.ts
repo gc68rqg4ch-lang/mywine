@@ -132,6 +132,9 @@ export async function loadJob(db: AdminClient, jobId: string, chatId: number) {
   return data;
 }
 
+/** So lange wartet „Neuer Wein“ auf eine Beschreibung; danach geht Text wieder an den Chat. */
+export const DESCRIBE_WINDOW_MS = 30 * 60 * 1000;
+
 /** Jüngster Job, der gerade auf eine Textantwort wartet. */
 export async function findJobAwaitingText(db: AdminClient, chatId: number) {
   const { data, error } = await db
@@ -139,11 +142,24 @@ export async function findJobAwaitingText(db: AdminClient, chatId: number) {
     .select("*")
     .eq("telegram_chat_id", chatId)
     .eq("status", "needs_review")
-    .in("extracted->>step", ["correcting", "quantity", "price", "regular_price", "vendor", "vendor_new"])
+    .in("extracted->>step", [
+      "describe",
+      "producer",
+      "correcting",
+      "quantity",
+      "price",
+      "regular_price",
+      "vendor",
+      "vendor_new",
+    ])
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw error;
+  if (data && jobState(data)?.step === "describe" && Date.parse(data.updated_at) < Date.now() - DESCRIBE_WINDOW_MS) {
+    await db.from("ingest_jobs").update({ status: "discarded" }).eq("id", data.id);
+    return null;
+  }
   return data;
 }
 

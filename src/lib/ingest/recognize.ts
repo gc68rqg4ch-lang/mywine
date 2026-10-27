@@ -5,11 +5,13 @@ import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import {
   RecognitionSchema,
+  TextEntrySchema,
   WineProposalSchema,
   missingEnrichableFields,
   normalizeProposal,
   type EnrichableField,
   type Recognition,
+  type TextEntry,
   type WineProposal,
 } from "./schema";
 
@@ -172,35 +174,48 @@ export function cleanSources(sources: string[]) {
 }
 
 export const EnrichmentSchema = WineProposalSchema.pick({
+  producer: true,
   country: true,
   region: true,
   appellation: true,
   type: true,
   alcohol_content: true,
-}).extend({ sources: z.array(z.string()).describe("URLs der verwendeten Quellen") });
+}).extend({
+  drink_from_year: z.number().int().nullable().describe("Trinkfenster ab (Jahr) für diesen Jahrgang"),
+  drink_until_year: z.number().int().nullable().describe("Trinkfenster bis (Jahr) für diesen Jahrgang"),
+  sources: z.array(z.string()).describe("URLs der verwendeten Quellen"),
+});
 
-/** Ergänzt fehlende Stammdaten (Land, Region, Appellation, Typ, Alkohol) per Websuche. */
+export type DrinkWindow = { from: number | null; until: number | null };
+
+const plausibleYear = (y: number | null | undefined) => (y != null && y >= 1800 && y <= 2200 ? y : null);
+
+/**
+ * Ergänzt fehlende Stammdaten (Produzent, Land, Region, Appellation, Typ, Alkohol) und
+ * das Trinkfenster des Jahrgangs per Websuche.
+ */
 export async function enrichFromWeb(
   proposal: WineProposal,
-): Promise<{ proposal: WineProposal; filled: EnrichableField[]; sources: string[] }> {
+): Promise<{ proposal: WineProposal; filled: EnrichableField[]; sources: string[]; drink: DrinkWindow }> {
+  const none = { proposal, filled: [], sources: [], drink: { from: null, until: null } };
   const missing = missingEnrichableFields(proposal);
-  if (missing.length === 0 || !proposal.name || !proposal.producer) {
-    return { proposal, filled: [], sources: [] };
-  }
+  const wantsWindow = proposal.vintage_year != null;
+  if ((missing.length === 0 && !wantsWindow) || !proposal.name) return none;
 
   // Rebsorten recherchiert researchGrapeShares separat.
   const known = { ...proposal, grape_shares: undefined };
+  const wanted = [...missing, ...(wantsWindow ? [`Trinkfenster (ab/bis) für Jahrgang ${proposal.vintage_year}`] : [])];
   const found = await webResearch({
-    prompt: `Suche im Web nach diesem Wein und ergänze die fehlenden Angaben: ${missing.join(", ")}.
-Bekannte Angaben (vom Etikett, nicht ändern): ${JSON.stringify(known)}
-Nutze bevorzugt die Website des Produzenten oder seriöse Händler. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null.
+    prompt: `Suche im Web nach diesem Wein und ergänze die fehlenden Angaben: ${wanted.join(", ")}.
+Bekannte Angaben (nicht ändern): ${JSON.stringify(known)}
+Nutze bevorzugt die Website des Produzenten oder seriöse Händler und Kritiker. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null.
 Land auf Deutsch.`,
     toolName: "report_wine_details",
     toolDescription: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
     schema: EnrichmentSchema,
     maxSearches: 4,
   });
-  if (!found) return { proposal, filled: [], sources: [] };
+  if (!found) return none;
 
   const merged: WineProposal = { ...proposal };
   const filled: EnrichableField[] = [];
@@ -210,7 +225,48 @@ Land auf Deutsch.`,
       filled.push(field);
     }
   }
-  return { proposal: normalizeProposal(merged), filled, sources: cleanSources(found.sources) };
+  const from = plausibleYear(found.drink_from_year);
+  const until = plausibleYear(found.drink_until_year);
+  return {
+    proposal: normalizeProposal(merged),
+    filled,
+    sources: cleanSources(found.sources),
+    drink: wantsWindow && (from == null || until == null || from <= until) ? { from, until } : { from: null, until: null },
+  };
+}
+
+const TEXT_SYSTEM = `Du erfasst Weineinkäufe für einen privaten Weinkeller in der Schweiz aus einer kurzen Nachricht, z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“.
+Übernimm nur, was in der Nachricht steht oder sich eindeutig daraus ergibt; erfinde nichts.
+- name: Weinname ohne Produzent und Jahrgang. producer nur, wenn genannt (sonst null – wird später recherchiert).
+- type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500).
+- Land auf Deutsch.
+- purchase: Anzahl Flaschen, Lagerort (nur Weinkeller oder Wohnzimmer), bezahlter Preis und Normalpreis pro Flasche in CHF, Händler. Nicht Genanntes: 0 bzw. leer. Ein Gesamtpreis für mehrere Flaschen wird durch die Anzahl geteilt.`;
+
+/** Freitext → Wein + Kaufangaben (Haiku, bei Fehler oder Ablehnung Sonnet). */
+export async function parseTextEntry(text: string): Promise<{ proposal: WineProposal; purchase: TextEntry["purchase"] }> {
+  const run = async (model: string) => {
+    const response = await anthropic().beta.messages.parse({
+      model,
+      max_tokens: 8000,
+      system: TEXT_SYSTEM,
+      messages: [{ role: "user", content: text }],
+      output_config: { format: betaZodOutputFormat(TextEntrySchema) },
+      ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
+    });
+    if (response.stop_reason === "refusal" || !response.parsed_output) {
+      throw new RecognitionError(`${model} hat den Text nicht erfasst.`);
+    }
+    return response.parsed_output;
+  };
+  let parsed: TextEntry;
+  try {
+    parsed = await run(RECOGNITION_MODEL);
+  } catch (error) {
+    if (error instanceof Anthropic.AuthenticationError) throw error;
+    parsed = await run(FALLBACK_MODEL);
+  }
+  const { purchase, ...wine } = parsed;
+  return { proposal: normalizeProposal(wine), purchase };
 }
 
 /** Übernimmt eine Freitext-Korrektur in den Vorschlag (Haiku, strukturierte Ausgabe). */

@@ -6,6 +6,7 @@ import { answerCallback, escapeHtml, sendMessage, tg } from "@/lib/telegram/api"
 import type { Actor } from "@/lib/telegram/actor";
 import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery } from "@/lib/telegram/types";
+import { startTextIngest } from "@/lib/ingest/flow";
 import { answerChat } from "./agent";
 import { executeProposal } from "./execute";
 import { appendHistory, clearHistory, loadHistory } from "./history";
@@ -31,6 +32,17 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
   try {
     const history = await loadHistory(db, chatId);
     const reply = await answerChat(db, history, text, actor);
+
+    // Neuer Wein per Text: Erfassung starten (wie nach „Neuer Wein“), Antwort nur kurz.
+    if (reply.newEntry) {
+      if (reply.text) await sendMessage(chatId, escapeHtml(reply.text));
+      await startTextIngest(chatId, reply.newEntry);
+      await appendHistory(db, chatId, [
+        { role: "user", content: text },
+        { role: "assistant", content: `[Erfassung eines neuen Weins gestartet: ${reply.newEntry}]` },
+      ]);
+      return;
+    }
 
     // Nennt die Antwort Weine, kommen sie als Knöpfe darunter; sonst bleibt die Menüleiste.
     const buttons = await wineButtons(db, reply.wines).catch((error) => {

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { formatBottleSize, wineTypeLabel } from "@/lib/format";
+import { formatBottleSize, formatBottles, formatMoney, wineTitle, wineTypeLabel } from "@/lib/format";
 import { formatShares } from "@/lib/grapes/shares";
 import { escapeHtml } from "@/lib/telegram/api";
 import type { TgInlineKeyboard } from "@/lib/telegram/types";
@@ -18,7 +18,9 @@ export type CallbackAction =
   | "skipregular"
   | "vendor"
   | "newvendor"
-  | "skipvendor";
+  | "skipvendor"
+  | "restock"
+  | "confirm";
 
 export function callbackData(action: CallbackAction, jobId: string, value?: string) {
   return [action, jobId, value].filter(Boolean).join(":");
@@ -38,6 +40,8 @@ export function parseCallbackData(data: string | undefined) {
     "vendor",
     "newvendor",
     "skipvendor",
+    "restock",
+    "confirm",
   ];
   if (!actions.includes(action as CallbackAction) || !/^[0-9a-f-]{36}$/.test(jobId ?? "")) {
     return null;
@@ -46,6 +50,7 @@ export function parseCallbackData(data: string | undefined) {
 }
 
 const FIELD_LABELS: Record<EnrichableField, string> = {
+  producer: "Produzent",
   country: "Land",
   region: "Region",
   appellation: "Appellation",
@@ -176,4 +181,96 @@ export function parseQuantity(text: string) {
   const match = text.trim().match(/^(\d{1,3})\b/);
   const value = match ? Number(match[1]) : NaN;
   return Number.isInteger(value) && value >= 1 && value <= 999 ? value : null;
+}
+
+// ---------------------------------------------------------------------------
+// Erfassung per Text
+
+export const DESCRIBE_TEXT = [
+  "📷 Schick mir <b>Vorder- und Rückseite</b> der Flasche als Album – oder",
+  "✍️ beschreib den Wein, z. B. <i>„Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“</i>.",
+  "Fehlende Angaben recherchiere ich bzw. frage ich nach.",
+].join("\n");
+
+export function cancelKeyboard(jobId: string): TgInlineKeyboard {
+  return { inline_keyboard: [[{ text: "✖️ Abbrechen", callback_data: callbackData("drop", jobId) }]] };
+}
+
+export function restockKeyboard(jobId: string): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: "✅ Ja, Nachkauf", callback_data: callbackData("restock", jobId) },
+        { text: "✖️ Nein, abbrechen", callback_data: callbackData("drop", jobId) },
+      ],
+    ],
+  };
+}
+
+export function confirmKeyboard(jobId: string): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: "✅ Ja", callback_data: callbackData("confirm", jobId) },
+        { text: "✖️ Nein", callback_data: callbackData("drop", jobId) },
+      ],
+    ],
+  };
+}
+
+/** Kurzer Steckbrief des erkannten Weins (Text-Erfassung). */
+export function wineSummaryLines(state: IngestState) {
+  const p = state.proposal;
+  const window =
+    state.drink_from_year || state.drink_until_year
+      ? `Trinkreife ${state.drink_from_year ?? "?"}–${state.drink_until_year ?? "?"}`
+      : null;
+  return [
+    `🍷 <b>${e([p.producer, wineTitle({ name: p.name, vintage_year: p.vintage_year })].filter(Boolean).join(" – "))}</b>${state.restock ? " <i>(Nachkauf)</i>" : ""}`,
+    e(
+      [
+        p.type ? wineTypeLabel(p.type) : null,
+        [p.country, p.region, p.appellation].filter(Boolean).join(", ") || null,
+        p.bottle_size_ml && p.bottle_size_ml !== 750 ? formatBottleSize(p.bottle_size_ml) : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ),
+    e(
+      [
+        p.grape_shares.length ? `🍇 ${formatShares(p.grape_shares)}` : null,
+        p.alcohol_content != null ? `${p.alcohol_content.toLocaleString("de-CH")} %` : null,
+        window,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ),
+  ].filter((l) => l && l !== "<b></b>");
+}
+
+/** Zusammenfassung vor dem Speichern (Text-Erfassung). */
+export function textSummaryMessage(state: IngestState) {
+  const purchase = [
+    state.quantity != null ? formatBottles(state.quantity) : null,
+    state.storage_room ?? null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const prices = [
+    state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
+    state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
+    state.vendor_name ? `bei ${state.vendor_name}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return [
+    "📝 <b>Zusammenfassung</b>",
+    ...wineSummaryLines(state),
+    e(purchase),
+    prices ? e(prices) : null,
+    "",
+    state.restock ? "Als neue Charge zum bestehenden Wein speichern?" : "Speichern?",
+  ]
+    .filter((l) => l != null && l !== undefined)
+    .join("\n");
 }

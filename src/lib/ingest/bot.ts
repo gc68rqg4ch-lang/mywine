@@ -1,7 +1,6 @@
 import "server-only";
 
 import { after } from "next/server";
-import { formatBottles, formatMoney, todayIso, wineTitle } from "@/lib/format";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import {
   answerCallback,
@@ -11,7 +10,6 @@ import {
   sendMessage,
 } from "@/lib/telegram/api";
 import { resolveActor, type Actor } from "@/lib/telegram/actor";
-import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery, TgMessage, TgUpdate } from "@/lib/telegram/types";
 import {
   ALBUM_QUIET_MS,
@@ -32,16 +30,11 @@ import {
 } from "./jobs";
 import {
   HELP_TEXT,
-  locationKeyboard,
   parseCallbackData,
   parsePrice,
   parseQuantity,
-  priceKeyboard,
-  regularPriceKeyboard,
   skipVendorKeyboard,
-  vendorKeyboard,
   proposalMessage,
-  quantityKeyboard,
   reviewKeyboard,
 } from "./messages";
 import {
@@ -51,14 +44,6 @@ import {
   type LabelImage,
 } from "./recognize";
 import type { IngestState, StorageRoom, WineProposal } from "./schema";
-import { researchGrapeShares } from "@/lib/grapes/research";
-import {
-  hasAnyPercent,
-  hasCompletePercents,
-  type GrapeShare,
-  type GrapeSource,
-} from "@/lib/grapes/shares";
-import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
 import { handleChatCallback, handleChatMessage, resetChat } from "@/lib/chat/handler";
 import { isChatCallback } from "@/lib/chat/proposals";
 import { handleMenuCallback, sendMainMenu } from "@/lib/chat/menu";
@@ -69,14 +54,17 @@ import {
   isTastingCallback,
 } from "@/lib/chat/tasting";
 import { MAIN_KEYBOARD, isMenuCallback, menuKeyFor } from "@/lib/chat/menu-view";
+import { findWine, mergeWithKnownWine, resolveVendor } from "./wines";
 import {
-  createInventoryItem,
-  findWine,
-  listVendors,
-  mergeWithKnownWine,
-  resolveVendor,
-  resolveWine,
-} from "./wines";
+  acceptRestock,
+  advanceTo,
+  confirmAndSave,
+  discardDescribe,
+  failJob,
+  resolveGrapes,
+  setProducer,
+  startTextIngest,
+} from "./flow";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Grenze der Claude API pro Bild
 const IMAGE_TYPES = {
@@ -133,6 +121,8 @@ async function handlePhoto(msg: TgMessage) {
   }
 
   const db = createAdminClient();
+  // Statt einer Beschreibung kommen Fotos: die wartende Text-Erfassung verfällt.
+  await discardDescribe(db, chatId);
   const jobId = jobIdFor(chatId, msg.media_group_id ?? `m${msg.message_id}`);
   await ensureJob(db, jobId, chatId);
 
@@ -233,6 +223,8 @@ async function processJob(jobId: string, chatId: number) {
       step: "review",
       proposal,
       grape_source: grapes.source,
+      drink_from_year: web?.drink.from ?? null,
+      drink_until_year: web?.drink.until ?? null,
       recognition: {
         model: recognition.model,
         confidence: recognition.confidence,
@@ -257,50 +249,6 @@ async function processJob(jobId: string, chatId: number) {
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }
-}
-
-type ResolvedGrapes = {
-  shares: GrapeShare[];
-  source: Exclude<IngestState["grape_source"], undefined>;
-  sources: string[];
-};
-
-/**
- * Rebsorten für den Vorschlag: vollständige Prozente vom Etikett, sonst bereits
- * gespeicherte Prozente des bekannten Weins für diesen Jahrgang, sonst Recherche.
- * Findet die Recherche keine Prozente, gewinnen die Rebsorten vom Etikett.
- */
-async function resolveGrapes(
-  db: AdminClient,
-  proposal: WineProposal,
-  knownWineId: string | null,
-): Promise<ResolvedGrapes> {
-  const label = proposal.grape_shares;
-  if (hasCompletePercents(label)) return { shares: label, source: "label", sources: [] };
-
-  const stored = knownWineId
-    ? await loadGrapeShares(db, knownWineId, proposal.vintage_year).catch(() => null)
-    : null;
-  if (stored && stored.vintageYear === proposal.vintage_year && hasAnyPercent(stored.shares)) {
-    return { shares: stored.shares, source: "existing", sources: [] };
-  }
-
-  if (proposal.name && proposal.producer) {
-    const research = await researchGrapeShares(
-      { ...proposal, name: proposal.name, producer: proposal.producer },
-      label.map((s) => s.grape),
-    ).catch((error) => {
-      console.error("grape research failed", error);
-      return null;
-    });
-    if (research && (hasAnyPercent(research.shares) || label.length === 0)) {
-      return { shares: research.shares, source: "research", sources: research.sources };
-    }
-  }
-
-  if (label.length) return { shares: label, source: "label", sources: [] };
-  if (stored) return { shares: stored.shares, source: "existing", sources: [] };
-  return { shares: [], source: null, sources: [] };
 }
 
 async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[]> {
@@ -356,11 +304,9 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
         await answerCallback(cb.id, "Name und Produzent fehlen – bitte zuerst korrigieren.");
         return;
       }
-      const next = await advanceJob(db, job, "review", { step: "location" });
       await answerCallback(cb.id);
-      if (!next) return;
       await clearKeyboard(chatId, messageId);
-      await sendMessage(chatId, "Wo lagerst du die Flaschen?", locationKeyboard(job.id));
+      await advanceTo(db, job, chatId, "review", {});
       return;
     }
 
@@ -380,7 +326,20 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       const next = await advanceJob(
         db,
         job,
-        ["review", "correcting", "location", "quantity", "price", "regular_price", "vendor", "vendor_new"],
+        [
+          "describe",
+          "restock",
+          "producer",
+          "review",
+          "correcting",
+          "location",
+          "quantity",
+          "price",
+          "regular_price",
+          "vendor",
+          "vendor_new",
+          "confirm",
+        ],
         { step: "done" },
         { status: "discarded" },
       );
@@ -396,15 +355,9 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       const room: StorageRoom | null =
         parsed.value === "keller" ? "Weinkeller" : parsed.value === "wohnzimmer" ? "Wohnzimmer" : null;
       if (!room) return answerCallback(cb.id);
-      const next = await advanceJob(db, job, "location", { step: "quantity", storage_room: room });
       await answerCallback(cb.id);
-      if (!next) return;
       await clearKeyboard(chatId, messageId);
-      await sendMessage(
-        chatId,
-        `📍 ${room}. Wie viele Flaschen? (Button oder Zahl schreiben)`,
-        quantityKeyboard(job.id),
-      );
+      await advanceTo(db, job, chatId, "location", { storage_room: room });
       return;
     }
 
@@ -413,28 +366,28 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       if (!quantity) return answerCallback(cb.id);
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
-      await setQuantity(db, job, chatId, quantity);
+      await advanceTo(db, job, chatId, "quantity", { quantity });
       return;
     }
 
     case "skipprice": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
-      await setPaidPrice(db, job, chatId, null);
+      await advanceTo(db, job, chatId, "price", { price: null });
       return;
     }
 
     case "sameprice": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
-      await setRegularPrice(db, job, chatId, state.price ?? null);
+      await advanceTo(db, job, chatId, "regular_price", { regular_price: state.price ?? null });
       return;
     }
 
     case "skipregular": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
-      await setRegularPrice(db, job, chatId, null);
+      await advanceTo(db, job, chatId, "regular_price", { regular_price: null });
       return;
     }
 
@@ -446,7 +399,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       const { data: vendor } = await db.from("vendors").select("id, name").eq("id", vendorId).maybeSingle();
       if (!vendor) return;
       await clearKeyboard(chatId, messageId);
-      await setVendorAndSave(db, job, chatId, vendor);
+      await advanceTo(db, job, chatId, ["vendor", "vendor_new"], { vendor_id: vendor.id, vendor_name: vendor.name });
       return;
     }
 
@@ -462,66 +415,24 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
     case "skipvendor": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
-      await setVendorAndSave(db, job, chatId, null);
+      await advanceTo(db, job, chatId, ["vendor", "vendor_new"], { vendor_id: null, vendor_name: null });
+      return;
+    }
+
+    case "restock": {
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await acceptRestock(db, job, chatId);
+      return;
+    }
+
+    case "confirm": {
+      const ok = await confirmAndSave(db, job, chatId);
+      await answerCallback(cb.id, ok ? "Wird gespeichert …" : undefined);
+      if (ok) await clearKeyboard(chatId, messageId);
       return;
     }
   }
-}
-
-async function setQuantity(db: AdminClient, job: IngestJob, chatId: number, quantity: number) {
-  const next = await advanceJob(db, job, "quantity", { step: "price", quantity });
-  if (!next) return;
-  await sendMessage(
-    chatId,
-    `${formatBottles(quantity)}. Was hast du bezahlt? (CHF pro Flasche)`,
-    priceKeyboard(job.id),
-  );
-}
-
-async function setPaidPrice(db: AdminClient, job: IngestJob, chatId: number, price: number | null) {
-  const next = await advanceJob(db, job, "price", { step: "regular_price", price });
-  if (!next) return;
-  await sendMessage(
-    chatId,
-    "Normalpreis? (oder überspringen)",
-    regularPriceKeyboard(job.id, price),
-  );
-}
-
-async function setRegularPrice(
-  db: AdminClient,
-  job: IngestJob,
-  chatId: number,
-  regularPrice: number | null,
-) {
-  const vendors = await listVendors(db);
-  const next = await advanceJob(db, job, "regular_price", {
-    step: "vendor",
-    regular_price: regularPrice,
-    vendor_options: vendors.map((v) => v.id),
-  });
-  if (!next) return;
-  await sendMessage(
-    chatId,
-    vendors.length ? "Händler? (Button oder Namen schreiben)" : "Händler? (Namen schreiben oder überspringen)",
-    vendorKeyboard(job.id, vendors),
-  );
-}
-
-/** Händler setzen (null = überspringen) und speichern. */
-async function setVendorAndSave(
-  db: AdminClient,
-  job: IngestJob,
-  chatId: number,
-  vendor: { id: string; name: string } | null,
-) {
-  const saving = await advanceJob(db, job, ["vendor", "vendor_new"], {
-    step: "saving",
-    vendor_id: vendor?.id ?? null,
-    vendor_name: vendor?.name ?? null,
-  });
-  if (!saving) return;
-  after(() => saveJob(saving, chatId));
 }
 
 // ---------------------------------------------------------------------------
@@ -566,6 +477,19 @@ async function handleText(msg: TgMessage, actor: Actor) {
   }
 
   switch (state.step) {
+    case "describe": {
+      await startTextIngest(chatId, text, job.id);
+      return;
+    }
+    case "producer": {
+      const producer = text.replace(/\s+/g, " ").trim();
+      if (producer.length < 2 || producer.length > 120) {
+        await sendMessage(chatId, "Bitte den Namen des Produzenten schreiben.");
+        return;
+      }
+      await setProducer(db, job, chatId, producer);
+      return;
+    }
     case "correcting": {
       await sendMessage(chatId, "✏️ Übernehme die Korrektur …");
       after(() => correctJob(job, state, chatId, text));
@@ -577,7 +501,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
         await sendMessage(chatId, "Bitte eine Anzahl zwischen 1 und 999 schreiben.");
         return;
       }
-      await setQuantity(db, job, chatId, quantity);
+      await advanceTo(db, job, chatId, "quantity", { quantity });
       return;
     }
     case "price": {
@@ -586,7 +510,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
         await sendMessage(chatId, "Bitte einen Preis wie <i>24.50</i> schreiben oder „Überspringen“ tippen.");
         return;
       }
-      await setPaidPrice(db, job, chatId, price);
+      await advanceTo(db, job, chatId, "price", { price });
       return;
     }
     case "regular_price": {
@@ -595,7 +519,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
         await sendMessage(chatId, "Bitte einen Preis wie <i>29.90</i> schreiben oder einen Button tippen.");
         return;
       }
-      await setRegularPrice(db, job, chatId, regularPrice);
+      await advanceTo(db, job, chatId, "regular_price", { regular_price: regularPrice });
       return;
     }
     case "vendor":
@@ -606,7 +530,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
         return;
       }
       const vendor = await resolveVendor(db, name);
-      await setVendorAndSave(db, job, chatId, vendor);
+      await advanceTo(db, job, chatId, ["vendor", "vendor_new"], { vendor_id: vendor.id, vendor_name: vendor.name });
       return;
     }
   }
@@ -625,6 +549,9 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
       proposal.name !== state.proposal.name || proposal.producer !== state.proposal.producer;
 
     const known = await findWine(db, proposal.name, proposal.producer);
+    // Trinkfenster gehört zum Wein und Jahrgang: bei einem anderen neu bestimmen.
+    let drink = { from: state.drink_from_year ?? null, until: state.drink_until_year ?? null };
+    if (otherWine || proposal.vintage_year !== state.proposal.vintage_year) drink = { from: null, until: null };
     if (known) {
       proposal = mergeWithKnownWine(proposal, known);
     } else if (otherWine) {
@@ -633,6 +560,7 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
       if (web) {
         proposal = web.proposal;
         enriched = { ...enriched, enriched_fields: web.filled, sources: web.sources };
+        drink = web.drink;
       }
     }
 
@@ -649,7 +577,14 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
       db,
       job,
       "correcting",
-      { step: "review", proposal, recognition: enriched, grape_source: grapeSource },
+      {
+        step: "review",
+        proposal,
+        recognition: enriched,
+        grape_source: grapeSource,
+        drink_from_year: drink.from,
+        drink_until_year: drink.until,
+      },
       { matched_wine_id: known?.id ?? null },
     );
     if (!next) return;
@@ -659,86 +594,4 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
     // Der Job bleibt im Korrekturmodus – die nächste Textantwort ist ein neuer Versuch.
     await sendMessage(chatId, "Das konnte ich nicht übernehmen. Bitte formuliere die Korrektur nochmals.");
   }
-}
-
-// ---------------------------------------------------------------------------
-// Speichern
-
-async function saveJob(job: IngestJob, chatId: number) {
-  const db = createAdminClient();
-  const state = jobState(job)!;
-  try {
-    const wineId = await resolveWine(db, state.proposal, job.matched_wine_id);
-    await storeGrapes(db, wineId, state);
-    const itemId = await createInventoryItem(db, {
-      wineId,
-      proposal: state.proposal,
-      quantity: state.quantity ?? 1,
-      price: state.price ?? null,
-      regularPrice: state.regular_price ?? null,
-      vendorId: state.vendor_id ?? null,
-      // Kaufdatum = Tag der Erfassung. Das Journal (inventory_events) schreibt die DB per Trigger.
-      purchasedAt: todayIso(),
-      storageRoom: state.storage_room ?? "Weinkeller",
-      photoPaths: job.photo_paths,
-    });
-
-    await advanceJob(
-      db,
-      job,
-      "saving",
-      { step: "done" },
-      { status: "confirmed", inventory_item_id: itemId, matched_wine_id: wineId },
-    );
-
-    const base = appBaseUrl();
-    const title = escapeHtml(
-      `${state.proposal.producer} – ${wineTitle({ name: state.proposal.name, vintage_year: state.proposal.vintage_year })}`,
-    );
-    const prices = [
-      state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
-      state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
-    ].filter(Boolean);
-    if (state.vendor_name) prices.push(`bei ${escapeHtml(state.vendor_name)}`);
-    const priceLine = prices.length ? `\n${prices.join(" · ")}` : "";
-    const link = base ? `\n<a href="${base}/flasche/${itemId}">In MyWine öffnen</a>` : "";
-    await sendMessage(
-      chatId,
-      `✅ Gespeichert: ${formatBottles(state.quantity ?? 1)} ${title} · ${state.storage_room}${priceLine}${link}`,
-    );
-  } catch (error) {
-    await failJob(db, job.id, chatId, "Speichern ist fehlgeschlagen", error);
-  }
-}
-
-/** Rebsorten des Vorschlags in wine_grape_shares speichern (Jahrgang des Eintrags). */
-async function storeGrapes(db: AdminClient, wineId: string, state: IngestState) {
-  const source = state.grape_source;
-  const shares = state.proposal.grape_shares;
-  if (!shares.length || !source || source === "existing") return;
-  try {
-    await replaceGrapeShares(db, {
-      wineId,
-      vintageYear: state.proposal.vintage_year,
-      shares,
-      source: source satisfies GrapeSource,
-      // Recherche/Etikett überschreiben keine manuell gepflegten Angaben.
-      keepManual: source !== "manual",
-    });
-  } catch (error) {
-    // Die Flasche trotzdem speichern; Rebsorten lassen sich nachrecherchieren.
-    console.error("storing grape shares failed", error);
-  }
-}
-
-async function failJob(db: AdminClient, jobId: string, chatId: number, message: string, error: unknown) {
-  console.error(message, error);
-  const detail = error instanceof Error ? error.message : String(error);
-  await db
-    .from("ingest_jobs")
-    .update({ status: "failed", error: detail.slice(0, 1000) })
-    .eq("id", jobId);
-  await sendMessage(chatId, `❌ ${escapeHtml(message)}. Bitte schick die Fotos nochmals.`).catch(
-    () => undefined,
-  );
 }

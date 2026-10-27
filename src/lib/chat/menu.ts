@@ -13,6 +13,8 @@ import { loadGrapeShares } from "@/lib/grapes/store";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { wineDetailsText, type WineDetails } from "./details";
+import { startDescribe } from "@/lib/ingest/flow";
+import { DESCRIBE_TEXT, cancelKeyboard } from "@/lib/ingest/messages";
 import { executeProposal } from "./execute";
 import {
   FILL_STEPS,
@@ -662,13 +664,12 @@ export async function handleMenuCallback(cb: TgCallbackQuery, actor: MenuActor) 
   }
 }
 
-export const NEW_WINE_TEXT =
-  "📷 Schick mir <b>Vorder- und Rückseite</b> der Flasche als Album (beide Fotos zusammen auswählen).";
-
 /** Tippen auf die feste Menüleiste: neues Menü als Nachricht. */
 export async function sendMainMenu(chatId: number, key: "open" | "stock" | "ready" | "newWine") {
   if (key === "newWine") {
-    await sendMessage(chatId, NEW_WINE_TEXT, MAIN_KEYBOARD);
+    // Fotos oder eine Beschreibung – die nächste Textnachricht wird als neuer Eintrag erfasst.
+    const jobId = await startDescribe(createAdminClient(), chatId);
+    await sendMessage(chatId, DESCRIBE_TEXT, cancelKeyboard(jobId));
     return;
   }
   const db = createAdminClient();

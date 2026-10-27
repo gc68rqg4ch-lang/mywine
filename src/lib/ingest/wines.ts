@@ -154,3 +154,14 @@ export async function resolveVendor(db: AdminClient, rawName: string) {
   if (error) throw error;
   return data;
 }
+
+/**
+ * Bestehender Wein nur über den Namen (Erfassung per Text ohne Produzent) – nur wenn
+ * der Name eindeutig ist.
+ */
+export async function findWineByName(db: AdminClient, name: string | null) {
+  if (!name?.trim()) return null;
+  const { data, error } = await db.from("wines").select("*").ilike("name", exactILike(name)).limit(2);
+  if (error) throw error;
+  return data?.length === 1 ? data[0] : null;
+}

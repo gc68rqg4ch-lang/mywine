@@ -23,9 +23,17 @@ Fakten zum Keller holst du ausschliesslich mit den Werkzeugen – erfinde keine 
 - Passen mehrere Weine, Jahrgänge, Lagerorte oder offene Flaschen, frag nach statt zu raten.
 - Ein Glas sind etwa 150 ml; für „ich habe zwei Gläser getrunken“ nutze propose_fill_level mit glasses.
 - Bewertungen gibt es für Michel und Sara getrennt (0–5 Sterne, halbe Schritte). Sie gehen an die Person, die schreibt – an jemand anderen nur, wenn ausdrücklich genannt (dann person setzen).
-- Lagerorte sind Räume wie Weinkeller oder Wohnzimmer.`;
+- Lagerorte sind Räume wie Weinkeller oder Wohnzimmer.
+- Beschreibt die Person einen Kauf bzw. einen neuen Wein für den Keller (z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“ oder „Habe 3 Flaschen Rioja gekauft“), ruf start_wine_entry mit ihren Angaben auf und antworte höchstens mit einem kurzen Satz. Fragen zu Weinen, die schon im Keller sind, sind keine Erfassung.`;
 
-export type ChatReply = { text: string; proposals: PendingProposal[]; wines: WineRef[]; model: string };
+export type ChatReply = {
+  text: string;
+  proposals: PendingProposal[];
+  wines: WineRef[];
+  /** Beschreibung eines neuen Weins/Kaufs → Erfassung per Text. */
+  newEntry: string | null;
+  model: string;
+};
 
 class EscalateError extends Error {}
 
@@ -42,11 +50,12 @@ function actorNote(actor: Actor) {
 async function runWith(model: string, db: AdminClient, history: ChatTurn[], text: string, actor: Actor): Promise<ChatReply> {
   const proposals: PendingProposal[] = [];
   const wines: WineRef[] = [];
+  const newEntries: string[] = [];
   const runner = anthropic().beta.messages.toolRunner({
     model,
     max_tokens: 8000,
     system: `${SYSTEM}\n\n${actorNote(actor)}\nHeute ist ${todayIso()}.`,
-    tools: chatTools(db, proposals, wines, actor),
+    tools: chatTools(db, proposals, wines, actor, newEntries),
     messages: toMessages(history, text),
     max_iterations: MAX_ITERATIONS,
     output_config: { effort: "medium" },
@@ -63,8 +72,10 @@ async function runWith(model: string, db: AdminClient, history: ChatTurn[], text
     .map((b) => b.text)
     .join("\n")
     .trim();
-  if (!reply && !proposals.length && !wines.length) throw new EscalateError(`${model}: keine Antwort`);
-  return { text: reply, proposals, wines, model };
+  if (!reply && !proposals.length && !wines.length && !newEntries.length) {
+    throw new EscalateError(`${model}: keine Antwort`);
+  }
+  return { text: reply, proposals, wines, newEntry: newEntries[0] ?? null, model };
 }
 
 /** Beantwortet eine Chat-Nachricht: zuerst mit Haiku, bei Bedarf mit Sonnet. */

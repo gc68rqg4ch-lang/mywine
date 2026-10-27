@@ -7,7 +7,7 @@ import { MAX_UNION_PARAMS, countUnionParams } from "@/lib/ai/schema-limits";
 import { NOT_MENTIONED, extractionSchema, toExtraction } from "@/lib/tasting/extract";
 import { EnrichmentSchema, toolInputSchema } from "@/lib/ingest/recognize";
 import { GrapeResearchSchema } from "@/lib/grapes/research";
-import { RecognitionSchema, WineProposalSchema } from "@/lib/ingest/schema";
+import { RecognitionSchema, TextEntrySchema, WineProposalSchema } from "@/lib/ingest/schema";
 import { SAT_TYPES, newTastingData } from "@/lib/tasting/sat";
 import { applyExtraction, missingCategories } from "@/lib/tasting/bot-draft";
 import { chatTools } from "@/lib/chat/tools";
@@ -20,6 +20,7 @@ const counts: [string, number][] = [
   ...SAT_TYPES.map(({ type }) => [`Verkostung ${type}`, countUnionParams(outputFormat(extractionSchema(type)))] as [string, number]),
   ["Foto-Erkennung", countUnionParams(outputFormat(RecognitionSchema))],
   ["Foto-Korrektur", countUnionParams(outputFormat(WineProposalSchema))],
+  ["Erfassung per Text", countUnionParams(outputFormat(TextEntrySchema))],
   ["Websuche Stammdaten (strict)", countUnionParams(toolInputSchema(EnrichmentSchema))],
   ["Websuche Rebsorten (strict)", countUnionParams(toolInputSchema(GrapeResearchSchema))],
   ["Chat-Tools gesamt", chatTools({} as never, []).reduce((s, t) => s + countUnionParams((t as { input_schema?: unknown }).input_schema), 0)],

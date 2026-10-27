@@ -41,10 +41,12 @@ export const RecognitionSchema = WineProposalSchema.extend({
 export type Recognition = z.infer<typeof RecognitionSchema>;
 
 /**
- * Felder, die eine Websuche ergänzen darf (nie Name/Produzent/Jahrgang vom Etikett).
+ * Felder, die eine Websuche ergänzen darf (nie Name/Jahrgang; den Produzenten nur,
+ * wenn er fehlt – z. B. bei einer Erfassung per Text).
  * Rebsorten recherchiert eine eigene Suche mit Prozentanteilen (lib/grapes/research).
  */
 export const ENRICHABLE_FIELDS = [
+  "producer",
   "country",
   "region",
   "appellation",
@@ -56,6 +58,14 @@ export type EnrichableField = (typeof ENRICHABLE_FIELDS)[number];
 export type StorageRoom = "Weinkeller" | "Wohnzimmer";
 
 export type IngestStep =
+  /** Text-Erfassung: wartet auf die Beschreibung (nach „Neuer Wein“). */
+  | "describe"
+  /** Text-Erfassung: läuft Erkennung und Recherche. */
+  | "researching"
+  /** Text-Erfassung: Nachkauf zu einem Wein im Bestand? */
+  | "restock"
+  /** Text-Erfassung: Produzent fehlt noch. */
+  | "producer"
   | "review"
   | "correcting"
   | "location"
@@ -64,12 +74,21 @@ export type IngestStep =
   | "regular_price"
   | "vendor"
   | "vendor_new"
+  /** Text-Erfassung: Zusammenfassung mit [Ja] [Nein]. */
+  | "confirm"
   | "saving"
   | "done";
 
 /** Inhalt von ingest_jobs.extracted: Vorschlag plus Gesprächszustand. */
 export type IngestState = {
   step: IngestStep;
+  /** photo (Standard) oder text: Erfassung per Freitext ohne Etikett. */
+  source?: "photo" | "text";
+  /** Text-Erfassung: der Wein (mit Jahrgang) liegt schon im Bestand → nur neue Charge. */
+  restock?: boolean;
+  /** Trinkfenster aus der Recherche (wird in wine_vintages übernommen, wenn dort leer). */
+  drink_from_year?: number | null;
+  drink_until_year?: number | null;
   proposal: WineProposal;
   recognition: {
     model: string;
@@ -94,6 +113,23 @@ export type IngestState = {
   vendor_id?: string | null;
   vendor_name?: string | null;
 };
+
+/**
+ * Freitext-Erfassung („Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“):
+ * Wein wie bei der Etikett-Erkennung, dazu die Kaufangaben. Kaufangaben ohne
+ * nullable-Felder (0 bzw. "" = nicht genannt), damit das Schema unter der
+ * API-Grenze für Union-Typen bleibt.
+ */
+export const TextEntrySchema = WineProposalSchema.extend({
+  purchase: z.object({
+    quantity: z.number().int().describe("Anzahl Flaschen; 0 = nicht genannt"),
+    storage_room: z.enum(["", "Weinkeller", "Wohnzimmer"]).describe("Lagerort; leer = nicht genannt"),
+    price: z.number().describe("Bezahlter Preis pro Flasche in CHF; 0 = nicht genannt"),
+    regular_price: z.number().describe("Normalpreis pro Flasche in CHF; 0 = nicht genannt"),
+    vendor: z.string().describe("Händler; leer = nicht genannt"),
+  }),
+});
+export type TextEntry = z.infer<typeof TextEntrySchema>;
 
 export function missingEnrichableFields(p: WineProposal): EnrichableField[] {
   return ENRICHABLE_FIELDS.filter((field) => p[field] == null);

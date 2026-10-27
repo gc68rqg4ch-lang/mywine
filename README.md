@@ -151,6 +151,19 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
   heisst das „⭐ Bewerten“; für die andere Person („⭐ für Sara“) fragt er vor dem Speichern nach. Der
   Gesprächsverlauf ist pro Chat getrennt. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.
 
+### Erfassung per Text (ohne Foto)
+
+Freitext wie „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“ – im Chat (Claude erkennt den Kauf
+und ruft `start_wine_entry` auf) oder nach „📷 Neuer Wein“ (die nächste Textnachricht innerhalb von 30 Minuten).
+Ablauf in `src/lib/ingest/flow.ts`, `ingest_jobs.source = 'text'`:
+- Erkennen (`parseTextEntry`, Haiku/Sonnet, Schema `TextEntrySchema` mit Kaufangaben), dann wie bei Fotos: Abgleich
+  mit bestehenden Weinen (ohne Produzent über einen eindeutigen Namen), sonst Websuche (Produzent, Herkunft, Typ,
+  Alkohol, Trinkfenster des Jahrgangs) und Rebsorten mit %.
+- Liegt der Wein mit dem Jahrgang schon im Keller: „Nachkauf zu bestehendem Wein?“ → nur eine neue Charge.
+- Danach nur, was im Text fehlt: Lagerort, Anzahl, Preis, Normalpreis, Händler (`nextPurchaseStep`); zum Schluss
+  eine Zusammenfassung mit [Ja] [Nein]. Der Händler aus dem Text wird erst beim Speichern angelegt.
+- Das Trinkfenster wird in `wine_vintages` übernommen, wenn dort noch keines steht (auch bei der Foto-Erfassung).
+
 ### Menüs (Knöpfe)
 
 - **Menüleiste unten** (Reply-Keyboard, kommt mit `/start` bzw. `/help`): 🍷 Offen · 📦 Bestand · ⏰ Trinkreif ·
