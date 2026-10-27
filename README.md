@@ -45,7 +45,13 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
      **Nachrecherchieren** neu recherchierbar; Trinkreife (Fenster aus `wine_vintages`, dazu die letzte Verkostung).
      **Fotos** des Jahrgangs als Vorschau mit demselben Overlay; **📷 Foto hinzufügen** (Vorderseite, Rückseite,
      Weiteres): der Browser verkleinert auf max. 2000 px JPEG (auch HEIC vom iPhone), der Server legt das Original
-     unter `wine-photos/app/<wine-id>/…` ab, erzeugt das Vorschaubild und schreibt `wine_media`. Je Foto
+     unter `wine-photos/app/<wine-id>/…` ab, erzeugt das Vorschaubild und schreibt `wine_media`.
+     **Dokumente** (PDF, `wine_media.kind = document`, privater Bucket `wine-documents`) des Jahrgangs und ohne
+     Jahrgang mit 📄 und Dateiname; Antippen öffnet das PDF über eine signierte URL in einem neuen Tab. Im
+     Bearbeiten-Modus hochladen (max. 10 MB; der Browser lädt direkt in den Bucket, weil Vercel nur 4.5 MB pro
+     Request annimmt – der Server prüft danach Ort, Typ und Grösse und trägt das Dokument ein) und löschen mit
+     Rückfrage (Datei serverseitig mitgelöscht). **Nachrecherchieren** der Rebsorten und der Link zum
+     Sammellauf (`/recherche`) stehen auch in der normalen Ansicht; `/recherche` ist zudem in der Navigation (🔎). Je Foto
      **Ersetzen** und **Löschen** mit Rückfrage; eine neue Vorder-/Rückseite ersetzt die vorhandene (ebenfalls
      nach Rückfrage). Gelöscht werden Zeile, Original und Vorschaubild – die Dateien über den Admin-Client
      (Mitglieder dürfen im Bucket nur lesen und hochladen), erst nach Prüfung der Mitgliedschaft.
@@ -182,6 +188,7 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Zugang:** Webhook prüft `X-Telegram-Bot-Api-Secret-Token`. Freigeschaltet sind alle Telegram-User, deren ID in
   `persons.telegram_user_id` steht; `TELEGRAM_ALLOWED_USER_ID` gilt als Rückfall für Michel. Unbekannte bekommen im
   Einzelchat nur „Ich kenne dich noch nicht – deine Telegram-ID ist …“, sonst nichts. `/id` zeigt die eigene ID.
+- **ℹ️ Details** nennt vorhandene Dokumente mit Anzahl und Link zur Weinseite.
 - **Wer schreibt:** Der Bot spricht die Person mit Namen an; Bewertungen und Verkostungen gehen an sie. Im Menü
   heisst das „⭐ Bewerten“; für die andere Person („⭐ für Sara“) fragt er vor dem Speichern nach. Der
   Gesprächsverlauf ist pro Chat getrennt. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.

@@ -27,9 +27,11 @@ import {
   type InventoryStatus,
 } from "@/lib/format";
 import { loadGrapeShares } from "@/lib/grapes/store";
+import { loadDocuments } from "@/lib/media/documents";
 import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
+import { WineDocuments } from "./documents";
 import { BatchEditor, VintageEditForm, WineEditForm } from "./edit-sections";
 import { GrapeSection } from "./grape-card";
 import { WinePhotos } from "./photos";
@@ -143,11 +145,12 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
 
   // Bearbeiten-Modus (?bearbeiten=1): Formulare statt Anzeige, alle über das gemeinsame Modul.
   const editing = query.bearbeiten === "1";
-  const [{ ratings, tastings, vintage }, grapes, photos, vendors] = await Promise.all([
+  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents] = await Promise.all([
     loadRatingsAndTastings(supabase, wine.id, year),
     loadGrapeShares(supabase, wine.id, year),
     loadVintagePhotos(supabase, wine.id, year, inVintage.map((i) => i.inventory_item_id)),
     editing ? loadVendorNames(supabase) : Promise.resolve([] as string[]),
+    loadDocuments(supabase, wine.id, year),
   ]);
 
   const sealed = inVintage.filter((i) => i.status === "sealed" && i.quantity > 0);
@@ -308,6 +311,18 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             <p className="muted small">Noch keine Fotos – unter ✏️ Bearbeiten hinzufügen.</p>
           )}
         </div>
+        {(editing || documents.length > 0) && (
+          <div className="stack section-divider">
+            <h3 className="subsection-title">Dokumente</h3>
+            <WineDocuments
+              key={`${year}:${documents.length}`}
+              docs={documents}
+              editing={editing}
+              wineId={wine.id}
+              vintageYear={year}
+            />
+          </div>
+        )}
         {anchor && (
           <div className="section-divider">
             <GrapeSection

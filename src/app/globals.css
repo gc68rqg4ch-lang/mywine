@@ -1738,3 +1738,33 @@ input[inputmode="decimal"] {
   padding-top: 12px;
   border-top: 1px dashed var(--border);
 }
+
+/* Navigation: Recherche auf schmalen Bildschirmen nur als 🔎 */
+@media (max-width: 560px) {
+  .nav-long {
+    display: none;
+  }
+}
+
+/* Dokumente (PDF) in „Zum Wein“ */
+.doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.doc-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  overflow-wrap: anywhere;
+}

@@ -10,6 +10,7 @@ import type { TgCallbackQuery, TgInlineButton, TgInlineKeyboard } from "@/lib/te
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatShares } from "@/lib/grapes/shares";
 import { loadGrapeShares } from "@/lib/grapes/store";
+import { countDocuments } from "@/lib/media/documents";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { wineDetailsText, type WineDetails } from "./details";
@@ -426,7 +427,7 @@ async function ratePickerScreen(db: AdminClient, subject: Subject, key: string, 
 async function loadDetails(db: AdminClient, wineId: string, year: number | null): Promise<WineDetails | null> {
   const sameYear = <Q extends { eq: (c: "vintage_year", v: number) => Q; is: (c: "vintage_year", v: null) => Q }>(q: Q) =>
     year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
-  const [{ data: wine, error }, grapes, vintage, bottles, ratings, persons, tasting] = await Promise.all([
+  const [{ data: wine, error }, grapes, vintage, bottles, ratings, persons, tasting, documents] = await Promise.all([
     db.from("wines").select("name, producer, type, country, region, appellation, alcohol_content, grapes").eq("id", wineId).maybeSingle(),
     loadGrapeShares(db, wineId, year),
     sameYear(db.from("wine_vintages").select("drink_from_year, drink_until_year").eq("wine_id", wineId)).maybeSingle(),
@@ -441,6 +442,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     sameYear(db.from("wine_tastings").select("quality_level, quality_points, sat, tasted_at").eq("wine_id", wineId))
       .order("tasted_at", { ascending: false })
       .limit(1),
+    countDocuments(db, wineId, year).catch(() => 0),
   ]);
   if (error) throw error;
   if (!wine) return null;
@@ -467,6 +469,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
       ? { quality: last.quality_level, points: last.quality_points ?? currentScore(normalizeData(last.sat, last.tasted_at)) }
       : null,
     appUrl: base ? `${base}${wineHref(wineId, year)}` : null,
+    documents,
   };
 }
 

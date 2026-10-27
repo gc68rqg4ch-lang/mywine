@@ -35,6 +35,8 @@ export type WineDetails = {
   ratings: { person: string; rating: number }[];
   lastTasting: { quality: string | null; points: number | null } | null;
   appUrl: string | null;
+  /** Anzahl PDFs (Jahrgang und ohne Jahrgang); anschauen auf der Weinseite. */
+  documents?: number;
 };
 
 const e = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -107,6 +109,9 @@ export function wineDetailsText(d: WineDetails) {
     ...priceLines.map((p) => `💰 ${e(p)}`),
     d.ratings.length && `⭐ ${e(join(d.ratings.map((r) => `${r.person} ${formatStarNumber(r.rating)}`)))}`,
     tasting && `📝 ${e(tasting)}`,
+    d.documents
+      ? `📄 ${d.documents === 1 ? "1 Dokument" : `${d.documents} Dokumente`}${d.appUrl ? ` – <a href="${d.appUrl}">auf der Weinseite</a>` : ""}`
+      : null,
     d.appUrl && `<a href="${d.appUrl}">In der App öffnen</a>`,
   ];
   return lines.filter((l): l is string => typeof l === "string" && l.trim() !== "").join("\n");
