@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FillGauge } from "@/components/fill-gauge";
-import { TypeDot } from "@/components/type-dot";
+import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getSession } from "@/lib/auth";
 import {
   STATUS_LABELS,
@@ -137,9 +137,14 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
 
   return (
     <div className="stack-lg">
-      <Link href={back.href} className="back">
-        ← {back.label}
-      </Link>
+      <div className="row row-between">
+        <Link href={back.href} className="back">
+          ← {back.label}
+        </Link>
+        <Link href={`/wein/${wine.id}`} className="back">
+          Alle Jahrgänge &amp; Lagerorte →
+        </Link>
+      </div>
 
       {verkostung && (
         <p className="notice notice-ok" role="status">
@@ -158,7 +163,7 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
           <span className="item-producer">{wine.producer}</span>
           <h1 className="page-title">{wineTitle({ name: wine.name, vintage_year: item.vintage_year })}</h1>
           <div className="row muted">
-            <TypeDot type={wine.type} withLabel />
+            <WineTypeIcon type={wine.type} withLabel />
             <span className={`status status-${item.status}`}>{STATUS_LABELS[item.status]}</span>
             {item.status === "sealed" && <span>{formatBottles(item.quantity)}</span>}
           </div>

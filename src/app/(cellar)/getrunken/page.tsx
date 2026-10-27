@@ -1,20 +1,25 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { TypeDot } from "@/components/type-dot";
+import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getSession } from "@/lib/auth";
+import { getLocationFilter, withLocation } from "@/lib/location";
 import { formatBottleSize, formatDate, formatRating, wineTitle, zurichDate } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Getrunken" };
 
 export default async function DrunkBottlesPage() {
   const { supabase } = await getSession();
+  const { filter } = await getLocationFilter();
 
-  const { data, error } = await supabase
-    .from("inventory_items")
-    .select(
-      "id, vintage_year, bottle_size_ml, personal_wine_rating, personal_vintage_rating, drunk_at, wine:wines(name, producer, region, country, type)",
-    )
-    .eq("status", "drunk");
+  const { data, error } = await withLocation(
+    supabase
+      .from("inventory_items")
+      .select(
+        "id, vintage_year, bottle_size_ml, personal_wine_rating, personal_vintage_rating, drunk_at, wine:wines(name, producer, region, country, type)",
+      )
+      .eq("status", "drunk"),
+    filter,
+  );
 
   if (error) throw error;
 
@@ -46,7 +51,7 @@ export default async function DrunkBottlesPage() {
             return (
               <li key={row.id}>
                 <Link href={`/flasche/${row.id}`} className="item">
-                  <TypeDot type={wine.type} />
+                  <WineTypeIcon type={wine.type} />
                   <div className="item-main">
                     <span className="item-producer">{wine.producer}</span>
                     <span className="item-title">

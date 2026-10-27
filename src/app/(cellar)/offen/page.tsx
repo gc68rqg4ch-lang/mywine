@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { FillGauge } from "@/components/fill-gauge";
-import { TypeDot } from "@/components/type-dot";
+import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getSession } from "@/lib/auth";
+import { getLocationFilter, withLocation } from "@/lib/location";
 import { formatBottleSize, formatDaysSince, formatStorage, wineTitle } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Offene Flaschen" };
@@ -10,12 +11,13 @@ export const metadata: Metadata = { title: "Offene Flaschen" };
 export default async function OpenBottlesPage({ searchParams }: PageProps<"/offen">) {
   const params = await searchParams;
   const { supabase } = await getSession();
+  const { filter } = await getLocationFilter();
 
   // Älteste offene Flaschen zuerst – die sollten als nächstes getrunken werden.
-  const { data, error } = await supabase
-    .from("cellar_overview")
-    .select("*")
-    .eq("status", "open")
+  const { data, error } = await withLocation(
+    supabase.from("cellar_overview").select("*").eq("status", "open"),
+    filter,
+  )
     .order("date_opened", { ascending: true, nullsFirst: false })
     .order("producer");
 
@@ -39,7 +41,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
           {rows.map((row) => (
             <li key={row.inventory_item_id}>
               <Link href={`/flasche/${row.inventory_item_id}`} className="item">
-                <TypeDot type={row.type} />
+                <WineTypeIcon type={row.type} />
                 <div className="item-main">
                   <span className="item-producer">{row.producer}</span>
                   <span className="item-title">{wineTitle(row)}</span>

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { signOut } from "@/app/actions";
+import { LocationSwitcher } from "@/components/location-switcher";
 import { NavLinks } from "@/components/nav-links";
 import { getSession } from "@/lib/auth";
+import { getLocationFilter, withLocation } from "@/lib/location";
 
 export default async function CellarLayout({ children }: LayoutProps<"/">) {
   const { supabase, isMember, email, userId } = await getSession();
@@ -29,10 +31,11 @@ export default async function CellarLayout({ children }: LayoutProps<"/">) {
     );
   }
 
-  const { count: openCount } = await supabase
-    .from("inventory_items")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "open");
+  const location = await getLocationFilter();
+  const { count: openCount } = await withLocation(
+    supabase.from("inventory_items").select("id", { count: "exact", head: true }).eq("status", "open"),
+    location.filter,
+  );
 
   return (
     <>
@@ -42,7 +45,11 @@ export default async function CellarLayout({ children }: LayoutProps<"/">) {
             MyWine
           </Link>
           <NavLinks openCount={openCount ?? 0} />
-          <form action={signOut}>
+          <LocationSwitcher
+            options={location.options.map(({ key, label }) => ({ key, label }))}
+            selected={location.selected?.key ?? null}
+          />
+          <form action={signOut} className="signout">
             <button type="submit" className="btn btn-ghost btn-sm" title={email ?? undefined}>
               Abmelden
             </button>

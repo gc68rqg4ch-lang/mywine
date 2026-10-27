@@ -5,8 +5,17 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
 ## Funktionen (Meilenstein 1)
 
 - **Login per Magic Link** (`/login` → Mail → `/auth/confirm`)
-- **Bestand** (`/`): ungeöffnete Positionen mit Suche, Typfilter und Kennzahlen (Kellerwert = bezahlt,
-  Normalwert = Normalpreis bzw. bezahlter Preis, falls kein Normalpreis erfasst ist)
+- **Lagerort-Wahl** oben rechts (Alle / Räume aus `storage_locations`): filtert alle Listen und Zahlen,
+  gemerkt im Cookie `mywine_lagerort`. Offene Flaschen ohne Lagerort erscheinen nur unter „Alle“.
+- **Bestand** (`/`): ein Eintrag pro Wein (`cellar_wine_summary` + `cellar_wines`) mit Flaschenzahl und
+  Jahrgängen, Suche und Gruppierung nach Weintyp, Land (mit Flagge), Rebsorte, Jahrgang oder Preisklasse
+  (bis 30 / 30–60 / 60–100 / 100–200 / über 200 CHF). Bei Jahrgang und Preisklasse steht ein Wein in jeder
+  passenden Gruppe mit deren Flaschenzahl, bei Rebsorte Cuvées unter jeder Traube. Kacheln: Bestand
+  (Flaschen, Weine, Jahrgänge, Kellerwert bezahlt/normal), offene Flaschen (Tage seit Öffnen), Käufe des
+  Jahres (aus dem Journal `inventory_events`) und Trinkreife. Weintypen als Trauben-Symbole
+  (`src/components/wine-type-icon.tsx`); Logik in `src/lib/cellar/overview.ts`.
+- **Weinseite** (`/wein/[id]`): Aufteilung nach Jahrgang (Flaschen, Ø Preis, Preisklasse, Trinkreife,
+  Bewertungen) und nach Lagerort, dazu alle Flaschen – immer ungefiltert.
 - **Offene Flaschen** (`/offen`): älteste zuerst, mit Füllstand
 - **Getrunken** (`/getrunken`): neueste zuerst nach `drunk_at`, mit persönlicher Bewertung; importierte Zeilen ohne `drunk_at` folgen alphabetisch
 - **Detailseite** (`/flasche/[id]`) mit Aktionen:
@@ -87,6 +96,8 @@ src/
   app/api/telegram/             Webhook (route.ts) und Webhook-Registrierung (setup/route.ts)
   lib/ingest/                   Bot-Logik: Album/Jobs, Claude-Erkennung, Abgleich, Speichern
   lib/telegram/                 Telegram Bot API (fetch), Konfiguration
+  lib/cellar/overview.ts        Bestandsübersicht: Weine, Lagerort-Filter, Gruppen, Kennzahlen
+  lib/location.ts               Lagerort-Auswahl (Cookie) und Query-Filter
   lib/grapes/                   Rebsorten-Anteile: Helfer, Recherche, Speichern (wine_grape_shares)
 supabase/migrations/            Migrationen, die zusätzlich zum Import-Schema angelegt wurden
 ```
