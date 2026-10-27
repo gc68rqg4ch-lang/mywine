@@ -5,7 +5,7 @@ import { GrapeShareSchema } from "@/lib/ingest/schema";
 import { cleanSources, webResearch } from "@/lib/ingest/recognize";
 import { normalizeGrapeShares, type GrapeShare } from "./shares";
 
-const GrapeResearchSchema = z.object({
+export const GrapeResearchSchema = z.object({
   grapes: z.array(GrapeShareSchema).describe("Rebsorten des Weins, wichtigste zuerst"),
   percentages_for_vintage: z
     .boolean()

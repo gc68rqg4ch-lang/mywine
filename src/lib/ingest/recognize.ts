@@ -106,7 +106,7 @@ export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionR
 }
 
 /** JSON-Schema für ein striktes Tool aus einem Zod-Schema (ohne "$schema"-Schlüssel). */
-function toolInputSchema(schema: z.ZodType) {
+export function toolInputSchema(schema: z.ZodType) {
   const json = z.toJSONSchema(schema, { target: "draft-7" }) as Anthropic.Beta.BetaTool.InputSchema;
   delete json.$schema;
   return json;
@@ -171,7 +171,7 @@ export function cleanSources(sources: string[]) {
   return sources.filter((s) => /^https?:\/\//.test(s)).slice(0, 5);
 }
 
-const EnrichmentSchema = WineProposalSchema.pick({
+export const EnrichmentSchema = WineProposalSchema.pick({
   country: true,
   region: true,
   appellation: true,

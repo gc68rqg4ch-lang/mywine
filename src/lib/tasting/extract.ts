@@ -9,13 +9,22 @@ import { WINE_STYLE, type SatData, type SatType } from "./sat";
 
 type Options = [string, ...string[]];
 
-/** Schema mit exakten Optionswerten je Feld; nicht Erwähntes ist null. */
+/**
+ * Wert für „im Text nicht erwähnt“. Das Schema kommt so ohne nullable/Union-Typen aus –
+ * die API erlaubt höchstens MAX_UNION_PARAMS davon (Mehrfachfelder: leere Liste,
+ * Notizen: leerer String).
+ */
+export const NOT_MENTIONED = "nicht_erwähnt";
+
+/** Schema mit exakten Optionswerten je Feld; nicht Erwähntes ist NOT_MENTIONED bzw. leer. */
 export function extractionSchema(type: SatType) {
   const fields = Object.fromEntries(
-    extractableFields(type).map((def) => {
-      const option = z.enum(def.options as Options);
-      return [def.key, (def.multi ? z.array(option) : option).nullable().describe(def.label)];
-    }),
+    extractableFields(type).map((def) => [
+      def.key,
+      (def.multi ? z.array(z.enum(def.options as Options)) : z.enum([NOT_MENTIONED, ...def.options] as Options)).describe(
+        def.label,
+      ),
+    ]),
   );
   const lexicon = aromaLexicon(type);
   const aroma = z.object({
@@ -26,8 +35,22 @@ export function extractionSchema(type: SatType) {
     fields: z.object(fields),
     aromas_add: z.array(aroma),
     aromas_remove: z.array(aroma),
-    notes: z.string().nullable(),
+    notes: z.string().describe("Leer, wenn es nichts zu notieren gibt"),
   });
+}
+
+/** Antwort von Claude → Extraction (nicht Erwähntes wird null, wie applyExtraction es erwartet). */
+export function toExtraction(raw: z.infer<ReturnType<typeof extractionSchema>>): Extraction {
+  const fields: Extraction["fields"] = {};
+  for (const [key, value] of Object.entries(raw.fields as Record<string, string | string[]>)) {
+    fields[key] = value === NOT_MENTIONED || (Array.isArray(value) && value.length === 0) ? null : value;
+  }
+  return {
+    fields,
+    aromas_add: raw.aromas_add,
+    aromas_remove: raw.aromas_remove,
+    notes: raw.notes.trim() || null,
+  };
 }
 
 function systemPrompt(type: SatType) {
@@ -39,11 +62,11 @@ function systemPrompt(type: SatType) {
 
 Regeln:
 - Übernimm nur, was im neuen Text tatsächlich gesagt wird. Nichts erfinden, nichts ableiten, was nicht gesagt ist.
-- Nicht Erwähntes ist null (bzw. leere Liste). Der bisherige Stand bleibt dann automatisch erhalten.
-- Verwende ausschliesslich die exakten Optionswerte unten. Übliche Umschreibungen darfst du zuordnen, wenn die Bedeutung eindeutig ist (z. B. „knackige Säure“ → saeure „hoch“, „eher hohe Säure“ → „mittel (+)“, „langer Abgang“ → abgang „lang“, „trocken“ → suesse „trocken“). Ist es nicht eindeutig, lass das Feld null.
+- Nicht Erwähntes ist „${NOT_MENTIONED}“ (bei Mehrfachfeldern eine leere Liste, notes ein leerer String). Der bisherige Stand bleibt dann automatisch erhalten.
+- Verwende ausschliesslich die exakten Optionswerte unten. Übliche Umschreibungen darfst du zuordnen, wenn die Bedeutung eindeutig ist (z. B. „knackige Säure“ → saeure „hoch“, „eher hohe Säure“ → „mittel (+)“, „langer Abgang“ → abgang „lang“, „trocken“ → suesse „trocken“). Ist es nicht eindeutig, setze „${NOT_MENTIONED}“.
 - Aromen nur aus dem Lexikon, mit der passenden Gruppe; nur eindeutige Entsprechungen (z. B. „Kirsche“ bei Rotwein nur, wenn rot oder schwarz klar ist – sonst weglassen und in notes erwähnen).
 - Korrigiert der Text etwas Bisheriges („doch eher kurzer Abgang“, „keine Vanille“), setze den neuen Wert bzw. nimm das Aroma in aromas_remove auf.
-- notes: kurze Bemerkungen, die in kein Feld passen (z. B. Speisebegleitung, Anlass), sonst null.
+- notes: kurze Bemerkungen, die in kein Feld passen (z. B. Speisebegleitung, Anlass), sonst leer.
 
 Felder und erlaubte Werte:
 ${defs}
@@ -79,7 +102,7 @@ async function extractWith(model: string, data: SatData, text: string): Promise<
   if (response.stop_reason === "refusal" || response.stop_reason === "max_tokens" || !response.parsed_output) {
     throw new Error(`${model}: kein gültiges Ergebnis (${response.stop_reason})`);
   }
-  return response.parsed_output as Extraction;
+  return toExtraction(response.parsed_output);
 }
 
 /** Ordnet Freitext den SAT-Feldern zu: zuerst Haiku, bei Fehler oder Ablehnung Sonnet. */

@@ -174,7 +174,9 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 Im Wein-Menü „📝 Verkostung“:
 - **💬 Erzählen:** Eindrücke als Freitext (auch diktiert). Claude (`claude-haiku-5-5`, bei Bedarf
   `claude-sonnet-5-5`) ordnet sie per strukturierter Ausgabe den Feldern und exakten Optionswerten aus
-  `src/lib/tasting/sat.ts` zu (`src/lib/tasting/extract.ts`); nicht Erwähntes bleibt leer. Punkte und Qualität
+  `src/lib/tasting/sat.ts` zu (`src/lib/tasting/extract.ts`); nicht Erwähntes bleibt leer. Das Schema kommt ohne
+  nullable-/Union-Felder aus (Enum-Wert „nicht_erwähnt“, leere Liste bzw. leerer String) – die API erlaubt höchstens
+  16 davon pro Schema (`src/lib/ai/schema-limits.ts`). Punkte und Qualität
   berechnet dieselbe Logik wie in der App (`autoEvaluate`). Fehlen Angaben für Länge/Intensität/Komplexität
   oder fürs Resultat (Süsse, Säure, Tannin, Körper, Trinkreife …), fragt der Bot nach: [✏️ Ergänzen]
   [💾 Trotzdem speichern]. Sonst: [💾 Speichern] [✏️ Korrigieren] [📱 In der App bearbeiten], dazu
