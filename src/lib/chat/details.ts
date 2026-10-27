@@ -2,7 +2,7 @@
 // Rein, ohne DB – leere Angaben fallen weg statt „–“ zu zeigen.
 
 import { countryFlag } from "@/lib/cellar/overview";
-import { drinkWindowLabel } from "@/lib/cellar/wine-page";
+import { drinkWindowLabel } from "@/lib/cellar/overview";
 import { daysSince, formatBottleSize, formatMoney, formatStarNumber, priceDiscount, type WineType } from "@/lib/format";
 import { typeEmoji } from "./menu-view";
 

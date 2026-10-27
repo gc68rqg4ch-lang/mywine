@@ -3,7 +3,7 @@
 // cellar_wines (Wein + Jahrgang + Flaschengrösse mit Aufteilung nach Lagerort).
 
 import type { Json, Tables } from "@/lib/database.types";
-import { WINE_TYPE_LABELS, type WineType } from "@/lib/format";
+import { WINE_TYPE_LABELS, todayIso, type WineType } from "@/lib/format";
 
 export type LocationFilter = { house: string | null; room: string } | null;
 
@@ -36,18 +36,81 @@ export type SummaryWine = {
   grapes: string[];
 };
 
-export type DrinkStatus = "overdue" | "ready" | "wait" | "unknown";
+/** Trinkreife eines Jahrgangs aus seinem Trinkfenster (siehe drinkStatus). */
+export type DrinkStatus = "overdue" | "now" | "ready" | "wait" | "unknown";
+
+/** Reihenfolge der Gruppen und Zählungen. */
+export const DRINK_STATUS_ORDER: DrinkStatus[] = ["overdue", "now", "ready", "wait", "unknown"];
 
 export const PRICE_CLASSES = ["bis 30", "30–60", "60–100", "100–200", "über 200"] as const;
 
 export const DRINK_STATUS_LABELS: Record<DrinkStatus, string> = {
-  overdue: "überfällig",
-  ready: "trinkreif",
-  wait: "warten",
-  unknown: "unbekannt",
+  overdue: "Über dem Höhepunkt",
+  now: "Jetzt trinken",
+  ready: "Trinkreif",
+  wait: "Noch lagern",
+  unknown: "Unbekannt",
 };
 
-export type GroupBy = "typ" | "land" | "rebsorte" | "jahrgang" | "preis" | "getrunken";
+export const currentYear = () => Number(todayIso().slice(0, 4));
+
+/**
+ * Trinkreife aus dem Trinkfenster des Jahrgangs: bis < Jahr → über dem Höhepunkt,
+ * bis = Jahr → jetzt trinken, ab > Jahr → noch lagern, sonst trinkreif; ohne Fenster unbekannt.
+ * Gilt für App und Bot gleich.
+ */
+export function drinkStatus(from: number | null, until: number | null, year: number): DrinkStatus {
+  if (from == null && until == null) return "unknown";
+  if (until != null && until < year) return "overdue";
+  if (until != null && until === year) return "now";
+  if (from != null && from > year) return "wait";
+  return "ready";
+}
+
+export function drinkWindowLabel(from: number | null, until: number | null) {
+  if (from && until) return `${from}–${until}`;
+  if (from) return `ab ${from}`;
+  if (until) return `bis ${until}`;
+  return null;
+}
+
+/** „Trinkreif · 2024–2032“ bzw. „Unbekannt · kein Trinkfenster“. */
+export function drinkStatusText(from: number | null, until: number | null, year: number) {
+  return `${DRINK_STATUS_LABELS[drinkStatus(from, until, year)]} · ${drinkWindowLabel(from, until) ?? "kein Trinkfenster"}`;
+}
+
+/** Bestand nach Trinkreife gruppiert, diese Gruppe aufgeklappt und angesprungen. */
+export function drinkStatusHref(status: DrinkStatus) {
+  return `/?gruppe=trinkreife&reife=${status}#${groupAnchor("trinkreife", status)}`;
+}
+
+export function isDrinkStatus(value: unknown): value is DrinkStatus {
+  return typeof value === "string" && (DRINK_STATUS_ORDER as string[]).includes(value);
+}
+
+/** id einer Gruppe in der Liste (Sprungziel). */
+export const groupAnchor = (by: GroupBy, key: string) => `gruppe-${by}-${key || "ohne"}`;
+
+export type DrinkBadge = { status: DrinkStatus; text: string; year?: number | null };
+
+/**
+ * Trinkreife je Jahrgang eines Listeneintrags (für die Kachel). Gleicher Status und gleiches
+ * Fenster in allen Jahrgängen → ein Eintrag ohne Jahr, sonst einer pro Jahrgang.
+ */
+export function drinkBadges(wine: Groupable, vintages: (number | null)[], year: number): DrinkBadge[] {
+  const byYear = new Map<number | null, DrinkBadge>();
+  for (const u of wine.units) {
+    if (!vintages.includes(u.vintage_year) || byYear.has(u.vintage_year)) continue;
+    const from = u.drink_from_year ?? null;
+    const until = u.drink_until_year ?? null;
+    byYear.set(u.vintage_year, { status: drinkStatus(from, until, year), text: drinkStatusText(from, until, year), year: u.vintage_year });
+  }
+  const list = sortVintages([...byYear.keys()]).map((y) => byYear.get(y)!);
+  if (new Set(list.map((b) => b.text)).size <= 1) return list.slice(0, 1).map((b) => ({ status: b.status, text: b.text }));
+  return list;
+}
+
+export type GroupBy = "typ" | "land" | "rebsorte" | "jahrgang" | "preis" | "trinkreife" | "getrunken";
 
 export const GROUP_BY_LABELS: Record<GroupBy, string> = {
   typ: "Weintyp",
@@ -55,11 +118,12 @@ export const GROUP_BY_LABELS: Record<GroupBy, string> = {
   rebsorte: "Rebsorte",
   jahrgang: "Jahrgang",
   preis: "Preisklasse",
+  trinkreife: "Trinkreife",
   getrunken: "Getrunken am",
 };
 
 /** Gruppierungen von Bestand und Offen; Getrunken hat zusätzlich „Getrunken am“. */
-export const BASE_GROUPINGS: GroupBy[] = ["typ", "land", "rebsorte", "jahrgang", "preis"];
+export const BASE_GROUPINGS: GroupBy[] = ["typ", "land", "rebsorte", "jahrgang", "preis", "trinkreife"];
 
 export function isGroupBy(value: unknown, allowed: GroupBy[] = BASE_GROUPINGS): value is GroupBy {
   return typeof value === "string" && (allowed as string[]).includes(value);
@@ -92,11 +156,8 @@ export function parseLocations(json: Json | null): LocationCount[] {
   }));
 }
 
-function asDrinkStatus(v: string | null): DrinkStatus {
-  return v === "overdue" || v === "ready" || v === "wait" ? v : "unknown";
-}
-
-export function toVintageRow(r: Tables<"cellar_wines">): VintageRow | null {
+/** drink_status wird aus dem Trinkfenster berechnet (nicht aus der View), wie überall in App und Bot. */
+export function toVintageRow(r: Tables<"cellar_wines">, year = currentYear()): VintageRow | null {
   if (!r.wine_id) return null;
   return {
     wine_id: r.wine_id,
@@ -104,7 +165,7 @@ export function toVintageRow(r: Tables<"cellar_wines">): VintageRow | null {
     bottle_size_ml: r.bottle_size_ml,
     avg_price: r.avg_price,
     price_class: r.price_class,
-    drink_status: asDrinkStatus(r.drink_status),
+    drink_status: drinkStatus(r.drink_from_year, r.drink_until_year, year),
     drink_from_year: r.drink_from_year,
     drink_until_year: r.drink_until_year,
     locations: parseLocations(r.locations),
@@ -164,6 +225,9 @@ export type GroupUnit = {
   count: number;
   /** YYYY-MM-DD (Zürich), nur bei getrunkenen Flaschen. */
   drunk_on?: string | null;
+  /** Trinkfenster des Jahrgangs (Gruppierung „Trinkreife“). */
+  drink_from_year?: number | null;
+  drink_until_year?: number | null;
 };
 
 /** Was Liste, Suche und Gruppierung von einem Eintrag brauchen. */
@@ -212,7 +276,13 @@ export function buildCellarWines(
       vintages: sortVintages([...new Set(wineRows.filter((r) => r.sealed > 0).map((r) => r.vintage_year))]),
       units: wineRows
         .filter((r) => r.sealed > 0)
-        .map((r) => ({ vintage_year: r.vintage_year, price_class: r.price_class, count: r.sealed })),
+        .map((r) => ({
+          vintage_year: r.vintage_year,
+          price_class: r.price_class,
+          count: r.sealed,
+          drink_from_year: r.drink_from_year,
+          drink_until_year: r.drink_until_year,
+        })),
       rows: wineRows,
     });
   }
@@ -318,11 +388,11 @@ function splitBy<T extends Groupable>(wine: T, keyOf: (u: GroupUnit) => string) 
 }
 
 /**
- * Gruppiert die Einträge. Bei Jahrgang, Preisklasse und „Getrunken am“ erscheint ein
+ * Gruppiert die Einträge. Bei Jahrgang, Preisklasse, Trinkreife und „Getrunken am“ erscheint ein
  * Eintrag in jeder passenden Gruppe mit der Flaschenzahl dieser Gruppe; bei Rebsorte
  * in jeder seiner Rebsorten (Cuvées also mehrfach) mit allen Flaschen.
  */
-export function groupWines<T extends Groupable>(wines: T[], by: GroupBy): WineGroup<T>[] {
+export function groupWines<T extends Groupable>(wines: T[], by: GroupBy, thisYear = currentYear()): WineGroup<T>[] {
   const groups = new Map<string, WineGroup<T>>();
   const whole = (wine: T): GroupItem<T> => ({
     wine,
@@ -370,6 +440,13 @@ export function groupWines<T extends Groupable>(wines: T[], by: GroupBy): WineGr
         }
         break;
       }
+      case "trinkreife": {
+        const statusOf = (u: GroupUnit) => drinkStatus(u.drink_from_year ?? null, u.drink_until_year ?? null, thisYear);
+        for (const [key, item] of splitBy(wine, statusOf)) {
+          pushTo(groups, key, () => ({ key, label: DRINK_STATUS_LABELS[key as DrinkStatus] }), item);
+        }
+        break;
+      }
       case "getrunken": {
         for (const [year, item] of splitBy(wine, (u) => u.drunk_on?.slice(0, 4) ?? "")) {
           pushTo(groups, year, () => ({ key: year, label: year || "Ohne Datum" }), item);
@@ -403,6 +480,9 @@ export function groupWines<T extends Groupable>(wines: T[], by: GroupBy): WineGr
             PRICE_CLASSES.indexOf(b.key as (typeof PRICE_CLASSES)[number]),
       );
       break;
+    case "trinkreife":
+      list.sort((a, b) => DRINK_STATUS_ORDER.indexOf(a.key as DrinkStatus) - DRINK_STATUS_ORDER.indexOf(b.key as DrinkStatus));
+      break;
     case "getrunken":
       // Neueste zuerst, „Ohne Datum“ zuletzt; darin Monate absteigend.
       list.sort((a, b) => lastIfEmpty(a, b) || b.key.localeCompare(a.key));
@@ -434,10 +514,12 @@ export function cellarTotals(wines: CellarWine[]) {
 }
 
 export function drinkCounts(wines: CellarWine[]) {
-  const counts: Record<DrinkStatus, number> = { overdue: 0, ready: 0, wait: 0, unknown: 0 };
+  const counts = emptyDrinkCounts();
   for (const wine of wines) for (const row of wine.rows) counts[row.drink_status] += row.sealed;
   return counts;
 }
+
+export const emptyDrinkCounts = (): Record<DrinkStatus, number> => ({ overdue: 0, now: 0, ready: 0, wait: 0, unknown: 0 });
 
 // ---------------------------------------------------------------------------
 // Länderflaggen

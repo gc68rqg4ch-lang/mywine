@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { PhotoThumb, type ViewerPhoto } from "@/components/photo-viewer";
 import { WineTypeIcon } from "@/components/wine-type-icon";
+import { drinkStatusHref, type DrinkBadge } from "@/lib/cellar/overview";
 import type { WineType } from "@/lib/format";
 import { MEDIA_KIND_LABELS } from "@/lib/media/pick";
 import type { LabelPair, ViewPhoto } from "@/lib/media/store";
@@ -18,6 +19,7 @@ export function WineCard({
   extra,
   aside,
   photo,
+  drink,
 }: {
   href: string;
   type: WineType | null;
@@ -31,9 +33,11 @@ export function WineCard({
   aside?: ReactNode;
   /** Etikett links statt Trauben-Symbol; Antippen öffnet das Overlay (Vorder-/Rückseite). */
   photo?: LabelPair | null;
+  /** Trinkreife (eine Zeile je Jahrgang, falls verschieden); Antippen öffnet den Bestand nach Trinkreife gruppiert. */
+  drink?: DrinkBadge[];
 }) {
-  // Das Bild ist ein eigener Knopf über dem Platzhalter in der Karte – nicht im Link,
-  // damit ein Tipp aufs Bild nicht die Weinseite öffnet.
+  // Bild und Trinkreife liegen über Platzhaltern in der Karte – nicht im Link, damit ein Tipp
+  // darauf nicht die Weinseite öffnet (Links dürfen nicht verschachtelt sein).
   return (
     <li className="item-wrap">
       <Link href={href} className="item">
@@ -43,9 +47,29 @@ export function WineCard({
           <span className="item-title">{title}</span>
           <span className="item-meta">{meta.filter(Boolean).join(" · ")}</span>
           {extra && <span className="item-meta item-extra">{extra}</span>}
+          {drink?.map((b, i) => (
+            <span key={b.year ?? i} className="item-meta" aria-hidden>
+              {"\u00a0"}
+            </span>
+          ))}
         </div>
         {aside}
       </Link>
+      {drink?.length ? (
+        <div className="item-drink-layer">
+          {photo ? <span className="item-thumb-slot" /> : <span className="item-drink-spacer" />}
+          <span className="item-drink">
+            {drink.map((b, i) => (
+              <span key={b.year ?? i} className="item-meta">
+                <Link href={drinkStatusHref(b.status)} className={`drink-link drink-${b.status}`}>
+                  {b.year !== undefined ? `${b.year ?? "o. J."}: ` : ""}
+                  {b.text}
+                </Link>
+              </span>
+            ))}
+          </span>
+        </div>
+      ) : null}
       {photo && (
         <PhotoThumb
           className="item-thumb"

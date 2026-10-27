@@ -5,7 +5,7 @@ import { ListControls, applyTypeFilter, readListParams } from "@/components/cell
 import { WineCard } from "@/components/cellar/wine-card";
 import { FillGauge } from "@/components/fill-gauge";
 import { getMemberSession } from "@/lib/auth";
-import { BASE_GROUPINGS, groupWines, matchesQuery, originLabel } from "@/lib/cellar/overview";
+import { BASE_GROUPINGS, currentYear, drinkBadges, groupWines, matchesQuery, originLabel } from "@/lib/cellar/overview";
 import { openTotals, toOpenEntry } from "@/lib/cellar/lists";
 import { formatBottleSize, formatDaysSince } from "@/lib/format";
 import { loadLabelPhotos } from "@/lib/media/store";
@@ -26,7 +26,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
       supabase
         .from("cellar_overview")
         .select(
-          "inventory_item_id, wine_id, name, producer, country, region, type, grapes, vintage_year, purchase_price, fill_level_percent, date_opened, bottle_size_ml",
+          "inventory_item_id, wine_id, name, producer, country, region, type, grapes, vintage_year, purchase_price, fill_level_percent, date_opened, bottle_size_ml, drink_from_year, drink_until_year",
         )
         .eq("status", "open"),
       filter,
@@ -49,7 +49,8 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
   const entries = rows.map((r) => toOpenEntry(r, grapes.get(r.wine_id) ?? []));
   const visible = query ? entries.filter((e) => matchesQuery(e, query)) : entries;
   const { types, filtered } = applyTypeFilter(visible, type);
-  const groups = groupWines(filtered, groupBy);
+  const thisYear = currentYear();
+  const groups = groupWines(filtered, groupBy, thisYear);
   const photo = await loadLabelPhotos(supabase, filtered.map((e) => e.wine_id));
   const totals = openTotals(entries);
   const hidden = withoutRoom.count ?? 0;
@@ -112,6 +113,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
               wine.bottleSizeMl && wine.bottleSizeMl !== 750 ? formatBottleSize(wine.bottleSizeMl) : null,
               originLabel(wine),
             ]}
+            drink={drinkBadges(wine, wine.vintages, thisYear)}
             aside={<FillGauge percent={wine.fill} />}
             photo={photo(wine.wine_id, wine.vintages[0])}
           />

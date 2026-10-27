@@ -33,6 +33,8 @@ export function toOpenEntry(
     fill_level_percent: number | null;
     date_opened: string | null;
     bottle_size_ml: number | null;
+    drink_from_year?: number | null;
+    drink_until_year?: number | null;
   },
   grapes: string[],
 ): OpenEntry {
@@ -46,7 +48,15 @@ export function toOpenEntry(
     type: r.type,
     grapes,
     vintages: [r.vintage_year],
-    units: [{ vintage_year: r.vintage_year, price_class: priceClass(r.purchase_price), count: 1 }],
+    units: [
+      {
+        vintage_year: r.vintage_year,
+        price_class: priceClass(r.purchase_price),
+        count: 1,
+        drink_from_year: r.drink_from_year ?? null,
+        drink_until_year: r.drink_until_year ?? null,
+      },
+    ],
     fill: r.fill_level_percent,
     dateOpened: r.date_opened,
     days: daysSince(r.date_opened),

@@ -1,7 +1,6 @@
 // Weinseite (/wein/[id]): Jahrgangs-Auswahl, Chargen und Raster – reine Funktionen.
 
 import type { InventoryStatus } from "@/lib/format";
-import type { DrinkStatus } from "./overview";
 
 /** Link auf die Weinseite; mit Jahrgang (null = ohne Jahrgang) ist dieser vorausgewählt. */
 export function wineHref(wineId: string, year?: number | null, extra?: Record<string, string>) {
@@ -63,19 +62,4 @@ export function anchorItem<T extends PageItem>(items: T[]): T | null {
       (a, b) => rank[a.status] - rank[b.status] || (b.drunk_at ?? "").localeCompare(a.drunk_at ?? ""),
     )[0] ?? null
   );
-}
-
-/** Trinkreife wie in der DB-View: überfällig, trinkreif, warten oder unbekannt. */
-export function drinkStatus(from: number | null, until: number | null, year: number): DrinkStatus {
-  if (from == null && until == null) return "unknown";
-  if (until != null && until < year) return "overdue";
-  if (from != null && from > year) return "wait";
-  return "ready";
-}
-
-export function drinkWindowLabel(from: number | null, until: number | null) {
-  if (from && until) return `${from}–${until}`;
-  if (from) return `ab ${from}`;
-  if (until) return `bis ${until}`;
-  return null;
 }

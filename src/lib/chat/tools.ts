@@ -4,12 +4,13 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import {
   DRINK_STATUS_LABELS,
+  DRINK_STATUS_ORDER,
   buildCellarWines,
+  emptyDrinkCounts,
   matchesQuery,
   toSummaryWine,
   toVintageRow,
   type CellarWine,
-  type DrinkStatus,
 } from "@/lib/cellar/overview";
 import { daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
@@ -26,7 +27,7 @@ export type PendingProposal =
   | { edit: Edit; preview: EditPreview; text: string };
 
 const WINE_TYPES = ["red", "white", "rose", "sparkling", "sweet", "fortified", "orange"] as const;
-const DRINK_STATUSES = ["overdue", "ready", "wait", "unknown"] as const;
+const DRINK_STATUSES = ["overdue", "now", "ready", "wait", "unknown"] as const;
 
 const nonNull = <T,>(v: T | null): v is T => v != null;
 const json = (value: unknown) => JSON.stringify(value);
@@ -71,7 +72,7 @@ export async function loadCellar(db: AdminClient, room: string | null) {
   if (rows.error) throw rows.error;
   return buildCellarWines(
     (summary.data ?? []).map(toSummaryWine).filter(nonNull),
-    (rows.data ?? []).map(toVintageRow).filter(nonNull),
+    (rows.data ?? []).map((r) => toVintageRow(r)).filter(nonNull),
     room ? { house: null, room } : null,
   );
 }
@@ -193,14 +194,14 @@ export function chatTools(
     betaZodTool({
       name: "drink_readiness",
       description:
-        "Trinkreife des Bestands: Anzahl ungeöffneter Flaschen pro Status (überfällig, trinkreif, warten, unbekannt) und die Weine dazu.",
+        "Trinkreife des Bestands (aus dem Trinkfenster je Jahrgang): Anzahl ungeöffneter Flaschen pro Status – overdue = über dem Höhepunkt (bis-Jahr vorbei), now = jetzt trinken (bis-Jahr = dieses Jahr), ready = trinkreif, wait = noch lagern, unknown = kein Trinkfenster – und die Weine dazu.",
       inputSchema: z.object({
         status: z.enum(DRINK_STATUSES).optional().describe("Nur Weine mit diesem Status auflisten"),
         room: z.string().max(80).optional(),
       }),
       run: async ({ status, room }) => {
         const wines = await loadCellar(db, room ?? null);
-        const counts: Record<DrinkStatus, number> = { overdue: 0, ready: 0, wait: 0, unknown: 0 };
+        const counts = emptyDrinkCounts();
         const list: { wine_id: string; wine: string; status: string; window: string | null; sealed: number }[] = [];
         for (const w of wines) {
           for (const r of w.rows) {
@@ -216,10 +217,9 @@ export function chatTools(
             });
           }
         }
-        const order: DrinkStatus[] = ["overdue", "ready", "wait", "unknown"];
         return json({
           today: todayIso(),
-          bottles_by_status: Object.fromEntries(order.map((s) => [DRINK_STATUS_LABELS[s], counts[s]])),
+          bottles_by_status: Object.fromEntries(DRINK_STATUS_ORDER.map((s) => [DRINK_STATUS_LABELS[s], counts[s]])),
           wines: list.slice(0, 30),
           truncated: list.length > 30,
         });

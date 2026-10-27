@@ -623,6 +623,53 @@ input[type="range"] {
   height: 48px;
 }
 
+/* Trinkreife in der Karte: eigene Links über einem Platzhalter in der letzten Zeile, gleich
+   ausgerichtet wie der Karteninhalt (Rand + Innenabstand, Symbol bzw. Bild, Abstand). */
+.item-drink-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 13px 15px;
+  pointer-events: none;
+}
+.item-drink-spacer {
+  flex: none;
+  width: 22px;
+}
+.item-drink-layer .item-thumb-slot {
+  align-self: center;
+}
+.item-drink {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-right: 64px;
+}
+.item-drink .drink-link {
+  pointer-events: auto;
+}
+.drink-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 2px;
+}
+.drink-link:hover {
+  text-decoration-color: currentColor;
+}
+.drink-link.drink-overdue {
+  color: var(--danger);
+}
+.drink-link.drink-now,
+.drink-link.drink-ready {
+  color: var(--ok-text);
+}
+.group {
+  scroll-margin-top: 80px;
+}
+
 .photo-thumb {
   display: block;
   padding: 0;
@@ -1336,6 +1383,7 @@ input[inputmode="decimal"] {
 }
 .tile-dl dd {
   margin: 0;
+  white-space: nowrap;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -1343,6 +1391,8 @@ input[inputmode="decimal"] {
 .drink-badge.drink-overdue {
   color: var(--danger);
 }
+.drink-now dd,
+.drink-badge.drink-now,
 .drink-ready dd,
 .drink-badge.drink-ready {
   color: var(--ok-text);

@@ -8,16 +8,20 @@ import { getMemberSession } from "@/lib/auth";
 import {
   BASE_GROUPINGS,
   DRINK_STATUS_LABELS,
+  DRINK_STATUS_ORDER,
   buildCellarWines,
   cellarTotals,
+  currentYear,
+  drinkBadges,
   drinkCounts,
+  drinkStatusHref,
   formatVintages,
   groupWines,
   matchesQuery,
+  isDrinkStatus,
   originLabel,
   toSummaryWine,
   toVintageRow,
-  type DrinkStatus,
   type LocationFilter,
 } from "@/lib/cellar/overview";
 import { daysSince, formatMoney, todayIso } from "@/lib/format";
@@ -39,10 +43,13 @@ function storagePattern(filter: NonNullable<LocationFilter>) {
 export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   const params = await searchParams;
   const { query, groupBy, type } = readListParams(params, BASE_GROUPINGS);
+  // ?reife=…: von einem Trinkreife-Status – diese Gruppe aufklappen.
+  const openKey = groupBy === "trinkreife" && isDrinkStatus(params.reife) ? params.reife : null;
 
   const { supabase } = await getMemberSession();
   const { filter, selected } = await getLocationFilter();
   const year = todayIso().slice(0, 4);
+  const thisYear = currentYear();
 
   let purchasesQuery = supabase
     .from("inventory_events")
@@ -67,13 +74,13 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
 
   const wines = buildCellarWines(
     (summary.data ?? []).map(toSummaryWine).filter(nonNull),
-    (vintageRows.data ?? []).map(toVintageRow).filter(nonNull),
+    (vintageRows.data ?? []).map((r) => toVintageRow(r, thisYear)).filter(nonNull),
     filter,
   );
   const inStock = wines.filter((w) => w.sealed > 0);
   const visible = query ? inStock.filter((w) => matchesQuery(w, query)) : inStock;
   const { types, filtered } = applyTypeFilter(visible, type);
-  const groups = groupWines(filtered, groupBy);
+  const groups = groupWines(filtered, groupBy, thisYear);
   const photo = await loadLabelPhotos(supabase, filtered.map((w) => w.wine_id));
 
   const totals = cellarTotals(wines);
@@ -141,9 +148,13 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
         <div className="tile">
           <h2 className="tile-title">Trinkreife</h2>
           <dl className="tile-dl">
-            {(["overdue", "ready", "wait", "unknown"] as DrinkStatus[]).map((s) => (
+            {DRINK_STATUS_ORDER.map((s) => (
               <div key={s} className={`drink drink-${s}`}>
-                <dt>{DRINK_STATUS_LABELS[s]}</dt>
+                <dt>
+                  <Link href={drinkStatusHref(s)} className="drink-link">
+                    {DRINK_STATUS_LABELS[s]}
+                  </Link>
+                </dt>
                 <dd>{drink[s]} Fl.</dd>
               </div>
             ))}
@@ -157,6 +168,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
         groups={groups}
         groupBy={groupBy}
         query={query}
+        openKey={openKey}
         empty="Keine ungeöffneten Flaschen hier."
         itemKey={({ wine }) => wine.wine_id}
         renderItem={({ wine, bottles, vintages }) => (
@@ -167,10 +179,11 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
             title={wine.name}
             meta={[formatVintages(vintages), originLabel(wine)]}
             photo={photo(wine.wine_id, newestVintage(vintages))}
+            drink={drinkBadges(wine, vintages, thisYear)}
             aside={
               <BottleCount
                 bottles={bottles}
-                note={wine.open > 0 && groupBy !== "jahrgang" && groupBy !== "preis" ? `+${wine.open} offen` : null}
+                note={wine.open > 0 && groupBy !== "jahrgang" && groupBy !== "preis" && groupBy !== "trinkreife" ? `+${wine.open} offen` : null}
               />
             }
           />

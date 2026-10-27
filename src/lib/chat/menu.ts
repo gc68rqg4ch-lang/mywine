@@ -1,7 +1,16 @@
 import "server-only";
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { DRINK_STATUS_LABELS, formatVintages, type DrinkStatus } from "@/lib/cellar/overview";
+import {
+  DRINK_STATUS_LABELS,
+  DRINK_STATUS_ORDER,
+  currentYear,
+  drinkStatus,
+  drinkWindowLabel,
+  emptyDrinkCounts,
+  formatVintages,
+  type DrinkStatus,
+} from "@/lib/cellar/overview";
 import { daysSince, formatBottleSize } from "@/lib/format";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { answerCallback, editMessage, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
@@ -204,12 +213,12 @@ async function typeListScreen(db: AdminClient, code: TypeCode, offset: number, s
   };
 }
 
-const READY_ORDER: DrinkStatus[] = ["overdue", "ready", "wait"];
-const READY_EMOJI: Record<DrinkStatus, string> = { overdue: "⏰", ready: "✅", wait: "⏳", unknown: "❔" };
+// Gleiche Einteilung wie die Gruppierung „Trinkreife“ in der App.
+const READY_EMOJI: Record<DrinkStatus, string> = { overdue: "⚠️", now: "⏰", ready: "✅", wait: "⏳", unknown: "❔" };
 
 async function readyScreen(db: AdminClient, offset: number, status?: string): Promise<Screen> {
   const wines = await loadCellar(db, null);
-  const counts: Record<DrinkStatus, number> = { overdue: 0, ready: 0, wait: 0, unknown: 0 };
+  const counts = emptyDrinkCounts();
   const entries: { wineId: string; type: OpenBottleRow["type"]; producer: string; name: string; year: number | null; status: DrinkStatus; window: string; sealed: number }[] = [];
   for (const w of wines) {
     for (const r of w.rows) {
@@ -223,13 +232,13 @@ async function readyScreen(db: AdminClient, offset: number, status?: string): Pr
         name: w.name,
         year: r.vintage_year,
         status: r.drink_status,
-        window: r.drink_from_year || r.drink_until_year ? `${r.drink_from_year ?? "?"}–${r.drink_until_year ?? "?"}` : "",
+        window: drinkWindowLabel(r.drink_from_year, r.drink_until_year) ?? "",
         sealed: r.sealed,
       });
     }
   }
-  entries.sort((a, b) => READY_ORDER.indexOf(a.status) - READY_ORDER.indexOf(b.status));
-  const summary = (["overdue", "ready", "wait", "unknown"] as DrinkStatus[])
+  entries.sort((a, b) => DRINK_STATUS_ORDER.indexOf(a.status) - DRINK_STATUS_ORDER.indexOf(b.status));
+  const summary = DRINK_STATUS_ORDER
     .map((s) => `${READY_EMOJI[s]} ${DRINK_STATUS_LABELS[s]} ${counts[s]}`)
     .join(" · ");
   const names = shortNames(entries);
@@ -289,7 +298,7 @@ async function wineScreen(db: AdminClient, wineId: string, back: ListRef): Promi
 }
 
 async function vintageScreen(db: AdminClient, wineId: string, year: number | null, back: ListRef, status?: string): Promise<Screen> {
-  let q = db.from("cellar_wines").select("sealed_bottles, open_bottles, drink_status, drink_from_year, drink_until_year").eq("wine_id", wineId);
+  let q = db.from("cellar_wines").select("sealed_bottles, open_bottles, drink_from_year, drink_until_year").eq("wine_id", wineId);
   q = year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
   const [{ data: rows, error }, { data: wine, error: wErr }, ratings] = await Promise.all([
     q,
@@ -302,13 +311,14 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
 
   const sealed = (rows ?? []).reduce((s, r) => s + (r.sealed_bottles ?? 0), 0);
   const open = (rows ?? []).reduce((s, r) => s + (r.open_bottles ?? 0), 0);
-  const drink = rows?.find((r) => r.drink_status && r.drink_status !== "unknown");
+  const drink = rows?.find((r) => r.drink_from_year != null || r.drink_until_year != null);
+  const drinkState = drink ? drinkStatus(drink.drink_from_year, drink.drink_until_year, currentYear()) : null;
   const subject: Subject = { kind: "vintage", wineId, year };
   const lines = [
     `<b>${typeEmoji(wine.type)} ${e(wine.producer)} – ${e(wine.name)} ${yearLabel(year)}</b>`,
     sealed || open ? [sealed ? `${sealed} Fl. ungeöffnet` : null, open ? `${open} offen` : null].filter(Boolean).join(" · ") : "Keine Flasche mehr im Bestand.",
-    drink
-      ? `${READY_EMOJI[drink.drink_status as DrinkStatus] ?? ""} ${DRINK_STATUS_LABELS[drink.drink_status as DrinkStatus] ?? drink.drink_status} ${drink.drink_from_year ?? "?"}–${drink.drink_until_year ?? "?"}`
+    drink && drinkState
+      ? `${READY_EMOJI[drinkState]} ${DRINK_STATUS_LABELS[drinkState]} · ${drinkWindowLabel(drink.drink_from_year, drink.drink_until_year)}`
       : null,
     ratings.line ? e(ratings.line) : null,
   ].filter(Boolean);

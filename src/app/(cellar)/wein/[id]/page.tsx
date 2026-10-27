@@ -7,11 +7,9 @@ import { PhotoGallery } from "@/components/photo-viewer";
 import { ResearchSuggestions } from "@/components/research-suggestions";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
-import { DRINK_STATUS_LABELS, countryFlag } from "@/lib/cellar/overview";
+import { DRINK_STATUS_LABELS, countryFlag, drinkStatus, drinkStatusHref, drinkWindowLabel } from "@/lib/cellar/overview";
 import {
   anchorItem,
-  drinkStatus,
-  drinkWindowLabel,
   parseVintageParam,
   pickVintage,
   vintageOptions,
@@ -349,7 +347,13 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         <div className="stack section-divider">
           <h3 className="subsection-title">Trinkreife</h3>
           <p>
-            <span className={`drink-badge drink-${status}`}>{DRINK_STATUS_LABELS[status]}</span>
+            <Link
+              href={drinkStatusHref(status)}
+              className={`drink-badge drink-link drink-${status}`}
+              title="Alle Weine im Bestand mit dieser Trinkreife"
+            >
+              {DRINK_STATUS_LABELS[status]}
+            </Link>
             {drinkWindow && <span className="muted"> {drinkWindow}</span>}
           </p>
           {!drinkWindow && <p className="muted small">Kein Trinkfenster erfasst.</p>}

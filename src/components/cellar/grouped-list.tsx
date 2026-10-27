@@ -1,15 +1,17 @@
 import { Fragment, type ReactNode } from "react";
 import { WineTypeIcon } from "@/components/wine-type-icon";
-import type { GroupBy, GroupItem, Groupable, WineGroup } from "@/lib/cellar/overview";
+import { groupAnchor, type GroupBy, type GroupItem, type Groupable, type WineGroup } from "@/lib/cellar/overview";
 
 /**
  * Einklappbare Gruppen mit Trauben-Symbol bzw. Flagge und Flaschenzahl. Beim Laden
  * zugeklappt; bei aktiver Suche sind nur Gruppen mit Treffern da – die gehen auf.
+ * openKey: diese Gruppe ist aufgeklappt (Sprungziel über groupAnchor, z. B. aus der Trinkreife).
  */
 export function GroupedList<T extends Groupable>({
   groups,
   groupBy,
   query,
+  openKey,
   empty,
   itemKey,
   renderItem,
@@ -17,6 +19,7 @@ export function GroupedList<T extends Groupable>({
   groups: WineGroup<T>[];
   groupBy: GroupBy;
   query: string;
+  openKey?: string | null;
   empty: string;
   itemKey: (item: GroupItem<T>) => string;
   renderItem: (item: GroupItem<T>) => ReactNode;
@@ -34,7 +37,12 @@ export function GroupedList<T extends Groupable>({
   return (
     <div className="groups">
       {groups.map((group) => (
-        <details key={`${groupBy}:${group.key || "none"}:${query}`} className="group" open={query !== ""}>
+        <details
+          key={`${groupBy}:${group.key || "none"}:${query}:${openKey ?? ""}`}
+          id={groupAnchor(groupBy, group.key)}
+          className="group"
+          open={query !== "" || (openKey != null && group.key === openKey)}
+        >
           <summary>
             {groupBy === "typ" && <WineTypeIcon type={group.wineType ?? null} size={24} />}
             {group.flag && (

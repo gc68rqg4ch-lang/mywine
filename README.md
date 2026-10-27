@@ -10,13 +10,20 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
 - **Lagerort-Wahl** oben rechts (Alle / Räume aus `storage_locations`): filtert alle Listen und Zahlen,
   gemerkt im Cookie `mywine_lagerort`. Offene Flaschen ohne Lagerort erscheinen nur unter „Alle“.
 - **Bestand** (`/`): ein Eintrag pro Wein (`cellar_wine_summary` + `cellar_wines`) mit Flaschenzahl und
-  Jahrgängen, Suche und Gruppierung nach Weintyp, Land (mit Flagge), Rebsorte, Jahrgang oder Preisklasse
-  (bis 30 / 30–60 / 60–100 / 100–200 / über 200 CHF). Bei Jahrgang und Preisklasse steht ein Wein in jeder
+  Jahrgängen, Suche und Gruppierung nach Weintyp, Land (mit Flagge), Rebsorte, Jahrgang, Preisklasse
+  (bis 30 / 30–60 / 60–100 / 100–200 / über 200 CHF) oder Trinkreife. Bei Jahrgang, Preisklasse und Trinkreife steht ein Wein in jeder
   passenden Gruppe mit deren Flaschenzahl, bei Rebsorte Cuvées unter jeder Traube. Gruppen laden zugeklappt
   (Titel, Symbol bzw. Flagge, Flaschenzahl); bei aktiver Suche gehen die Gruppen mit Treffern auf. Kacheln: Bestand
   (Flaschen, Weine, Jahrgänge, Bestandswert bezahlt/normal), offene Flaschen (Tage seit Öffnen), Käufe des
   Jahres (aus dem Journal `inventory_events`) und Trinkreife. Weintypen als Trauben-Symbole
   (`src/components/wine-type-icon.tsx`); Logik in `src/lib/cellar/overview.ts`.
+- **Trinkreife** (App und Bot gleich, `drinkStatus` in `src/lib/cellar/overview.ts`, aus dem Trinkfenster des
+  jeweiligen Jahrgangs, nicht aus der View-Spalte `drink_status`): „Über dem Höhepunkt“ (bis < aktuelles Jahr),
+  „Jetzt trinken“ (bis = aktuelles Jahr), „Trinkreif“ (ab ≤ aktuelles Jahr < bis), „Noch lagern“
+  (ab > aktuelles Jahr), „Unbekannt“ (kein Trinkfenster). Jede Karte in Bestand und Offen zeigt klein den Status
+  mit Fenster („Trinkreif · 2024–2032“, bei verschiedenen Jahrgängen eine Zeile je Jahrgang). Ein Tipp darauf
+  (auch auf der Weinseite und in der Kachel Trinkreife) öffnet den Bestand nach Trinkreife gruppiert
+  (`/?gruppe=trinkreife&reife=…#gruppe-trinkreife-…`), diese Gruppe aufgeklappt und angesprungen.
 - **Offen** (`/offen`) und **Getrunken** (`/getrunken`) sind wie der Bestand aufgebaut und nutzen dieselben
   Komponenten (`src/components/cellar/`: Suche/Gruppierung, einklappbare Gruppen, Weinkarte) und dieselbe
   Gruppierungslogik (`groupWines` über `Groupable`-Einträge, `src/lib/cellar/lists.ts`); die Lagerort-Wahl gilt.
@@ -271,7 +278,8 @@ Ablauf in `src/lib/ingest/flow.ts`, `ingest_jobs.source = 'text'`:
 ### Menüs (Knöpfe)
 
 - **Menüleiste unten** (Reply-Keyboard, kommt mit `/start` bzw. `/help`): 🍷 Offen · 📦 Bestand · ⏰ Trinkreif ·
-  📷 Neuer Wein. Bestand zeigt zuerst die Weintypen, dann die Weine des Typs.
+  📷 Neuer Wein. Bestand zeigt zuerst die Weintypen, dann die Weine des Typs. ⏰ Trinkreif nutzt dieselbe
+  Einteilung wie die App (⚠️ über dem Höhepunkt, ⏰ jetzt trinken, ✅ trinkreif, ⏳ noch lagern, ❔ unbekannt).
 - **Listen:** pro Wein eine Zeile mit Emoji statt Weintyp (🍷 Rot, 🥂 Weiss, 🌸 Rosé, 🍾 Schaumwein,
   🍯 Süss/Likör, 🟠 Orange), z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“; Produzent bzw. Lagerort nur, wenn nötig
   zur Unterscheidung. Darunter je Wein ein Knopf (8 pro Seite, dann „Mehr…“).
