@@ -109,6 +109,115 @@ export type Database = {
           },
         ]
       }
+      inventory_events: {
+        Row: {
+          bottle_size_ml: number | null
+          created_at: string
+          currency: string | null
+          event_type: Database["public"]["Enums"]["event_type"]
+          fill_level_percent: number | null
+          id: string
+          inventory_item_id: string | null
+          note: string | null
+          occurred_at: string
+          place_id: string | null
+          price: number | null
+          quantity: number | null
+          rating: number | null
+          source: string
+          storage_from: string | null
+          storage_to: string | null
+          vendor_id: string | null
+          vintage_year: number | null
+          wine_id: string
+        }
+        Insert: {
+          bottle_size_ml?: number | null
+          created_at?: string
+          currency?: string | null
+          event_type: Database["public"]["Enums"]["event_type"]
+          fill_level_percent?: number | null
+          id?: string
+          inventory_item_id?: string | null
+          note?: string | null
+          occurred_at?: string
+          place_id?: string | null
+          price?: number | null
+          quantity?: number | null
+          rating?: number | null
+          source?: string
+          storage_from?: string | null
+          storage_to?: string | null
+          vendor_id?: string | null
+          vintage_year?: number | null
+          wine_id: string
+        }
+        Update: {
+          bottle_size_ml?: number | null
+          created_at?: string
+          currency?: string | null
+          event_type?: Database["public"]["Enums"]["event_type"]
+          fill_level_percent?: number | null
+          id?: string
+          inventory_item_id?: string | null
+          note?: string | null
+          occurred_at?: string
+          place_id?: string | null
+          price?: number | null
+          quantity?: number | null
+          rating?: number | null
+          source?: string
+          storage_from?: string | null
+          storage_to?: string | null
+          vendor_id?: string | null
+          vintage_year?: number | null
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_events_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["inventory_item_id"]
+          },
+          {
+            foreignKeyName: "inventory_events_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_events_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "places"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_events_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_events_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "inventory_events_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_items: {
         Row: {
           bottle_size_ml: number | null
@@ -116,10 +225,12 @@ export type Database = {
           currency: string | null
           drunk_at: string | null
           id: string
+          is_gift: boolean
           personal_vintage_rating: number | null
           personal_wine_rating: number | null
           photo_urls: string[]
           purchase_price: number | null
+          purchased_at: string | null
           quantity: number
           regular_price: number | null
           status: Database["public"]["Enums"]["inventory_status"]
@@ -128,6 +239,7 @@ export type Database = {
           storage_location: string | null
           storage_room: string | null
           updated_at: string
+          vendor_id: string | null
           vintage_notes: string | null
           vintage_rating: string | null
           vintage_year: number | null
@@ -139,10 +251,12 @@ export type Database = {
           currency?: string | null
           drunk_at?: string | null
           id?: string
+          is_gift?: boolean
           personal_vintage_rating?: number | null
           personal_wine_rating?: number | null
           photo_urls?: string[]
           purchase_price?: number | null
+          purchased_at?: string | null
           quantity?: number
           regular_price?: number | null
           status?: Database["public"]["Enums"]["inventory_status"]
@@ -151,6 +265,7 @@ export type Database = {
           storage_location?: string | null
           storage_room?: string | null
           updated_at?: string
+          vendor_id?: string | null
           vintage_notes?: string | null
           vintage_rating?: string | null
           vintage_year?: number | null
@@ -162,10 +277,12 @@ export type Database = {
           currency?: string | null
           drunk_at?: string | null
           id?: string
+          is_gift?: boolean
           personal_vintage_rating?: number | null
           personal_wine_rating?: number | null
           photo_urls?: string[]
           purchase_price?: number | null
+          purchased_at?: string | null
           quantity?: number
           regular_price?: number | null
           status?: Database["public"]["Enums"]["inventory_status"]
@@ -174,12 +291,20 @@ export type Database = {
           storage_location?: string | null
           storage_room?: string | null
           updated_at?: string
+          vendor_id?: string | null
           vintage_notes?: string | null
           vintage_rating?: string | null
           vintage_year?: number | null
           wine_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "inventory_items_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "inventory_items_wine_id_fkey"
             columns: ["wine_id"]
@@ -238,6 +363,142 @@ export type Database = {
           },
         ]
       }
+      places: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_home: boolean
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_home?: boolean
+          name: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_home?: boolean
+          name?: string
+        }
+        Relationships: []
+      }
+      tags: {
+        Row: {
+          color: string | null
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      tasting_notes: {
+        Row: {
+          created_at: string
+          id: string
+          note: string
+          place_id: string | null
+          rating: number | null
+          source: string
+          tasted_at: string | null
+          updated_at: string
+          vintage_year: number | null
+          wine_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          note: string
+          place_id?: string | null
+          rating?: number | null
+          source?: string
+          tasted_at?: string | null
+          updated_at?: string
+          vintage_year?: number | null
+          wine_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          note?: string
+          place_id?: string | null
+          rating?: number | null
+          source?: string
+          tasted_at?: string | null
+          updated_at?: string
+          vintage_year?: number | null
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasting_notes_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "places"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasting_notes_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "tasting_notes_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vendors: {
+        Row: {
+          archived: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          archived?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          archived?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       wine_grape_shares: {
         Row: {
           created_at: string
@@ -282,6 +543,171 @@ export type Database = {
           },
           {
             foreignKeyName: "wine_grape_shares_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wine_media: {
+        Row: {
+          created_at: string
+          file_name: string | null
+          id: string
+          inventory_item_id: string | null
+          kind: Database["public"]["Enums"]["media_kind"]
+          mime_type: string | null
+          sort_order: number
+          storage_bucket: string
+          storage_path: string
+          vintage_year: number | null
+          wine_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_name?: string | null
+          id?: string
+          inventory_item_id?: string | null
+          kind: Database["public"]["Enums"]["media_kind"]
+          mime_type?: string | null
+          sort_order?: number
+          storage_bucket: string
+          storage_path: string
+          vintage_year?: number | null
+          wine_id: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string | null
+          id?: string
+          inventory_item_id?: string | null
+          kind?: Database["public"]["Enums"]["media_kind"]
+          mime_type?: string | null
+          sort_order?: number
+          storage_bucket?: string
+          storage_path?: string
+          vintage_year?: number | null
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wine_media_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["inventory_item_id"]
+          },
+          {
+            foreignKeyName: "wine_media_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wine_media_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_media_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wine_tags: {
+        Row: {
+          created_at: string
+          tag_id: string
+          wine_id: string
+        }
+        Insert: {
+          created_at?: string
+          tag_id: string
+          wine_id: string
+        }
+        Update: {
+          created_at?: string
+          tag_id?: string
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wine_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wine_tags_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_tags_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wine_vintages: {
+        Row: {
+          created_at: string
+          drink_from_year: number | null
+          drink_until_year: number | null
+          id: string
+          notes: string | null
+          personal_rating: number | null
+          updated_at: string
+          vintage_rating: string | null
+          vintage_year: number | null
+          wine_id: string
+        }
+        Insert: {
+          created_at?: string
+          drink_from_year?: number | null
+          drink_until_year?: number | null
+          id?: string
+          notes?: string | null
+          personal_rating?: number | null
+          updated_at?: string
+          vintage_rating?: string | null
+          vintage_year?: number | null
+          wine_id: string
+        }
+        Update: {
+          created_at?: string
+          drink_from_year?: number | null
+          drink_until_year?: number | null
+          id?: string
+          notes?: string | null
+          personal_rating?: number | null
+          updated_at?: string
+          vintage_rating?: string | null
+          vintage_year?: number | null
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wine_vintages_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_vintages_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
             referencedRelation: "wines"
@@ -338,14 +764,20 @@ export type Database = {
           country: string | null
           currency: string | null
           date_opened: string | null
+          drink_from_year: number | null
+          drink_status: string | null
+          drink_until_year: number | null
+          drunk_at: string | null
           fill_level_percent: number | null
           grapes: string[] | null
           inventory_item_id: string | null
+          is_gift: boolean | null
           name: string | null
           personal_vintage_rating: number | null
           personal_wine_rating: number | null
           producer: string | null
           purchase_price: number | null
+          purchased_at: string | null
           quantity: number | null
           region: string | null
           regular_price: number | null
@@ -357,11 +789,21 @@ export type Database = {
           storage_location: string | null
           storage_room: string | null
           type: Database["public"]["Enums"]["wine_type"] | null
+          vendor_id: string | null
+          vendor_name: string | null
           vintage_rating: string | null
           vintage_year: number | null
           wine_id: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "inventory_items_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
@@ -395,6 +837,13 @@ export type Database = {
       }
     }
     Enums: {
+      event_type:
+        | "purchased"
+        | "opened"
+        | "fill_changed"
+        | "drunk"
+        | "moved"
+        | "deleted"
       ingest_status:
         | "received"
         | "processing"
@@ -403,6 +852,7 @@ export type Database = {
         | "discarded"
         | "failed"
       inventory_status: "sealed" | "open" | "drunk"
+      media_kind: "label_front" | "label_back" | "photo" | "document"
       wine_type:
         | "red"
         | "white"
@@ -418,16 +868,134 @@ export type Database = {
   }
 }
 
-type PublicSchema = Database["public"]
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
 
-export type Tables<T extends keyof (PublicSchema["Tables"] & PublicSchema["Views"])> =
-  (PublicSchema["Tables"] & PublicSchema["Views"])[T] extends { Row: infer R } ? R : never
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
-export type Enums<T extends keyof PublicSchema["Enums"]> = PublicSchema["Enums"][T]
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never) = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never) = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never) = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never) = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never) = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
 
 export const Constants = {
   public: {
     Enums: {
+      event_type: [
+        "purchased",
+        "opened",
+        "fill_changed",
+        "drunk",
+        "moved",
+        "deleted",
+      ],
       ingest_status: [
         "received",
         "processing",
@@ -437,6 +1005,7 @@ export const Constants = {
         "failed",
       ],
       inventory_status: ["sealed", "open", "drunk"],
+      media_kind: ["label_front", "label_back", "photo", "document"],
       wine_type: [
         "red",
         "white",
