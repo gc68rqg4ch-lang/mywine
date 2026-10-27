@@ -97,7 +97,7 @@ async function loadRatingsAndTastings(
   const tastings = (tastingRows.data ?? []).map((t) => ({
     ...t,
     person: t.person?.name ?? null,
-    // Halbe Punkte stehen nur in sat, solange quality_points smallint ist.
+    // Fallback für Verkostungen ohne Spaltenwert: Summe aus dem Formular (sat).
     points: t.quality_points ?? currentScore(normalizeData(t.sat, t.tasted_at)),
   }));
   return { ratings, tastings };

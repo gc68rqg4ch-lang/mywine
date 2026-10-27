@@ -81,13 +81,7 @@ export async function saveTasting(input: {
       ? ctx.session.supabase.from("wine_tastings").update(values).eq("id", input.tastingId).select("id").single()
       : ctx.session.supabase.from("wine_tastings").insert(values).select("id").single();
 
-  let { data, error } = await write(row);
-  // quality_points ist (noch) smallint: halbe Summen wie 2.5 passen nicht. Dann ohne
-  // Punkte speichern – der genaue Wert steht in sat.fields. Nach der Migration
-  // wine_tastings_quality_points_half_steps entfällt dieser Fall von selbst.
-  if (error?.code === "22P02" && score != null && !Number.isInteger(score)) {
-    ({ data, error } = await write({ ...row, quality_points: null }));
-  }
+  const { data, error } = await write(row);
   if (error || !data) {
     console.error("save tasting failed", error);
     return { ok: false, error: "Die Verkostung konnte nicht gespeichert werden." };

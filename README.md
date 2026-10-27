@@ -23,9 +23,8 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
 - **WSET-Verkostung** (`/flasche/[id]/verkostung`, bearbeiten mit `?t=<id>`): Nachbau des
   [Verkostungs-Tools](https://gc68rqg4ch-lang.github.io/WSET-Verkostungs-tool/) mit gleichen Feldern, Optionen,
   Aromen-Lexikon und Punkte-Logik (`src/lib/tasting/sat.ts`). Gespeichert in `wine_tastings`: Stil, Qualität,
-  Punkte und Trinkreife als Spalten, das komplette Formular als JSON in `sat` (Schlüssel wie im Tool).
-  Halbe Punktsummen (z. B. 2.5) passen erst nach der Migration `wine_tastings_quality_points_half_steps`
-  in `quality_points`; bis dahin bleibt die Spalte bei halben Summen leer, der Wert steht in `sat`.
+  Punkte (in halben Schritten) und Trinkreife als Spalten, das komplette Formular als JSON in `sat`
+  (Schlüssel wie im Tool).
 - **Rebsorten nachrecherchieren** (`/recherche`): Sammellauf für alle Weine + Jahrgänge ohne Prozentangaben, mit
   Fortschrittsanzeige; manuell gepflegte Angaben werden übersprungen. `wines.grapes` bleibt vorerst bestehen.
 
