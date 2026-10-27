@@ -5,14 +5,7 @@ import { getSession } from "@/lib/auth";
 import { todayIso, wineTitle } from "@/lib/format";
 import { formatShares } from "@/lib/grapes/shares";
 import { loadGrapeShares } from "@/lib/grapes/store";
-import {
-  autoEvaluate,
-  freshData,
-  manualScoresFromData,
-  normalizeData,
-  satTypeForWine,
-  switchType,
-} from "@/lib/tasting/sat";
+import { autoEvaluate, manualScoresFromData, newTastingData, normalizeData } from "@/lib/tasting/sat";
 import { SatForm } from "./sat-form";
 
 export const metadata: Metadata = { title: "Verkostung (WSET)" };
@@ -59,21 +52,12 @@ export default async function TastingPage({ params, searchParams }: PageProps<"/
     initial = autoEvaluate(loaded, manualSet).data;
   } else {
     // Neue Verkostung: Wein und Jahrgang aus der Flasche vorausfüllen.
-    const base = switchType(freshData(today), satTypeForWine(wine.type));
-    initial = autoEvaluate(
-      {
-        ...base,
-        meta: {
-          date: today,
-          name: wine.name,
-          producer: wine.producer,
-          region: [wine.region, wine.country].filter(Boolean).join(", "),
-          vintage: item.vintage_year ? String(item.vintage_year) : "",
-          grape: grapes ? formatShares(grapes.shares) : wine.grapes.join(", "),
-        },
-      },
-      new Set(),
-    ).data;
+    initial = newTastingData(
+      wine,
+      item.vintage_year,
+      grapes ? formatShares(grapes.shares) : wine.grapes.join(", "),
+      today,
+    );
   }
 
   const ownPerson = persons?.find((p) => p.user_id === userId)?.id ?? null;

@@ -33,6 +33,7 @@ import {
   type TypeCode,
 } from "./menu-view";
 import { fillAfterGlasses, personKey } from "./proposals";
+import { startTelling, tastingStartScreen } from "./tasting";
 import { loadCellar } from "./tools";
 
 type Screen = { text: string; keyboard: TgInlineKeyboard };
@@ -295,6 +296,7 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
       inline_keyboard: [
         ...(sealed ? [[btn("🍾 Öffnen", { op: "open", wineId, year, back })]] : []),
         ...ratingButtons(ratings.persons, subject, back),
+        [btn("📝 Verkostung", { op: "tasting", subject, back })],
         ...appButton(`/wein/${wineId}`),
         ...backRow(back),
       ],
@@ -328,6 +330,7 @@ async function itemScreen(db: AdminClient, itemId: string, back: ListRef, status
         [btn("🥃 1 Glas", { op: "glasses", itemId, glasses: 1, back }), btn("🥃🥃 2 Gläser", { op: "glasses", itemId, glasses: 2, back })],
         [btn("Füllstand %", { op: "fillPicker", itemId, back }), btn("✅ Ausgetrunken", { op: "drunkAsk", itemId, back })],
         ...ratingButtons(ratings.persons, subject, back),
+        [btn("📝 Verkostung", { op: "tasting", subject, back })],
         ...appButton(`/flasche/${itemId}`),
         ...backRow(back),
       ],
@@ -432,8 +435,19 @@ async function claim(chatId: number, messageId: number) {
 const CLAIMED_OPS = new Set<MenuAction["op"]>(["glasses", "drunk", "open", "openBatch"]);
 
 /** Nächstes Menü zu einem Knopf (führt Aktionen aus); exportiert für Tests. */
-export async function screenFor(db: AdminClient, a: MenuAction): Promise<{ screen: Screen; toast?: string }> {
+export async function screenFor(
+  db: AdminClient,
+  a: MenuAction,
+  ctx: { chatId: number },
+): Promise<{ screen: Screen; toast?: string }> {
   switch (a.op) {
+    case "tasting": {
+      const base = await subjectScreen(db, a.subject, a.back);
+      const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
+      return { screen: await tastingStartScreen(db, a.subject, a.back, header) };
+    }
+    case "tell":
+      return { screen: await startTelling(db, ctx.chatId, a.subject, a.back) };
     case "list":
       return { screen: await listScreen(db, a.list, a.offset) };
     case "wine":
@@ -521,7 +535,7 @@ export async function handleMenuCallback(cb: TgCallbackQuery) {
   }
   const db = createAdminClient();
   try {
-    const { screen, toast } = await screenFor(db, action);
+    const { screen, toast } = await screenFor(db, action, { chatId });
     await answerCallback(cb.id, toast);
     await editMessage(chatId, messageId, screen.text, screen.keyboard);
   } catch (error) {

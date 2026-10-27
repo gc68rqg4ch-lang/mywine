@@ -614,3 +614,27 @@ export function satTypeForWine(type: string | null | undefined): SatType {
       return "weiss";
   }
 }
+
+/** Neue Verkostung: Weintyp und Wein/Jahrgang vorausgefüllt, Punkte wie im Tool vorgeschlagen. */
+export function newTastingData(
+  wine: { name: string; producer: string; region: string | null; country: string | null; type: string | null },
+  vintageYear: number | null,
+  grapes: string,
+  today: string,
+): SatData {
+  const base = switchType(freshData(today), satTypeForWine(wine.type));
+  return autoEvaluate(
+    {
+      ...base,
+      meta: {
+        date: today,
+        name: wine.name,
+        producer: wine.producer,
+        region: [wine.region, wine.country].filter(Boolean).join(", "),
+        vintage: vintageYear ? String(vintageYear) : "",
+        grape: grapes,
+      },
+    },
+    new Set(),
+  ).data;
+}

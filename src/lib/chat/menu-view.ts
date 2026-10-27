@@ -8,6 +8,7 @@
 //   D:<item>:<l>              Ausgetrunken? (Rückfrage)   X:<item>:<l>            als ausgetrunken markieren
 //   N:<wine>:<jahr|->:<l>     Öffnen (ggf. Ort wählen)    Q:<charge>:<l>          diese Charge öffnen
 //   R:<subj>:<person>:<l>     Sterne wählen               S:<subj>:<person>:<halbe>:<l>  Bewertung speichern
+//   T:<subj>:<l>              Verkostung: Weg wählen      E:<subj>:<l>            Verkostung erzählen
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
 import { formatStarNumber, type WineType } from "@/lib/format";
@@ -80,7 +81,9 @@ export type MenuAction =
   | { op: "open"; wineId: string; year: number | null; back: ListRef }
   | { op: "openBatch"; batchId: string; back: ListRef }
   | { op: "ratePicker"; subject: Subject; personKey: string; back: ListRef }
-  | { op: "rate"; subject: Subject; personKey: string; rating: number; back: ListRef };
+  | { op: "rate"; subject: Subject; personKey: string; rating: number; back: ListRef }
+  | { op: "tasting"; subject: Subject; back: ListRef }
+  | { op: "tell"; subject: Subject; back: ListRef };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const KEY_RE = /^[0-9a-f]{8}$/;
@@ -163,11 +166,15 @@ export function encodeMenu(a: MenuAction): string {
       return `R:${encodeSubject(a.subject)}:${a.personKey}:${l}`;
     case "rate":
       return `S:${encodeSubject(a.subject)}:${a.personKey}:${Math.round(a.rating * 2)}:${l}`;
+    case "tasting":
+      return `T:${encodeSubject(a.subject)}:${l}`;
+    case "tell":
+      return `E:${encodeSubject(a.subject)}:${l}`;
   }
 }
 
 export function isMenuCallback(data: string | undefined) {
-  return /^[LWVOGFPDXNQRS]:/.test(data ?? "");
+  return /^[LWVOGFPDXNQRSTE]:/.test(data ?? "");
 }
 
 export function decodeMenu(data: string | undefined): MenuAction | null {
@@ -216,6 +223,13 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
       const b = back(2);
       if (!subject || !KEY_RE.test(f[1] ?? "") || !b) return null;
       return { op: "ratePicker", subject, personKey: f[1], back: b };
+    }
+    case "T":
+    case "E": {
+      const subject = decodeSubject(f[0]);
+      const b = back(1);
+      if (!subject || !b) return null;
+      return op === "T" ? { op: "tasting", subject, back: b } : { op: "tell", subject, back: b };
     }
     case "S": {
       const subject = decodeSubject(f[0]);

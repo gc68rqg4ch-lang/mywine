@@ -153,6 +153,22 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
   vollständig im `callback_data` (Format in `src/lib/chat/menu-view.ts`).
 - Nennt eine Chat-Antwort Weine, hängt Claude über `attach_wine_buttons` dieselben Knöpfe an.
 
+### Verkostung per Bot
+
+Im Wein-Menü „📝 Verkostung“:
+- **💬 Erzählen:** Eindrücke als Freitext (auch diktiert). Claude (`claude-haiku-5-5`, bei Bedarf
+  `claude-sonnet-5-5`) ordnet sie per strukturierter Ausgabe den Feldern und exakten Optionswerten aus
+  `src/lib/tasting/sat.ts` zu (`src/lib/tasting/extract.ts`); nicht Erwähntes bleibt leer. Punkte und Qualität
+  berechnet dieselbe Logik wie in der App (`autoEvaluate`). Fehlen Angaben für Länge/Intensität/Komplexität
+  oder fürs Resultat (Süsse, Säure, Tannin, Körper, Trinkreife …), fragt der Bot nach: [✏️ Ergänzen]
+  [💾 Trotzdem speichern]. Sonst: [💾 Speichern] [✏️ Korrigieren] [📱 In der App bearbeiten], dazu
+  Person wechseln (Standard Michel) und Verwerfen.
+- **📋 Vollständig:** Link auf `/flasche/<id>/verkostung` mit vorausgefülltem Wein und Jahrgang.
+- Gespeichert wird in `wine_tastings` mit `source = 'bot'` und demselben `sat`-JSON wie in der App
+  (`src/lib/tasting/store.ts`, von App und Bot genutzt); in der App normal bearbeitbar, die Herkunft bleibt.
+- Der Entwurf liegt bis zum Speichern in `ingest_jobs` (`source = 'telegram_tasting'`, Stand in `extracted`);
+  nach „Erzählen“/„Ergänzen“ geht der nächste Freitext (innerhalb einer Stunde) an die Verkostung.
+
 ### Chat-Modus (Textnachrichten)
 
 Freier Text (wenn kein Foto-Eintrag gerade auf Anzahl, Preis usw. wartet) geht an Claude mit Werkzeugen

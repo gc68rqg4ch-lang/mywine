@@ -61,6 +61,12 @@ import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
 import { handleChatCallback, handleChatMessage, resetChat } from "@/lib/chat/handler";
 import { isChatCallback } from "@/lib/chat/proposals";
 import { handleMenuCallback, sendMainMenu } from "@/lib/chat/menu";
+import {
+  findTastingAwaitingText,
+  handleTastingCallback,
+  handleTastingText,
+  isTastingCallback,
+} from "@/lib/chat/tasting";
 import { MAIN_KEYBOARD, isMenuCallback, menuKeyFor } from "@/lib/chat/menu-view";
 import {
   createInventoryItem,
@@ -302,6 +308,10 @@ async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[
 // Buttons
 
 async function handleCallback(cb: TgCallbackQuery) {
+  if (isTastingCallback(cb.data)) {
+    await handleTastingCallback(cb);
+    return;
+  }
   if (isMenuCallback(cb.data)) {
     await handleMenuCallback(cb);
     return;
@@ -523,9 +533,14 @@ async function handleText(msg: TgMessage) {
     return;
   }
 
-  // Wartet ein Foto-Eintrag auf eine Eingabe (Anzahl, Preis, …), geht der Text dorthin;
-  // sonst ist es eine Frage oder Anweisung an den Chat-Modus.
+  // Wartet eine Verkostung oder ein Foto-Eintrag auf eine Eingabe (Eindrücke, Anzahl,
+  // Preis, …), geht der Text dorthin; sonst ist es eine Frage an den Chat-Modus.
   const db = createAdminClient();
+  const tasting = await findTastingAwaitingText(db, chatId);
+  if (tasting) {
+    await handleTastingText(tasting.id, tasting.draft, chatId, text);
+    return;
+  }
   const job = await findJobAwaitingText(db, chatId);
   const state = job ? jobState(job) : null;
   if (!job || !state) {

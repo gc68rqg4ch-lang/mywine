@@ -1,21 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { Json } from "@/lib/database.types";
 import { getSession } from "@/lib/auth";
 import { todayIso } from "@/lib/format";
 import { isValidRating, saveRating } from "@/lib/ratings";
-import {
-  QUALITY_OPTIONS,
-  READINESS_OPTIONS,
-  WINE_STYLE,
-  currentScore,
-  normalizeData,
-  withCurrentTypeState,
-} from "@/lib/tasting/sat";
+import { tastingRow } from "@/lib/tasting/store";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function memberSession() {
   const session = await getSession();
@@ -50,39 +41,14 @@ export async function saveTasting(input: {
   if (input.tastingId && !UUID_RE.test(input.tastingId)) return { ok: false, error: "Ungültige Verkostung." };
   if (input.personId && !UUID_RE.test(input.personId)) return { ok: false, error: "Ungültige Person." };
 
-  const today = todayIso();
-  const sat = withCurrentTypeState(normalizeData(input.sat, today));
-  const fields = sat.fields;
-  const date = sat.meta.date && DATE_RE.test(sat.meta.date) ? sat.meta.date : today;
-  const quality = typeof fields.qualitaet === "string" && QUALITY_OPTIONS.includes(fields.qualitaet)
-    ? fields.qualitaet
-    : null;
-  const readiness = typeof fields.trinkreife === "string" && READINESS_OPTIONS.includes(fields.trinkreife)
-    ? fields.trinkreife
-    : null;
-  const score = currentScore(sat);
+  const row = tastingRow({ item: ctx.item, personId: input.personId, sat: input.sat, today: todayIso(), source: "app" });
 
-  const row = {
-    wine_id: ctx.item.wine_id,
-    vintage_year: ctx.item.vintage_year,
-    inventory_item_id: ctx.item.id,
-    person_id: input.personId,
-    tasted_at: date,
-    wine_style: WINE_STYLE[sat.type],
-    quality_level: quality,
-    quality_points: score,
-    readiness,
-    sat: sat as unknown as Json,
-    notes: sat.notes.trim() || null,
-    source: "app",
-  };
-
-  const write = (values: typeof row) =>
-    input.tastingId
-      ? ctx.session.supabase.from("wine_tastings").update(values).eq("id", input.tastingId).select("id").single()
-      : ctx.session.supabase.from("wine_tastings").insert(values).select("id").single();
-
-  const { data, error } = await write(row);
+  // Beim Bearbeiten bleibt die Herkunft (z. B. „bot“) erhalten.
+  const changes: Omit<typeof row, "source"> & { source?: string } = { ...row };
+  delete changes.source;
+  const { data, error } = await (input.tastingId
+    ? ctx.session.supabase.from("wine_tastings").update(changes).eq("id", input.tastingId).select("id").single()
+    : ctx.session.supabase.from("wine_tastings").insert(row).select("id").single());
   if (error || !data) {
     console.error("save tasting failed", error);
     return { ok: false, error: "Die Verkostung konnte nicht gespeichert werden." };
