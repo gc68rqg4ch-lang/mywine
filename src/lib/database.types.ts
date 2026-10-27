@@ -1102,6 +1102,7 @@ export type Database = {
           name: string
           producer: string
           region: string | null
+          researched_at: string | null
           type: Database["public"]["Enums"]["wine_type"] | null
         }
         Insert: {
@@ -1114,6 +1115,7 @@ export type Database = {
           name: string
           producer: string
           region?: string | null
+          researched_at?: string | null
           type?: Database["public"]["Enums"]["wine_type"] | null
         }
         Update: {
@@ -1126,6 +1128,7 @@ export type Database = {
           name?: string
           producer?: string
           region?: string | null
+          researched_at?: string | null
           type?: Database["public"]["Enums"]["wine_type"] | null
         }
         Relationships: []
