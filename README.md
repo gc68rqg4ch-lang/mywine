@@ -17,7 +17,7 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
 ### Lebenszyklus einer Flasche
 
 `public.open_bottle(p_item_id, p_fill_level_percent, p_date_opened)` läuft atomar in einer Transaktion
-(siehe `supabase/migrations/20261027120000_open_bottle_function.sql`):
+(siehe `supabase/migrations/20261027113004_open_bottle_function.sql`):
 
 - Charge mit `quantity > 1` → `quantity - 1`, plus neue Position (`quantity 1`, `status open`) mit den Daten der Charge
 - Charge mit `quantity = 1` → die Position selbst wird `open` (es bleibt keine Zeile mit 0 Flaschen zurück)
