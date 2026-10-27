@@ -60,6 +60,8 @@ import {
 import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
 import { handleChatCallback, handleChatMessage, resetChat } from "@/lib/chat/handler";
 import { isChatCallback } from "@/lib/chat/proposals";
+import { handleMenuCallback, sendMainMenu } from "@/lib/chat/menu";
+import { MAIN_KEYBOARD, isMenuCallback, menuKeyFor } from "@/lib/chat/menu-view";
 import {
   createInventoryItem,
   findWine,
@@ -300,6 +302,10 @@ async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[
 // Buttons
 
 async function handleCallback(cb: TgCallbackQuery) {
+  if (isMenuCallback(cb.data)) {
+    await handleMenuCallback(cb);
+    return;
+  }
   if (isChatCallback(cb.data)) {
     await handleChatCallback(cb);
     return;
@@ -502,12 +508,18 @@ async function handleText(msg: TgMessage) {
   const chatId = msg.chat.id;
   const text = msg.text!.trim();
 
+  // Feste Menüleiste unten geht immer vor (auch wenn ein Foto-Eintrag auf Text wartet).
+  const menuKey = menuKeyFor(text);
+  if (menuKey) {
+    await sendMainMenu(chatId, menuKey);
+    return;
+  }
   if (/^\/(reset|vergessen)\b/i.test(text)) {
     await resetChat(chatId);
     return;
   }
   if (text.startsWith("/")) {
-    await sendMessage(chatId, HELP_TEXT);
+    await sendMessage(chatId, HELP_TEXT, MAIN_KEYBOARD);
     return;
   }
 

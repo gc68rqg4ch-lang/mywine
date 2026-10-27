@@ -162,15 +162,12 @@ export function skipVendorKeyboard(jobId: string): TgInlineKeyboard {
 }
 
 export const HELP_TEXT = [
-  "📷 Schick mir <b>Vorder- und Rückseite</b> einer Flasche als Album (beide Fotos zusammen auswählen).",
-  "Ich erkenne den Wein, du bestätigst oder korrigierst, danach frage ich Lagerort, Anzahl und Preis ab.",
+  "Unten findest du das Menü: <b>🍷 Offen</b>, <b>📦 Bestand</b>, <b>⏰ Trinkreif</b>, <b>📷 Neuer Wein</b>.",
+  "Tipp auf einen Wein für Gläser, Füllstand, Öffnen, Ausgetrunken und Bewertungen.",
   "",
-  "💬 Oder schreib mir einfach, z. B.:",
-  "• <i>Welche Rioja habe ich noch?</i>",
-  "• <i>Was ist gerade offen?</i>",
-  "• <i>Wir haben zwei Gläser vom Pintia getrunken.</i>",
-  "• <i>Sara gibt dem Austin Hope 4,5 Sterne.</i>",
-  "Änderungen schlage ich vor – erst nach [Ja] wird gespeichert. /reset vergisst den Gesprächsverlauf.",
+  "📷 Neuer Wein: Vorder- und Rückseite als Album schicken.",
+  "💬 Oder einfach schreiben, z. B. <i>Welche Rioja habe ich noch?</i> oder <i>Sara gibt dem Pintia 4,5 Sterne.</i>",
+  "/reset vergisst den Gesprächsverlauf.",
 ].join("\n");
 
 export { parsePrice } from "@/lib/format";

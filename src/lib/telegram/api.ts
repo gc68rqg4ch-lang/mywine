@@ -1,7 +1,7 @@
 import "server-only";
 
 import { telegramConfig } from "./config";
-import type { TgInlineKeyboard, TgMessage } from "./types";
+import type { TgInlineKeyboard, TgMessage, TgReplyMarkup } from "./types";
 
 const API = "https://api.telegram.org";
 
@@ -35,7 +35,7 @@ export async function tg<T = unknown>(method: string, payload: Record<string, un
 export function sendMessage(
   chatId: number,
   html: string,
-  keyboard?: TgInlineKeyboard,
+  keyboard?: TgReplyMarkup,
 ) {
   return tg<TgMessage>("sendMessage", {
     chat_id: chatId,
@@ -44,6 +44,31 @@ export function sendMessage(
     link_preview_options: { is_disabled: true },
     ...(keyboard ? { reply_markup: keyboard } : {}),
   });
+}
+
+/**
+ * Ersetzt Text und Buttons einer Bot-Nachricht (Menü aktualisieren statt neue Nachricht).
+ * „message is not modified“ (gleicher Inhalt) gilt als Erfolg.
+ */
+export async function editMessage(
+  chatId: number,
+  messageId: number,
+  html: string,
+  keyboard: TgInlineKeyboard = { inline_keyboard: [] },
+) {
+  try {
+    await tg("editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: html,
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+      reply_markup: keyboard,
+    });
+  } catch (error) {
+    if (error instanceof TelegramApiError && error.description.includes("message is not modified")) return;
+    throw error;
+  }
 }
 
 /** Entfernt die Buttons unter einer Nachricht (Fehler ignorieren – rein kosmetisch). */

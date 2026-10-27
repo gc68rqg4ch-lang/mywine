@@ -8,6 +8,8 @@ import type { TgCallbackQuery } from "@/lib/telegram/types";
 import { answerChat } from "./agent";
 import { executeProposal } from "./execute";
 import { appendHistory, clearHistory, loadHistory } from "./history";
+import { wineButtons } from "./menu";
+import { MAIN_KEYBOARD } from "./menu-view";
 import { REJECT_DATA, confirmKeyboard, decodeProposal } from "./proposals";
 
 const MAX_INPUT = 2000;
@@ -19,7 +21,7 @@ export async function handleChatMessage(chatId: number, text: string) {
 
 export async function resetChat(chatId: number) {
   await clearHistory(createAdminClient(), chatId);
-  await sendMessage(chatId, "Okay, ich habe unseren Gesprächsverlauf vergessen.");
+  await sendMessage(chatId, "Okay, ich habe unseren Gesprächsverlauf vergessen.", MAIN_KEYBOARD);
 }
 
 async function replyToChat(chatId: number, text: string) {
@@ -29,7 +31,14 @@ async function replyToChat(chatId: number, text: string) {
     const history = await loadHistory(db, chatId);
     const reply = await answerChat(db, history, text);
 
-    if (reply.text) await sendMessage(chatId, escapeHtml(reply.text));
+    // Nennt die Antwort Weine, kommen sie als Knöpfe darunter; sonst bleibt die Menüleiste.
+    const buttons = await wineButtons(db, reply.wines).catch((error) => {
+      console.error("chat wine buttons failed", error);
+      return null;
+    });
+    if (reply.text || buttons) {
+      await sendMessage(chatId, escapeHtml(reply.text || "Hier:"), buttons ?? MAIN_KEYBOARD);
+    }
     for (const p of reply.proposals) {
       await sendMessage(chatId, `❓ ${escapeHtml(p.text)}?`, confirmKeyboard(p.proposal));
     }

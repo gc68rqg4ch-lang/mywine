@@ -96,7 +96,7 @@ src/
   app/(cellar)/                 geschützter Bereich: Bestand, Offen, Getrunken, Detail, Server Actions
   app/api/telegram/             Webhook (route.ts) und Webhook-Registrierung (setup/route.ts)
   lib/ingest/                   Bot-Logik: Album/Jobs, Claude-Erkennung, Abgleich, Speichern
-  lib/chat/                     Chat-Modus: Werkzeuge, Vorschläge mit Ja/Nein, Verlauf
+  lib/chat/                     Chat-Modus und Menüs: Werkzeuge, Knöpfe, Vorschläge mit Ja/Nein, Verlauf
   lib/telegram/                 Telegram Bot API (fetch), Konfiguration
   lib/cellar/overview.ts        Bestandsübersicht: Weine, Lagerort-Filter, Gruppen, Kennzahlen
   lib/location.ts               Lagerort-Auswahl (Cookie) und Query-Filter
@@ -130,6 +130,20 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.
 - **Sicherheit:** Webhook prüft `X-Telegram-Bot-Api-Secret-Token`, verarbeitet nur Updates von
   `TELEGRAM_ALLOWED_USER_ID`. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.
+
+### Menüs (Knöpfe)
+
+- **Menüleiste unten** (Reply-Keyboard, kommt mit `/start` bzw. `/help`): 🍷 Offen · 📦 Bestand · ⏰ Trinkreif ·
+  📷 Neuer Wein. Bestand zeigt zuerst die Weintypen, dann die Weine des Typs.
+- **Listen:** pro Wein eine Zeile mit Emoji statt Weintyp (🍷 Rot, 🥂 Weiss, 🌸 Rosé, 🍾 Schaumwein,
+  🍯 Süss/Likör, 🟠 Orange), z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“; Produzent bzw. Lagerort nur, wenn nötig
+  zur Unterscheidung. Darunter je Wein ein Knopf (8 pro Seite, dann „Mehr…“).
+- **Pro Wein:** offen → 🥃 1 Glas, 🥃🥃 2 Gläser, Füllstand %, ✅ Ausgetrunken (fragt einmal nach); ungeöffnet →
+  🍾 Öffnen (bei mehreren Lagerorten Ort wählen); immer ⭐ Bewertung je Person (1–5 in halben Schritten) und
+  📱 In der App öffnen. Das Antippen ist die Bestätigung, es gibt keine zusätzliche Ja/Nein-Frage.
+- Menüs ersetzen die bestehende Nachricht (`editMessageText`) statt neue zu stapeln. Der Zustand steckt
+  vollständig im `callback_data` (Format in `src/lib/chat/menu-view.ts`).
+- Nennt eine Chat-Antwort Weine, hängt Claude über `attach_wine_buttons` dieselben Knöpfe an.
 
 ### Chat-Modus (Textnachrichten)
 

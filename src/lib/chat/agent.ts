@@ -5,13 +5,16 @@ import { todayIso } from "@/lib/format";
 import { FALLBACK_MODEL, RECOGNITION_MODEL, SONNET_FALLBACK, anthropic } from "@/lib/ingest/recognize";
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { ChatTurn } from "./history";
+import type { WineRef } from "./menu";
 import { chatTools, type PendingProposal } from "./tools";
 
 const MAX_ITERATIONS = 8;
 
 const SYSTEM = `Du bist der Assistent von MyWine, dem privaten Weinkeller von Michel und Sara in der Schweiz. Du schreibst im Telegram-Chat mit Michel.
 
-Antworte kurz und auf Deutsch in Schweizer Schreibweise (immer „ss“, nie „ß“). Reiner Text ohne Markdown, höchstens einfache Aufzählungen mit „•“. Preise in CHF.
+Antworte kurz und auf Deutsch in Schweizer Schreibweise (immer „ss“, nie „ß“). Reiner Text ohne Markdown. Preise in CHF.
+
+Format für Weine: pro Wein eine Zeile, vorne das Emoji des Weintyps statt eines Wortes (🍷 Rot, 🥂 Weiss, 🌸 Rosé, 🍾 Schaumwein, 🍯 Süss/Likör, 🟠 Orange), dann Name und Jahrgang, Details mit „·“ getrennt – z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“ oder „🥂 Chardonnay 2023 · 11 Fl.“. Bei offenen Flaschen kannst du das Feld line aus list_open_bottles direkt übernehmen. Den Produzenten nur, wenn der Name allein nicht eindeutig ist. Den Lagerort nur nennen, wenn danach gefragt wird oder er zur Unterscheidung nötig ist. Nennt deine Antwort konkrete Weine, ruf zusätzlich attach_wine_buttons mit genau diesen Weinen auf.
 
 Fakten zum Keller holst du ausschliesslich mit den Werkzeugen – erfinde keine Weine, Mengen oder Bewertungen. Was die Werkzeuge nicht liefern, sagst du offen.
 
@@ -21,7 +24,7 @@ Fakten zum Keller holst du ausschliesslich mit den Werkzeugen – erfinde keine 
 - Bewertungen gibt es für Michel und Sara getrennt (0–5 Sterne, halbe Schritte). Ohne Namen meint „ich“ Michel.
 - Lagerorte sind Räume wie Weinkeller oder Wohnzimmer.`;
 
-export type ChatReply = { text: string; proposals: PendingProposal[]; model: string };
+export type ChatReply = { text: string; proposals: PendingProposal[]; wines: WineRef[]; model: string };
 
 class EscalateError extends Error {}
 
@@ -33,11 +36,12 @@ function toMessages(history: ChatTurn[], text: string): Anthropic.Beta.BetaMessa
 
 async function runWith(model: string, db: AdminClient, history: ChatTurn[], text: string): Promise<ChatReply> {
   const proposals: PendingProposal[] = [];
+  const wines: WineRef[] = [];
   const runner = anthropic().beta.messages.toolRunner({
     model,
     max_tokens: 8000,
     system: `${SYSTEM}\n\nHeute ist ${todayIso()}.`,
-    tools: chatTools(db, proposals),
+    tools: chatTools(db, proposals, wines),
     messages: toMessages(history, text),
     max_iterations: MAX_ITERATIONS,
     output_config: { effort: "medium" },
@@ -54,8 +58,8 @@ async function runWith(model: string, db: AdminClient, history: ChatTurn[], text
     .map((b) => b.text)
     .join("\n")
     .trim();
-  if (!reply && !proposals.length) throw new EscalateError(`${model}: keine Antwort`);
-  return { text: reply, proposals, model };
+  if (!reply && !proposals.length && !wines.length) throw new EscalateError(`${model}: keine Antwort`);
+  return { text: reply, proposals, wines, model };
 }
 
 /** Beantwortet eine Chat-Nachricht: zuerst mit Haiku, bei Bedarf mit Sonnet. */

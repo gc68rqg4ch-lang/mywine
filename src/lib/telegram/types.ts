@@ -46,5 +46,14 @@ export type TgUpdate = {
   callback_query?: TgCallbackQuery;
 };
 
-export type TgInlineButton = { text: string; callback_data: string };
+export type TgInlineButton = { text: string; callback_data: string } | { text: string; url: string };
 export type TgInlineKeyboard = { inline_keyboard: TgInlineButton[][] };
+
+/** Feste Tastatur unten im Chat; ein Tippen schickt den Text als normale Nachricht. */
+export type TgReplyKeyboard = {
+  keyboard: { text: string }[][];
+  resize_keyboard?: boolean;
+  is_persistent?: boolean;
+};
+
+export type TgReplyMarkup = TgInlineKeyboard | TgReplyKeyboard;

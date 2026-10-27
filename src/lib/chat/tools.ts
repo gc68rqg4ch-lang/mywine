@@ -14,6 +14,8 @@ import {
 import { daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
 import type { AdminClient } from "@/lib/supabase/admin";
+import type { WineRef } from "./menu";
+import { daysLabel, openBottleLine, typeEmoji } from "./menu-view";
 import { fillAfterGlasses, personKey, type Proposal } from "./proposals";
 
 export type PendingProposal = { proposal: Proposal; text: string };
@@ -55,7 +57,7 @@ async function findWineIds(db: AdminClient, query: string) {
   return (data ?? []).map((w) => w.id);
 }
 
-async function loadCellar(db: AdminClient, room: string | null) {
+export async function loadCellar(db: AdminClient, room: string | null) {
   const [summary, rows] = await Promise.all([
     db.from("cellar_wine_summary").select("wine_id, name, producer, country, region, type, grapes"),
     db.from("cellar_wines").select("*"),
@@ -72,6 +74,7 @@ async function loadCellar(db: AdminClient, room: string | null) {
 function describeWine(w: CellarWine) {
   return {
     wine_id: w.wine_id,
+    emoji: typeEmoji(w.type),
     producer: w.producer,
     name: w.name,
     type: wineTypeLabel(w.type),
@@ -107,7 +110,7 @@ async function loadPersons(db: AdminClient) {
  * Die Werkzeuge für ein Gespräch. Schreib-Werkzeuge ändern nichts, sondern legen
  * einen Vorschlag in `pending` ab; der Bot zeigt ihn mit [Ja] [Nein] an.
  */
-export function chatTools(db: AdminClient, pending: PendingProposal[]) {
+export function chatTools(db: AdminClient, pending: PendingProposal[], wineRefs: WineRef[] = []) {
   const propose = (proposal: Proposal, text: string) => {
     if (pending.length >= 3) return "Zu viele Vorschläge auf einmal – bitte erst die offenen bestätigen lassen.";
     pending.push({ proposal, text });
@@ -154,6 +157,21 @@ export function chatTools(db: AdminClient, pending: PendingProposal[]) {
           (data ?? []).map((r) => ({
             inventory_item_id: r.inventory_item_id,
             wine_id: r.wine_id,
+            line: openBottleLine(
+              {
+                itemId: r.inventory_item_id ?? "",
+                wineId: r.wine_id ?? "",
+                producer: r.producer ?? "",
+                name: r.name ?? "",
+                year: r.vintage_year,
+                type: r.type,
+                fill: r.fill_level_percent,
+                days: daysSince(r.date_opened),
+                room: r.storage_room,
+              },
+              `${r.name ?? ""} ${r.vintage_year ?? "o. J."}`,
+            ),
+            since: daysLabel(daysSince(r.date_opened)),
             wine: title(r),
             type: wineTypeLabel(r.type),
             bottle_size_ml: r.bottle_size_ml ?? 750,
@@ -292,6 +310,31 @@ export function chatTools(db: AdminClient, pending: PendingProposal[]) {
             note: r.note,
           })),
         );
+      },
+    }),
+
+    betaZodTool({
+      name: "attach_wine_buttons",
+      description:
+        "Hängt unter deine Antwort je Wein einen Knopf zum Antippen (Gläser, Füllstand, Öffnen, Bewertung). Immer aufrufen, wenn die Antwort konkrete Weine oder Flaschen nennt – in derselben Reihenfolge. Offene Flaschen mit inventory_item_id, sonst wine_id + vintage_year.",
+      inputSchema: z.object({
+        wines: z
+          .array(
+            z.object({
+              inventory_item_id: z.uuid().optional(),
+              wine_id: z.uuid().optional(),
+              vintage_year: z.number().int().nullable().optional(),
+            }),
+          )
+          .min(1)
+          .max(30),
+      }),
+      run: async ({ wines }) => {
+        for (const w of wines) {
+          if (w.inventory_item_id) wineRefs.push({ itemId: w.inventory_item_id });
+          else if (w.wine_id) wineRefs.push({ wineId: w.wine_id, year: w.vintage_year ?? null });
+        }
+        return `${wines.length} Knöpfe werden unter der Antwort angezeigt.`;
       },
     }),
 
