@@ -647,6 +647,7 @@ export type Database = {
           sort_order: number
           storage_bucket: string
           storage_path: string
+          thumb_path: string | null
           vintage_year: number | null
           wine_id: string
         }
@@ -660,6 +661,7 @@ export type Database = {
           sort_order?: number
           storage_bucket: string
           storage_path: string
+          thumb_path?: string | null
           vintage_year?: number | null
           wine_id: string
         }
@@ -673,6 +675,7 @@ export type Database = {
           sort_order?: number
           storage_bucket?: string
           storage_path?: string
+          thumb_path?: string | null
           vintage_year?: number | null
           wine_id?: string
         }

@@ -15,6 +15,7 @@ import {
 } from "@/lib/cellar/overview";
 import { buildDrunkEntries, drunkTotals, type DrunkBottle, type DrunkEntry, type RatingRow } from "@/lib/cellar/lists";
 import { formatDate, formatStarNumber, todayIso } from "@/lib/format";
+import { loadLabelPhotos } from "@/lib/media/store";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { loadGrapeNames } from "@/lib/grapes/store";
 import { getLocationFilter, withLocation } from "@/lib/location";
@@ -88,6 +89,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
   const visible = query ? entries.filter((e) => matchesQuery(e, query)) : entries;
   const { types, filtered } = applyTypeFilter(visible, type);
   const groups = groupWines(filtered, groupBy);
+  const photo = await loadLabelPhotos(supabase, filtered.map((e) => e.wine_id));
   const totals = drunkTotals(entries, year);
   const hidden = withoutRoom.count ?? 0;
 
@@ -150,6 +152,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
             ]}
             extra={ratingsText(wine)}
             aside={<BottleCount bottles={bottles} />}
+            photo={photo(wine.wine_id, vintages.length === 1 ? vintages[0] : wine.latestVintage)}
           />
         )}
       />

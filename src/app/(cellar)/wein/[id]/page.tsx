@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { viewerPhoto } from "@/components/cellar/wine-card";
+import { PhotoGallery } from "@/components/photo-viewer";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
 import { DRINK_STATUS_LABELS, countryFlag } from "@/lib/cellar/overview";
@@ -25,9 +27,11 @@ import {
   type InventoryStatus,
 } from "@/lib/format";
 import { loadGrapeShares } from "@/lib/grapes/store";
+import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { GrapeSection } from "./grape-card";
+import { PhotoUpload } from "./photo-upload";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, type PersonRating } from "./ratings-card";
 
@@ -105,21 +109,6 @@ async function loadRatingsAndTastings(supabase: Supabase, wineId: string, vintag
   return { ratings, tastings, vintage: vintage.data };
 }
 
-/**
- * photo_urls enthält externe https-URLs oder Pfade im privaten Bucket wine-photos
- * (vom Telegram-Bot). Für Letztere signierte URLs erzeugen.
- */
-async function loadPhotos(supabase: Supabase, itemIds: string[]) {
-  if (!itemIds.length) return [];
-  const { data } = await supabase.from("inventory_items").select("photo_urls").in("id", itemIds);
-  const entries = [...new Set((data ?? []).flatMap((r) => r.photo_urls))];
-  const external = entries.filter((e) => e.startsWith("https://"));
-  const paths = entries.filter((e) => !/^[a-z]+:\/\//i.test(e));
-  if (paths.length === 0) return external;
-  const { data: signed } = await supabase.storage.from("wine-photos").createSignedUrls(paths, 60 * 60);
-  return [...(signed ?? []).flatMap((d) => (d.signedUrl ? [d.signedUrl] : [])), ...external];
-}
-
 function Detail({ label, value }: { label: string; value: ReactNode }) {
   if (value == null || value === "") return null;
   return (
@@ -149,7 +138,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const [{ ratings, tastings, vintage }, grapes, photos] = await Promise.all([
     loadRatingsAndTastings(supabase, wine.id, year),
     loadGrapeShares(supabase, wine.id, year),
-    loadPhotos(supabase, inVintage.map((i) => i.inventory_item_id)),
+    loadVintagePhotos(supabase, wine.id, year, inVintage.map((i) => i.inventory_item_id)),
   ]);
 
   const sealed = inVintage.filter((i) => i.status === "sealed" && i.quantity > 0);
@@ -257,14 +246,24 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
           <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
           <Detail label="Notiz" value={vintage?.notes} />
         </dl>
-        {photos.length > 0 && (
-          <div className="photos">
-            {photos.map((url) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={url} src={url} alt={`Foto ${wine.name}`} loading="lazy" />
-            ))}
-          </div>
-        )}
+        <div className="stack section-divider">
+          <h3 className="subsection-title">Fotos</h3>
+          <PhotoGallery photos={photos.map(viewerPhoto)} alt={`${wine.name} ${yearLabel}`} />
+          <PhotoUpload
+            // Neu mounten, damit die vorgeschlagene Art zum Jahrgang passt.
+            key={`${year}:${photos.length}`}
+            wineId={wine.id}
+            vintageYear={year}
+            itemId={anchor?.inventory_item_id ?? null}
+            defaultKind={
+              !photos.some((p) => p.kind === "label_front")
+                ? "label_front"
+                : !photos.some((p) => p.kind === "label_back")
+                  ? "label_back"
+                  : "photo"
+            }
+          />
+        </div>
         {anchor && (
           <div className="section-divider">
             <GrapeSection

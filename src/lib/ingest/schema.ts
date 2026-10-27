@@ -37,6 +37,9 @@ export const RecognitionSchema = WineProposalSchema.extend({
     .string()
     .nullable()
     .describe("Kurz auf Deutsch, was unsicher oder unleserlich war; sonst null"),
+  image_sides: z
+    .array(z.enum(["front", "back", "other"]))
+    .describe("Pro Foto in der gesendeten Reihenfolge: front = Vorderetikett, back = Rückenetikett, other = anderes"),
 });
 export type Recognition = z.infer<typeof RecognitionSchema>;
 
@@ -96,6 +99,8 @@ export type IngestState = {
     notes: string | null;
     enriched_fields: EnrichableField[];
     sources: string[];
+    /** Pro Foto (Reihenfolge wie photo_paths): Vorder-/Rückseite – für wine_media. */
+    image_sides?: ("front" | "back" | "other")[];
   };
   /**
    * Herkunft der Rebsorten im Vorschlag: label/research/manual werden beim Speichern

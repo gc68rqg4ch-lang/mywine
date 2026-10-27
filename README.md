@@ -26,6 +26,11 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
     (sonst die alte Import-Bewertung); zusätzliche Gruppierung „Getrunken am“ (Jahr, darin Monate). Kacheln:
     getrunken dieses Jahr, Lieblingsweine (beste Bewertungen), zuletzt getrunken.
   - Flaschen ohne Lagerort (Import) erscheinen nur unter „Alle“; die Kachel nennt ihre Anzahl.
+  - **Etikettfotos:** links auf der Karte das Vorschaubild der Vorderseite (`wine_media.kind = label_front`,
+    gewählter bzw. neuester Jahrgang; ohne Foto das Trauben-Symbol). Pro Seite eine Abfrage und ein
+    `createSignedUrls`-Aufruf (`loadLabelPhotos` in `src/lib/media/store.ts`). Antippen des Bilds öffnet das
+    Overlay (Vorderseite, wischen zur Rückseite, schliessen per Tippen, X oder Escape); der Rest der Karte
+    führt wie bisher zur Weinseite.
 - **Weinseite** (`/wein/[id]?jahrgang=2019`): eine Seite pro Wein, Ziel aller Klicks aus Bestand, Offen und
   Getrunken (`wineHref` in `src/lib/cellar/wine-page.ts`). Kopf über die volle Breite: Name, Produzent,
   Jahrgang-Umschalter (`ohne` = ohne Jahrgang), Flaschenzahl. Darunter drei feste Spalten (iPad quer); hochkant
@@ -38,6 +43,9 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
   2. **Zum Wein** (eine Kachel, Abschnitte mit Trennlinie): Stammdaten (Typ, Land, Region, Appellation, Alkohol, Fotos), Rebsorten mit Prozentanteil aus
      `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“), bearbeitbar (`source = manual`) und per
      **Nachrecherchieren** neu recherchierbar; Trinkreife (Fenster aus `wine_vintages`, dazu die letzte Verkostung).
+     **Fotos** des Jahrgangs als Vorschau mit demselben Overlay; **📷 Foto hinzufügen** (Vorderseite, Rückseite,
+     Weiteres): der Browser verkleinert auf max. 2000 px JPEG (auch HEIC vom iPhone), der Server legt das Original
+     unter `wine-photos/app/<wine-id>/…` ab, erzeugt das Vorschaubild und schreibt `wine_media`.
   3. **Bewertungen:** subjektiv je Person mit halben Sternen 0–5 in `wine_ratings` (neueste je Person aus
      `latest_wine_ratings`; pro Person und Tag eine, ältere als Verlauf) sowie objektiv die WSET-Verkostungen mit
      „Neue Verkostung“ und Liste.
@@ -129,6 +137,12 @@ Normalpreis (**[Gleich wie bezahlt] [Überspringen]**), Händler (Buttons aus `v
 per Freitext oder **[Überspringen]**) → Wein anlegen oder wiederverwenden, `inventory_items` mit
 `status = sealed`, `purchased_at = heute`, `vendor_id` und den Fotos anlegen, Job auf `confirmed`.
 Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreibt keine eigenen Einträge.
+
+- **Fotos → `wine_media`:** beim Speichern je Foto eine Zeile mit `wine_id`, `vintage_year`,
+  `inventory_item_id` und `kind` (`label_front`/`label_back`, weitere `photo`). Welche Seite welches Foto ist,
+  sagt die Erkennung (`image_sides`), sonst gilt: erstes Foto Vorderseite, zweites Rückseite. Dazu ein
+  Vorschaubild (160 px breit, WebP, `sharp`) neben dem Original (`….thumb.webp`) in `thumb_path`. Schlägt das
+  fehl, wird die Flasche trotzdem gespeichert; die Pfade stehen weiterhin auch in `inventory_items.photo_urls`.
 
 - **Erkennung:** `claude-haiku-5-5` mit beiden Bildern und strukturierter JSON-Ausgabe; bei Konfidenz < 0.7
   nochmals mit `claude-sonnet-5-5` (mit serverseitigem Fallback bei Ablehnungen).

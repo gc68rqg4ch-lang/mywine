@@ -603,15 +603,178 @@ input[type="range"] {
   color: var(--accent);
 }
 
-.photos {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
-  margin-top: 16px;
+/* Fotos: Vorschaubilder in Listen und auf der Weinseite, Overlay */
+
+.item-wrap {
+  position: relative;
 }
-.photos img {
+.item-thumb-slot {
+  flex: none;
+  width: 36px;
+  height: 48px;
+}
+/* Liegt über dem Platzhalter in der Karte, ist aber kein Teil des Links. */
+.item-thumb {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 48px;
+}
+
+.photo-thumb {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.photo-thumb img {
+  display: block;
   width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.photo-thumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.photo-gallery {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.photo-gallery li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.photo-gallery .photo-thumb {
+  width: 72px;
+  height: 96px;
+}
+.photo-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.upload-btn {
+  align-self: flex-start;
+}
+.upload-btn[aria-disabled] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.upload-btn:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+html:has(.viewer[open]) {
+  overflow: hidden;
+}
+.viewer {
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  overflow: hidden;
+}
+.viewer::backdrop {
+  background: rgb(0 0 0 / 0.88);
+}
+.viewer-track {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.viewer-track::-webkit-scrollbar {
+  display: none;
+}
+.viewer-slide {
+  flex: 0 0 100%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 56px 16px 48px;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+.viewer-slide img {
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  object-fit: contain;
   border-radius: 8px;
+}
+.viewer-slide figcaption {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+.viewer-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 20px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.viewer-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.4);
+}
+.viewer-dots span.active {
+  background: #fff;
+}
+.viewer-close {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
+  font-size: 1.8rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .mini-list {

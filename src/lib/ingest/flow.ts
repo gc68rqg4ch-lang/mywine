@@ -12,7 +12,9 @@ import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
 import { appBaseUrl } from "@/lib/telegram/config";
-import { advanceJob, jobState, toJson, type IngestJob } from "./jobs";
+import { labelKinds } from "@/lib/media/pick";
+import { saveWineMedia } from "@/lib/media/store";
+import { PHOTO_BUCKET, advanceJob, jobState, toJson, type IngestJob } from "./jobs";
 import {
   confirmKeyboard,
   locationKeyboard,
@@ -215,6 +217,40 @@ async function storeGrapes(db: AdminClient, wineId: string, state: IngestState) 
   }
 }
 
+const MIME_BY_EXT: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
+
+/**
+ * Fotos der Erfassung als wine_media (Vorder-/Rückseite) mit Vorschaubild. Fehler
+ * hier verhindern das Speichern der Flasche nicht – die Fotos bleiben in photo_urls.
+ */
+async function storeJobMedia(
+  db: AdminClient,
+  paths: string[],
+  state: IngestState,
+  target: { wineId: string; itemId: string },
+) {
+  if (!paths.length) return;
+  try {
+    const kinds = labelKinds(paths.length, state.recognition.image_sides);
+    const media = await Promise.all(
+      paths.map(async (path, i) => {
+        const { data, error } = await db.storage.from(PHOTO_BUCKET).download(path);
+        if (error) throw error;
+        return {
+          path,
+          bytes: new Uint8Array(await data.arrayBuffer()),
+          mimeType: MIME_BY_EXT[path.split(".").pop()?.toLowerCase() ?? ""] ?? "image/jpeg",
+          kind: kinds[i],
+          sortOrder: i,
+        };
+      }),
+    );
+    await saveWineMedia(db, { ...target, vintageYear: state.proposal.vintage_year }, media);
+  } catch (error) {
+    console.error("storing wine media failed", error);
+  }
+}
+
 export async function saveJob(job: IngestJob, chatId: number) {
   const db = createAdminClient();
   const state = jobState(job)!;
@@ -238,6 +274,7 @@ export async function saveJob(job: IngestJob, chatId: number) {
       storageRoom: state.storage_room ?? "Weinkeller",
       photoPaths: job.photo_paths,
     });
+    await storeJobMedia(db, job.photo_paths, state, { wineId, itemId });
 
     await advanceJob(
       db,

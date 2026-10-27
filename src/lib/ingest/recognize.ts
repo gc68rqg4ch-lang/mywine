@@ -45,13 +45,15 @@ Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine le
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira), orange.
 - bottle_size_ml: aus der Füllmenge (75 cl = 750, 37,5 cl = 375, 1,5 l = 1500).
 - grape_shares: Rebsorten, die auf dem Etikett stehen; percent nur, wenn der Anteil aufgedruckt ist (z. B. "85 % Tempranillo"), sonst null. Bei reinsortigen Weinen ("100 % Merlot" oder Sortenbezeichnung wie "Pinot Noir") ist percent 100.
+- image_sides: für jedes Foto in Reihenfolge, ob es das Vorderetikett (front), das Rückenetikett (back) oder etwas anderes (other) zeigt.
 - confidence: wie sicher Name, Produzent und Jahrgang stimmen (1.0 = klar lesbar, unter 0.7 = geraten oder unleserlich).`;
 
 function imageBlocks(images: LabelImage[]): Anthropic.Beta.BetaContentBlockParam[] {
-  return images.map((img) => ({
-    type: "image",
-    source: { type: "base64", media_type: img.mediaType, data: img.base64 },
-  }));
+  // „Foto n“ vor jedem Bild, damit image_sides der Reihenfolge eindeutig folgt.
+  return images.flatMap((img, i): Anthropic.Beta.BetaContentBlockParam[] => [
+    { type: "text", text: `Foto ${i + 1}:` },
+    { type: "image", source: { type: "base64", media_type: img.mediaType, data: img.base64 } },
+  ]);
 }
 
 async function recognizeWith(model: string, images: LabelImage[]): Promise<Recognition> {
@@ -86,6 +88,7 @@ export type RecognitionResult = {
   model: string;
   confidence: number;
   notes: string | null;
+  imageSides: Recognition["image_sides"] | null;
 };
 
 /** Etikett erkennen: zuerst Haiku, bei Konfidenz < 0.7 nochmals mit Sonnet. */
@@ -98,12 +101,13 @@ export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionR
     result = await recognizeWith(model, images);
   }
 
-  const { confidence, uncertain_notes, ...proposal } = result;
+  const { confidence, uncertain_notes, image_sides, ...proposal } = result;
   return {
     proposal: normalizeProposal(proposal),
     model,
     confidence: Math.min(1, Math.max(0, confidence)),
     notes: uncertain_notes?.trim() || null,
+    imageSides: image_sides.length === images.length ? image_sides : null,
   };
 }
 

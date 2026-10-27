@@ -23,6 +23,8 @@ import {
 import { daysSince, formatMoney, todayIso } from "@/lib/format";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { getLocationFilter, withLocation } from "@/lib/location";
+import { newestVintage } from "@/lib/media/pick";
+import { loadLabelPhotos } from "@/lib/media/store";
 
 export const metadata: Metadata = { title: "Bestand" };
 
@@ -72,6 +74,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   const visible = query ? inStock.filter((w) => matchesQuery(w, query)) : inStock;
   const { types, filtered } = applyTypeFilter(visible, type);
   const groups = groupWines(filtered, groupBy);
+  const photo = await loadLabelPhotos(supabase, filtered.map((w) => w.wine_id));
 
   const totals = cellarTotals(wines);
   const drink = drinkCounts(wines);
@@ -163,6 +166,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
             producer={wine.producer}
             title={wine.name}
             meta={[formatVintages(vintages), originLabel(wine)]}
+            photo={photo(wine.wine_id, newestVintage(vintages))}
             aside={
               <BottleCount
                 bottles={bottles}

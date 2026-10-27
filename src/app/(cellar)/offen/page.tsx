@@ -8,6 +8,7 @@ import { getMemberSession } from "@/lib/auth";
 import { BASE_GROUPINGS, groupWines, matchesQuery, originLabel } from "@/lib/cellar/overview";
 import { openTotals, toOpenEntry } from "@/lib/cellar/lists";
 import { formatBottleSize, formatDaysSince } from "@/lib/format";
+import { loadLabelPhotos } from "@/lib/media/store";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { loadGrapeNames } from "@/lib/grapes/store";
 import { getLocationFilter, withLocation } from "@/lib/location";
@@ -49,6 +50,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
   const visible = query ? entries.filter((e) => matchesQuery(e, query)) : entries;
   const { types, filtered } = applyTypeFilter(visible, type);
   const groups = groupWines(filtered, groupBy);
+  const photo = await loadLabelPhotos(supabase, filtered.map((e) => e.wine_id));
   const totals = openTotals(entries);
   const hidden = withoutRoom.count ?? 0;
 
@@ -111,6 +113,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
               originLabel(wine),
             ]}
             aside={<FillGauge percent={wine.fill} />}
+            photo={photo(wine.wine_id, wine.vintages[0])}
           />
         )}
       />

@@ -231,6 +231,7 @@ async function processJob(jobId: string, chatId: number) {
         notes: recognition.notes,
         enriched_fields: enriched.filled,
         sources: [...enriched.sources, ...grapes.sources].slice(0, 8),
+        ...(recognition.imageSides ? { image_sides: recognition.imageSides } : {}),
       },
     };
 
