@@ -238,6 +238,57 @@ export type Database = {
           },
         ]
       }
+      wine_grape_shares: {
+        Row: {
+          created_at: string
+          grape: string
+          id: string
+          percent: number | null
+          sort_order: number
+          source: string
+          updated_at: string
+          vintage_year: number | null
+          wine_id: string
+        }
+        Insert: {
+          created_at?: string
+          grape: string
+          id?: string
+          percent?: number | null
+          sort_order?: number
+          source?: string
+          updated_at?: string
+          vintage_year?: number | null
+          wine_id: string
+        }
+        Update: {
+          created_at?: string
+          grape?: string
+          id?: string
+          percent?: number | null
+          sort_order?: number
+          source?: string
+          updated_at?: string
+          vintage_year?: number | null
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wine_grape_shares_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_grape_shares_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wines: {
         Row: {
           alcohol_content: number | null
