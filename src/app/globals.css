@@ -884,8 +884,13 @@ input[inputmode="decimal"] {
   align-items: center;
   gap: 10px;
 }
+/* Feste Namensspalte: die Sterne beginnen bei allen Personen auf gleicher Höhe, „(du)“ verschiebt nichts. */
 .rating-name {
-  min-width: 4.5em;
+  flex: 0 0 6.5em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
 }
 .rating-value {

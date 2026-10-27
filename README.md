@@ -31,11 +31,11 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
   Jahrgang-Umschalter (`ohne` = ohne Jahrgang), Flaschenzahl. Darunter drei feste Spalten (iPad quer); hochkant
   links Öffnen mit Bewertungen darunter, rechts „Zum Wein“; iPhone eine Spalte (Öffnen, Zum Wein, Bewertungen).
   Alles Jahrgangsabhängige folgt der Auswahl.
-  1. **Flasche öffnen:** Chargen mit Lagerort, Anzahl, bezahltem Preis, Normalpreis und Rabatt in % (je Charge
+  1. **Flasche öffnen** (gibt es offene Flaschen, steht die Kachel „Offen“ darüber): Chargen mit Lagerort, Anzahl, bezahltem Preis, Normalpreis und Rabatt in % (je Charge
      „Bearbeiten“); Füllstand, Datum, Knopf → `public.open_bottle()` mit der `inventory_item`-ID der Charge.
      Darunter offene Flaschen (Füllstand, **Ausgetrunken**; `drunk_at` setzt die DB) und getrunkene Flaschen,
      jeweils mit Preis. Ohne ungeöffnete Flasche fehlt nur der Öffnen-Bereich.
-  2. **Zum Wein:** Stammdaten (Typ, Land, Region, Appellation, Alkohol, Fotos), Rebsorten mit Prozentanteil aus
+  2. **Zum Wein** (eine Kachel, Abschnitte mit Trennlinie): Stammdaten (Typ, Land, Region, Appellation, Alkohol, Fotos), Rebsorten mit Prozentanteil aus
      `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“), bearbeitbar (`source = manual`) und per
      **Nachrecherchieren** neu recherchierbar; Trinkreife (Fenster aus `wine_vintages`, dazu die letzte Verkostung).
   3. **Bewertungen:** subjektiv je Person mit halben Sternen 0–5 in `wine_ratings` (neueste je Person aus

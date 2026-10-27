@@ -38,7 +38,8 @@ function Notice({ state }: { state: ActionState }) {
   return null;
 }
 
-export function GrapeCard({
+/** Abschnitt „Rebsorten“ in der Kachel „Zum Wein“. */
+export function GrapeSection({
   itemId,
   itemVintage,
   shares,
@@ -82,9 +83,9 @@ export function GrapeCard({
     sharesVintage != null ? `Jahrgang ${sharesVintage}` : shares.length ? "alle Jahrgänge" : null;
 
   return (
-    <section className="card stack">
+    <div className="stack">
       <div className="row row-between">
-        <h2 className="section-title">Rebsorten</h2>
+        <h3 className="subsection-title">Rebsorten</h3>
         {!editing && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={startEditing}>
             Bearbeiten
@@ -205,7 +206,7 @@ export function GrapeCard({
           </form>
         </>
       )}
-    </section>
+    </div>
   );
 }
 

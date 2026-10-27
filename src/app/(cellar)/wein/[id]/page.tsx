@@ -27,7 +27,7 @@ import {
 import { loadGrapeShares } from "@/lib/grapes/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
-import { GrapeCard } from "./grape-card";
+import { GrapeSection } from "./grape-card";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, type PersonRating } from "./ratings-card";
 
@@ -184,12 +184,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   // Spalte 1: Flasche öffnen (Chargen mit Preisen), offene und getrunkene Flaschen.
   const openColumn = (
     <div className="wine-col wine-col-open">
-      {charges.length > 0 && (
-        <section className="card stack">
-          <h2 className="section-title">Flasche öffnen</h2>
-          <OpenBottleForm charges={charges} today={today} />
-        </section>
-      )}
+      {/* Offene Flaschen zuerst – die trinkt man als Nächstes. */}
       {open.length > 0 && (
         <section className="card stack">
           <h2 className="section-title">Offen</h2>
@@ -210,6 +205,12 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
               }}
             />
           ))}
+        </section>
+      )}
+      {charges.length > 0 && (
+        <section className="card stack">
+          <h2 className="section-title">Flasche öffnen</h2>
+          <OpenBottleForm charges={charges} today={today} />
         </section>
       )}
       {drunk.length > 0 && (
@@ -264,26 +265,28 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             ))}
           </div>
         )}
-      </section>
-      {anchor && (
-        <GrapeCard
-          // Neu mounten, wenn sich Jahrgang oder gespeicherte Angaben ändern.
-          key={JSON.stringify([year, grapes])}
-          itemId={anchor.inventory_item_id}
-          itemVintage={year}
-          shares={grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }))}
-          sharesVintage={grapes?.vintageYear ?? null}
-          sources={grapes?.sources ?? []}
-        />
-      )}
-      <section className="card stack-sm">
-        <h2 className="section-title">Trinkreife</h2>
-        <p>
-          <span className={`drink-badge drink-${status}`}>{DRINK_STATUS_LABELS[status]}</span>
-          {drinkWindow && <span className="muted"> {drinkWindow}</span>}
-        </p>
-        {!drinkWindow && <p className="muted small">Kein Trinkfenster erfasst.</p>}
-        {latestReadiness && <p className="small">Laut Verkostung: {latestReadiness}</p>}
+        {anchor && (
+          <div className="section-divider">
+            <GrapeSection
+              // Neu mounten, wenn sich Jahrgang oder gespeicherte Angaben ändern.
+              key={JSON.stringify([year, grapes])}
+              itemId={anchor.inventory_item_id}
+              itemVintage={year}
+              shares={grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }))}
+              sharesVintage={grapes?.vintageYear ?? null}
+              sources={grapes?.sources ?? []}
+            />
+          </div>
+        )}
+        <div className="stack section-divider">
+          <h3 className="subsection-title">Trinkreife</h3>
+          <p>
+            <span className={`drink-badge drink-${status}`}>{DRINK_STATUS_LABELS[status]}</span>
+            {drinkWindow && <span className="muted"> {drinkWindow}</span>}
+          </p>
+          {!drinkWindow && <p className="muted small">Kein Trinkfenster erfasst.</p>}
+          {latestReadiness && <p className="small">Laut Verkostung: {latestReadiness}</p>}
+        </div>
       </section>
     </div>
   );
