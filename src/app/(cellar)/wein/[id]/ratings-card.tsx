@@ -12,7 +12,7 @@ export type PersonRating = {
   ratedAt: string | null;
 };
 
-export function RatingsCard({
+export function PersonRatings({
   itemId,
   ratings,
   today,
@@ -47,8 +47,8 @@ export function RatingsCard({
   };
 
   return (
-    <section className="card stack">
-      <h2 className="section-title">Bewertung</h2>
+    <div className="stack">
+      <h3 className="subsection-title">{ratings.map((r) => r.name).join(" & ") || "Personen"}</h3>
       {ratings.length === 0 ? (
         <p className="muted">Noch keine Personen erfasst.</p>
       ) : (
@@ -95,7 +95,7 @@ export function RatingsCard({
           {error}
         </p>
       )}
-      <p className="muted small">Pro Person gilt die neueste Bewertung; ältere bleiben als Verlauf erhalten.</p>
-    </section>
+      <p className="muted small">Subjektiv, halbe Sterne. Pro Person gilt die neueste Bewertung; ältere bleiben als Verlauf erhalten.</p>
+    </div>
   );
 }

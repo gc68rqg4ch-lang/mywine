@@ -254,11 +254,19 @@ code {
 input[type="date"] {
   -webkit-appearance: none;
   appearance: none;
-  line-height: 44px;
+  height: 44px;
+  line-height: normal;
 }
+/* iOS/iPadOS: der Wert steckt in einem eigenen Element, das sonst oben sitzt */
 input[type="date"]::-webkit-date-and-time-value {
-  text-align: left;
   margin: 0;
+  min-height: 42px;
+  line-height: 42px;
+  text-align: left;
+}
+/* Desktop-WebKit/Chromium: Inhalt ohne Zusatzabstand, damit er mittig bleibt */
+input[type="date"]::-webkit-datetime-edit {
+  padding: 0;
 }
 
 input[type="email"],
@@ -1336,43 +1344,53 @@ input[inputmode="decimal"] {
 }
 
 /* ---------------------------------------------------------------------------
-   Weinseite: Raster mit bis zu 3 Spalten (iPad), auf dem iPhone 1 Spalte.
-   Breiten je Kachel kommen aus tileSpans() (tile-c2-*, tile-c3-*), damit keine Lücken bleiben. */
-.wine-grid {
+   Weinseite: drei feste Spalten (iPad quer) – Öffnen | Zum Wein | Bewertungen.
+   iPad hochkant: links Öffnen, darunter Bewertungen; rechts Zum Wein. iPhone: eine Spalte. */
+.wine-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-auto-flow: row dense;
+  grid-template-areas: "open" "wine" "ratings";
   gap: 16px;
+  align-items: start;
 }
-.wine-tile {
+.wine-col {
   display: flex;
   flex-direction: column;
+  gap: 16px;
   min-width: 0;
 }
-.wine-tile > * {
-  flex: 1;
+.wine-col-open {
+  grid-area: open;
+}
+.wine-col-wine {
+  grid-area: wine;
+}
+.wine-col-ratings {
+  grid-area: ratings;
 }
 @media (min-width: 700px) {
-  .wine-grid {
+  .wine-columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "open wine" "ratings wine";
+    /* Zusätzliche Höhe von „Zum Wein“ geht in die untere Zeile – Öffnen und Bewertungen bleiben bündig. */
+    grid-template-rows: auto 1fr;
   }
-  .tile-c2-2 {
-    grid-column: span 2;
+  .wine-col-wine {
+    grid-row: 1 / span 2;
   }
 }
 @media (min-width: 1000px) {
-  .wine-grid {
+  .wine-columns {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas: "open wine ratings";
+    grid-template-rows: auto;
   }
-  .tile-c2-2 {
-    grid-column: auto;
+  .wine-col-wine {
+    grid-row: auto;
   }
-  .tile-c3-2 {
-    grid-column: span 2;
-  }
-  .tile-c3-3 {
-    grid-column: span 3;
-  }
+}
+.wine-head .detail-header {
+  align-items: flex-start;
 }
 
 .vintage-switch {
@@ -1391,38 +1409,6 @@ input[inputmode="decimal"] {
   font-weight: 600;
 }
 
-.choice-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-}
-.choice-list legend {
-  margin-bottom: 6px;
-  padding: 0;
-  font-weight: 500;
-}
-.choice {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  cursor: pointer;
-}
-.choice.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.choice input {
-  accent-color: var(--accent);
-}
 
 .open-bottle {
   display: flex;
@@ -1437,25 +1423,7 @@ input[inputmode="decimal"] {
   gap: 12px;
 }
 
-.location-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.location-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-}
 
-.price-entry + .price-entry {
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
 
 /* Weintyp-Filter in den Listen */
 .type-filter {
@@ -1477,4 +1445,91 @@ input[inputmode="decimal"] {
   color: var(--muted);
   font-size: 0.85rem;
   white-space: nowrap;
+}
+
+/* Chargen-Auswahl (Spalte „Flasche öffnen“) */
+.charge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.charge-list legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-weight: 500;
+}
+.charge {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.charge.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.charge-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.charge-pick input {
+  accent-color: var(--accent);
+}
+.charge .price-line {
+  padding-left: 26px;
+}
+
+.price-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 0.9rem;
+}
+.price-edit {
+  padding: 8px 0;
+}
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.bottle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bottle-list li + li {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.open-bottle:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.section-divider {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
 }

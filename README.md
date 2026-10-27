@@ -27,19 +27,20 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
     getrunken dieses Jahr, Lieblingsweine (beste Bewertungen), zuletzt getrunken.
   - Flaschen ohne Lagerort (Import) erscheinen nur unter „Alle“; die Kachel nennt ihre Anzahl.
 - **Weinseite** (`/wein/[id]?jahrgang=2019`): eine Seite pro Wein, Ziel aller Klicks aus Bestand, Offen und
-  Getrunken (`wineHref` in `src/lib/cellar/wine-page.ts`). Jahrgang-Umschalter oben bei mehreren Jahrgängen
-  (`ohne` = ohne Jahrgang); alles Jahrgangsabhängige folgt der Auswahl. Kacheln in einem Raster mit bis zu
-  3 Spalten (breit: Öffnen, Verkostungen, Rebsorten; schmal: Bewertung, Preise, Lagerorte, Trinkreife,
-  Stammdaten, Getrunken); `tileSpans()` verteilt die Breiten so, dass keine Lücken bleiben. iPhone: 1 Spalte.
-  - **Öffnen & offene Flaschen:** Lagerort bzw. Charge wählen → `public.open_bottle()` mit deren
-    `inventory_item`-ID; offene Flaschen mit Füllstand ändern und **Ausgetrunken** (`drunk_at` setzt die DB)
-  - **Lagerorte** je Charge mit Flaschenzahl und Preis; **Preise** je Charge bearbeitbar (Rabatt in CHF und %)
-  - **Rebsorten** mit Prozentanteil aus `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“),
-    bearbeitbar (`source = manual`) und per **Nachrecherchieren** neu recherchierbar
-  - **Bewertung** pro Person (`persons`) mit halben Sternen 0–5 in `wine_ratings`; angezeigt wird die
-    neueste je Person (`latest_wine_ratings`). Pro Person und Tag eine Bewertung, ältere bleiben als Verlauf.
-  - **Verkostungen (WSET)**, **Trinkreife** (Fenster aus `wine_vintages`, dazu die letzte Verkostung),
-    Stammdaten mit Fotos, getrunkene Flaschen
+  Getrunken (`wineHref` in `src/lib/cellar/wine-page.ts`). Kopf über die volle Breite: Name, Produzent,
+  Jahrgang-Umschalter (`ohne` = ohne Jahrgang), Flaschenzahl. Darunter drei feste Spalten (iPad quer); hochkant
+  links Öffnen mit Bewertungen darunter, rechts „Zum Wein“; iPhone eine Spalte (Öffnen, Zum Wein, Bewertungen).
+  Alles Jahrgangsabhängige folgt der Auswahl.
+  1. **Flasche öffnen:** Chargen mit Lagerort, Anzahl, bezahltem Preis, Normalpreis und Rabatt in % (je Charge
+     „Bearbeiten“); Füllstand, Datum, Knopf → `public.open_bottle()` mit der `inventory_item`-ID der Charge.
+     Darunter offene Flaschen (Füllstand, **Ausgetrunken**; `drunk_at` setzt die DB) und getrunkene Flaschen,
+     jeweils mit Preis. Ohne ungeöffnete Flasche fehlt nur der Öffnen-Bereich.
+  2. **Zum Wein:** Stammdaten (Typ, Land, Region, Appellation, Alkohol, Fotos), Rebsorten mit Prozentanteil aus
+     `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“), bearbeitbar (`source = manual`) und per
+     **Nachrecherchieren** neu recherchierbar; Trinkreife (Fenster aus `wine_vintages`, dazu die letzte Verkostung).
+  3. **Bewertungen:** subjektiv je Person mit halben Sternen 0–5 in `wine_ratings` (neueste je Person aus
+     `latest_wine_ratings`; pro Person und Tag eine, ältere als Verlauf) sowie objektiv die WSET-Verkostungen mit
+     „Neue Verkostung“ und Liste.
   - Jahrgangsbezogene Aktionen hängen an einer Flasche des Jahrgangs (offen vor ungeöffnet vor getrunken).
   - `/flasche/[id]` leitet auf die Weinseite mit dem Jahrgang der Flasche weiter (Bot-Links, Lesezeichen).
 - **Weintyp-Filter:** in Bestand, Offen und Getrunken bei den Gruppierungen Land, Rebsorte, Jahrgang,

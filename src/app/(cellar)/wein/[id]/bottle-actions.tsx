@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import { FillGauge } from "@/components/fill-gauge";
 import { markDrunk, openBottle, updateFillLevel, type ActionState } from "../../actions";
+import { PriceLine, type PriceInfo } from "./price-card";
 
 function Feedback({ state }: { state: ActionState }) {
   if (state?.error)
@@ -55,27 +56,33 @@ function FillSlider({ value, onChange }: { value: number; onChange: (v: number) 
 
 export type Charge = {
   itemId: string;
-  /** z. B. „Weinkeller · 6 Fl. · CHF 24.50“ */
+  /** z. B. „Weinkeller · 6 Fl.“ */
   label: string;
+  price: PriceInfo;
 };
 
-/** Flasche öffnen: Lagerort bzw. Charge wählen; open_bottle bekommt deren inventory_item-ID. */
+/**
+ * Flasche öffnen: Charge (Lagerort, Anzahl, Preise) wählen; open_bottle bekommt deren
+ * inventory_item-ID. Die Preis-Bearbeitung ist ein eigenes Formular je Charge, darum
+ * hängen die Auswahlknöpfe per form-Attribut am Öffnen-Formular.
+ */
 export function OpenBottleForm({ charges, today }: { charges: Charge[]; today: string }) {
   const [state, action, pending] = useActionState(openBottle, undefined);
   const [fill, setFill] = useState(100);
   const [chargeId, setChargeId] = useState(charges[0]?.itemId ?? "");
+  const formId = useId();
   if (!charges.length) return null;
 
   return (
-    <form action={action} className="stack">
-      <h3 className="subsection-title">Flasche öffnen</h3>
-      {charges.length > 1 ? (
-        <fieldset className="choice-list">
-          <legend>Aus welchem Lagerort?</legend>
-          {charges.map((c) => (
-            <label key={c.itemId} className={c.itemId === chargeId ? "choice active" : "choice"}>
+    <div className="stack">
+      <fieldset className="charge-list">
+        <legend>{charges.length > 1 ? "Aus welcher Charge?" : "Charge"}</legend>
+        {charges.map((c) => (
+          <div key={c.itemId} className={c.itemId === chargeId ? "charge active" : "charge"}>
+            <label className="charge-pick">
               <input
                 type="radio"
+                form={formId}
                 name="itemId"
                 value={c.itemId}
                 checked={c.itemId === chargeId}
@@ -83,30 +90,29 @@ export function OpenBottleForm({ charges, today }: { charges: Charge[]; today: s
               />
               <span>{c.label}</span>
             </label>
-          ))}
-        </fieldset>
-      ) : (
-        <>
-          <input type="hidden" name="itemId" value={charges[0].itemId} />
-          <p className="muted">Aus: {charges[0].label}</p>
-        </>
-      )}
-      <FillSlider value={fill} onChange={setFill} />
-      <label className="field">
-        <span>Geöffnet am</span>
-        <input type="date" name="dateOpened" defaultValue={today} max={today} required />
-      </label>
-      <Feedback state={state} />
-      <button type="submit" className="btn btn-primary" disabled={pending}>
-        {pending ? "Wird geöffnet …" : "Flasche öffnen"}
-      </button>
-    </form>
+            <PriceLine {...c.price} />
+          </div>
+        ))}
+      </fieldset>
+      <form id={formId} action={action} className="stack">
+        <FillSlider value={fill} onChange={setFill} />
+        <label className="field">
+          <span>Geöffnet am</span>
+          <input type="date" name="dateOpened" defaultValue={today} max={today} required />
+        </label>
+        <Feedback state={state} />
+        <button type="submit" className="btn btn-primary" disabled={pending}>
+          {pending ? "Wird geöffnet …" : "Flasche öffnen"}
+        </button>
+      </form>
+    </div>
   );
 }
 
 export type OpenBottleInfo = {
   itemId: string;
   fillLevel: number | null;
+  price: PriceInfo;
   /** z. B. „Offen seit 12. Okt. 2026 (seit 15 Tagen) · Wohnzimmer“ */
   label: string;
 };
@@ -122,7 +128,10 @@ export function OpenBottleControls({ bottle }: { bottle: OpenBottleInfo }) {
     <div className="open-bottle">
       <div className="open-bottle-head">
         <FillGauge percent={bottle.fillLevel} />
-        <span className="muted small">{bottle.label}</span>
+        <div className="stack-sm">
+          <span className="muted small">{bottle.label}</span>
+          <PriceLine {...bottle.price} />
+        </div>
       </div>
       <form action={fillAction} className="stack-sm">
         <input type="hidden" name="itemId" value={bottle.itemId} />
