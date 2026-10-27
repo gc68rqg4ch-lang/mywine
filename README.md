@@ -45,7 +45,10 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
      **Nachrecherchieren** neu recherchierbar; Trinkreife (Fenster aus `wine_vintages`, dazu die letzte Verkostung).
      **Fotos** des Jahrgangs als Vorschau mit demselben Overlay; **📷 Foto hinzufügen** (Vorderseite, Rückseite,
      Weiteres): der Browser verkleinert auf max. 2000 px JPEG (auch HEIC vom iPhone), der Server legt das Original
-     unter `wine-photos/app/<wine-id>/…` ab, erzeugt das Vorschaubild und schreibt `wine_media`.
+     unter `wine-photos/app/<wine-id>/…` ab, erzeugt das Vorschaubild und schreibt `wine_media`. Je Foto
+     **Ersetzen** und **Löschen** mit Rückfrage; eine neue Vorder-/Rückseite ersetzt die vorhandene (ebenfalls
+     nach Rückfrage). Gelöscht werden Zeile, Original und Vorschaubild – die Dateien über den Admin-Client
+     (Mitglieder dürfen im Bucket nur lesen und hochladen), erst nach Prüfung der Mitgliedschaft.
   3. **Bewertungen:** subjektiv je Person mit halben Sternen 0–5 in `wine_ratings` (neueste je Person aus
      `latest_wine_ratings`; pro Person und Tag eine, ältere als Verlauf) sowie objektiv die WSET-Verkostungen mit
      „Neue Verkostung“ und Liste.
@@ -164,6 +167,17 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Wer schreibt:** Der Bot spricht die Person mit Namen an; Bewertungen und Verkostungen gehen an sie. Im Menü
   heisst das „⭐ Bewerten“; für die andere Person („⭐ für Sara“) fragt er vor dem Speichern nach. Der
   Gesprächsverlauf ist pro Chat getrennt. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.
+
+### Fotos zu einem Wein nachreichen (📷 Foto)
+
+Im Wein-Menü (Jahrgang bzw. offene Flasche) **📷 Foto** → Vorder- und Rückseite als Album schicken (Vorderseite
+zuerst). Ablauf in `src/lib/ingest/attach.ts`, `ingest_jobs.source = 'telegram_attach'`, Knöpfe `A:<aktion>:<job>`:
+- Die Fotos gehen an den gewählten Wein und Jahrgang (bei einer offenen Flasche auch an sie) als `wine_media` mit
+  Vorschaubild – keine neue Charge. Fotos innerhalb von 30 Minuten nach dem Tipp gehören dazu, danach wieder zur
+  normalen Erfassung.
+- Album: erstes Foto Vorderseite, zweites Rückseite. Einzelfoto: Frage [Vorderseite] [Rückseite].
+- Gibt es die Seite für den Jahrgang schon: Rückfrage [🔁 Ersetzen] [✖️ Abbrechen]. Ersetzen speichert erst die
+  neuen Fotos und löscht dann die alten samt Dateien. Abbrechen löscht die geschickten Fotos.
 
 ### Erfassung per Text (ohne Foto)
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export type ViewerPhoto = { id: string; thumb: string; full: string; label: string };
 
@@ -93,7 +93,16 @@ export function PhotoThumb({
 }
 
 /** Raster aller Fotos (Weinseite); jedes öffnet das gemeinsame Overlay. */
-export function PhotoGallery({ photos, alt }: { photos: ViewerPhoto[]; alt: string }) {
+export function PhotoGallery<T extends ViewerPhoto>({
+  photos,
+  alt,
+  actions,
+}: {
+  photos: T[];
+  alt: string;
+  /** Knöpfe unter einem Foto (z. B. Ersetzen, Löschen). */
+  actions?: (photo: T) => ReactNode;
+}) {
   if (!photos.length) return null;
   return (
     <ul className="photo-gallery">
@@ -101,6 +110,7 @@ export function PhotoGallery({ photos, alt }: { photos: ViewerPhoto[]; alt: stri
         <li key={p.id}>
           <PhotoThumb photos={photos} start={i} alt={alt} />
           <span className="photo-label">{p.label}</span>
+          {actions?.(p)}
         </li>
       ))}
     </ul>

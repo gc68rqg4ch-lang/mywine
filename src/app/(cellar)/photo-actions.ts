@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import sharp from "sharp";
 import { getSession } from "@/lib/auth";
 import type { MediaKind } from "@/lib/media/pick";
-import { PHOTO_BUCKET, saveWineMedia } from "@/lib/media/store";
+import { PHOTO_BUCKET, removeWineMedia, saveWineMedia } from "@/lib/media/store";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionState } from "./actions";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -13,7 +14,12 @@ const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "
 /** Der Browser verkleinert vorher; mehr lässt die Server Action ohnehin nicht durch. */
 const MAX_BYTES = 4 * 1024 * 1024;
 
-/** Foto zum Wein hochladen (Vorder-/Rückseite/weiteres) – mit Vorschaubild für die Listen. */
+const MEDIA_COLUMNS = "id, storage_path, thumb_path, inventory_item_id" as const;
+
+/**
+ * Foto zum Wein hochladen (Vorder-/Rückseite/weiteres) – mit Vorschaubild für die Listen.
+ * `replaceIds`: diese Fotos desselben Weins danach löschen (Ersetzen, nach Rückfrage im Browser).
+ */
 export async function uploadWinePhoto(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const session = await getSession();
   if (!session.isMember) return { error: "Kein Zugriff." };
@@ -42,6 +48,10 @@ export async function uploadWinePhoto(_prev: ActionState, formData: FormData): P
     itemId = data?.id ?? null;
   }
 
+  const replaceIds = String(formData.get("replaceIds") ?? "")
+    .split(",")
+    .filter((id) => UUID_RE.test(id));
+
   const bytes = new Uint8Array(await file.arrayBuffer());
   // Nur echte Bilder ablegen (der Typ kommt vom Browser und ist nicht verlässlich).
   const meta = await sharp(bytes).metadata().catch(() => null);
@@ -64,6 +74,51 @@ export async function uploadWinePhoto(_prev: ActionState, formData: FormData): P
     return { error: "Das Foto ist hochgeladen, konnte aber nicht zugeordnet werden." };
   }
 
+  if (replaceIds.length) {
+    try {
+      const { data: old, error } = await supabase
+        .from("wine_media")
+        .select(MEDIA_COLUMNS)
+        .in("id", replaceIds)
+        .eq("wine_id", wineId)
+        .eq("storage_bucket", PHOTO_BUCKET);
+      if (error) throw error;
+      await removeWineMedia(supabase, createAdminClient(), old);
+    } catch (error) {
+      console.error("removing replaced photo failed", error);
+      revalidatePath("/", "layout");
+      return { error: "Das neue Foto ist gespeichert, das alte konnte aber nicht gelöscht werden." };
+    }
+  }
+
   revalidatePath("/", "layout");
-  return { ok: "Foto gespeichert." };
+  return { ok: replaceIds.length ? "Foto ersetzt." : "Foto gespeichert." };
+}
+
+/** Foto löschen (Rückfrage im Browser): Zeile, Original und Vorschaubild. */
+export async function deleteWinePhoto(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const session = await getSession();
+  if (!session.isMember) return { error: "Kein Zugriff." };
+  const { supabase } = session;
+
+  const mediaId = String(formData.get("mediaId") ?? "");
+  if (!UUID_RE.test(mediaId)) return { error: "Ungültiges Foto." };
+  // Über den Client der Session lesen: RLS stellt sicher, dass nur Mitglieder das Foto sehen.
+  const { data: row, error } = await supabase
+    .from("wine_media")
+    .select(MEDIA_COLUMNS)
+    .eq("id", mediaId)
+    .eq("storage_bucket", PHOTO_BUCKET)
+    .maybeSingle();
+  if (error || !row) return { error: "Dieses Foto gibt es nicht mehr." };
+
+  try {
+    // Mitglieder dürfen im Bucket nicht löschen – die Dateien entfernt der Admin-Client (nur serverseitig).
+    await removeWineMedia(supabase, createAdminClient(), [row]);
+  } catch (err) {
+    console.error("deleting photo failed", err);
+    return { error: "Löschen ist fehlgeschlagen." };
+  }
+  revalidatePath("/", "layout");
+  return { ok: "Foto gelöscht." };
 }

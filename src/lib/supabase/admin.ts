@@ -6,7 +6,8 @@ import { supabaseUrl } from "./env";
 
 /**
  * Supabase-Client mit dem Secret Key – umgeht RLS. Nur serverseitig verwenden
- * (Telegram-Bot), nie an den Browser geben.
+ * (Telegram-Bot; in der App nur zum Löschen von Fotodateien nach Prüfung der
+ * Mitgliedschaft), nie an den Browser geben.
  */
 export function createAdminClient() {
   const secretKey = process.env.SUPABASE_SECRET_KEY;

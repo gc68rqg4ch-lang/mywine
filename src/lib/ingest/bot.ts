@@ -55,6 +55,7 @@ import {
 } from "@/lib/chat/tasting";
 import { MAIN_KEYBOARD, isMenuCallback, menuKeyFor } from "@/lib/chat/menu-view";
 import { findWine, mergeWithKnownWine, resolveVendor } from "./wines";
+import { findAttachJob, handleAttachCallback, isAttachCallback, noteAttachPhoto } from "./attach";
 import {
   acceptRestock,
   advanceTo,
@@ -121,6 +122,22 @@ async function handlePhoto(msg: TgMessage) {
   }
 
   const db = createAdminClient();
+
+  // „📷 Foto“ im Wein-Menü wartet: die Fotos gehören zu diesem Wein, keine neue Erfassung.
+  const attach = await findAttachJob(db, chatId);
+  if (attach) {
+    const { bytes, filePath } = await downloadFile(file.fileId);
+    const ext = extensionOf(filePath) ?? "jpg";
+    const { error } = await db.storage
+      .from(PHOTO_BUCKET)
+      .upload(`${photoFolder(attach.id)}/${msg.message_id}.${ext}`, bytes, { contentType: IMAGE_TYPES[ext], upsert: true });
+    if (error) throw error;
+    if (!(await noteAttachPhoto(db, attach.id, chatId))) {
+      await sendMessage(chatId, "Dieses Foto kam zu spät – die Fotos werden schon zugeordnet.");
+    }
+    return;
+  }
+
   // Statt einer Beschreibung kommen Fotos: die wartende Text-Erfassung verfällt.
   await discardDescribe(db, chatId);
   const jobId = jobIdFor(chatId, msg.media_group_id ?? `m${msg.message_id}`);
@@ -270,6 +287,10 @@ async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[
 // Buttons
 
 async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
+  if (isAttachCallback(cb.data)) {
+    await handleAttachCallback(cb);
+    return;
+  }
   if (isTastingCallback(cb.data)) {
     await handleTastingCallback(cb);
     return;

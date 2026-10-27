@@ -73,8 +73,56 @@ export async function saveWineMedia(
   if (error) throw error;
 }
 
-/** Ein Foto, wie es Liste und Overlay brauchen (signierte URLs). */
-export type ViewPhoto = { id: string; kind: MediaKind; thumb: string; full: string };
+/**
+ * Löscht wine_media-Zeilen samt Original und Vorschaubild im Bucket und nimmt die
+ * Pfade aus inventory_items.photo_urls. `storageDb` darf löschen (Mitglieder haben
+ * im Bucket nur Lese- und Schreibrechte – die App gibt dafür den Admin-Client mit).
+ */
+export async function removeWineMedia(
+  db: Db,
+  storageDb: Db,
+  rows: Pick<MediaRow, "id" | "storage_path" | "thumb_path" | "inventory_item_id">[],
+) {
+  if (!rows.length) return;
+  const { error } = await db
+    .from("wine_media")
+    .delete()
+    .in("id", rows.map((r) => r.id));
+  if (error) throw error;
+
+  const paths = rows.flatMap((r) => [r.storage_path, ...(r.thumb_path ? [r.thumb_path] : [])]);
+  const { error: storageError } = await storageDb.storage.from(PHOTO_BUCKET).remove(paths);
+  // Verwaiste Dateien stören nicht; die Zeile ist weg und wird nirgends mehr angezeigt.
+  if (storageError) console.error("removing photo files failed", storageError);
+
+  const itemIds = [...new Set(rows.flatMap((r) => (r.inventory_item_id ? [r.inventory_item_id] : [])))];
+  if (!itemIds.length) return;
+  const { data: items } = await db.from("inventory_items").select("id, photo_urls").in("id", itemIds);
+  const gone = new Set(paths);
+  for (const item of items ?? []) {
+    const kept = item.photo_urls.filter((p) => !gone.has(p));
+    if (kept.length !== item.photo_urls.length) {
+      await db.from("inventory_items").update({ photo_urls: kept }).eq("id", item.id);
+    }
+  }
+}
+
+/** wine_media-Zeilen eines Jahrgangs (z. B. vorhandene Vorder-/Rückseite vor dem Ersetzen). */
+export async function loadVintageMedia(db: Db, wineId: string, year: number | null, kinds: MediaKind[]) {
+  let query = db
+    .from("wine_media")
+    .select(MEDIA_COLUMNS)
+    .eq("wine_id", wineId)
+    .in("kind", kinds)
+    .eq("storage_bucket", PHOTO_BUCKET);
+  query = year == null ? query.is("vintage_year", null) : query.eq("vintage_year", year);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data satisfies MediaRow[];
+}
+
+/** Ein Foto, wie es Liste und Overlay brauchen (signierte URLs). `legacy` = nur in photo_urls, ohne wine_media. */
+export type ViewPhoto = { id: string; kind: MediaKind; thumb: string; full: string; legacy?: boolean };
 
 async function loadRows(db: Db, wineIds: string[], kinds: MediaKind[]) {
   if (!wineIds.length) return [];
@@ -159,8 +207,8 @@ export async function loadVintagePhotos(db: Db, wineId: string, year: number | n
   const photos: ViewPhoto[] = media.flatMap((r) => toView(r, urls) ?? []);
   for (const p of legacyPaths) {
     const url = urls.get(p);
-    if (url) photos.push({ id: p, kind: "photo", thumb: url, full: url });
+    if (url) photos.push({ id: p, kind: "photo", thumb: url, full: url, legacy: true });
   }
-  for (const url of external) photos.push({ id: url, kind: "photo", thumb: url, full: url });
+  for (const url of external) photos.push({ id: url, kind: "photo", thumb: url, full: url, legacy: true });
   return photos;
 }

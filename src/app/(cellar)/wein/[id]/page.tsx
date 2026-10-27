@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { viewerPhoto } from "@/components/cellar/wine-card";
-import { PhotoGallery } from "@/components/photo-viewer";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
 import { DRINK_STATUS_LABELS, countryFlag } from "@/lib/cellar/overview";
@@ -31,7 +30,7 @@ import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { GrapeSection } from "./grape-card";
-import { PhotoUpload } from "./photo-upload";
+import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, type PersonRating } from "./ratings-card";
 
@@ -248,20 +247,14 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         </dl>
         <div className="stack section-divider">
           <h3 className="subsection-title">Fotos</h3>
-          <PhotoGallery photos={photos.map(viewerPhoto)} alt={`${wine.name} ${yearLabel}`} />
-          <PhotoUpload
-            // Neu mounten, damit die vorgeschlagene Art zum Jahrgang passt.
+          <WinePhotos
+            // Neu mounten, wenn sich Jahrgang oder Fotos ändern (vorgeschlagene Art passt dann wieder).
             key={`${year}:${photos.length}`}
             wineId={wine.id}
             vintageYear={year}
             itemId={anchor?.inventory_item_id ?? null}
-            defaultKind={
-              !photos.some((p) => p.kind === "label_front")
-                ? "label_front"
-                : !photos.some((p) => p.kind === "label_back")
-                  ? "label_back"
-                  : "photo"
-            }
+            photos={photos.map(viewerPhoto)}
+            alt={`${wine.name} ${yearLabel}`}
           />
         </div>
         {anchor && (

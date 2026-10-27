@@ -6,7 +6,7 @@ import type { WineType } from "@/lib/format";
 import { MEDIA_KIND_LABELS } from "@/lib/media/pick";
 import type { LabelPair, ViewPhoto } from "@/lib/media/store";
 
-export const viewerPhoto = (p: ViewPhoto): ViewerPhoto => ({ ...p, label: MEDIA_KIND_LABELS[p.kind] });
+export const viewerPhoto = (p: ViewPhoto): ViewPhoto & ViewerPhoto => ({ ...p, label: MEDIA_KIND_LABELS[p.kind] });
 
 /** Karte eines Weins in Bestand, Offen und Getrunken. */
 export function WineCard({

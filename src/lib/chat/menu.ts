@@ -13,6 +13,7 @@ import { loadGrapeShares } from "@/lib/grapes/store";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { wineDetailsText, type WineDetails } from "./details";
+import { discardAttach, startAttach } from "@/lib/ingest/attach";
 import { startDescribe } from "@/lib/ingest/flow";
 import { DESCRIBE_TEXT, cancelKeyboard } from "@/lib/ingest/messages";
 import { executeProposal } from "./execute";
@@ -311,6 +312,7 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
         ...(sealed ? [[btn("🍾 Öffnen", { op: "open", wineId, year, back })]] : []),
         ...ratingButtons(ratings.persons, subject, back),
         [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
+        [btn("📷 Foto", { op: "photo", subject, back })],
         ...appButton(`/wein/${wineId}`),
         ...backRow(back),
       ],
@@ -345,6 +347,7 @@ async function itemScreen(db: AdminClient, itemId: string, back: ListRef, status
         [btn("Füllstand %", { op: "fillPicker", itemId, back }), btn("✅ Ausgetrunken", { op: "drunkAsk", itemId, back })],
         ...ratingButtons(ratings.persons, subject, back),
         [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
+        [btn("📷 Foto", { op: "photo", subject, back })],
         ...appButton(`/flasche/${itemId}`),
         ...backRow(back),
       ],
@@ -562,6 +565,16 @@ async function screenForAction(
       const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
       return { screen: await tastingStartScreen(db, a.subject, a.back, header) };
     }
+    case "photo": {
+      // Bei einer offenen Flasche hängen die Fotos an ihr, sonst nur an Wein und Jahrgang.
+      const s = a.subject;
+      const target =
+        s.kind === "vintage"
+          ? { wineId: s.wineId, vintageYear: s.year, itemId: null }
+          : await loadItem(db, s.itemId).then((i) => (i?.wine_id ? { wineId: i.wine_id, vintageYear: i.vintage_year, itemId: s.itemId } : null));
+      if (!target) return { screen: await subjectScreen(db, a.subject, a.back, "Wein nicht gefunden.") };
+      return { screen: await startAttach(db, ctx.chatId, target) };
+    }
     case "tell":
       return { screen: await startTelling(db, ctx.chatId, a.subject, a.back, ctx.actor?.personId ?? null) };
     case "list":
@@ -668,7 +681,10 @@ export async function handleMenuCallback(cb: TgCallbackQuery, actor: MenuActor) 
 export async function sendMainMenu(chatId: number, key: "open" | "stock" | "ready" | "newWine") {
   if (key === "newWine") {
     // Fotos oder eine Beschreibung – die nächste Textnachricht wird als neuer Eintrag erfasst.
-    const jobId = await startDescribe(createAdminClient(), chatId);
+    // Eine wartende „📷 Foto“-Zuordnung verfällt, damit die Fotos ein neuer Wein werden.
+    const db = createAdminClient();
+    await discardAttach(db, chatId);
+    const jobId = await startDescribe(db, chatId);
     await sendMessage(chatId, DESCRIBE_TEXT, cancelKeyboard(jobId));
     return;
   }

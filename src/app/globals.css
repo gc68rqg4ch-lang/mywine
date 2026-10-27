@@ -649,7 +649,7 @@ input[type="range"] {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px 20px;
 }
 .photo-gallery li {
   display: flex;
@@ -665,17 +665,25 @@ input[type="range"] {
   color: var(--muted);
   font-size: 0.75rem;
 }
+.photo-actions {
+  display: flex;
+  gap: 10px;
+}
+.photo-actions .link-btn {
+  font-size: 0.75rem;
+  /* Grössere Tippfläche ohne grösseren Text. */
+  padding: 4px 0;
+}
+.link-btn.link-danger {
+  color: var(--danger);
+}
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 
 .upload-btn {
   align-self: flex-start;
-}
-.upload-btn[aria-disabled] {
-  opacity: 0.55;
-  pointer-events: none;
-}
-.upload-btn:focus-within {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 .visually-hidden {
   position: absolute;

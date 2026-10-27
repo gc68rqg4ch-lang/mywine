@@ -10,7 +10,7 @@
 //   R:<subj>:<person>:<l>     Sterne wählen               S:<subj>:<person>:<halbe>:<l>  Bewertung speichern
 //   T:<subj>:<l>              Verkostung: Weg wählen      E:<subj>:<l>            Verkostung erzählen
 //   K:<subj>:<person>:<halbe>:<l>  Rückfrage, bevor für eine andere Person bewertet wird
-//   I:<subj>:<l>              Details zum Jahrgang
+//   I:<subj>:<l>              Details zum Jahrgang        M:<subj>:<l>            Fotos nachreichen (📷 Foto)
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
 import { formatStarNumber, type WineType } from "@/lib/format";
@@ -87,7 +87,8 @@ export type MenuAction =
   | { op: "rateAsk"; subject: Subject; personKey: string; rating: number; back: ListRef }
   | { op: "details"; subject: Subject; back: ListRef }
   | { op: "tasting"; subject: Subject; back: ListRef }
-  | { op: "tell"; subject: Subject; back: ListRef };
+  | { op: "tell"; subject: Subject; back: ListRef }
+  | { op: "photo"; subject: Subject; back: ListRef };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const KEY_RE = /^[0-9a-f]{8}$/;
@@ -178,11 +179,13 @@ export function encodeMenu(a: MenuAction): string {
       return `T:${encodeSubject(a.subject)}:${l}`;
     case "tell":
       return `E:${encodeSubject(a.subject)}:${l}`;
+    case "photo":
+      return `M:${encodeSubject(a.subject)}:${l}`;
   }
 }
 
 export function isMenuCallback(data: string | undefined) {
-  return /^[LWVOGFPDXNQRSTEKI]:/.test(data ?? "");
+  return /^[LWVOGFPDXNQRSTEKIM]:/.test(data ?? "");
 }
 
 export function decodeMenu(data: string | undefined): MenuAction | null {
@@ -234,11 +237,12 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
     }
     case "T":
     case "E":
-    case "I": {
+    case "I":
+    case "M": {
       const subject = decodeSubject(f[0]);
       const b = back(1);
       if (!subject || !b) return null;
-      const kind = ({ T: "tasting", E: "tell", I: "details" } as const)[op];
+      const kind = ({ T: "tasting", E: "tell", I: "details", M: "photo" } as const)[op];
       return { op: kind, subject, back: b };
     }
     case "K":
