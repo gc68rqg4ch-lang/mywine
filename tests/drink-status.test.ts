@@ -1,5 +1,6 @@
 // Trinkreife: fünf Stufen aus dem Trinkfenster des Jahrgangs, Gruppierung in Bestand/Offen,
 // Status in der Kachel und dieselbe Einteilung im Bot-Menü „⏰ Trinkreif“. Ausführen: npm test
+import "./env";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { installNet, type Net } from "./stub-net";
@@ -15,17 +16,8 @@ import {
   toVintageRow,
   type SummaryWine,
   type VintageRow,
-} from "../src/lib/cellar/overview";
+} from "@/lib/cellar/overview";
 
-Object.assign(process.env, {
-  NEXT_PUBLIC_SUPABASE_URL: "https://stub.supabase.co",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "stub",
-  SUPABASE_SECRET_KEY: "stub",
-  TELEGRAM_BOT_TOKEN: "stub",
-  TELEGRAM_WEBHOOK_SECRET: "stub",
-  TELEGRAM_ALLOWED_USER_ID: "111",
-  ANTHROPIC_API_KEY: "stub",
-});
 
 const Y = 2026;
 

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GroupedList } from "@/components/cellar/grouped-list";
-import { ListControls, applyTypeFilter, readListParams } from "@/components/cellar/list-controls";
+import { ListControls } from "@/components/cellar/list-controls";
+import { applyTypeFilter, readListParams } from "@/lib/cellar/list-params";
 import { WineCard } from "@/components/cellar/wine-card";
 import { FillGauge } from "@/components/fill-gauge";
 import { getMemberSession } from "@/lib/auth";

@@ -2,8 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import Anthropic from "@anthropic-ai/sdk";
-import { apiProblem, apiProblemForBot, usageLimit } from "../src/lib/ai/api-errors";
-import { formatDate } from "../src/lib/format";
+import { apiProblem, apiProblemForBot, usageLimit } from "@/lib/ai/api-errors";
+import { formatDate } from "@/lib/format";
 
 const DAY = formatDate("2026-11-01");
 

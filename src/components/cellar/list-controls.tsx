@@ -1,16 +1,8 @@
 import Link from "next/link";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { GROUP_BY_LABELS, type GroupBy } from "@/lib/cellar/overview";
-import { WINE_TYPE_LABELS, type WineType } from "@/lib/format";
-
-/** Weintyp-Filter: ein Typ aus wine_type oder „unknown“ (ohne Typ). */
-export type TypeFilter = WineType | "unknown";
-
-const TYPE_ORDER: TypeFilter[] = ["red", "white", "rose", "sparkling", "sweet", "fortified", "orange", "unknown"];
-
-export function typeOf(entry: { type: WineType | null }): TypeFilter {
-  return entry.type ?? "unknown";
-}
+import { TYPE_ORDER, type TypeFilter } from "@/lib/cellar/list-params";
+import { WINE_TYPE_LABELS } from "@/lib/format";
 
 type ListState = { groupBy: GroupBy; query: string; type: TypeFilter | null };
 
@@ -92,21 +84,4 @@ export function ListControls({
       )}
     </div>
   );
-}
-
-/** Suchtext, Gruppierung und Weintyp-Filter aus den searchParams. */
-export function readListParams(params: Record<string, string | string[] | undefined>, groupings: GroupBy[]) {
-  const query = typeof params.q === "string" ? params.q.trim() : "";
-  const gruppe = params.gruppe;
-  const groupBy: GroupBy = typeof gruppe === "string" && (groupings as string[]).includes(gruppe) ? (gruppe as GroupBy) : "typ";
-  const typ = params.typ;
-  const type =
-    groupBy !== "typ" && typeof typ === "string" && (TYPE_ORDER as string[]).includes(typ) ? (typ as TypeFilter) : null;
-  return { query, groupBy, type };
-}
-
-/** Typen einer Liste und die Liste gefiltert nach dem gewählten Typ. */
-export function applyTypeFilter<T extends { type: WineType | null }>(entries: T[], type: TypeFilter | null) {
-  const types = [...new Set(entries.map(typeOf))];
-  return { types, filtered: type ? entries.filter((e) => typeOf(e) === type) : entries };
 }

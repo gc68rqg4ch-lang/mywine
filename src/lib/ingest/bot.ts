@@ -187,8 +187,8 @@ function extensionOf(path: string): keyof typeof IMAGE_TYPES | null {
   return ext && ext in IMAGE_TYPES ? (ext as keyof typeof IMAGE_TYPES) : null;
 }
 
-/** Erkennung eines vollständigen Albums – läuft nur im Request, der den Job beansprucht. */
-async function processJob(jobId: string, chatId: number) {
+/** Erkennung eines vollständigen Albums – läuft nur im Request, der den Job beansprucht (exportiert für Tests). */
+export async function processJob(jobId: string, chatId: number) {
   const db = createAdminClient();
   const job = await claimJob(db, jobId);
   if (!job) return;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { wineHref } from "@/lib/cellar/wine-page";
+import { afterWine } from "@/lib/research/batch";
 import type { ResearchScope } from "@/lib/research/gaps";
 import type { ResearchOutcome } from "@/lib/research/wine";
 import { researchWine } from "../research-actions";
@@ -31,9 +32,6 @@ const ICON: Record<ResearchOutcome["status"] | "waiting" | "running", string> = 
   complete: "✔️",
   error: "⚠️",
 };
-
-/** Andere Fehler: nach so vielen in Folge anhalten. */
-const MAX_FAILURES_IN_A_ROW = 3;
 
 const minutes = (seconds: number) => Math.max(1, Math.round(seconds / 60));
 
@@ -85,14 +83,11 @@ export function BatchResearch({
         outcome = { status: "error", filled: [], suggested: 0, seconds: 0 };
       }
       setRows((r) => ({ ...r, [c.wineId]: { state: "done", ...outcome } }));
-      // API-Limit: sofort aufhören – jeder weitere Wein würde gleich scheitern.
-      if (outcome.error?.kind === "usage_limit") {
-        setHalt(outcome.error.message);
-        break;
-      }
-      failures = outcome.status === "error" ? failures + 1 : 0;
-      if (failures >= MAX_FAILURES_IN_A_ROW) {
-        setHalt(`Angehalten nach ${MAX_FAILURES_IN_A_ROW} Fehlern in Folge: ${outcome.error?.message ?? "unbekannter Fehler"}`);
+      // API-Limit: sofort aufhören; andere Fehler: nach 3 in Folge.
+      const step = afterWine(outcome, failures);
+      failures = step.failures;
+      if (step.halt) {
+        setHalt(step.halt);
         break;
       }
     }

@@ -160,6 +160,24 @@ Schemaänderungen kommen als Datei nach `supabase/migrations/` und werden nicht 
 
 DB-Typen neu generieren nach Schemaänderungen: `npx supabase gen types typescript --project-id ckwwttimhhogyzekvlad > src/lib/database.types.ts`
 
+### Tests
+
+`npm test` führt alle Tests unter `tests/` aus (`node:test` über `tsx`). Sie brauchen weder eine echte
+Datenbank noch API-Schlüssel und legen nichts in der Produktions-DB an:
+
+- `tests/env.ts` setzt Platzhalter für alle Umgebungsvariablen (jede Testdatei importiert es zuerst).
+- `tests/stub-net.ts` ersetzt `fetch`: Telegram, Claude API (auch Fehlerantworten wie das Nutzungslimit),
+  PostgREST und Supabase Storage als kleine Nachbildung im Speicher – für Abläufe über den Admin-Client.
+- `tests/fake-db.ts` ist ein Supabase-Client im Speicher für Funktionen, die den Client übergeben bekommen
+  (Menüs, Details, Verkostung), inkl. eingebetteter Beziehungen wie `wine:wines(…)`.
+
+Abgedeckt: Bot-Zugang und `/id` (`access`), Bewerten (`rating`), Wein-Menü (`wine-menu`), Details (`details`),
+Erfassung per Foto, Text, Nachkauf und Jahrgang-Pflicht (`photo-ingest`, `text-ingest`, `ingest-helpers`),
+Fotos nachreichen (`photo-attach`, `media-*`), Bearbeiten-Modul inkl. `move_bottles` und `change_vintage`
+(`edit`), Weinseite (`wine-page`), Übersicht, Typ-Filter und Gruppierungen inkl. Trinkreife (`overview`,
+`lists`, `drink-status`), Verkostung (`tasting`), Recherche mit Lücken, Vorschlägen und Limit-Stopp
+(`research`, `api-errors`) sowie die Schema-Grenzen der Claude API (`schema-limits`).
+
 ## Einrichtung Supabase / Vercel
 
 1. **Redirect-URLs erlauben:** Supabase → Authentication → URL Configuration

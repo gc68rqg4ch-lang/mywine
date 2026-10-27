@@ -1,19 +1,13 @@
 // Integrationstest: „📷 Foto“ im Wein-Menü des Bots – Album zuordnen (Vorder-/Rückseite mit
 // Vorschaubild, keine neue Charge), Einzelfoto mit Seitenwahl, Ersetzen nach Rückfrage,
 // Abbrechen. Telegram, Supabase (inkl. Storage) per fetch-Stub. Ausführen: npm test
+import "./env";
 import assert from "node:assert/strict";
+import { test } from "node:test";
 import sharp from "sharp";
 import { installNet, type Net } from "./stub-net";
-
-Object.assign(process.env, {
-  NEXT_PUBLIC_SUPABASE_URL: "https://stub.supabase.co",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "stub",
-  SUPABASE_SECRET_KEY: "stub",
-  TELEGRAM_BOT_TOKEN: "stub",
-  TELEGRAM_WEBHOOK_SECRET: "stub",
-  TELEGRAM_ALLOWED_USER_ID: "111",
-  ANTHROPIC_API_KEY: "stub",
-});
+import { findAttachJob, processAttach } from "@/lib/ingest/attach";
+import { handleUpdate } from "@/lib/ingest/bot";
 
 const W = "11111111-1111-4111-8111-111111111111";
 const I = "22222222-2222-4222-8222-222222222222";
@@ -44,25 +38,24 @@ const media = () => net.tables.wine_media as { id: string; kind: string; storage
 const jobs = () => net.tables.ingest_jobs as { id: string; status: string; source: string; extracted: { step: string }; photo_paths: string[]; updated_at: string }[];
 const label = (color: string) => sharp({ create: { width: 600, height: 900, channels: 3, background: color } }).jpeg().toBuffer();
 
-(async () => {
-  const { handleUpdate } = await import("@/lib/ingest/bot");
-  const { findAttachJob, processAttach } = await import("@/lib/ingest/attach");
-
-  /** „📷 Foto“ antippen, Fotos in den Ordner des Jobs legen, Ruhezeit simulieren, verarbeiten. */
-  async function attach(colors: string[]) {
-    await handleUpdate(cb(`M:v${W}.2019:-`));
-    assert.match(lastText(), /Fotos für <b>Vega Sicilia – Pintia 2019<\/b>/);
-    const job = await findAttachJob((await import("@/lib/supabase/admin")).createAdminClient(), 111);
-    assert.ok(job, "Job wartet auf Fotos");
-    for (const [i, color] of colors.entries()) {
-      net.storage!.set(`wine-photos/telegram/${job.id}/${10 + i}.jpg`, { bytes: await label(color), type: "image/jpeg" });
-    }
-    jobs().find((j) => j.id === job.id)!.updated_at = new Date(Date.now() - 10_000).toISOString();
-    await processAttach(job.id, 111);
-    return job.id;
+/** „📷 Foto“ antippen, Fotos in den Ordner des Jobs legen, Ruhezeit simulieren, verarbeiten. */
+async function attach(colors: string[]) {
+  await handleUpdate(cb(`M:v${W}.2019:-`));
+  assert.match(lastText(), /Fotos für <b>Vega Sicilia – Pintia 2019<\/b>/);
+  const job = await findAttachJob((await import("@/lib/supabase/admin")).createAdminClient(), 111);
+  assert.ok(job, "Job wartet auf Fotos");
+  for (const [i, color] of colors.entries()) {
+    net.storage!.set(`wine-photos/telegram/${job.id}/${10 + i}.jpg`, { bytes: await label(color), type: "image/jpeg" });
   }
+  jobs().find((j) => j.id === job.id)!.updated_at = new Date(Date.now() - 10_000).toISOString();
+  await processAttach(job.id, 111);
+  return job.id;
+}
 
-  // A) Album mit zwei Fotos: Vorder- und Rückseite, je mit Vorschaubild; keine neue Charge
+let oldFront: ReturnType<typeof media>[number];
+let oldBack: ReturnType<typeof media>[number];
+
+test("A) Album mit zwei Fotos: Vorder- und Rückseite, je mit Vorschaubild; keine neue Charge", async () => {
   const a = await attach(["#802040", "#404040"]);
   assert.deepEqual(media().map((m) => [m.kind, m.vintage_year, m.wine_id]), [["label_front", 2019, W], ["label_back", 2019, W]]);
   for (const m of media()) {
@@ -74,9 +67,10 @@ const label = (color: string) => sharp({ create: { width: 600, height: 900, chan
   assert.equal(net.tables.inventory_items.length, 1);
   assert.equal(jobs().find((j) => j.id === a)!.status, "confirmed");
   assert.match(lastText(), /✅ Ich habe Vorderseite, Rückseite gespeichert · Vega Sicilia – Pintia 2019/);
-  const [oldFront, oldBack] = media();
+  [oldFront, oldBack] = media();
+});
 
-  // B) Einzelfoto: Seite wählen; Vorderseite gibt es schon → Rückfrage → ersetzen
+test("B) Einzelfoto: Seite wählen; Vorderseite gibt es schon → Rückfrage → ersetzen", async () => {
   const b = await attach(["#206080"]);
   assert.equal(jobs().find((j) => j.id === b)!.extracted.step, "side");
   assert.match(lastText(), /Vorderseite oder die Rückseite/);
@@ -89,21 +83,20 @@ const label = (color: string) => sharp({ create: { width: 600, height: 900, chan
   assert.ok(media().some((m) => m.id === oldBack.id), "Rückseite bleibt");
   assert.ok(!net.storage!.has(`wine-photos/${oldFront.storage_path}`) && !net.storage!.has(`wine-photos/${oldFront.thumb_path}`), "Datei und Vorschaubild gelöscht");
   assert.match(lastText(), /✅ Ich habe Vorderseite ersetzt/);
+
   // Doppelter Tipp ändert nichts mehr
   await handleUpdate(cb(`A:r:${b}`));
   assert.equal(media().length, 2);
+});
 
-  // C) Abbrechen: hochgeladene Fotos werden gelöscht, nichts zugeordnet
+test("C) Abbrechen: hochgeladene Fotos werden gelöscht, nichts zugeordnet", async () => {
   const c = await attach(["#aa3333"]);
   await handleUpdate(cb(`A:x:${c}`));
   assert.equal(jobs().find((j) => j.id === c)!.status, "discarded");
   assert.ok(![...net.storage!.keys()].some((k) => k.includes(c)), "Fotos des Abbruchs gelöscht");
   assert.equal(media().length, 2);
+});
 
-  // D) Ohne wartenden Job gibt es nichts zuzuordnen
+test("D) Ohne wartenden Job gibt es nichts zuzuordnen", async () => {
   assert.equal(await findAttachJob((await import("@/lib/supabase/admin")).createAdminClient(), 111), null);
-  console.log("photo-attach ok");
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
 });

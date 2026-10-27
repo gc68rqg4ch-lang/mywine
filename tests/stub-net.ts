@@ -51,7 +51,11 @@ export function installNet(net: Net) {
       net.telegram.push({ method: url.pathname.split("/").pop()!, body: body ?? {} });
       return json({ ok: true, result: { message_id: 100 + net.telegram.length } });
     }
-    if (url.host === "api.anthropic.com") return json(net.claude(body));
+    if (url.host === "api.anthropic.com") {
+      // Fehlerantwort der API: { status, body } mit einem HTTP-Status ≠ 200
+      const answer = net.claude(body);
+      return typeof answer.status === "number" && answer.body ? json(answer.body, answer.status) : json(answer);
+    }
     const m = url.pathname.match(/\/rest\/v1\/(rpc\/)?(\w+)$/);
     if (!m) throw new Error(`stub: ${url}`);
     if (m[1]) return json(net.rpc[m[2]]?.(body) ?? null);
@@ -121,6 +125,11 @@ async function storage(net: Net, url: URL, method: string, headers: Headers, bod
 export const claudeText = (obj: unknown) => ({
   id: "msg", type: "message", role: "assistant", model: "claude-haiku-5-5", stop_reason: "end_turn", stop_sequence: null,
   content: [{ type: "text", text: JSON.stringify(obj) }], usage: { input_tokens: 1, output_tokens: 1 },
+});
+/** Fehlerantwort der Messages API (z. B. Nutzungslimit: 400 invalid_request_error). */
+export const claudeError = (status: number, message: string) => ({
+  status,
+  body: { type: "error", error: { type: status === 400 ? "invalid_request_error" : "api_error", message } },
 });
 export const claudeTool = (name: string, input: unknown) => ({
   id: "msg", type: "message", role: "assistant", model: "claude-sonnet-5-5", stop_reason: "tool_use", stop_sequence: null,

@@ -1,18 +1,15 @@
 // Integrationstest: gemeinsames Bearbeiten-Modul (App und Bot) – Prüfungen, vorher → nachher,
 // Teil-Verschieben ohne falschen Kauf, Jahrgang zusammenführen, Formular-Parser und der
 // Bot-Vorschlag mit [Ja]. Supabase und Telegram per fetch-Stub. Ausführen: npm test
+import "./env";
 import assert from "node:assert/strict";
+import { test } from "node:test";
 import { installNet, type Net } from "./stub-net";
-
-Object.assign(process.env, {
-  NEXT_PUBLIC_SUPABASE_URL: "https://stub.supabase.co",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "stub",
-  SUPABASE_SECRET_KEY: "stub",
-  TELEGRAM_BOT_TOKEN: "stub",
-  TELEGRAM_WEBHOOK_SECRET: "stub",
-  TELEGRAM_ALLOWED_USER_ID: "111",
-  ANTHROPIC_API_KEY: "stub",
-});
+import { createAdminClient } from "@/lib/supabase/admin";
+import { editsFromForm } from "@/lib/edit/form";
+import { handleUpdate } from "@/lib/ingest/bot";
+import { prepareEdit, applyEdit, applyEdits, NOTHING } from "@/lib/edit/edit";
+import { sendEditProposal } from "@/lib/chat/edits";
 
 const W = "11111111-1111-4111-8111-111111111111";
 const W2 = "33333333-3333-4333-8333-333333333333";
@@ -66,21 +63,18 @@ net.rpc.move_bottles = (args) => {
 };
 installNet(net);
 
-(async () => {
-  const { prepareEdit, applyEdit, applyEdits, NOTHING } = await import("@/lib/edit/edit");
-  const { editsFromForm } = await import("@/lib/edit/form");
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const db = createAdminClient();
+const db = createAdminClient();
 
-  // Wein: gleicher Name + Produzent wie ein anderer → klare Meldung; Änderung mit vorher → nachher
+test("Wein: gleicher Name + Produzent wie ein anderer → klare Meldung; Änderung mit vorher → nachher", async () => {
   const conflict = await prepareEdit(db, { kind: "wine", wineId: W, set: { name: "alion" } });
   assert.ok(!conflict.ok && /Es gibt schon einen Wein „Alion“ von Vega Sicilia/.test(conflict.error), JSON.stringify(conflict));
   const wine = await prepareEdit(db, { kind: "wine", wineId: W, set: { region: "DO Toro ", appellation: "" } });
   assert.ok(wine.ok);
   assert.deepEqual(wine.preview.changes, [{ label: "Region", before: "Toro", after: "DO Toro" }]);
   assert.equal((await prepareEdit(db, { kind: "wine", wineId: W, set: { region: "Toro" } })).ok, false, NOTHING);
+});
 
-  // Charge: Anzahl nur ungeöffnet, 0 → löschen; neuer Händler wird angekündigt und angelegt
+test("Charge: Anzahl nur ungeöffnet, 0 → löschen; neuer Händler wird angekündigt und angelegt", async () => {
   const zero = await prepareEdit(db, { kind: "batch", itemId: I, set: { quantity: 0 } });
   assert.ok(!zero.ok && /Charge löschen/.test(zero.error));
   const batch = await applyEdit(db, { kind: "batch", itemId: I, set: { purchasePrice: 22, vendor: "Coop" } });
@@ -88,8 +82,9 @@ installNet(net);
   assert.equal(net.tables.vendors.find((v) => v.name === "Coop") != null, true);
   assert.equal(net.tables.inventory_items[0].purchase_price, 22);
   assert.match(batch.message, /^Händler Coop, Bezahlt CHF\s22\.00 gespeichert\.$/);
+});
 
-  // Verschieben nur über move_bottles (atomar in der DB) – die App legt selbst keine Chargen an
+test("Verschieben nur über move_bottles (atomar in der DB) – die App legt selbst keine Chargen an", async () => {
   const posts: string[] = [];
   const origFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -102,6 +97,7 @@ installNet(net);
   assert.deepEqual(posts, ["/rest/v1/rpc/move_bottles"], "nur der RPC-Aufruf, kein eigenes Insert");
   assert.deepEqual(rpcCalls.at(-1), { p_item_id: I, p_quantity: 2, p_house: "Zuhause", p_room: "Wohnzimmer" });
   assert.deepEqual(net.tables.inventory_items.map((r) => [r.quantity, r.storage_room]), [[4, "Weinkeller"], [2, "Wohnzimmer"]]);
+
   // Nochmals 1 Flasche: am Ziel liegt jetzt eine gleiche Charge → Hinweis, die Flasche kommt dazu
   const again = await prepareEdit(db, { kind: "move", itemId: I, room: "Wohnzimmer", count: 1 });
   assert.ok(again.ok && again.preview.notes.some((n) => /gleiche Charge/.test(n)), JSON.stringify(again));
@@ -110,16 +106,18 @@ installNet(net);
   assert.deepEqual(net.tables.inventory_items.map((r) => [r.quantity, r.storage_room]), [[3, "Weinkeller"], [3, "Wohnzimmer"]]);
   assert.ok(!(await prepareEdit(db, { kind: "move", itemId: I, room: "Wohnzimmer", count: 4 })).ok, "mehr als vorhanden");
   assert.ok(!(await prepareEdit(db, { kind: "move", itemId: I, room: "Weinkeller" })).ok, "schon dort");
+});
 
-  // Jahrgang: Ziel existiert → Hinweis aufs Zusammenführen; ausführen über change_vintage
+test("Jahrgang: Ziel existiert → Hinweis aufs Zusammenführen; ausführen über change_vintage", async () => {
   const merge = await prepareEdit(db, { kind: "vintage", wineId: W, from: 2019, to: 2018 });
   assert.ok(merge.ok && merge.preview.notes.some((n) => /zusammengeführt/.test(n)));
   const done = await applyEdit(db, { kind: "vintage", wineId: W, from: 2019, to: 2018 });
   assert.ok(done.ok && /zusammengeführt/.test(done.message));
   assert.deepEqual(rpcCalls.at(-1), { p_wine_id: W, p_from: 2019, p_to: 2018 });
   assert.ok(!(await prepareEdit(db, { kind: "vintage", wineId: W, from: 2019, to: 1700 })).ok);
+});
 
-  // Formular (App): Charge mit Preis, Lagerort und Jahrgang → drei Bearbeitungen; unveränderte fallen weg
+test("Formular (App): Charge mit Preis, Lagerort und Jahrgang → drei Bearbeitungen; unveränderte fallen weg", async () => {
   const form = new FormData();
   for (const [k, v] of Object.entries({ kind: "batch", itemId: I, giftField: "1", purchasePrice: "22.00", room: "Weinkeller", roomBefore: "Weinkeller", vintage: "NV", vintageBefore: "2019" })) form.set(k, v);
   const edits = editsFromForm(form);
@@ -131,10 +129,9 @@ installNet(net);
   assert.ok("error" in (editsFromForm(bad) as object));
   const multi = await applyEdits(db, [{ kind: "batch", itemId: I, set: { purchasePrice: 22 } }, { kind: "batch", itemId: I, set: { isGift: true } }]);
   assert.ok(multi.ok && multi.message === "Geschenk ja gespeichert.", JSON.stringify(multi));
+});
 
-  // Bot: Vorschlag liegt in ingest_jobs, [Ja] führt über dasselbe Modul aus („Ich habe …“)
-  const { sendEditProposal } = await import("@/lib/chat/edits");
-  const { handleUpdate } = await import("@/lib/ingest/bot");
+test("Bot: Vorschlag liegt in ingest_jobs, [Ja] führt über dasselbe Modul aus („Ich habe …“)", async () => {
   const edit = { kind: "batch" as const, itemId: I, set: { quantity: 5 } };
   const prepared = await prepareEdit(db, edit);
   assert.ok(prepared.ok);
@@ -148,8 +145,4 @@ installNet(net);
   const reply = net.telegram.filter((t) => t.method === "sendMessage").at(-1)!;
   assert.match(String(reply.body.text), /^✅ Ich habe Anzahl 5 gespeichert\./);
   assert.equal(job.status, "confirmed");
-  console.log("edit tests ok");
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
 });

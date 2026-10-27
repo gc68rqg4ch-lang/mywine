@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { labelKinds, newestVintage, pickLabels, thumbPathFor, vintagePhotos, type MediaRow } from "../src/lib/media/pick";
+import { labelKinds, newestVintage, pickLabels, thumbPathFor, vintagePhotos, type MediaRow } from "@/lib/media/pick";
 
 let n = 0;
 const row = (p: Partial<MediaRow>): MediaRow => ({

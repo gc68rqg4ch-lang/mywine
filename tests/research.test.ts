@@ -1,17 +1,18 @@
 // Recherche pro Wein: Lücken im Bestand/alle und vollständiges Ergänzen in einem Durchgang,
 // ohne Vorhandenes zu überschreiben. Claude und Supabase per fetch-Stub. Ausführen: npm test
+import "./env";
 import assert from "node:assert/strict";
-import { claudeTool, installNet, type Net } from "./stub-net";
-
-Object.assign(process.env, {
-  NEXT_PUBLIC_SUPABASE_URL: "https://stub.supabase.co",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "stub",
-  SUPABASE_SECRET_KEY: "stub",
-  ANTHROPIC_API_KEY: "stub",
-  TELEGRAM_BOT_TOKEN: "stub",
-  TELEGRAM_WEBHOOK_SECRET: "stub",
-  TELEGRAM_ALLOWED_USER_ID: "111",
-});
+import { test } from "node:test";
+import { claudeError, claudeTool, installNet, type Net } from "./stub-net";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { decideSuggestion, loadPendingSuggestions } from "@/lib/research/suggestions";
+import { handleUpdate } from "@/lib/ingest/bot";
+import { researchAndFillWine, loadGapData } from "@/lib/research/wine";
+import { suggestionQuestion } from "@/lib/chat/research";
+import { gapCounts, needsResearch, researchedRecently, wineGaps } from "@/lib/research/gaps";
+import { MAX_FAILURES_IN_A_ROW, afterWine } from "@/lib/research/batch";
+import { runBotResearch } from "@/lib/chat/research";
+import { formatDate } from "@/lib/format";
 
 const W = "11111111-1111-4111-8111-111111111111";
 const W2 = "22222222-2222-4222-8222-222222222222";
@@ -20,6 +21,8 @@ const W4 = "44444444-4444-4444-8444-444444444444";
 const MICHEL = "86c222d0-3a8c-4d5f-9564-f5654769ecd6";
 const prompts: string[] = [];
 let answer: Record<string, unknown> | null = null;
+/** Gesetzt: die API antwortet mit diesem Fehler. */
+let failWith: ReturnType<typeof claudeError> | null = null;
 const net: Net = {
   tables: {
     wines: [
@@ -50,6 +53,7 @@ const net: Net = {
   claude: (body) => {
     const prompt = String((body.messages as { content: string }[])[0].content);
     prompts.push(prompt);
+    if (failWith) return failWith;
     if (prompt.includes("Macan")) {
       // Ungültige Werte: werden verworfen statt gespeichert
       return claudeTool("report_wine_details", {
@@ -73,13 +77,9 @@ net.rpc.replace_grape_shares = (args) => {
 };
 installNet(net);
 
-(async () => {
-  const { wineGaps, gapCounts, needsResearch } = await import("@/lib/research/gaps");
-  const { researchAndFillWine, loadGapData } = await import("@/lib/research/wine");
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const db = createAdminClient();
+const db = createAdminClient();
 
-  // Lücken: im Bestand nur Pintia 2019; „alle“ auch 2016 und Alion (dort fehlt nichts)
+test("Lücken: im Bestand nur Pintia 2019; „alle“ auch 2016 und Alion (dort fehlt nichts)", async () => {
   const data = await loadGapData(db);
   const pintia = data.wines.find((w) => w.id === W)!;
   const cellar = wineGaps(pintia, data, "cellar")!;
@@ -89,8 +89,9 @@ installNet(net);
   assert.equal(wineGaps(data.wines.find((w) => w.id === W2)!, data, "cellar"), null, "Alion ist nicht im Bestand");
   assert.equal(needsResearch(wineGaps(data.wines.find((w) => w.id === W2)!, data, "all")!), false);
   assert.deepEqual(gapCounts([cellar]), { grapePercent: 1, grapes: 0, alcohol: 1, window: 1, origin: 1 });
+});
 
-  // Ein Durchgang fragt immer alles; Leeres wird gefüllt, Abweichungen werden Vorschläge
+test("Ein Durchgang fragt immer alles; Leeres wird gefüllt, Abweichungen werden Vorschläge", async () => {
   const outcome = await researchAndFillWine(db, W, "cellar");
   assert.equal(prompts.length, 1, "genau eine Web-Recherche pro Wein");
   const asked = prompts[0].split("Bei uns gespeichert")[0];
@@ -138,7 +139,6 @@ installNet(net);
   answer = null;
 
   // Entscheiden: Behalten (abgelehnt) kommt nicht wieder; Übernehmen schreibt über das Bearbeiten-Modul
-  const { decideSuggestion, loadPendingSuggestions } = await import("@/lib/research/suggestions");
   const producer = pending().find((r) => r.field === "producer")!;
   assert.ok((await decideSuggestion(db, producer.id as string, false, MICHEL)).ok);
   assert.equal(producer.status, "rejected"); assert.equal(producer.decided_by, MICHEL); assert.ok(producer.decided_at);
@@ -152,23 +152,24 @@ installNet(net);
   const from = pending().find((r) => r.field === "drink_from_year")!;
   assert.ok((await decideSuggestion(db, from.id as string, true, MICHEL)).ok);
   assert.deepEqual([v19.drink_from_year, v19.drink_until_year], [2020, 2032], "Trinkfenster: nur „ab“ übernommen");
+});
 
-  // Anzeige und Bot-Frage in der Ich-Form
+test("Anzeige und Bot-Frage in der Ich-Form", async () => {
   const list = await loadPendingSuggestions(db, { wineId: W });
   const region = list.find((x) => x.field === "region")!;
   assert.deepEqual([region.label, region.current, region.suggested], ["Region", "Toro", "Falsch"]);
-  const { suggestionQuestion } = await import("@/lib/chat/research");
   assert.equal(
     suggestionQuestion({ field: "alcohol_content", vintageYear: null, current: "15 %", suggested: "14.5 %", sourceNote: null }),
     "🔎 Ich habe beim Alkohol <b>14.5 %</b> gefunden, bei dir steht 15 %. Übernehmen?",
   );
-  // [Ja] im Bot: übernimmt mit der Person, die schreibt
-  const { handleUpdate } = await import("@/lib/ingest/bot");
-  await handleUpdate({ update_id: 1, callback_query: { id: "cb", from: { id: 111, is_bot: false, first_name: "M" }, data: `rs:${region.id}:y`, message: { message_id: 9, chat: { id: 111, type: "private" }, date: 0, text: "🔎 Ich habe … Übernehmen?" } } } as never);
-  assert.equal(wine.region, "Falsch");
-  assert.equal(net.tables.research_suggestions.find((r) => r.id === region.id)!.decided_by, MICHEL);
 
-  // Ungültige Antwort (Alkohol 40 %, Jahr 1700, 2017.5, 140 %): nichts gespeichert, keine Vorschläge
+  // [Ja] im Bot: übernimmt mit der Person, die schreibt
+  await handleUpdate({ update_id: 1, callback_query: { id: "cb", from: { id: 111, is_bot: false, first_name: "M" }, data: `rs:${region.id}:y`, message: { message_id: 9, chat: { id: 111, type: "private" }, date: 0, text: "🔎 Ich habe … Übernehmen?" } } } as never);
+  assert.equal(net.tables.wines.find((w) => w.id === W)!.region, "Falsch");
+  assert.equal(net.tables.research_suggestions.find((r) => r.id === region.id)!.decided_by, MICHEL);
+});
+
+test("Ungültige Antwort (Alkohol 40 %, Jahr 1700, 2017.5, 140 %): nichts gespeichert, keine Vorschläge", async () => {
   const before = grapeCalls.length;
   const suggestionsBefore = net.tables.research_suggestions.length;
   const invalid = await researchAndFillWine(db, W3, "cellar");
@@ -178,21 +179,51 @@ installNet(net);
   assert.equal(grapeCalls.length, before, "140 % → ohne Anteil; gleiche Sorten → nichts zu tun");
   assert.equal(net.tables.research_suggestions.length, suggestionsBefore);
   assert.ok(net.tables.wines.find((w) => w.id === W3)!.researched_at, "researched_at auch ohne Fund gesetzt");
+});
 
-  // Wein ohne Flaschen: keine Recherche
+test("Wein ohne Flaschen: keine Recherche", async () => {
   const count = prompts.length;
   assert.equal((await researchAndFillWine(db, W4, "all")).status, "complete");
   assert.equal(prompts.length, count);
   assert.equal(net.tables.wines.find((w) => w.id === W4)!.researched_at, undefined, "ohne Recherche kein Datum");
+});
 
-  // 7-Tage-Regel für „kürzlich geprüfte überspringen“
-  const { researchedRecently } = await import("@/lib/research/gaps");
+test("7-Tage-Regel für „kürzlich geprüfte überspringen“", async () => {
   const now = Date.parse("2026-10-27T12:00:00Z");
   assert.equal(researchedRecently({ researched_at: "2026-10-21T12:00:01Z" }, now), true);
   assert.equal(researchedRecently({ researched_at: "2026-10-20T11:59:00Z" }, now), false);
   assert.equal(researchedRecently({ researched_at: null }, now), false);
-  console.log("research tests ok");
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
+});
+
+const LIMIT = "You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.";
+
+test("API-Limit: Recherche bricht ab, Bot meldet es in der Ich-Form mit Datum", async () => {
+  failWith = claudeError(400, LIMIT);
+  try {
+    await assert.rejects(researchAndFillWine(db, W, "cellar"), /usage limits/);
+    const sent = net.telegram.length;
+    await runBotResearch(111, W, 2019, "Vega Sicilia – Pintia");
+    const messages = net.telegram.slice(sent).filter((t) => t.method === "sendMessage").map((t) => String(t.body.text));
+    assert.deepEqual(messages, [`⛔ Ich komme gerade nicht an Claude: Das monatliche API-Limit ist erreicht. Wieder verfügbar am ${formatDate("2026-11-01")}.`]);
+  } finally {
+    failWith = null;
+  }
+});
+
+test("Sammellauf: beim API-Limit sofort anhalten, andere Fehler erst nach 3 in Folge", () => {
+  const limit = { status: "error" as const, error: { kind: "usage_limit" as const, message: "Das monatliche API-Limit ist erreicht." } };
+  const other = { status: "error" as const, error: { kind: "api" as const, message: "Fehler der Claude API (529): Overloaded" } };
+  const ok = { status: "filled" as const };
+  assert.equal(afterWine(limit, 0).halt, "Das monatliche API-Limit ist erreicht.", "gleich beim ersten Mal");
+  // Fehler, Fehler, Erfolg (Zähler zurück), dann 3 Fehler → Halt erst beim dritten
+  let failures = 0;
+  const halts: (string | null)[] = [];
+  for (const outcome of [other, other, ok, other, other, other]) {
+    const step = afterWine(outcome, failures);
+    failures = step.failures;
+    halts.push(step.halt);
+  }
+  assert.equal(MAX_FAILURES_IN_A_ROW, 3);
+  assert.deepEqual(halts.map((h) => h != null), [false, false, false, false, false, true]);
+  assert.equal(halts[5], "Angehalten nach 3 Fehlern in Folge: Fehler der Claude API (529): Overloaded");
 });

@@ -1,18 +1,10 @@
 // Integrationstest: Erfassung eines neuen Weins per Text (Bot) – Erkennung, Recherche,
 // nur fehlende Rückfragen, Zusammenfassung, Speichern, Nachkauf. Claude, Telegram und
 // Supabase sind per fetch-Stub ersetzt. Ausführen: npm test
+import "./env";
 import assert from "node:assert/strict";
+import { test } from "node:test";
 import { claudeText, claudeTool, installNet, type Net } from "./stub-net";
-
-Object.assign(process.env, {
-  NEXT_PUBLIC_SUPABASE_URL: "https://stub.supabase.co",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "stub",
-  SUPABASE_SECRET_KEY: "stub",
-  TELEGRAM_BOT_TOKEN: "stub",
-  TELEGRAM_WEBHOOK_SECRET: "stub",
-  TELEGRAM_ALLOWED_USER_ID: "111",
-  ANTHROPIC_API_KEY: "stub",
-});
 
 const W = "11111111-1111-4111-8111-111111111111";
 const net: Net = {
@@ -51,6 +43,8 @@ net.claude = (body) => {
 installNet(net);
 
 import type { IngestState } from "@/lib/ingest/schema";
+import { handleUpdate } from "@/lib/ingest/bot";
+import { processTextJob, saveJob, nextPurchaseStep } from "@/lib/ingest/flow";
 
 const empty = (purchase: Record<string, unknown>, wine: Record<string, unknown>) => ({
   name: null, producer: null, vintage_year: null, country: null, region: null, appellation: null, type: null,
@@ -64,14 +58,12 @@ const msg = (text: string) => ({ update_id: 1, message: { message_id: 5, from: {
 const cb = (data: string) => ({ update_id: 2, callback_query: { id: "cb", from: { id: 111, is_bot: false, first_name: "M" }, data, message: { message_id: 9, chat: { id: 111, type: "private" }, date: 0 } } });
 const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text", telegram_chat_id: 111, status: "processing", extracted: { step: "researching", source: "text" }, photo_paths: [], updated_at: new Date().toISOString() });
 
-(async () => {
-  // Erst nach den Umgebungsvariablen laden (die Supabase-Konfiguration wird beim Import gelesen).
-  const { processTextJob, saveJob, nextPurchaseStep } = await import("@/lib/ingest/flow");
-  const { handleUpdate } = await import("@/lib/ingest/bot");
+let st: IngestState;
 
-  // Reine Schrittfolge: nur Fehlendes, am Ende Zusammenfassung (Text) bzw. Speichern (Foto)
+test("Reine Schrittfolge: nur Fehlendes, am Ende Zusammenfassung (Text) bzw. Speichern (Foto)", async () => {
   const s0 = { source: "text", proposal: { vintage_year: 2019 } } as IngestState;
   assert.equal(nextPurchaseStep(s0), "location");
+
   // Jahrgang ist Pflicht: fehlt er oder ist er unsicher, kommt er zuerst – ausser schon bestätigt (auch NV)
   assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: null } } as IngestState), "vintage");
   assert.equal(nextPurchaseStep({ ...s0, vintage_uncertain: true }), "vintage");
@@ -79,12 +71,13 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   assert.equal(nextPurchaseStep({ ...s0, storage_room: "Weinkeller", quantity: 6, price: 66 }), "regular_price");
   assert.equal(nextPurchaseStep({ ...s0, storage_room: "Weinkeller", quantity: 6, price: 66, regular_price: null, vendor_name: "X" }), "confirm");
   assert.equal(nextPurchaseStep({ ...s0, source: undefined, storage_room: "Weinkeller", quantity: 1, price: null, regular_price: null, vendor_id: null }), "saving");
+});
 
-  // A) Neuer Wein: Produzent, Herkunft, Trinkreife und Rebsorten per Recherche; nur Normalpreis fehlt
+test("A) Neuer Wein: Produzent, Herkunft, Trinkreife und Rebsorten per Recherche; nur Normalpreis fehlt", async () => {
   parseResult = empty({ quantity: 6, storage_room: "Weinkeller", price: 66, vendor: "Mövenpick" }, { name: "Pintia", vintage_year: 2019 });
   newJob("aaaaaaaa-0000-4000-8000-00000000000a");
   await processTextJob("aaaaaaaa-0000-4000-8000-00000000000a", 111, "Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick");
-  let st = state("aaaaaaaa-0000-4000-8000-00000000000a");
+  st = state("aaaaaaaa-0000-4000-8000-00000000000a");
   assert.deepEqual(claudeCalls, ["parse", "enrich"], "Stammdaten, Trinkfenster und Rebsorten in einem Durchgang");
   assert.equal(job("aaaaaaaa-0000-4000-8000-00000000000a").status, "needs_review"); assert.equal(st.step, "regular_price");
   assert.equal(st.proposal.producer, "Vega Sicilia"); assert.equal(st.proposal.country, "Spanien"); assert.equal(st.proposal.type, "red");
@@ -99,12 +92,11 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   st = state("aaaaaaaa-0000-4000-8000-00000000000a");
   assert.equal(st.step, "confirm"); assert.equal(st.regular_price, 72);
   const summary = lastText().replace(/ /g, " ");
-  console.log(summary + "\n");
   assert.match(summary, /Zusammenfassung[\s\S]*6 Flaschen · Weinkeller[\s\S]*bezahlt CHF 66.00 · Normalpreis CHF 72.00 · bei Mövenpick[\s\S]*so speichern\?/);
   const keyboard = net.telegram.at(-1)!.body.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] };
   assert.deepEqual(keyboard.inline_keyboard[0].map((b) => b.text), ["✅ Ja", "✖️ Nein"]);
 
-  // Speichern: [Ja] setzt den Schritt auf „saving“ und ruft saveJob über after() auf
+  // Speichern: [Ja] setzt den Schritt auf „saving" und ruft saveJob über after() auf
   job("aaaaaaaa-0000-4000-8000-00000000000a").extracted = { ...st, step: "saving" };
   await saveJob(job("aaaaaaaa-0000-4000-8000-00000000000a") as never, 111);
   assert.equal(net.tables.wines.length, 1); assert.equal(net.tables.wines[0].producer, "Vega Sicilia");
@@ -114,7 +106,9 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   assert.deepEqual([net.tables.wine_vintages[0]?.drink_from_year, net.tables.wine_vintages[0]?.drink_until_year], [2024, 2032]);
   assert.equal(rpcCalls.length, 1, "Rebsorten gespeichert");
   assert.equal(job("aaaaaaaa-0000-4000-8000-00000000000a").status, "confirmed");
-  // Bestätigung in der Ich-Form, darunter gleich das Wein-Menü dieses Weins und Jahrgangs
+});
+
+test("Bestätigung in der Ich-Form, darunter gleich das Wein-Menü dieses Weins und Jahrgangs", async () => {
   assert.match(lastText(), /^✅ Ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht\.\n.*\nMöchtest du gleich eine öffnen oder bewerten\?$/);
   type Kb = { inline_keyboard: { text: string; callback_data?: string; url?: string }[][] };
   const menu = net.telegram.at(-1)!.body.reply_markup as Kb;
@@ -148,8 +142,9 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   const edited = net.telegram.filter((t) => t.method === "editMessageText").at(-1)!;
   assert.match(String(edited.body.text), /Geöffnet/);
   assert.ok((edited.body.reply_markup as Kb).inline_keyboard.flat().some((b) => b.text === "🥃 1 Glas"), "danach das Menü der offenen Flasche");
+});
 
-  // B) Nachkauf: Wein + Jahrgang liegt schon im Bestand → Rückfrage, keine Recherche der Stammdaten
+test("B) Nachkauf: Wein + Jahrgang liegt schon im Bestand → Rückfrage, keine Recherche der Stammdaten", async () => {
   net.tables.wines.push({ id: W, name: "Pintia", producer: "Vega Sicilia", country: "Spanien", region: "Toro", appellation: null, type: "red", alcohol_content: 14.5, grapes: [] });
   net.tables.inventory_items.push({ id: "old", wine_id: W, vintage_year: 2018, status: "sealed", quantity: 2 });
   net.tables.inventory_items.push({ id: "old2", wine_id: W, vintage_year: 2018, status: "open", quantity: 1 });
@@ -163,6 +158,7 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   const knownPrompt = enrichPrompts.at(-1)!;
   assert.match(knownPrompt, /Produzent, Land, Region, Appellation, Typ, Alkohol/, "die Recherche liefert immer alles");
   assert.match(knownPrompt, /Jahrgang 2018: Trinkfenster ab\/bis, Rebsorten mit Prozent/);
+
   // Bei der Erfassung gehen Etikett bzw. bekannter Wein vor: nur Leeres (Appellation) übernommen
   const known = state("bbbbbbbb-0000-4000-8000-00000000000b").proposal;
   assert.deepEqual([known.region, known.alcohol_content, known.appellation], ["Toro", 14.5, "DO Toro"]);
@@ -173,14 +169,16 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   assert.equal(st.restock, true); assert.equal(st.step, "location", "Lagerort fehlt noch, Anzahl nicht");
   await handleUpdate(cb("loc:bbbbbbbb-0000-4000-8000-00000000000b:wohnzimmer") as never);
   assert.equal(state("bbbbbbbb-0000-4000-8000-00000000000b").step, "price"); assert.match(lastText(), /3 Flaschen\. Was hast du bezahlt\?/);
+});
 
-  // C) „Neuer Wein“ in der Menüleiste: wartet auf eine Beschreibung
+test("C) „Neuer Wein“ in der Menüleiste: wartet auf eine Beschreibung", async () => {
   await handleUpdate(msg("📷 Neuer Wein") as never);
   const describe = net.tables.ingest_jobs.find((j) => (j.extracted as IngestState).step === "describe")!;
   assert.equal(describe.source, "text"); assert.equal(describe.status, "needs_review");
   assert.match(lastText(), /beschreib den Wein/);
+});
 
-  // D) Ohne Jahrgang: Rückfrage (Zahl oder „Ohne Jahrgang (NV)“), Jahrgang steht in der Zusammenfassung
+test("D) Ohne Jahrgang: Rückfrage (Zahl oder „Ohne Jahrgang (NV)“), Jahrgang steht in der Zusammenfassung", async () => {
   parseResult = empty({ quantity: 2, storage_room: "Weinkeller", price: 30, regular_price: 30, vendor: "Coop" }, { name: "Pintia", producer: "Vega Sicilia" });
   newJob("dddddddd-0000-4000-8000-00000000000d");
   await processTextJob("dddddddd-0000-4000-8000-00000000000d", 111, "Pintia, 2 Flaschen, Weinkeller, 30 Franken bei Coop");
@@ -204,5 +202,4 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
   st = state("eeeeeeee-0000-4000-8000-00000000000e");
   assert.equal(st.proposal.vintage_year, null); assert.equal(st.step, "confirm");
   assert.match(lastText(), /📅 Jahrgang: ohne \(NV\)/);
-  console.log("text ingest tests ok");
-})().catch((e) => { console.error(e); process.exit(1); });
+});
