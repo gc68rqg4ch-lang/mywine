@@ -390,6 +390,7 @@ export type Database = {
           id: string
           name: string
           sort_order: number
+          telegram_user_id: number | null
           user_id: string | null
         }
         Insert: {
@@ -397,6 +398,7 @@ export type Database = {
           id?: string
           name: string
           sort_order?: number
+          telegram_user_id?: number | null
           user_id?: string | null
         }
         Update: {
@@ -404,6 +406,7 @@ export type Database = {
           id?: string
           name?: string
           sort_order?: number
+          telegram_user_id?: number | null
           user_id?: string | null
         }
         Relationships: []

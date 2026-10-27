@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getSession } from "@/lib/auth";
+import { getMemberSession } from "@/lib/auth";
 import { BatchResearch, type BatchCandidate } from "./batch-research";
 
 export const metadata: Metadata = { title: "Rebsorten nachrecherchieren" };
@@ -13,7 +13,7 @@ const scopeKey = (wineId: string, vintage: number | null) => `${wineId}:${vintag
 export default async function ResearchPage({ searchParams }: PageProps<"/recherche">) {
   const params = await searchParams;
   const includeDrunk = params.alle === "1";
-  const { supabase } = await getSession();
+  const { supabase } = await getMemberSession();
 
   const [{ data: items, error: itemsError }, { data: shares, error: sharesError }] =
     await Promise.all([

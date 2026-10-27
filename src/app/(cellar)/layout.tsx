@@ -2,34 +2,11 @@ import Link from "next/link";
 import { signOut } from "@/app/actions";
 import { LocationSwitcher } from "@/components/location-switcher";
 import { NavLinks } from "@/components/nav-links";
-import { getSession } from "@/lib/auth";
+import { getMemberSession } from "@/lib/auth";
 import { getLocationFilter, withLocation } from "@/lib/location";
 
 export default async function CellarLayout({ children }: LayoutProps<"/">) {
-  const { supabase, isMember, email, userId } = await getSession();
-
-  if (!isMember) {
-    return (
-      <main className="login">
-        <div className="card login-card stack">
-          <h1 className="brand">MyWine</h1>
-          <p>
-            Du bist als <strong>{email ?? "unbekannt"}</strong> angemeldet, hast aber noch keinen
-            Zugriff auf diesen Weinkeller.
-          </p>
-          <p className="muted">
-            Eine berechtigte Person muss deine User-ID in <code>app_members</code> eintragen:
-          </p>
-          <code className="code-block">{userId}</code>
-          <form action={signOut}>
-            <button type="submit" className="btn">
-              Abmelden
-            </button>
-          </form>
-        </div>
-      </main>
-    );
-  }
+  const { supabase, email, person } = await getMemberSession();
 
   const location = await getLocationFilter();
   const { count: openCount } = await withLocation(
@@ -49,6 +26,11 @@ export default async function CellarLayout({ children }: LayoutProps<"/">) {
             options={location.options.map(({ key, label }) => ({ key, label }))}
             selected={location.selected?.key ?? null}
           />
+          {person && (
+            <span className="whoami" title={email ?? undefined}>
+              {person.name}
+            </span>
+          )}
           <form action={signOut} className="signout">
             <button type="submit" className="btn btn-ghost btn-sm" title={email ?? undefined}>
               Abmelden

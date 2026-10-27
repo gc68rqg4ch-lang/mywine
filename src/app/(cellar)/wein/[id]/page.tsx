@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { WineTypeIcon } from "@/components/wine-type-icon";
-import { getSession } from "@/lib/auth";
+import { getMemberSession } from "@/lib/auth";
 import { DRINK_STATUS_LABELS, countryFlag } from "@/lib/cellar/overview";
 import {
   anchorItem,
@@ -45,11 +45,11 @@ const BACK_LINKS: Record<string, { href: string; label: string }> = {
   getrunken: { href: "/getrunken", label: "Getrunken" },
 };
 
-type Supabase = Awaited<ReturnType<typeof getSession>>["supabase"];
+type Supabase = Awaited<ReturnType<typeof getMemberSession>>["supabase"];
 
 async function loadWine(id: string) {
   if (!UUID_RE.test(id)) return null;
-  const { supabase } = await getSession();
+  const { supabase } = await getMemberSession();
   const { data } = await supabase.from("wines").select("*").eq("id", id).maybeSingle();
   return data;
 }
@@ -141,7 +141,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const wine = await loadWine(id);
   if (!wine) notFound();
 
-  const { supabase } = await getSession();
+  const { supabase, person } = await getMemberSession();
   const today = todayIso();
   const items = await loadItems(supabase, wine.id);
   const options = vintageOptions(items);
@@ -286,7 +286,15 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     tiles.push({
       key: "ratings",
       size: "narrow",
-      node: <RatingsCard key={String(year)} itemId={anchor.inventory_item_id} ratings={ratings} today={today} />,
+      node: (
+        <RatingsCard
+          key={String(year)}
+          itemId={anchor.inventory_item_id}
+          ratings={ratings}
+          today={today}
+          ownPersonId={person?.id ?? null}
+        />
+      ),
     });
   }
 

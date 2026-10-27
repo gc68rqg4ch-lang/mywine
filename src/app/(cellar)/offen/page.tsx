@@ -4,7 +4,7 @@ import { GroupedList } from "@/components/cellar/grouped-list";
 import { ListControls, applyTypeFilter, readListParams } from "@/components/cellar/list-controls";
 import { WineCard } from "@/components/cellar/wine-card";
 import { FillGauge } from "@/components/fill-gauge";
-import { getSession } from "@/lib/auth";
+import { getMemberSession } from "@/lib/auth";
 import { BASE_GROUPINGS, groupWines, matchesQuery, originLabel } from "@/lib/cellar/overview";
 import { openTotals, toOpenEntry } from "@/lib/cellar/lists";
 import { formatBottleSize, formatDaysSince } from "@/lib/format";
@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Offene Flaschen" };
 export default async function OpenBottlesPage({ searchParams }: PageProps<"/offen">) {
   const params = await searchParams;
   const { query, groupBy, type } = readListParams(params, BASE_GROUPINGS);
-  const { supabase } = await getSession();
+  const { supabase } = await getMemberSession();
   const { filter } = await getLocationFilter();
 
   const [{ data, error }, withoutRoom] = await Promise.all([

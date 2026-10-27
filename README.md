@@ -4,7 +4,9 @@ Persönliche Weinkeller-App – Next.js (App Router, TypeScript) mit Supabase (`
 
 ## Funktionen (Meilenstein 1)
 
-- **Login per Magic Link** (`/login` → Mail → `/auth/confirm`)
+- **Login per Magic Link** (`/login` → Mail → `/auth/confirm`). Die angemeldete Person kommt aus
+  `persons.user_id` (oben im Kopf angezeigt); Bewertungen und Verkostungen sind für sie vorausgewählt, die
+  andere Person bleibt wählbar. Angemeldet, aber nicht in `app_members` → Seite „Kein Zugang“ (`/kein-zugang`).
 - **Lagerort-Wahl** oben rechts (Alle / Räume aus `storage_locations`): filtert alle Listen und Zahlen,
   gemerkt im Cookie `mywine_lagerort`. Offene Flaschen ohne Lagerort erscheinen nur unter „Alle“.
 - **Bestand** (`/`): ein Eintrag pro Wein (`cellar_wine_summary` + `cellar_wines`) mit Flaschenzahl und
@@ -141,8 +143,12 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Korrigieren:** Freitext-Antwort, die per `claude-haiku-5-5` in den Vorschlag übernommen wird.
 - **Album:** Telegram schickt jedes Foto einzeln. Alle Fotos eines Albums landen über eine aus
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.
-- **Sicherheit:** Webhook prüft `X-Telegram-Bot-Api-Secret-Token`, verarbeitet nur Updates von
-  `TELEGRAM_ALLOWED_USER_ID`. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.
+- **Zugang:** Webhook prüft `X-Telegram-Bot-Api-Secret-Token`. Freigeschaltet sind alle Telegram-User, deren ID in
+  `persons.telegram_user_id` steht; `TELEGRAM_ALLOWED_USER_ID` gilt als Rückfall für Michel. Unbekannte bekommen im
+  Einzelchat nur „Nicht freigeschaltet. Deine ID ist …“, sonst nichts. `/id` zeigt die eigene ID.
+- **Wer schreibt:** Der Bot spricht die Person mit Namen an; Bewertungen und Verkostungen gehen an sie. Im Menü
+  heisst das „⭐ Bewerten“; für die andere Person („⭐ für Sara“) fragt er vor dem Speichern nach. Der
+  Gesprächsverlauf ist pro Chat getrennt. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.
 
 ### Menüs (Knöpfe)
 
@@ -195,7 +201,7 @@ Antwort nochmals mit `claude-sonnet-5-5`.
 | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | Token von @BotFather |
 | `TELEGRAM_WEBHOOK_SECRET` | frei gewähltes Secret (Buchstaben, Ziffern, `_`, `-`; bis 256 Zeichen) |
-| `TELEGRAM_ALLOWED_USER_ID` | deine numerische Telegram-User-ID |
+| `TELEGRAM_ALLOWED_USER_ID` | optional: Rückfall-Zugang (gilt als Michel); sonst `persons.telegram_user_id` |
 | `ANTHROPIC_API_KEY` | Claude API |
 | `SUPABASE_SECRET_KEY` | Secret Key (`sb_secret_…`) – umgeht RLS, nur serverseitig |
 

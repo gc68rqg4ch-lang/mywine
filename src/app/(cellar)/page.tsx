@@ -4,7 +4,7 @@ import { GroupedList } from "@/components/cellar/grouped-list";
 import { ListControls, applyTypeFilter, readListParams } from "@/components/cellar/list-controls";
 import { BottleCount, WineCard } from "@/components/cellar/wine-card";
 import { WineTypeIcon } from "@/components/wine-type-icon";
-import { getSession } from "@/lib/auth";
+import { getMemberSession } from "@/lib/auth";
 import {
   BASE_GROUPINGS,
   DRINK_STATUS_LABELS,
@@ -38,7 +38,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   const params = await searchParams;
   const { query, groupBy, type } = readListParams(params, BASE_GROUPINGS);
 
-  const { supabase } = await getSession();
+  const { supabase } = await getMemberSession();
   const { filter, selected } = await getLocationFilter();
   const year = todayIso().slice(0, 4);
 

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { DRINK_STATUS_LABELS, formatVintages, type DrinkStatus } from "@/lib/cellar/overview";
 import { daysSince, formatBottleSize } from "@/lib/format";
 import type { AdminClient } from "@/lib/supabase/admin";
@@ -102,10 +103,16 @@ async function ratingsLine(db: AdminClient, wineId: string, year: number | null)
   return { persons: list, line: list.length ? `⭐ ${line}` : "" };
 }
 
+/** Wer gerade tippt (für „⭐ Bewerten“ = eigene Bewertung); gesetzt in screenFor(). */
+const actorContext = new AsyncLocalStorage<MenuActor | null>();
+export type MenuActor = { personId: string | null; name: string };
+
 function ratingButtons(persons: { id: string; name: string }[], subject: Subject, back: ListRef) {
-  return persons.length
-    ? [persons.map((p) => btn(`⭐ Bewertung ${p.name}`, { op: "ratePicker", subject, personKey: personKey(p.id), back }))]
-    : [];
+  const actor = actorContext.getStore();
+  const own = persons.find((p) => p.id === actor?.personId);
+  const picker = (p: { id: string }) => ({ op: "ratePicker", subject, personKey: personKey(p.id), back }) as const;
+  if (!own) return persons.length ? [persons.map((p) => btn(`⭐ Bewertung ${p.name}`, picker(p)))] : [];
+  return [[btn("⭐ Bewerten", picker(own)), ...persons.filter((p) => p !== own).map((p) => btn(`⭐ für ${p.name}`, picker(p)))]];
 }
 
 // ---------------------------------------------------------------------------
@@ -378,9 +385,17 @@ async function ratePickerScreen(db: AdminClient, subject: Subject, key: string, 
   const person = persons?.find((p) => p.id.startsWith(key));
   const base = await subjectScreen(db, subject, back);
   const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
+  const actor = actorContext.getStore();
+  const forOther = Boolean(actor?.personId && person && person.id !== actor.personId);
   return {
-    text: `${header}\n⭐ Bewertung von ${e(person?.name ?? "?")}?`,
-    keyboard: ratingKeyboard(subject, key, back, subjectAction(subject, back)),
+    text: `${header}\n⭐ ${
+      forOther
+        ? `Bewertung für ${e(person?.name ?? "?")}`
+        : actor?.personId && person?.id === actor.personId
+          ? "Deine Bewertung"
+          : `Bewertung von ${e(person?.name ?? "?")}`
+    }?`,
+    keyboard: ratingKeyboard(subject, key, back, subjectAction(subject, back), forOther),
   };
 }
 
@@ -438,16 +453,43 @@ const CLAIMED_OPS = new Set<MenuAction["op"]>(["glasses", "drunk", "open", "open
 export async function screenFor(
   db: AdminClient,
   a: MenuAction,
-  ctx: { chatId: number },
+  ctx: { chatId: number; actor?: MenuActor | null },
+): Promise<{ screen: Screen; toast?: string }> {
+  return actorContext.run(ctx.actor ?? null, () => screenForAction(db, a, ctx));
+}
+
+async function screenForAction(
+  db: AdminClient,
+  a: MenuAction,
+  ctx: { chatId: number; actor?: MenuActor | null },
 ): Promise<{ screen: Screen; toast?: string }> {
   switch (a.op) {
+    case "rateAsk": {
+      const { data: persons } = await db.from("persons").select("id, name");
+      const name = persons?.find((p) => p.id.startsWith(a.personKey))?.name ?? "?";
+      const base = await subjectScreen(db, a.subject, a.back);
+      const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
+      return {
+        screen: {
+          text: `${header}\n⭐ Für ${e(name)} ${formatStars(a.rating)} ★ speichern?`,
+          keyboard: {
+            inline_keyboard: [
+              [
+                btn(`✅ Ja, für ${name}`, { ...a, op: "rate" }),
+                btn("‹ Zurück", { op: "ratePicker", subject: a.subject, personKey: a.personKey, back: a.back }),
+              ],
+            ],
+          },
+        },
+      };
+    }
     case "tasting": {
       const base = await subjectScreen(db, a.subject, a.back);
       const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
       return { screen: await tastingStartScreen(db, a.subject, a.back, header) };
     }
     case "tell":
-      return { screen: await startTelling(db, ctx.chatId, a.subject, a.back) };
+      return { screen: await startTelling(db, ctx.chatId, a.subject, a.back, ctx.actor?.personId ?? null) };
     case "list":
       return { screen: await listScreen(db, a.list, a.offset) };
     case "wine":
@@ -521,7 +563,7 @@ export async function screenFor(
 }
 
 /** Antippen eines Menü-Knopfs: die Nachricht wird zum nächsten Menü. */
-export async function handleMenuCallback(cb: TgCallbackQuery) {
+export async function handleMenuCallback(cb: TgCallbackQuery, actor: MenuActor) {
   const chatId = cb.message?.chat.id;
   const messageId = cb.message?.message_id;
   const action = decodeMenu(cb.data);
@@ -535,7 +577,7 @@ export async function handleMenuCallback(cb: TgCallbackQuery) {
   }
   const db = createAdminClient();
   try {
-    const { screen, toast } = await screenFor(db, action, { chatId });
+    const { screen, toast } = await screenFor(db, action, { chatId, actor });
     await answerCallback(cb.id, toast);
     await editMessage(chatId, messageId, screen.text, screen.keyboard);
   } catch (error) {

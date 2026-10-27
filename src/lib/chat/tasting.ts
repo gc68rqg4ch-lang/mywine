@@ -122,7 +122,14 @@ async function defaultPerson(db: AdminClient) {
 }
 
 /** „💬 Erzählen“: Entwurf anlegen und um Freitext bitten (ersetzt das Menü). */
-export async function startTelling(db: AdminClient, chatId: number, subject: Subject, back: ListRef): Promise<Screen> {
+export async function startTelling(
+  db: AdminClient,
+  chatId: number,
+  subject: Subject,
+  back: ListRef,
+  /** Wer erzählt – Standard für die Verkostung (sonst Michel). */
+  personId: string | null = null,
+): Promise<Screen> {
   const item = await resolveItem(db, subject);
   if (!item) return { text: "Zu diesem Wein gibt es keine Flasche mehr.", keyboard: { inline_keyboard: backRow(back) } };
   const { data: wine, error } = await db
@@ -134,7 +141,7 @@ export async function startTelling(db: AdminClient, chatId: number, subject: Sub
   const grapes = await loadGrapeShares(db, wine.id, item.vintage_year);
   const today = todayIso();
   const sat = newTastingData(wine, item.vintage_year, grapes ? formatShares(grapes.shares) : wine.grapes.join(", "), today);
-  const person = await defaultPerson(db);
+  const person = personId ? { id: personId } : await defaultPerson(db);
   const title = `${wine.name} ${item.vintage_year ?? "o. J."}`;
 
   // Ältere offene Entwürfe dieses Chats beenden – es gibt immer nur einen.

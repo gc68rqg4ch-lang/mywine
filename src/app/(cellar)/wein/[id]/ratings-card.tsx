@@ -16,11 +16,15 @@ export function RatingsCard({
   itemId,
   ratings,
   today,
+  ownPersonId = null,
 }: {
   itemId: string;
   ratings: PersonRating[];
   today: string;
+  /** Angemeldete Person: steht zuerst und ist markiert; die anderen bleiben bewertbar. */
+  ownPersonId?: string | null;
 }) {
+  const ordered = [...ratings].sort((a, b) => Number(b.personId === ownPersonId) - Number(a.personId === ownPersonId));
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   // Optimistische Anzeige, bis die Seite neu geladen ist.
@@ -49,11 +53,14 @@ export function RatingsCard({
         <p className="muted">Noch keine Personen erfasst.</p>
       ) : (
         <ul className="rating-list">
-          {ratings.map((r) => {
+          {ordered.map((r) => {
             const value = r.personId in local ? local[r.personId] : r.rating;
             return (
               <li key={r.personId}>
-                <span className="rating-name">{r.name}</span>
+                <span className="rating-name">
+                  {r.name}
+                  {r.personId === ownPersonId && <span className="muted small"> (du)</span>}
+                </span>
                 <HalfStars
                   value={value}
                   onChange={(v) => update(r.personId, v)}

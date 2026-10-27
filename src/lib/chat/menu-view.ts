@@ -9,6 +9,7 @@
 //   N:<wine>:<jahr|->:<l>     Öffnen (ggf. Ort wählen)    Q:<charge>:<l>          diese Charge öffnen
 //   R:<subj>:<person>:<l>     Sterne wählen               S:<subj>:<person>:<halbe>:<l>  Bewertung speichern
 //   T:<subj>:<l>              Verkostung: Weg wählen      E:<subj>:<l>            Verkostung erzählen
+//   K:<subj>:<person>:<halbe>:<l>  Rückfrage, bevor für eine andere Person bewertet wird
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
 import { formatStarNumber, type WineType } from "@/lib/format";
@@ -82,6 +83,7 @@ export type MenuAction =
   | { op: "openBatch"; batchId: string; back: ListRef }
   | { op: "ratePicker"; subject: Subject; personKey: string; back: ListRef }
   | { op: "rate"; subject: Subject; personKey: string; rating: number; back: ListRef }
+  | { op: "rateAsk"; subject: Subject; personKey: string; rating: number; back: ListRef }
   | { op: "tasting"; subject: Subject; back: ListRef }
   | { op: "tell"; subject: Subject; back: ListRef };
 
@@ -166,6 +168,8 @@ export function encodeMenu(a: MenuAction): string {
       return `R:${encodeSubject(a.subject)}:${a.personKey}:${l}`;
     case "rate":
       return `S:${encodeSubject(a.subject)}:${a.personKey}:${Math.round(a.rating * 2)}:${l}`;
+    case "rateAsk":
+      return `K:${encodeSubject(a.subject)}:${a.personKey}:${Math.round(a.rating * 2)}:${l}`;
     case "tasting":
       return `T:${encodeSubject(a.subject)}:${l}`;
     case "tell":
@@ -174,7 +178,7 @@ export function encodeMenu(a: MenuAction): string {
 }
 
 export function isMenuCallback(data: string | undefined) {
-  return /^[LWVOGFPDXNQRSTE]:/.test(data ?? "");
+  return /^[LWVOGFPDXNQRSTEK]:/.test(data ?? "");
 }
 
 export function decodeMenu(data: string | undefined): MenuAction | null {
@@ -231,6 +235,7 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
       if (!subject || !b) return null;
       return op === "T" ? { op: "tasting", subject, back: b } : { op: "tell", subject, back: b };
     }
+    case "K":
     case "S": {
       const subject = decodeSubject(f[0]);
       const halves = Number(f[2]);
@@ -238,7 +243,7 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
       if (!subject || !KEY_RE.test(f[1] ?? "") || !b || !Number.isInteger(halves) || halves < 0 || halves > 10) {
         return null;
       }
-      return { op: "rate", subject, personKey: f[1], rating: halves / 2, back: b };
+      return { op: op === "S" ? "rate" : "rateAsk", subject, personKey: f[1], rating: halves / 2, back: b };
     }
     default:
       return null;
@@ -330,8 +335,17 @@ export function backRow(back: ListRef): TgInlineButton[][] {
 
 export const RATING_STEPS = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
 
-export function ratingKeyboard(subject: Subject, personKey: string, back: ListRef, cancel: MenuAction): TgInlineKeyboard {
-  const buttons = RATING_STEPS.map((r) => btn(`${formatStars(r)} ★`, { op: "rate", subject, personKey, rating: r, back }));
+/** Sterne 1–5 in halben Schritten; für eine andere Person mit Rückfrage (confirm). */
+export function ratingKeyboard(
+  subject: Subject,
+  personKey: string,
+  back: ListRef,
+  cancel: MenuAction,
+  confirm = false,
+): TgInlineKeyboard {
+  const buttons = RATING_STEPS.map((r) =>
+    btn(`${formatStars(r)} ★`, { op: confirm ? "rateAsk" : "rate", subject, personKey, rating: r, back }),
+  );
   return { inline_keyboard: [buttons.slice(0, 5), buttons.slice(5), [btn("‹ Zurück", cancel)]] };
 }
 

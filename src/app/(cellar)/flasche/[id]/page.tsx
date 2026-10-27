@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { getMemberSession } from "@/lib/auth";
 import { wineHref } from "@/lib/cellar/wine-page";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -12,7 +12,7 @@ const PASSED_ON = ["geoeffnet", "ausgetrunken", "verkostung", "von"] as const;
 export default async function BottleRedirect({ params, searchParams }: PageProps<"/flasche/[id]">) {
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
-  const { supabase } = await getSession();
+  const { supabase } = await getMemberSession();
   const { data: item } = await supabase.from("inventory_items").select("wine_id, vintage_year").eq("id", id).maybeSingle();
   if (!item) notFound();
   const query = await searchParams;

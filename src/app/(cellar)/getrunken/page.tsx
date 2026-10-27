@@ -4,7 +4,7 @@ import { GroupedList } from "@/components/cellar/grouped-list";
 import { ListControls, applyTypeFilter, readListParams } from "@/components/cellar/list-controls";
 import { BottleCount, WineCard } from "@/components/cellar/wine-card";
 import { WineTypeIcon } from "@/components/wine-type-icon";
-import { getSession } from "@/lib/auth";
+import { getMemberSession } from "@/lib/auth";
 import {
   BASE_GROUPINGS,
   formatVintages,
@@ -31,7 +31,7 @@ function ratingsText(e: DrunkEntry) {
 export default async function DrunkBottlesPage({ searchParams }: PageProps<"/getrunken">) {
   const params = await searchParams;
   const { query, groupBy, type } = readListParams(params, GROUPINGS);
-  const { supabase } = await getSession();
+  const { supabase } = await getMemberSession();
   const { filter } = await getLocationFilter();
   const year = todayIso().slice(0, 4);
 

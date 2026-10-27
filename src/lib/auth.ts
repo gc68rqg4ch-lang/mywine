@@ -17,19 +17,30 @@ export const getSession = cache(async () => {
     redirect("/login");
   }
 
-  const { data: member } = await supabase
-    .from("app_members")
-    .select("user_id")
-    .eq("user_id", claims.sub)
-    .maybeSingle();
+  const [{ data: member }, { data: person }] = await Promise.all([
+    supabase.from("app_members").select("user_id").eq("user_id", claims.sub).maybeSingle(),
+    // Die angemeldete Person (persons.user_id) – Standard für Bewertungen und Verkostungen.
+    supabase.from("persons").select("id, name").eq("user_id", claims.sub).maybeSingle(),
+  ]);
 
   return {
     supabase,
     userId: claims.sub,
     email: typeof claims.email === "string" ? claims.email : null,
     isMember: Boolean(member),
+    person: person ?? null,
   };
 });
+
+/**
+ * Für Seiten im Keller: wie getSession, aber wer angemeldet ist und nicht in
+ * app_members steht, landet auf „Kein Zugang“ (statt einer leeren Seite).
+ */
+export async function getMemberSession() {
+  const session = await getSession();
+  if (!session.isMember) redirect("/kein-zugang");
+  return session;
+}
 
 /** Für Server Actions: wirft, wenn kein Mitglied angemeldet ist. */
 export async function requireMember() {

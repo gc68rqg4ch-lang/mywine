@@ -110,7 +110,12 @@ async function loadPersons(db: AdminClient) {
  * Die Werkzeuge für ein Gespräch. Schreib-Werkzeuge ändern nichts, sondern legen
  * einen Vorschlag in `pending` ab; der Bot zeigt ihn mit [Ja] [Nein] an.
  */
-export function chatTools(db: AdminClient, pending: PendingProposal[], wineRefs: WineRef[] = []) {
+export function chatTools(
+  db: AdminClient,
+  pending: PendingProposal[],
+  wineRefs: WineRef[] = [],
+  actor: { personId: string | null; name: string } | null = null,
+) {
   const propose = (proposal: Proposal, text: string) => {
     if (pending.length >= 3) return "Zu viele Vorschläge auf einmal – bitte erst die offenen bestätigen lassen.";
     pending.push({ proposal, text });
@@ -431,13 +436,19 @@ export function chatTools(db: AdminClient, pending: PendingProposal[], wineRefs:
       inputSchema: z.object({
         wine_id: z.uuid(),
         vintage_year: z.number().int().nullable(),
-        person: z.string().describe("Name der Person, z. B. Michel oder Sara"),
+        person: z
+          .string()
+          .optional()
+          .describe("Nur angeben, wenn ausdrücklich für eine andere Person bewertet wird (Michel oder Sara); sonst weglassen = die Person, die schreibt"),
         rating: z.number().min(0).max(5),
       }),
       run: async ({ wine_id, vintage_year, person, rating }) => {
         if (!isValidRating(rating)) return "Fehler: Bewertung nur in halben Schritten von 0 bis 5.";
         const persons = await loadPersons(db);
-        const match = persons.find((p) => p.name.toLowerCase() === person.trim().toLowerCase());
+        const wanted = person?.trim() || actor?.name || "";
+        const match = person?.trim()
+          ? persons.find((p) => p.name.toLowerCase() === wanted.toLowerCase())
+          : (persons.find((p) => p.id === actor?.personId) ?? persons.find((p) => p.name === wanted));
         if (!match) return `Fehler: Unbekannte Person. Möglich: ${persons.map((p) => p.name).join(", ")}.`;
         const { data: wine, error } = await db.from("wines").select("producer, name").eq("id", wine_id).maybeSingle();
         if (error) throw error;

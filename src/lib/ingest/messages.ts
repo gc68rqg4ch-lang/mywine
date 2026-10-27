@@ -167,7 +167,7 @@ export const HELP_TEXT = [
   "",
   "📷 Neuer Wein: Vorder- und Rückseite als Album schicken.",
   "💬 Oder einfach schreiben, z. B. <i>Welche Rioja habe ich noch?</i> oder <i>Sara gibt dem Pintia 4,5 Sterne.</i>",
-  "/reset vergisst den Gesprächsverlauf.",
+  "/reset vergisst den Gesprächsverlauf, /id zeigt deine Telegram-ID.",
 ].join("\n");
 
 export { parsePrice } from "@/lib/format";

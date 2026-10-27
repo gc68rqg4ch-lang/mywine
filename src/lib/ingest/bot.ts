@@ -10,7 +10,8 @@ import {
   escapeHtml,
   sendMessage,
 } from "@/lib/telegram/api";
-import { appBaseUrl, telegramConfig } from "@/lib/telegram/config";
+import { resolveActor, type Actor } from "@/lib/telegram/actor";
+import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery, TgMessage, TgUpdate } from "@/lib/telegram/types";
 import {
   ALBUM_QUIET_MS,
@@ -89,22 +90,34 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Einstieg für jedes Telegram-Update. Lange Arbeit läuft per after() nach der Antwort. */
 export async function handleUpdate(update: TgUpdate) {
-  const { allowedUserId } = telegramConfig();
+  const from = update.callback_query?.from ?? update.message?.from;
+  if (!from || from.is_bot) return;
+  const actor = await resolveActor(createAdminClient(), from.id);
 
   if (update.callback_query) {
     const cb = update.callback_query;
-    if (cb.from.id !== allowedUserId) return;
-    await handleCallback(cb);
+    if (!actor) {
+      await answerCallback(cb.id, `Nicht freigeschaltet. Deine ID ist ${from.id}.`);
+      return;
+    }
+    await handleCallback(cb, actor);
     return;
   }
 
   const msg = update.message;
-  if (!msg || msg.from?.id !== allowedUserId) return;
+  if (!msg) return;
+  if (!actor) {
+    // Unbekannte bekommen nur ihre ID (für die Freischaltung), sonst nichts – und nur im Einzelchat.
+    if (msg.chat.type === "private") {
+      await sendMessage(msg.chat.id, `Nicht freigeschaltet. Deine ID ist <code>${from.id}</code>.`);
+    }
+    return;
+  }
 
   if (msg.photo?.length || msg.document) {
     await handlePhoto(msg);
   } else if (msg.text) {
-    await handleText(msg);
+    await handleText(msg, actor);
   }
 }
 
@@ -307,13 +320,13 @@ async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[
 // ---------------------------------------------------------------------------
 // Buttons
 
-async function handleCallback(cb: TgCallbackQuery) {
+async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
   if (isTastingCallback(cb.data)) {
     await handleTastingCallback(cb);
     return;
   }
   if (isMenuCallback(cb.data)) {
-    await handleMenuCallback(cb);
+    await handleMenuCallback(cb, actor);
     return;
   }
   if (isChatCallback(cb.data)) {
@@ -514,7 +527,7 @@ async function setVendorAndSave(
 // ---------------------------------------------------------------------------
 // Textantworten (Korrektur, Anzahl, Preise)
 
-async function handleText(msg: TgMessage) {
+async function handleText(msg: TgMessage, actor: Actor) {
   const chatId = msg.chat.id;
   const text = msg.text!.trim();
 
@@ -528,8 +541,12 @@ async function handleText(msg: TgMessage) {
     await resetChat(chatId);
     return;
   }
+  if (/^\/id\b/i.test(text)) {
+    await sendMessage(chatId, `Deine Telegram-ID ist <code>${actor.telegramUserId}</code> (${escapeHtml(actor.name)}).`, MAIN_KEYBOARD);
+    return;
+  }
   if (text.startsWith("/")) {
-    await sendMessage(chatId, HELP_TEXT, MAIN_KEYBOARD);
+    await sendMessage(chatId, `Hallo ${escapeHtml(actor.name)}!\n\n${HELP_TEXT}`, MAIN_KEYBOARD);
     return;
   }
 
@@ -544,7 +561,7 @@ async function handleText(msg: TgMessage) {
   const job = await findJobAwaitingText(db, chatId);
   const state = job ? jobState(job) : null;
   if (!job || !state) {
-    await handleChatMessage(chatId, text);
+    await handleChatMessage(chatId, text, actor);
     return;
   }
 

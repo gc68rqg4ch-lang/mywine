@@ -8,8 +8,11 @@ function required(name: string) {
 
 /** Bot-Konfiguration aus den Umgebungsvariablen – erst zur Laufzeit lesen. */
 export function telegramConfig() {
-  const allowedUserId = Number(required("TELEGRAM_ALLOWED_USER_ID"));
-  if (!Number.isSafeInteger(allowedUserId)) {
+  // Rückfall für den Zugang (gilt als Michel); eigentlich freigeschaltet wird über
+  // persons.telegram_user_id.
+  const rawAllowed = process.env.TELEGRAM_ALLOWED_USER_ID;
+  const allowedUserId = rawAllowed ? Number(rawAllowed) : null;
+  if (allowedUserId != null && !Number.isSafeInteger(allowedUserId)) {
     throw new Error("TELEGRAM_ALLOWED_USER_ID muss eine numerische Telegram-User-ID sein.");
   }
   return {

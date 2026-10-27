@@ -1470,3 +1470,11 @@ input[inputmode="decimal"] {
   gap: 6px;
   text-decoration: none;
 }
+
+/* Angemeldete Person dezent im Kopf */
+.whoami {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}

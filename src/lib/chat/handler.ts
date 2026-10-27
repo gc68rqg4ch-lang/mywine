@@ -3,6 +3,7 @@ import "server-only";
 import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { answerCallback, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
+import type { Actor } from "@/lib/telegram/actor";
 import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery } from "@/lib/telegram/types";
 import { answerChat } from "./agent";
@@ -15,8 +16,8 @@ import { REJECT_DATA, confirmKeyboard, decodeProposal } from "./proposals";
 const MAX_INPUT = 2000;
 
 /** Freie Textnachricht: Antwort per Claude mit Werkzeugen, läuft nach der Webhook-Antwort. */
-export async function handleChatMessage(chatId: number, text: string) {
-  after(() => replyToChat(chatId, text.slice(0, MAX_INPUT)));
+export async function handleChatMessage(chatId: number, text: string, actor: Actor) {
+  after(() => replyToChat(chatId, text.slice(0, MAX_INPUT), actor));
 }
 
 export async function resetChat(chatId: number) {
@@ -24,12 +25,12 @@ export async function resetChat(chatId: number) {
   await sendMessage(chatId, "Okay, ich habe unseren Gesprächsverlauf vergessen.", MAIN_KEYBOARD);
 }
 
-async function replyToChat(chatId: number, text: string) {
+async function replyToChat(chatId: number, text: string, actor: Actor) {
   const db = createAdminClient();
   await tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => undefined);
   try {
     const history = await loadHistory(db, chatId);
-    const reply = await answerChat(db, history, text);
+    const reply = await answerChat(db, history, text, actor);
 
     // Nennt die Antwort Weine, kommen sie als Knöpfe darunter; sonst bleibt die Menüleiste.
     const buttons = await wineButtons(db, reply.wines).catch((error) => {
