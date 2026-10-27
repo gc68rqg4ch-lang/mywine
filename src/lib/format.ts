@@ -72,6 +72,20 @@ export function formatDaysSince(date: string | null | undefined) {
   return `seit ${days} Tagen offen`;
 }
 
+/**
+ * Datum, an dem eine Flasche als ausgetrunken markiert wurde (YYYY-MM-DD, Europe/Zurich).
+ * Es gibt dafür keine eigene Spalte: nach dem Austrinken wird eine Position nicht mehr
+ * geändert, daher entspricht updated_at dem Statuswechsel. Das gilt aber nur für Flaschen,
+ * die in der App ausgetrunken wurden – erkennbar an open_bottle_details, weil sie vorher
+ * offen waren. Bei importierten getrunkenen Zeilen stammt updated_at vom Import.
+ */
+export function drunkDate(item: { updated_at: string; hasOpenDetails: boolean }) {
+  if (!item.hasOpenDetails) return null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(
+    new Date(item.updated_at),
+  );
+}
+
 /** Heutiges Datum als YYYY-MM-DD in Europe/Zurich. */
 export function todayIso() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date());

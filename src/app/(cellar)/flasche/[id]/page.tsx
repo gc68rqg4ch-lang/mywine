@@ -6,6 +6,7 @@ import { TypeDot } from "@/components/type-dot";
 import { getSession } from "@/lib/auth";
 import {
   STATUS_LABELS,
+  drunkDate,
   formatBottleSize,
   formatBottles,
   formatDate,
@@ -15,10 +16,17 @@ import {
   formatStorage,
   todayIso,
   wineTitle,
+  type InventoryStatus,
 } from "@/lib/format";
 import { OpenBottleControls, OpenBottleForm } from "./bottle-actions";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const BACK_LINKS: Record<InventoryStatus, { href: string; label: string }> = {
+  sealed: { href: "/", label: "Bestand" },
+  open: { href: "/offen", label: "Offene Flaschen" },
+  drunk: { href: "/getrunken", label: "Getrunken" },
+};
+
+const UUID_RE =/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function loadItem(id: string) {
   if (!UUID_RE.test(id)) return null;
@@ -63,12 +71,15 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
     .neq("inventory_item_id", item.id)
     .order("vintage_year", { nullsFirst: false });
 
-  const backHref = item.status === "sealed" ? "/" : "/offen";
+  const back = BACK_LINKS[item.status];
+  const drunkOn = item.status === "drunk"
+      ? drunkDate({ updated_at: item.updated_at, hasOpenDetails: Boolean(open) })
+      : null;
 
   return (
     <div className="stack-lg">
-      <Link href={backHref} className="back">
-        ← {item.status === "sealed" ? "Bestand" : "Offene Flaschen"}
+      <Link href={back.href} className="back">
+        ← {back.label}
       </Link>
 
       {geoeffnet && (
@@ -108,6 +119,7 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
             <Detail label="Jahrgangsnotiz" value={item.vintage_notes} />
             <Detail label="Bewertung Wein" value={formatRating(item.personal_wine_rating)} />
             <Detail label="Bewertung Jahrgang" value={formatRating(item.personal_vintage_rating)} />
+            <Detail label="Getrunken" value={formatDate(drunkOn)} />
             {open && (
               <>
                 <Detail
@@ -142,7 +154,11 @@ export default async function BottlePage({ params, searchParams }: PageProps<"/f
             <OpenBottleControls itemId={item.id} fillLevel={open?.fill_level_percent ?? null} />
           )}
           {item.status === "drunk" && (
-            <p className="card muted">Diese Flasche ist ausgetrunken.</p>
+            <p className="card muted">
+              {drunkOn
+                ? `Diese Flasche wurde am ${formatDate(drunkOn)} ausgetrunken.`
+                : "Diese Flasche ist ausgetrunken."}
+            </p>
           )}
 
           {siblings && siblings.length > 0 && (

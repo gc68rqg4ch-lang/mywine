@@ -13,6 +13,7 @@ export function NavLinks({ openCount }: { openCount: number }) {
       badge: openCount,
       active: pathname.startsWith("/offen"),
     },
+    { href: "/getrunken", label: "Getrunken", active: pathname.startsWith("/getrunken") },
   ];
 
   return (

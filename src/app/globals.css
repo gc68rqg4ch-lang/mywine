@@ -633,14 +633,43 @@ input[type="range"] {
   text-decoration: underline;
 }
 
+@media (max-width: 560px) {
+  .header-inner {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px 8px;
+    padding-bottom: 8px;
+  }
+  .nav {
+    order: 3;
+    width: 100%;
+    margin-right: 0;
+  }
+  .nav-link {
+    flex: 1;
+    justify-content: center;
+    padding: 6px 8px;
+  }
+}
+
 @media (max-width: 420px) {
   .stat-value {
     font-size: 1.1rem;
   }
-  .header-inner {
-    gap: 8px;
-  }
-  .nav-link {
-    padding: 6px 10px;
-  }
+}
+
+.item-rating {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+  color: var(--accent);
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.item-rating-sub {
+  color: var(--muted);
+  font-size: 0.8rem;
 }

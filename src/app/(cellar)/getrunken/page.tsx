@@ -1,0 +1,95 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { TypeDot } from "@/components/type-dot";
+import { getSession } from "@/lib/auth";
+import { drunkDate, formatBottleSize, formatDate, formatRating, wineTitle } from "@/lib/format";
+
+export const metadata: Metadata = { title: "Getrunken" };
+
+export default async function DrunkBottlesPage() {
+  const { supabase } = await getSession();
+
+  const { data, error } = await supabase
+    .from("inventory_items")
+    .select(
+      "id, vintage_year, bottle_size_ml, personal_wine_rating, personal_vintage_rating, updated_at, wine:wines(name, producer, region, country, type), open:open_bottle_details(inventory_item_id)",
+    )
+    .eq("status", "drunk");
+
+  if (error) throw error;
+
+  // Neueste zuerst. Ein Datum ist nur für in der App ausgetrunkene Flaschen bekannt
+  // (siehe drunkDate); importierte folgen danach alphabetisch.
+  const rows = (data ?? [])
+    .filter((row) => row.wine)
+    .map((row) => ({
+      ...row,
+      drunkOn: drunkDate({ updated_at: row.updated_at, hasOpenDetails: Boolean(row.open) }),
+      drunkAt: row.open ? Date.parse(row.updated_at) : 0,
+    }))
+    .sort(
+      (a, b) =>
+        b.drunkAt - a.drunkAt ||
+        a.wine!.producer.localeCompare(b.wine!.producer, "de-CH") ||
+        a.wine!.name.localeCompare(b.wine!.name, "de-CH") ||
+        (b.vintage_year ?? 0) - (a.vintage_year ?? 0),
+    );
+
+  return (
+    <div className="stack-lg">
+      <h1 className="page-title">Getrunken</h1>
+
+      {rows.length === 0 ? (
+        <p className="empty">Noch keine Flaschen ausgetrunken.</p>
+      ) : (
+        <ul className="list">
+          {rows.map((row) => {
+            const wine = row.wine!;
+            const { drunkOn } = row;
+            const wineRating = formatRating(row.personal_wine_rating);
+            const vintageRating = formatRating(row.personal_vintage_rating);
+            return (
+              <li key={row.id}>
+                <Link href={`/flasche/${row.id}`} className="item">
+                  <TypeDot type={wine.type} />
+                  <div className="item-main">
+                    <span className="item-producer">{wine.producer}</span>
+                    <span className="item-title">
+                      {wineTitle({ name: wine.name, vintage_year: row.vintage_year })}
+                    </span>
+                    <span className="item-meta">
+                      {[
+                        drunkOn ? `getrunken am ${formatDate(drunkOn)}` : null,
+                        [wine.region, wine.country].filter(Boolean).join(", "),
+                        formatBottleSize(row.bottle_size_ml),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </div>
+                  {(wineRating || vintageRating) && (
+                    <span className="item-rating">
+                      {wineRating && (
+                        <span aria-label={`Wein: ${row.personal_wine_rating} von 5`}>
+                          {wineRating}
+                        </span>
+                      )}
+                      {vintageRating && (
+                        <span
+                          className="item-rating-sub"
+                          aria-label={`Jahrgang: ${row.personal_vintage_rating} von 5`}
+                        >
+                          Jg. {vintageRating}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
