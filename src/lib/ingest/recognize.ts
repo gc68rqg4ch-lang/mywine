@@ -42,11 +42,15 @@ export type LabelImage = { mediaType: "image/jpeg" | "image/png" | "image/webp";
 
 export class RecognitionError extends Error {}
 
+/** Gilt für Foto und Text: nur Stufe bzw. Gattungswort → Marke davor (wie die bestehenden Weine). */
+const NAME_RULE =
+  "Den Produzenten nicht in den Namen – ausser der Name besteht nur aus einer Qualitäts-/Reifestufe oder einem Gattungswort (Reserva, Gran Reserva, Grande Reserva, Riserva, Crianza, Reserve, Grand Vin, Cuvée, Tinto, Rosso): dann Produzent bzw. Marke davor, z. B. „Legaris Reserva“, „Protos Reserva“, „Pago de los Capellanes Reserva“ (ohne „Bodegas“).";
+
 const RECOGNITION_SYSTEM = `Du liest Weinetiketten für eine private Weinsammlung in der Schweiz.
 Du bekommst Fotos der Vorder- und meist auch der Rückseite derselben Flasche.
 Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. Land aus "Product of Spain").
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
-- name: der Weinname ohne Produzent und ohne Jahrgang (z. B. "Reserva", "Les Pagodes de Cos"). Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist.
+- name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist.
 - country: auf Deutsch (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira).
 - bottle_size_ml: aus der Füllmenge (75 cl = 750, 37,5 cl = 375, 1,5 l = 1500).
@@ -356,7 +360,7 @@ export async function enrichFromWeb(proposal: WineProposal): Promise<{
 
 const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in der Schweiz aus einer kurzen Nachricht, z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“.
 Übernimm nur, was in der Nachricht steht oder sich eindeutig daraus ergibt; erfinde nichts.
-- name: Weinname ohne Produzent und Jahrgang. producer nur, wenn genannt (sonst null – wird später recherchiert).
+- name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500).
 - Land auf Deutsch.
 - purchase: Anzahl Flaschen, Lagerort (nur Weinkeller oder Wohnzimmer), bezahlter Preis und Normalpreis pro Flasche in CHF, Händler. Nicht Genanntes: 0 bzw. leer. Ein Gesamtpreis für mehrere Flaschen wird durch die Anzahl geteilt.`;
@@ -414,7 +418,7 @@ export async function applyCorrection(
 
 const TASTED_SYSTEM = (today: string) => `Du erfasst für eine private Weinsammlung in der Schweiz einen Wein, den jemand irgendwo verkostet hat (Restaurant, Bar, bei Freunden), aus einer kurzen Nachricht – z. B. „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne, würd ich kaufen“.
 Übernimm nur, was in der Nachricht steht; erfinde nichts. Heute ist ${today}.
-- name: Weinname ohne Produzent und Jahrgang. producer nur, wenn genannt (sonst null). vintage_year nur, wenn genannt (sonst null).
+- name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null). vintage_year nur, wenn genannt (sonst null).
 - type, country, region nur, wenn genannt bzw. eindeutig. Land auf Deutsch.
 - tasting: Datum (heute/gestern umrechnen, sonst leer), Ort, Preis mit Einheit (Flasche/Glas) und Währung, Anlass, Begleitung, Notiz, Sterne der schreibenden Person (-1 = nicht genannt), want_to_buy.`;
 

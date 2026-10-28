@@ -35,14 +35,18 @@ import {
   quantityKeyboard,
   regularPriceKeyboard,
   restockKeyboard,
+  similarKeyboard,
+  similarLabel,
   textSummaryMessage,
   vendorKeyboard,
   wineSummaryLines,
 } from "./messages";
 import { enrichFromWeb, parseTextEntry, type RecognitionResult } from "./recognize";
 import { needsVintage, type IngestState, type IngestStep, type WineProposal } from "./schema";
+import { completeWineName } from "./wine-names";
 import {
   createInventoryItem,
+  findSimilarWines,
   findWine,
   listVendors,
   mergeWithKnownWine,
@@ -163,18 +167,21 @@ export async function continuePhotoPurchase(
       },
     };
 
+    // Kein exakter Treffer, aber ein ähnlicher bestehender Wein (andere Schreibweise): erst fragen.
+    const similar = known ? [] : await findSimilarWines(db, proposal.name, proposal.producer);
     const { error } = await db
       .from("ingest_jobs")
       .update({
         status: "needs_review",
-        extracted: toJson(state),
+        extracted: toJson(similar.length ? { ...state, step: "similar", similar_ids: similar.map((w) => w.id) } : state),
         confidence: Math.round(recognition.confidence * 100) / 100,
         matched_wine_id: known?.id ?? null,
       })
       .eq("id", jobId);
     if (error) throw error;
 
-    await sendMessage(chatId, proposalMessage(state, Boolean(known)), reviewKeyboard(jobId));
+    if (similar.length) await askSimilar(chatId, jobId, similar);
+    else await sendMessage(chatId, proposalMessage(state, Boolean(known)), reviewKeyboard(jobId));
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }
@@ -635,15 +642,16 @@ export async function processTextJob(jobId: string, chatId: number, text: string
         : {}),
     };
     // Jahrgang zuerst: davon hängt ab, ob es ein Nachkauf ist.
-    const step: IngestStep = needsVintage(base)
-      ? "vintage"
-      : restockCandidate
-        ? "restock"
-        : !proposal.producer
-          ? "producer"
-          : nextPurchaseStep(base);
+    // Kein exakter Treffer, aber ein ähnlicher bestehender Wein: zuerst „Meinst du …?“
+    const similar = known ? [] : await findSimilarWines(db, proposal.name, proposal.producer);
+    const step: IngestStep = similar.length ? "similar" : restockCandidate && !needsVintage(base) ? "restock" : textStep(base);
     const vendors = step === "vendor" ? await listVendors(db) : [];
-    const state: IngestState = { ...base, step, ...(step === "vendor" ? { vendor_options: vendors.map((v) => v.id) } : {}) };
+    const state: IngestState = {
+      ...base,
+      step,
+      ...(step === "vendor" ? { vendor_options: vendors.map((v) => v.id) } : {}),
+      ...(similar.length ? { similar_ids: similar.map((w) => w.id) } : {}),
+    };
 
     const { data: job, error } = await db
       .from("ingest_jobs")
@@ -654,7 +662,9 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     if (error) throw error;
 
     await sendMessage(chatId, wineSummaryLines(state).join("\n"));
-    if (step === "restock") {
+    if (step === "similar") {
+      await askSimilar(chatId, jobId, similar);
+    } else if (step === "restock") {
       await sendMessage(
         chatId,
         T.restockAskOrRename,
@@ -682,7 +692,10 @@ export async function setVintage(db: AdminClient, job: IngestJob, chatId: number
     vintage_uncertain: false,
   };
   if (state.source === "text" && !state.restock) {
-    if (job.matched_wine_id && (await inStock(db, job.matched_wine_id, year))) {
+    const stocked = Boolean(job.matched_wine_id) && (await inStock(db, job.matched_wine_id!, year));
+    // Wein schon bestätigt („Ja, dieser“): Nachkauf ohne weitere Frage.
+    if (stocked && state.wine_confirmed) patch.restock = true;
+    else if (stocked) {
       const next = await advanceJob(db, job, "vintage", { ...patch, step: "restock" });
       if (next) {
         await sendMessage(chatId, T.restockAsk, restockKeyboard(job.id));
@@ -706,9 +719,17 @@ export async function acceptRestock(db: AdminClient, job: IngestJob, chatId: num
 /** Antwort auf „Von welchem Produzenten?“: übernehmen, Bestand prüfen, weiter. */
 export async function setProducer(db: AdminClient, job: IngestJob, chatId: number, producer: string) {
   const state = jobState(job)!;
-  let proposal: WineProposal = { ...state.proposal, producer: producer.replace(/\s+/g, " ").trim().slice(0, 120) };
+  const cleaned = producer.replace(/\s+/g, " ").trim().slice(0, 120);
+  // Nur Stufe („Reserva“) → jetzt mit Marke („Legaris Reserva“).
+  let proposal: WineProposal = { ...state.proposal, name: completeWineName(state.proposal.name, cleaned), producer: cleaned };
   const known = await findWine(db, proposal.name, proposal.producer);
   if (known) proposal = mergeWithKnownWine(proposal, known);
+  const similar = known || state.new_wine ? [] : await findSimilarWines(db, proposal.name, proposal.producer);
+  if (similar.length) {
+    const next = await advanceJob(db, job, "producer", { step: "similar", proposal, similar_ids: similar.map((w) => w.id) });
+    if (next) await askSimilar(chatId, job.id, similar);
+    return;
+  }
   if (known && (await inStock(db, known.id, proposal.vintage_year))) {
     const next = await advanceJob(db, job, "producer", { step: "restock", proposal }, { matched_wine_id: known.id });
     if (next) {
@@ -722,4 +743,50 @@ export async function setProducer(db: AdminClient, job: IngestJob, chatId: numbe
   }
   const withWine = known ? ((await advanceJob(db, job, "producer", { proposal }, { matched_wine_id: known.id })) ?? job) : job;
   await advanceTo(db, withWine, chatId, "producer", { proposal });
+}
+
+// ---------------------------------------------------------------------------
+// Ähnlicher bestehender Wein („Meinst du …?“)
+
+/** Text-Erfassung: nächster Schritt nach dem Abgleich – Jahrgang, Produzent, dann die Kaufangaben. */
+function textStep(state: IngestState): IngestStep {
+  if (needsVintage(state)) return "vintage";
+  if (!state.proposal.producer) return "producer";
+  return nextPurchaseStep(state);
+}
+
+async function askSimilar(chatId: number, jobId: string, wines: { name: string; producer: string | null }[]) {
+  const text = wines.length === 1 ? T.similarOne(escapeHtml(similarLabel(wines[0]))) : T.similarMany();
+  await sendMessage(chatId, text, similarKeyboard(jobId, wines));
+}
+
+/**
+ * Antwort auf „Meinst du …?“: index = gewählter bestehender Wein (→ dessen Name und Produzent,
+ * als Nachkauf, wenn er mit dem Jahrgang im Bestand liegt), null = „Nein, neuer Wein“.
+ */
+export async function chooseSimilar(db: AdminClient, job: IngestJob, chatId: number, index: number | null) {
+  const state = jobState(job)!;
+  const id = index == null ? null : state.similar_ids?.[index];
+  if (index != null && !id) return null;
+  const { data: wine, error } = id ? await db.from("wines").select("*").eq("id", id).maybeSingle() : { data: null, error: null };
+  if (error) throw error;
+
+  const proposal = wine ? mergeWithKnownWine(state.proposal, wine) : state.proposal;
+  const patch: Partial<IngestState> = { proposal, similar_ids: undefined, ...(wine ? { wine_confirmed: true } : { new_wine: true }) };
+  const columns = { matched_wine_id: wine?.id ?? null };
+
+  if (state.source !== "text") {
+    const next = await advanceJob(db, job, "similar", { ...patch, step: "review" }, columns);
+    if (next) await sendMessage(chatId, proposalMessage(jobState(next)!, Boolean(wine)), reviewKeyboard(job.id));
+    return next;
+  }
+  if (wine && !needsVintage({ ...state, ...patch })) patch.restock = await inStock(db, wine.id, proposal.vintage_year);
+  const merged: IngestState = { ...state, ...patch };
+  const step = textStep(merged);
+  const vendors = step === "vendor" ? await listVendors(db) : [];
+  const next = await advanceJob(db, job, "similar", { ...patch, step, ...(step === "vendor" ? { vendor_options: vendors.map((v) => v.id) } : {}) }, columns);
+  if (!next) return null;
+  if (step === "producer") await sendMessage(chatId, T.producerAsk, cancelKeyboard(job.id));
+  else await askFor(next, chatId, vendors);
+  return next;
 }

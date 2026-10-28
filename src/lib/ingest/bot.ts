@@ -91,6 +91,7 @@ import { findWine, mergeWithKnownWine, resolveVendor } from "./wines";
 import { findAttachJob, handleAttachCallback, isAttachCallback, noteAttachPhoto } from "./attach";
 import {
   acceptRestock,
+  chooseSimilar,
   advanceTo,
   confirmAndSave,
   continuePhotoPurchase,
@@ -399,6 +400,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
         [
           "describe",
           "restock",
+          "similar",
           "producer",
           "vintage",
           "review",
@@ -522,6 +524,16 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
       await setVintage(db, job, chatId, year);
+      return;
+    }
+
+    case "simyes":
+    case "simno": {
+      const index = parsed.action === "simyes" ? Number(parsed.value) : null;
+      if (index != null && !Number.isInteger(index)) return answerCallback(cb.id);
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await chooseSimilar(db, job, chatId, index);
       return;
     }
 

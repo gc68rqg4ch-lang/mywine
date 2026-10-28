@@ -4,6 +4,7 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import type { Tables } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
 import { grapeNames, type StorageRoom, type WineProposal } from "./schema";
+import { similarWines } from "./wine-names";
 
 type Wine = Tables<"wines">;
 
@@ -28,6 +29,17 @@ export async function findWine(db: AdminClient, name: string | null, producer: s
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+/**
+ * Bestehende Weine trotz anderer Schreibweise (bis 3) – nur aufrufen, wenn findWine nichts findet.
+ * Akzente, Füllwörter, Bodegas/Quinta/…, Produzent im Namen egal (siehe wine-names.ts).
+ */
+export async function findSimilarWines(db: AdminClient, name: string | null, producer: string | null) {
+  if (!name?.trim()) return [];
+  const { data, error } = await db.from("wines").select("id, name, producer, type, country");
+  if (error) throw error;
+  return similarWines(name, producer, data ?? []);
 }
 
 /**

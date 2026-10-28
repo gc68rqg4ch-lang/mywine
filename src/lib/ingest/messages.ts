@@ -25,7 +25,9 @@ export type CallbackAction =
   | "skipvendor"
   | "restock"
   | "confirm"
-  | "vint";
+  | "vint"
+  | "simyes"
+  | "simno";
 
 export function callbackData(action: CallbackAction, jobId: string, value?: string) {
   return [action, jobId, value].filter(Boolean).join(":");
@@ -34,6 +36,8 @@ export function callbackData(action: CallbackAction, jobId: string, value?: stri
 export function parseCallbackData(data: string | undefined) {
   const [action, jobId, value] = (data ?? "").split(":");
   const actions: CallbackAction[] = [
+    "simyes",
+    "simno",
     "save",
     "fix",
     "drop",
@@ -224,6 +228,24 @@ export const DESCRIBE_TEXT = T.describe;
 
 export function cancelKeyboard(jobId: string): TgInlineKeyboard {
   return { inline_keyboard: [[{ text: "✖️ Abbrechen", callback_data: callbackData("drop", jobId) }]] };
+}
+
+/** Bestehender Wein in der Rückfrage: „Name (Produzent)“. */
+export const similarLabel = (w: { name: string; producer: string | null }) => (w.producer ? `${w.name} (${w.producer})` : w.name);
+
+/** „Meinst du …?“: ein Treffer → Ja/Nein; mehrere → je Wein ein Knopf, dazu „Nein, neuer Wein“. */
+export function similarKeyboard(jobId: string, wines: { name: string; producer: string | null }[]): TgInlineKeyboard {
+  const choices =
+    wines.length === 1
+      ? [[{ text: T.similarYes, callback_data: callbackData("simyes", jobId, "0") }]]
+      : wines.map((w, i) => [{ text: similarLabel(w).slice(0, 60), callback_data: callbackData("simyes", jobId, String(i)) }]);
+  return {
+    inline_keyboard: [
+      ...choices,
+      [{ text: T.similarNo, callback_data: callbackData("simno", jobId) }],
+      [{ text: "✖️ Abbrechen", callback_data: callbackData("drop", jobId) }],
+    ],
+  };
 }
 
 export function restockKeyboard(jobId: string): TgInlineKeyboard {

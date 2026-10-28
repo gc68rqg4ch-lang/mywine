@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { completeWineName } from "./wine-names";
 import { WINE_TYPES } from "@/lib/format";
 import { normalizeGrapeShares, type GrapeSource } from "@/lib/grapes/shares";
 
@@ -74,6 +75,8 @@ export type IngestStep =
   | "researching"
   /** Text-Erfassung: Nachkauf zu einem Wein im Bestand? */
   | "restock"
+  /** Ähnlicher bestehender Wein (andere Schreibweise): „Meinst du …?“ */
+  | "similar"
   /** Text-Erfassung: Produzent fehlt noch. */
   | "producer"
   /** Jahrgang fehlt oder ist unsicher: Zahl oder „Ohne Jahrgang (NV)“. */
@@ -113,6 +116,12 @@ export type IngestState = {
   source?: "photo" | "text";
   /** Text-Erfassung: der Wein (mit Jahrgang) liegt schon im Bestand → nur neue Charge. */
   restock?: boolean;
+  /** Rückfrage „Meinst du …?“: die ähnlichen bestehenden Weine (IDs, bis 3). */
+  similar_ids?: string[];
+  /** Die Person hat den bestehenden Wein bestätigt („Ja, dieser“) – keine Nachkauf-Frage mehr. */
+  wine_confirmed?: boolean;
+  /** „Nein, neuer Wein“: nicht nochmals nach ähnlichen fragen. */
+  new_wine?: boolean;
   /** Geschenk statt Kauf: Preis 0, kein Normalpreis/Händler; gift_from = von wem (null = unbekannt). */
   is_gift?: boolean;
   gift_from?: string | null;
@@ -184,7 +193,8 @@ export function normalizeProposal(p: WineProposal): WineProposal {
   const alcohol = p.alcohol_content;
   const size = p.bottle_size_ml;
   return {
-    name: text(p.name),
+    // Nur Stufe („Reserva“) → Marke davor („Legaris Reserva“), wie die bestehenden Weine.
+    name: completeWineName(text(p.name), text(p.producer)),
     producer: text(p.producer),
     vintage_year: year != null && year >= 1800 && year <= 2100 ? year : null,
     country: text(p.country),

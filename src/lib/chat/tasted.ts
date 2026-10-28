@@ -23,6 +23,8 @@ import type { Json } from "@/lib/database.types";
 import { parseVintageAnswer, type IngestState, type TastedText, type WineProposal } from "@/lib/ingest/schema";
 import { parseTastedText, type RecognitionResult, enrichFromWeb } from "@/lib/ingest/recognize";
 import { jobState, toJson, type IngestJob } from "@/lib/ingest/jobs";
+import { similarLabel } from "@/lib/ingest/messages";
+import { findSimilarWines } from "@/lib/ingest/wines";
 import {
   continuePhotoPurchase,
   fillWineGaps,
@@ -85,6 +87,8 @@ export type TastedState = {
   wineId?: string | null;
   forceNew?: boolean;
   candidates?: WineCandidate[];
+  /** Kandidaten sind ähnliche Weine (andere Schreibweise): „Meinst du …?“ statt „mehrere heissen so“. */
+  similar?: boolean;
   vintageConfirmed?: boolean;
   personId: string | null;
   personName: string;
@@ -287,7 +291,11 @@ async function matchPatch(db: AdminClient, p: WineProposal): Promise<Partial<Tas
   if (!p.name) return { wineId: null };
   const match = await matchWine(db, p.name, p.producer);
   if ("ambiguous" in match) return { candidates: match.candidates };
-  if (!match.known) return { wineId: null };
+  if (!match.known) {
+    // Kein exakter Treffer: ähnlicher bestehender Wein (andere Schreibweise) → „Meinst du …?“
+    const similar = await findSimilarWines(db, p.name, p.producer);
+    return similar.length ? { candidates: similar, similar: true } : { wineId: null };
+  }
   return {
     wineId: match.known.id,
     // Bekannter Wein: dessen Angaben gelten (z. B. Produzent für die Anzeige).
@@ -300,6 +308,13 @@ async function ask(db: AdminClient, job: IngestJob, chatId: number) {
   const s = stateOf(job)!;
   switch (s.step) {
     case "t_match": {
+      if (s.similar) {
+        const list = s.candidates ?? [];
+        const text = list.length === 1 ? T.similarOne(e(similarLabel(list[0]))) : T.similarMany();
+        const rows = list.length === 1 ? [[button(T.similarYes, job.id, "pick", 0)]] : list.map((c, i) => [button(similarLabel(c).slice(0, 60), job.id, "pick", i)]);
+        await sendMessage(chatId, text, { inline_keyboard: [...rows, [button(T.similarNo, job.id, "new")], [button("✖️ Abbrechen", job.id, "drop")]] });
+        return;
+      }
       const rows = (s.candidates ?? []).slice(0, 8).map((c, i) => [
         button(`${wineName(c)}${c.country ? ` · ${c.country}` : ""}`, job.id, "pick", i),
       ]);
@@ -876,13 +891,15 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
       await step(db, job, chatId, "t_match", {
         wineId: c.id,
         candidates: undefined,
-        proposal: { ...s.proposal, producer: c.producer, type: s.proposal.type ?? (c.type as WineProposal["type"]) },
+        similar: undefined,
+        // Name und Produzent in der Schreibweise des bestehenden Weins.
+        proposal: { ...s.proposal, name: c.name, producer: c.producer, type: s.proposal.type ?? (c.type as WineProposal["type"]) },
       });
       return;
     }
     case "new":
       await done();
-      await step(db, job, chatId, "t_match", { wineId: null, forceNew: true, candidates: undefined });
+      await step(db, job, chatId, "t_match", { wineId: null, forceNew: true, candidates: undefined, similar: undefined });
       return;
     case "vint": {
       const year = parsed.value === "nv" ? null : Number(parsed.value);

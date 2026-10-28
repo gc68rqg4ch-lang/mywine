@@ -447,6 +447,16 @@ Ablauf in `src/lib/ingest/flow.ts`, `ingest_jobs.source = 'text'`:
   mit bestehenden Weinen (ohne Produzent über einen eindeutigen Namen), sonst Websuche (Produzent, Herkunft, Typ,
   Alkohol, Trinkfenster des Jahrgangs) und Rebsorten mit %.
 - Liegt der Wein mit dem Jahrgang schon im Bestand: „Nachkauf zu bestehendem Wein?“ → nur eine neue Charge.
+- **Vollständige Namen und andere Schreibweisen** (`src/lib/ingest/wine-names.ts`, gilt für Foto, Text, Nachkauf
+  und „🍷 Nur verkostet“): Besteht der erkannte Name nur aus einer Stufe bzw. einem Gattungswort (Reserva, Gran/Grande
+  Reserva, Riserva, Crianza, Reserve, Grand Vin, Cuvée, Tinto, Rosso …), kommt die Marke davor („Reserva“ + „Legaris“
+  → „Legaris Reserva“; „Bodegas“ vorne fällt weg) – Regel im Extraktions-Prompt und in `normalizeProposal`.
+  Findet der exakte Abgleich nichts, sucht `findSimilarWines` ähnliche Weine: Gross-/Kleinschreibung, Akzente,
+  Satzzeichen, Füllwörter (de/da/la/el/di/the …) und Zusätze (Bodegas, Quinta, Château, Weingut, Winery, Cellars,
+  Vineyards …) egal, Produzent im Namen oder nicht („Reserva“ + „Quinta da La Rosa“ ≈ „Quinta de la Rosa Reserva“).
+  Treffer → „Meinst du <Name> (<Produzent>)?“ mit „✅ Ja, dieser“ (bucht auf den bestehenden Wein, als Nachkauf,
+  wenn der Jahrgang im Bestand liegt) und „➕ Nein, neuer Wein“; mehrere → bis 3 Knöpfe. Schritt `similar`
+  (läuft wie alle Rückfragen nach 10 Min. ab, ✖️ Abbrechen). Exakter Treffer: wie bisher ohne Rückfrage.
 - Danach nur, was im Text fehlt: Lagerort, Anzahl, Preis, Normalpreis, Händler (`nextPurchaseStep`); zum Schluss
   eine Zusammenfassung mit [Ja] [Nein]. Der Händler aus dem Text wird erst beim Speichern angelegt.
 - Das Trinkfenster wird in `wine_vintages` übernommen, wenn dort noch keines steht (auch bei der Foto-Erfassung).

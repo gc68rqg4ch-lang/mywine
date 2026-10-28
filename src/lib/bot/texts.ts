@@ -179,6 +179,14 @@ export const T = {
   readingTasted: "Wie schön – ich schaue mir den Wein kurz an …",
   noWineInTasted: "Darin habe ich leider keinen Wein gefunden. Schreib mir z. B. <i>Heute im Kronenhalle den Pintia 2019 probiert, 4,5 Sterne</i>.",
   labelUnreadable: "Den Namen auf dem Etikett kann ich leider nicht lesen. Schreibst du mir den Wein? Z. B. <i>Pintia 2019 probiert, 4 Sterne</i>.",
+  // --- Ähnlicher bestehender Wein (andere Schreibweise)
+  /** Ein Treffer: „Meinst du <Name> (<Produzent>)?“ – Werte schon entschärft (HTML). */
+  similarOne: (wine: string, random?: () => number) =>
+    pick([`Den kenne ich vielleicht schon: Meinst du <b>${wine}</b>?`, `Meinst du <b>${wine}</b>? Den habe ich schon bei dir.`, `Ich glaube, den gibt es schon – meinst du <b>${wine}</b>?`], random),
+  similarMany: (random?: () => number) =>
+    pick(["Ich habe ähnliche Weine bei dir gefunden – meinst du einen davon?", "Den kenne ich vielleicht schon. Meinst du einen von diesen?"], random),
+  similarYes: "✅ Ja, dieser",
+  similarNo: "➕ Nein, neuer Wein",
   whichWine: (name: string) => `Es gibt mehrere Weine „${e(name)}“. Welcher ist es?`,
   tastedVintage: (wine: string, year: number | null) =>
     year != null ? `🍷 <b>${wine}</b>\nIst es der Jahrgang <b>${year}</b>? Sonst schreib mir die Jahreszahl.` : `🍷 <b>${wine}</b>\nWelcher Jahrgang war es? Schreib mir die Jahreszahl – oder tippe „Ohne Jahrgang (NV)“.`,
