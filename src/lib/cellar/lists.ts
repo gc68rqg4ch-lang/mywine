@@ -1,12 +1,12 @@
 // Einträge für die Listen „Offen“ und „Getrunken“ – gleiche Form wie der Bestand
 // (Groupable), damit Suche, Gruppierung und Karten dieselben sind.
 
-import { daysSince, zurichDate, type WineType } from "@/lib/format";
+import { compareWineNames, daysSince, zurichDate, type WineType } from "@/lib/format";
 import { priceClass, sortVintages, type Groupable, type GroupUnit } from "./overview";
 
 type WineInfo = {
   name: string;
-  producer: string;
+  producer: string | null;
   country: string | null;
   region: string | null;
   type: WineType | null;
@@ -173,8 +173,7 @@ export function buildDrunkEntries(
   return entries.sort(
     (a, b) =>
       (b.lastDrunk ?? "").localeCompare(a.lastDrunk ?? "") ||
-      a.producer.localeCompare(b.producer, "de-CH") ||
-      a.name.localeCompare(b.name, "de-CH"),
+      compareWineNames(a, b),
   );
 }
 

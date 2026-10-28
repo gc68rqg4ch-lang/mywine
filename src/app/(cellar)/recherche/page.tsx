@@ -13,6 +13,7 @@ import {
 } from "@/lib/research/gaps";
 import { ResearchSuggestions } from "@/components/research-suggestions";
 import { wineHref } from "@/lib/cellar/wine-page";
+import { compareWineNames, wineName } from "@/lib/format";
 import { loadPendingSuggestions, type Suggestion } from "@/lib/research/suggestions";
 import { loadGapData } from "@/lib/research/wine";
 import { BatchResearch, type BatchCandidate } from "./batch-research";
@@ -55,7 +56,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const selected = skipRecent ? chosen.filter((g) => !researchedRecently(g.wine)) : chosen;
   const completeCount = selected.filter((g) => !needsResearch(g)).length;
   const list = selected.sort(
-    (a, b) => a.wine.producer.localeCompare(b.wine.producer, "de-CH") || a.wine.name.localeCompare(b.wine.name, "de-CH"),
+    (a, b) => compareWineNames(a.wine, b.wine),
   );
   const candidates: BatchCandidate[] = list.map((g) => ({
     wineId: g.wine.id,
@@ -89,7 +90,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
             <div key={wineId} className="stack-sm">
               <Link href={wineHref(wineId)} className="link">
                 <strong>
-                  {list[0].wine?.producer} – {list[0].wine?.name}
+                  {list[0].wine ? wineName(list[0].wine) : ""}
                 </strong>
               </Link>
               <ResearchSuggestions suggestions={list} title={list.length === 1 ? "1 Abweichung" : `${list.length} Abweichungen`} />

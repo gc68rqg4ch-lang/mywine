@@ -11,7 +11,7 @@ import { researchWine } from "../research-actions";
 
 export type BatchCandidate = {
   wineId: string;
-  producer: string;
+  producer: string | null;
   name: string;
   years: (number | null)[];
   gaps: string[];
@@ -225,7 +225,7 @@ export function BatchResearch({
             <li key={c.wineId} className="batch-item">
               <span aria-hidden>{icon}</span>
               <div className="item-main">
-                <span className="item-producer">{c.producer}</span>
+                {c.producer && <span className="item-producer">{c.producer}</span>}
                 <Link href={wineHref(c.wineId)} className="item-title link">
                   {c.name} <span className="muted small">{years}</span>
                 </Link>

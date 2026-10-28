@@ -13,7 +13,8 @@ export const WINE_FIELDS = ["name", "producer", "type", "country", "region", "ap
 export type WineField = (typeof WINE_FIELDS)[number];
 export type WineChanges = {
   name?: string;
-  producer?: string;
+  /** null = ohne Produzent */
+  producer?: string | null;
   type?: WineType | null;
   country?: string | null;
   region?: string | null;
@@ -82,7 +83,15 @@ export type EncounterChanges = {
 };
 
 /** Neuer Wein beim Erfassen (gibt es Name + Produzent schon, wird der bestehende genommen). */
-export type NewWine = { name: string; producer: string; type?: WineType | null; country?: string | null; region?: string | null };
+export type NewWine = {
+  name: string;
+  producer?: string | null;
+  type?: WineType | null;
+  country?: string | null;
+  region?: string | null;
+  /** Trotz gleichnamiger Weine neu anlegen (nach der Auswahl „Neuen Wein anlegen“). */
+  forceNew?: boolean;
+};
 
 export type Edit =
   /** Stammdaten des Weins (alle Jahrgänge). */

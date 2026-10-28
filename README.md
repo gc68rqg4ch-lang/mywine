@@ -43,11 +43,19 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
   Aufbau wie die anderen Listen (Kacheln, Suche, Weintyp-Filter, Gruppierung nach Weintyp, Land, Rebsorte,
   Jahrgang, Preisklasse, dazu Ort, „Verkostet am“ und „Kaufen?“), ohne Lagerort-Wahl. Preisklasse nur für
   Flaschenpreise in CHF. Karte: letzter Ort und Datum, Bewertungen je Person, 🛒 beim Merker, „im Bestand: N“.
-  - Erfassen (`/verkostet/neu`, Knopf oben): Wein suchen oder neu anlegen (gleicher Name + Produzent →
-    bestehender), Jahrgang Pflicht (NV möglich), Datum (heute), Ort (bestehend oder neu mit Art und Stadt;
-    gleichnamiger wird wiederverwendet), Preis pro Flasche/Glas in CHF, AED oder EUR, Anlass, Begleitung, Notiz,
-    Merker „Kaufen?“ und Bewertungen (eigene, optional die andere Person) – mit `encounter_id` und dem Datum des
-    Eintrags.
+  - Erfassen (`/verkostet/neu`, Knopf oben) – schnell: Pflicht sind nur Name und Jahrgang (NV möglich). Reihenfolge:
+    Name (mit Vorschlägen bestehender Weine) → Jahrgang → Bewertung(en) → Notiz; „Mehr Angaben“ (zugeklappt):
+    Produzent, Weintyp, Land/Region, Ort (bestehend oder neu mit Art und Stadt), Preis pro Flasche/Glas in CHF, AED
+    oder EUR, Anlass, Begleitung, Merker „Kaufen?“, Datum (Standard heute). Reihenfolge und Pflichtfelder in
+    `src/lib/edit/encounter-form.ts`. Abgleich: mit Produzent über Name + Produzent; ohne Produzent nur über den
+    Namen – ein Treffer wird genommen, bei mehreren erscheint eine Auswahl (oder „Neuen Wein anlegen“).
+  - Speichern ist „alles oder nichts“: Wein (falls neu), Ort (falls neu), Eintrag und Bewertungen; schlägt ein Schritt
+    fehl, wird das Angelegte wieder entfernt (Log „encounter save failed“), Meldung „Speichern ist fehlgeschlagen –
+    nichts geändert.“ Fehlende Angaben später im ✏️-Modus der Weinseite oder per „🔎 Nachrecherchieren“ (füllt
+    leere Felder, auch den Produzenten).
+  - **Produzent ist freiwillig** (DB: `wines.producer` darf NULL sein). Fehlt er, wird er überall weggelassen
+    (`wineName` in `src/lib/format.ts`); sortiert wird dann nach dem Namen. Im Bot genügt zum Speichern der Name;
+    „gibt es den Wein schon“ ohne Produzent über einen eindeutigen Namen.
   - Weinseite, Spalte 3: Abschnitt „Verkostet“ mit allen Einträgen (neuester zuerst), im ✏️-Modus bearbeiten
     und löschen (samt den Bewertungen des Eintrags; WSET-Verkostungen bleiben). Merker „Kaufen?“ umschaltbar
     (die DB setzt ihn zurück, sobald ungeöffnete Flaschen eingebucht werden). Nur verkostete Jahrgänge sind in

@@ -5,7 +5,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-import { formatDate, todayIso } from "@/lib/format";
+import { formatDate, todayIso, wineName } from "@/lib/format";
 import type { EditChange, EditPreview } from "./types";
 
 export type Db = SupabaseClient<Database>;
@@ -57,8 +57,9 @@ export async function loadWine(db: Db, wineId: string) {
   return data;
 }
 
-export const wineTitle = (w: { producer: string; name: string }, year?: number | null) =>
-  `${w.producer} – ${w.name}${year === undefined ? "" : ` ${year ?? "NV"}`}`;
+/** „Vega Sicilia – Pintia 2019“; ohne Produzent nur „Pintia 2019“. */
+export const wineTitle = (w: { producer: string | null; name: string }, year?: number | null) =>
+  `${wineName(w)}${year === undefined ? "" : ` ${year ?? "NV"}`}`;
 
 export function diff(changes: EditChange[], label: string, before: string, after: string) {
   if (before !== after) changes.push({ label, before, after });

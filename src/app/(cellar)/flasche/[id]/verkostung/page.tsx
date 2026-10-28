@@ -67,7 +67,7 @@ export default async function TastingPage({ params, searchParams }: PageProps<"/
   return (
     <div className="stack-lg">
       <Link href={wineHref(wine.id, item.vintage_year)} className="back">
-        ← {wine.producer} · {wineTitle({ name: wine.name, vintage_year: item.vintage_year })}
+        ← {wine.producer ? `${wine.producer} · ` : ""}{wineTitle({ name: wine.name, vintage_year: item.vintage_year })}
       </Link>
       <div className="stack-sm">
         <h1 className="page-title">WSET Level 3 – Systematisches Verkosten</h1>

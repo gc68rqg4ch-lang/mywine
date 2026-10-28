@@ -2115,3 +2115,26 @@ input[inputmode="decimal"] {
   font-weight: 600;
   color: var(--accent);
 }
+
+/* Verkostet erfassen: „Mehr Angaben“ zugeklappt, Felder im Raster */
+.field-slot {
+  display: contents;
+}
+.field-label {
+  font-weight: 500;
+}
+.more-fields > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.more-fields[open] > summary {
+  margin-bottom: 12px;
+}
+.field-wide {
+  grid-column: 1 / -1;
+}
+.delete-confirm {
+  padding: 10px;
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+}

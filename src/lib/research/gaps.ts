@@ -17,7 +17,7 @@ export const GAP_LABELS: Record<GapKey, string> = {
 export type GapWine = {
   id: string;
   name: string;
-  producer: string;
+  producer: string | null;
   country: string | null;
   region: string | null;
   appellation: string | null;

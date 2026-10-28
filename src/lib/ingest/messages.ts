@@ -66,8 +66,10 @@ export function proposalMessage(state: IngestState, matched: boolean) {
   const p = state.proposal;
   const r = state.recognition;
   const lines = [
-    `🍷 <b>${e(p.producer ?? "Produzent unbekannt")}</b>`,
-    `${e(p.name ?? "Name unbekannt")}${p.vintage_year != null ? ` ${p.vintage_year}` : ""}`,
+    // Ohne Produzent steht der Name oben (kein „Produzent unbekannt“).
+    ...(p.producer
+      ? [`🍷 <b>${e(p.producer)}</b>`, `${e(p.name ?? "Name unbekannt")}${p.vintage_year != null ? ` ${p.vintage_year}` : ""}`]
+      : [`🍷 <b>${e(p.name ?? "Name unbekannt")}</b>${p.vintage_year != null ? ` ${p.vintage_year}` : ""}`]),
     vintageLine(state),
     "",
     `Typ: ${e(p.type ? wineTypeLabel(p.type) : "–")}`,
@@ -90,8 +92,8 @@ export function proposalMessage(state: IngestState, matched: boolean) {
       `🔎 <i>Im Web ergänzt habe ich: ${r.enriched_fields.map((f) => FIELD_LABELS[f]).join(", ")}</i>`,
     );
   }
-  if (!p.name || !p.producer) {
-    lines.push("", "⚠️ Zum Speichern brauche ich Name und Produzent – bitte korrigieren.");
+  if (!p.name) {
+    lines.push("", "⚠️ Zum Speichern brauche ich den Namen des Weins – bitte korrigieren.");
   }
   return lines.join("\n");
 }

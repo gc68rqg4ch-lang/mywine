@@ -6,7 +6,7 @@ import "server-only";
 // encounter_id und das Datum des Eintrags (rated_at).
 
 import type { Database } from "@/lib/database.types";
-import { WINE_TYPE_LABELS, formatMoney, todayIso, type WineType } from "@/lib/format";
+import { WINE_TYPE_LABELS, formatMoney, todayIso, wineName, type WineType } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
 import {
   DASH,
@@ -182,13 +182,13 @@ function checkFields(set: EncounterChanges) {
 async function describePlace(
   db: Db,
   ref: PlaceRef,
-): Promise<{ error: string } | { label: string; note: string | null; resolve: () => Promise<string | null> }> {
-  if (ref == null) return { label: DASH, note: null, resolve: async () => null };
+): Promise<{ error: string } | { label: string; note: string | null; resolve: () => Promise<{ id: string | null; created: boolean }> }> {
+  if (ref == null) return { label: DASH, note: null, resolve: async () => ({ id: null, created: false }) };
   if ("placeId" in ref) {
     const { data, error } = await db.from("places").select("id, name, kind, city").eq("id", ref.placeId).maybeSingle();
     if (error) throw error;
     if (!data) return { error: "Diesen Ort gibt es nicht mehr." };
-    return { label: placeLabel(data) ?? DASH, note: null, resolve: async () => data.id };
+    return { label: placeLabel(data) ?? DASH, note: null, resolve: async () => ({ id: data.id, created: false }) };
   }
   const name = clean(ref.name);
   if (!name) return { error: "Ort: bitte einen Namen angeben." };
@@ -205,7 +205,7 @@ async function describePlace(
     return {
       label: placeLabel(existing) ?? name,
       note: `Den Ort „${existing.name}“ gibt es schon – ich nehme ihn.`,
-      resolve: async () => existing.id,
+      resolve: async () => ({ id: existing.id, created: false }),
     };
   }
   return {
@@ -214,9 +214,9 @@ async function describePlace(
     resolve: async () => {
       const { data, error } = await db.from("places").insert({ name, kind: ref.kind, city }).select("id").single();
       // Gleichzeitig angelegt (eindeutiger Name): den vorhandenen nehmen.
-      if (error?.code === "23505") return (await find())?.id ?? null;
+      if (error?.code === "23505") return { id: (await find())?.id ?? null, created: false };
       if (error) throw error;
-      return data.id;
+      return { id: data.id, created: true };
     },
   };
 }
@@ -238,25 +238,48 @@ function fieldChanges(
 // ---------------------------------------------------------------------------
 // Erfassen
 
-async function findWineByName(db: Db, name: string, producer: string) {
+export type WineCandidate = { id: string; name: string; producer: string | null; type: string | null; country: string | null };
+
+/** Bestehende Weine mit diesem Namen (ohne Gross-/Kleinschreibung) – für „gibt es den Wein schon?“. */
+export async function wineCandidates(db: Db, name: string): Promise<WineCandidate[]> {
   const { data, error } = await db
     .from("wines")
-    .select("*")
-    .ilike("name", exact(name))
-    .ilike("producer", exact(producer))
-    .limit(1);
+    .select("id, name, producer, type, country")
+    .ilike("name", exact(name.trim().replace(/\s+/g, " ")))
+    .order("producer")
+    .limit(20);
   if (error) throw error;
-  return data?.[0] ?? null;
+  return data ?? [];
 }
+
+/** Fehler „mehrere Weine heissen so“ – die App zeigt dann eine Auswahl. */
+export const AMBIGUOUS_WINE = "Es gibt mehrere Weine mit diesem Namen – bitte den richtigen wählen oder „Neuen Wein anlegen“.";
+
+/**
+ * Neuer Wein beim Erfassen: mit Produzent über Name + Produzent abgleichen; ohne Produzent
+ * nur über den Namen – ein Treffer wird genommen, bei mehreren muss man wählen.
+ */
+async function matchNewWine(db: Db, name: string, producer: string | null, forceNew: boolean) {
+  if (forceNew) return { known: null };
+  const candidates = await wineCandidates(db, name);
+  if (producer) {
+    return { known: candidates.find((c) => c.producer?.toLowerCase() === producer.toLowerCase()) ?? null };
+  }
+  if (candidates.length > 1) return { ambiguous: true as const };
+  return { known: candidates[0] ?? null };
+}
+
+/** Was beim Speichern angelegt bzw. geändert wurde – zum Zurücknehmen bei einem Fehler. */
+type Undo = () => PromiseLike<{ error: unknown }>;
 
 export async function prepareAddEncounter(db: Db, edit: Extract<Edit, { kind: "addEncounter" }>): Promise<PreparedEdit> {
   const tastedOn = edit.set.tastedOn ?? todayIso();
   const invalid = checkFields({ ...edit.set, year: edit.year, tastedOn });
   if (invalid) return fail(invalid);
 
-  // Wein: bestehend oder neu (gleicher Name + Produzent → bestehender).
+  // Wein: bestehend oder neu. Pflicht ist nur der Name (und der Jahrgang, NV möglich).
   const notes: string[] = [];
-  let wine: { id: string | null; name: string; producer: string; want_to_buy: boolean };
+  let wine: { id: string | null; name: string; producer: string | null; want_to_buy: boolean };
   let newWine: Database["public"]["Tables"]["wines"]["Insert"] | null = null;
   if ("wineId" in edit.wine) {
     const w = await loadWine(db, edit.wine.wineId);
@@ -265,13 +288,17 @@ export async function prepareAddEncounter(db: Db, edit: Extract<Edit, { kind: "a
   } else {
     const name = clean(edit.wine.new.name);
     const producer = clean(edit.wine.new.producer);
-    if (!name || !producer) return fail("Neuer Wein: Name und Produzent sind nötig.");
+    if (!name) return fail("Bitte den Namen des Weins angeben.");
+    if (name.length > 200 || (producer?.length ?? 0) > 200) return fail("Name bzw. Produzent ist zu lang.");
     const type = edit.wine.new.type ?? null;
     if (type != null && !WINE_TYPES.includes(type)) return fail("Unbekannter Weintyp.");
-    const known = await findWineByName(db, name, producer);
-    if (known) {
+    const match = await matchNewWine(db, name, producer, edit.wine.new.forceNew ?? false);
+    if ("ambiguous" in match) return fail(AMBIGUOUS_WINE);
+    if (match.known) {
+      const known = await loadWine(db, match.known.id);
+      if (!known) return fail("Diesen Wein gibt es nicht mehr.");
       wine = known;
-      notes.push("Diesen Wein gibt es schon – ich hänge den Eintrag dort an.");
+      notes.push(`Den Wein „${wineName(known)}“ gibt es schon – ich hänge den Eintrag dort an.`);
     } else {
       wine = { id: null, name, producer, want_to_buy: false };
       newWine = { name, producer, type, country: clean(edit.wine.new.country), region: clean(edit.wine.new.region) };
@@ -309,28 +336,33 @@ export async function prepareAddEncounter(db: Db, edit: Extract<Edit, { kind: "a
   if (edit.wantToBuy) diff(changes, "Kaufen?", yesNo(wine.want_to_buy), yesNo(true));
   for (const r of ratings) changes.push({ label: `Bewertung ${persons.find((p) => p.id === r.personId)!.name}`, before: DASH, after: stars(r.rating) });
 
-  const prepared: PreparedEdit = ready(
-    { title: wineTitle(wine, edit.year), action: "Verkostet erfassen", changes, notes },
-    wine.id,
-    async () => {
+  // Alles oder nichts: Wein (falls neu), Ort (falls neu), Eintrag und Bewertungen. Schlägt ein
+  // Schritt fehl, wird das bereits Angelegte in umgekehrter Reihenfolge wieder entfernt.
+  const save = async () => {
+    const undo: Undo[] = [];
+    try {
       let wineId = wine.id;
       if (!wineId) {
         const { data, error } = await db.from("wines").insert({ ...newWine!, want_to_buy: edit.wantToBuy ?? false }).select("id").single();
         if (error) throw error;
-        wineId = data.id;
+        const id = data.id;
+        undo.push(() => db.from("wines").delete().eq("id", id));
+        wineId = id;
       } else if (edit.wantToBuy && !wine.want_to_buy) {
         const { error } = await db.from("wines").update({ want_to_buy: true }).eq("id", wineId);
         if (error) throw error;
+        const id = wineId;
+        undo.push(() => db.from("wines").update({ want_to_buy: false }).eq("id", id));
       }
-      if (prepared.ok) prepared.wineId = wineId;
-      const placeId = await place.resolve();
+      const resolved = await place.resolve();
+      if (resolved.created) undo.push(() => db.from("places").delete().eq("id", resolved.id!));
       const { data: encounter, error } = await db
         .from("wine_encounters")
         .insert({
           wine_id: wineId,
           vintage_year: edit.year,
           tasted_on: tastedOn,
-          place_id: placeId,
+          place_id: resolved.id,
           price,
           price_unit: priceUnit,
           currency,
@@ -341,20 +373,47 @@ export async function prepareAddEncounter(db: Db, edit: Extract<Edit, { kind: "a
         .select("id")
         .single();
       if (error) throw error;
+      undo.push(() => db.from("wine_encounters").delete().eq("id", encounter.id));
       if (ratings.length) {
-        const { error: rError } = await db.from("wine_ratings").insert(
-          ratings.map((r) => ({
-            wine_id: wineId,
-            vintage_year: edit.year,
-            person_id: r.personId,
-            rating: r.rating,
-            rated_at: tastedOn,
-            encounter_id: encounter.id,
-            source: edit.source === "bot" ? "bot" : "manual",
-          })),
-        );
+        const { data: inserted, error: rError } = await db
+          .from("wine_ratings")
+          .insert(
+            ratings.map((r) => ({
+              wine_id: wineId,
+              vintage_year: edit.year,
+              person_id: r.personId,
+              rating: r.rating,
+              rated_at: tastedOn,
+              encounter_id: encounter.id,
+              source: edit.source === "bot" ? "bot" : "manual",
+            })),
+          )
+          .select("id");
         if (rError) throw rError;
+        if ((inserted?.length ?? 0) !== ratings.length) throw new Error("Bewertungen nicht vollständig gespeichert");
+        undo.push(() => db.from("wine_ratings").delete().eq("encounter_id", encounter.id));
       }
+      return wineId;
+    } catch (error) {
+      console.error("encounter save failed", error);
+      for (const step of undo.reverse()) {
+        try {
+          const { error: undoError } = await step();
+          if (undoError) throw undoError;
+        } catch (undoError) {
+          console.error("encounter save: rollback failed", undoError);
+        }
+      }
+      throw error;
+    }
+  };
+
+  const prepared: PreparedEdit = ready(
+    { title: wineTitle(wine, edit.year), action: "Verkostet erfassen", changes, notes },
+    wine.id,
+    async () => {
+      const wineId = await save();
+      if (prepared.ok) prepared.wineId = wineId;
       const extra = ratings.length ? ` mit ${ratings.length === 1 ? "1 Bewertung" : `${ratings.length} Bewertungen`}` : "";
       return `${wineTitle(wine, edit.year)} als verkostet am ${date(tastedOn)} gespeichert${extra}`;
     },
@@ -444,7 +503,7 @@ export async function prepareEncounter(db: Db, edit: Extract<Edit, { kind: "enco
     { title: `${wineTitle(e.wine, e.vintage_year)} · verkostet am ${date(e.tasted_on)}`, action: "Eintrag „Verkostet“ bearbeiten", changes, notes },
     e.wine_id,
     async () => {
-      if (place && !("error" in place)) update.place_id = await place.resolve();
+      if (place && !("error" in place)) update.place_id = (await place.resolve()).id;
       if (Object.keys(update).length) {
         const { error } = await db.from("wine_encounters").update(update).eq("id", e.id);
         if (error) throw error;

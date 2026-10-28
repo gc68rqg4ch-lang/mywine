@@ -145,6 +145,19 @@ export function formatRating(rating: number | null | undefined) {
   return `${"★".repeat(full)}${"☆".repeat(Math.max(0, 5 - full))}`;
 }
 
+/**
+ * „Vega Sicilia – Pintia“ bzw. nur „Pintia“, wenn der Produzent fehlt (kein „–“, kein
+ * „Unbekannt“). sep: Trenner zwischen Produzent und Name.
+ */
+export function wineName(w: { producer?: string | null; name: string }, sep = " – ") {
+  return w.producer ? `${w.producer}${sep}${w.name}` : w.name;
+}
+
+/** Sortierung nach Produzent, dann Name; Weine ohne Produzent nach ihrem Namen einsortiert. */
+export function compareWineNames(a: { producer?: string | null; name: string }, b: { producer?: string | null; name: string }) {
+  return (a.producer ?? a.name).localeCompare(b.producer ?? b.name, "de-CH") || a.name.localeCompare(b.name, "de-CH");
+}
+
 export function wineTitle(row: { vintage_year?: number | null; name?: string | null }) {
   return [row.name, row.vintage_year ?? "o. J."].filter(Boolean).join(" ");
 }

@@ -8,6 +8,7 @@ import "server-only";
 import { after } from "next/server";
 import { apiProblemForBot } from "@/lib/ai/api-errors";
 import { wineHref } from "@/lib/cellar/wine-page";
+import { wineName } from "@/lib/format";
 import type { SuggestionField } from "@/lib/research/compare";
 import { decideSuggestion, loadPendingSuggestions, type Suggestion } from "@/lib/research/suggestions";
 import { researchAndFillWine } from "@/lib/research/wine";
@@ -57,9 +58,9 @@ export async function startBotResearch(chatId: number, wineId: string, year: num
     return;
   }
   if (announce) {
-    await sendMessage(chatId, `🔎 Ich recherchiere ${e(wine.producer)} – ${e(wine.name)}. Das dauert etwa eine Minute, ich melde mich.`);
+    await sendMessage(chatId, `🔎 Ich recherchiere ${e(wineName(wine))}. Das dauert etwa eine Minute, ich melde mich.`);
   }
-  after(() => runBotResearch(chatId, wineId, year, `${wine.producer} – ${wine.name}`));
+  after(() => runBotResearch(chatId, wineId, year, wineName(wine)));
 }
 
 export async function runBotResearch(chatId: number, wineId: string, year: number | null, title: string) {

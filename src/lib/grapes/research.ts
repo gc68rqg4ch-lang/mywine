@@ -40,8 +40,7 @@ export async function researchGrapeShares(
 
   const found = await webResearch({
     prompt: `Recherchiere die Rebsortenzusammensetzung dieses Weins:
-Produzent: ${wine.producer}
-Wein: ${wine.name}
+${wine.producer ? `Produzent: ${wine.producer}\n` : ""}Wein: ${wine.name}
 ${vintage}${origin ? `\nHerkunft: ${origin}` : ""}${knownGrapes.length ? `\nBisher bekannte Rebsorten: ${knownGrapes.join(", ")}` : ""}
 
 Gesucht sind die Rebsorten mit Prozentanteil für genau diesen Jahrgang (Cuvées ändern sich von Jahr zu Jahr).

@@ -2,7 +2,7 @@
 // Listen (Groupable), damit Suche, Weintyp-Filter und Gruppierung dieselben sind. Jede
 // Verkostung zählt als Einheit (Jahrgang, Preisklasse, Datum, Ort). Rein, ohne DB.
 
-import type { WineType } from "@/lib/format";
+import { compareWineNames, type WineType } from "@/lib/format";
 import { latestByPerson, type PersonRating, type RatingRow } from "./lists";
 import { priceClass, sortVintages, type Groupable, type GroupUnit } from "./overview";
 
@@ -21,7 +21,7 @@ export type EncounterRow = {
 export type TastedWineInfo = {
   id: string;
   name: string;
-  producer: string;
+  producer: string | null;
   country: string | null;
   region: string | null;
   type: WineType | null;
@@ -98,8 +98,7 @@ export function buildTastedEntries(
   return entries.sort(
     (a, b) =>
       b.lastTasted.localeCompare(a.lastTasted) ||
-      a.producer.localeCompare(b.producer, "de-CH") ||
-      a.name.localeCompare(b.name, "de-CH"),
+      compareWineNames(a, b),
   );
 }
 

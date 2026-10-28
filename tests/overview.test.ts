@@ -77,7 +77,7 @@ test("Weintyp-Filter: gefilterte Liste, wirkt mit Gruppierung", () => {
 });
 
 test("Suche, Flaggen, Herkunft, Lagerorte, Preisklassen", () => {
-  assert.ok(matchesQuery(all[0], all[0].producer.split(" ")[1]));
+  assert.ok(matchesQuery(all[0], all[0].producer!.split(" ")[1]));
   assert.ok(matchesQuery(all.find((w) => w.wine_id === "a")!, "tempra 2021"));
   assert.ok(!matchesQuery(all.find((w) => w.wine_id === "a")!, "tempra 2018"));
   assert.equal(countryFlag("Schweiz"), "🇨🇭");

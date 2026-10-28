@@ -22,7 +22,7 @@ export type Suggestion = {
   current: string;
   suggested: string;
   sourceNote: string | null;
-  wine: { name: string; producer: string } | null;
+  wine: { name: string; producer: string | null } | null;
 };
 
 const byYear = <Q extends { eq: (c: "vintage_year", v: number) => Q; is: (c: "vintage_year", v: null) => Q }>(

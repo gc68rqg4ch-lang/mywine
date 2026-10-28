@@ -118,7 +118,7 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
       case "wine": {
         const set: WineChanges = {};
         if (r.has("name")) set.name = r.text("name");
-        if (r.has("producer")) set.producer = r.text("producer");
+        if (r.has("producer")) set.producer = r.text("producer") || null;
         if (r.has("type")) set.type = (r.text("type") || null) as WineChanges["type"];
         for (const key of ["country", "region", "appellation"] as const) if (r.has(key)) set[key] = r.text(key) || null;
         if (r.has("alcohol")) set.alcohol = r.decimal("alcohol", "Alkohol");
@@ -178,10 +178,11 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
             ? {
                 new: {
                   name: r.text("newName"),
-                  producer: r.text("newProducer"),
+                  producer: r.text("newProducer") || null,
                   type: (r.text("newType") || null) as WineChanges["type"],
                   country: r.text("newCountry") || null,
                   region: r.text("newRegion") || null,
+                  ...(r.has("forceNew") ? { forceNew: true } : {}),
                 },
               }
             : { wineId: r.id("wineId") };

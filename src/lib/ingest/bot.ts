@@ -329,8 +329,9 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
 
   switch (parsed.action) {
     case "save": {
-      if (!state.proposal.name || !state.proposal.producer) {
-        await answerCallback(cb.id, "Mir fehlen Name und Produzent – bitte zuerst korrigieren.");
+      // Pflicht ist nur der Name; ein fehlender Produzent wird später ergänzt bzw. recherchiert.
+      if (!state.proposal.name) {
+        await answerCallback(cb.id, "Mir fehlt der Name des Weins – bitte zuerst korrigieren.");
         return;
       }
       await answerCallback(cb.id);

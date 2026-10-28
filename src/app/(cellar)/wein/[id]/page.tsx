@@ -465,7 +465,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             <h1 className="page-title">
               {wine.name} {yearLabel}
             </h1>
-            <span className="item-producer">{wine.producer}</span>
+            {wine.producer && <span className="item-producer">{wine.producer}</span>}
           </div>
           <div className="detail-total">
             <span className="tile-big">

@@ -96,30 +96,27 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
   const name = next.name;
   const producer = next.producer;
   if (!name) return fail("Der Name darf nicht leer sein.");
-  if (!producer) return fail("Der Produzent darf nicht leer sein.");
   if (next.type != null && !WINE_TYPES.includes(next.type)) return fail("Unbekannter Weintyp.");
   const alc = next.alcohol_content;
   if (alc != null && !(Number.isFinite(alc) && alc >= 0 && alc <= 25)) return fail("Alkohol: bitte 0–25 % vol.");
 
-  if (name.toLowerCase() !== wine.name.toLowerCase() || producer.toLowerCase() !== wine.producer.toLowerCase()) {
-    const { data: other, error } = await db
-      .from("wines")
-      .select("id, name, producer")
-      .ilike("name", exact(name))
-      .ilike("producer", exact(producer))
-      .neq("id", wineId)
-      .limit(1);
+  // Name + Produzent zusammen eindeutig (ohne Produzent: gleicher Name ohne Produzent).
+  if (name.toLowerCase() !== wine.name.toLowerCase() || (producer ?? "").toLowerCase() !== (wine.producer ?? "").toLowerCase()) {
+    const query = db.from("wines").select("id, name, producer").ilike("name", exact(name)).neq("id", wineId);
+    const { data: other, error } = await (producer ? query.ilike("producer", exact(producer)) : query.is("producer", null)).limit(1);
     if (error) throw error;
     if (other?.length) {
       return fail(
-        `Es gibt schon einen Wein „${other[0].name}“ von ${other[0].producer}. Name und Produzent müssen zusammen eindeutig sein – bitte anders benennen.`,
+        other[0].producer
+          ? `Es gibt schon einen Wein „${other[0].name}“ von ${other[0].producer}. Name und Produzent müssen zusammen eindeutig sein – bitte anders benennen.`
+          : `Es gibt schon einen Wein „${other[0].name}“ ohne Produzent – bitte einen Produzenten angeben oder anders benennen.`,
       );
     }
   }
 
   const changes: EditChange[] = [];
   diff(changes, "Name", wine.name, name);
-  diff(changes, "Produzent", wine.producer, producer);
+  diff(changes, "Produzent", show(wine.producer), show(producer));
   diff(changes, "Typ", asWineType(wine.type) ? wineTypeLabel(wine.type) : DASH, next.type ? WINE_TYPE_LABELS[next.type] : DASH);
   diff(changes, "Land", show(wine.country), show(next.country));
   diff(changes, "Region", show(wine.region), show(next.region));

@@ -28,7 +28,7 @@ export function WineCard({
 }: {
   href: string;
   type: WineType | null;
-  producer: string;
+  producer: string | null;
   title: string;
   /** Kleine Zeile unter dem Titel, Teile werden mit „·“ verbunden. */
   meta: (string | null | undefined | false)[];
@@ -49,14 +49,14 @@ export function WineCard({
             <PhotoThumb
               className="item-thumb"
               photos={[photo.front, ...(photo.back ? [photo.back] : [])].map(viewerPhoto)}
-              alt={`${producer} ${title}`}
+              alt={producer ? `${producer} ${title}` : title}
             />
           ) : (
             <WineTypeIcon type={type} size={30} />
           )}
         </span>
         <div className="item-main">
-          <span className="item-producer">{producer}</span>
+          {producer && <span className="item-producer">{producer}</span>}
           <Link href={href} className="item-title item-link">
             {title}
           </Link>

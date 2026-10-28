@@ -617,7 +617,7 @@ export function satTypeForWine(type: string | null | undefined): SatType {
 
 /** Neue Verkostung: Weintyp und Wein/Jahrgang vorausgefüllt, Punkte wie im Tool vorgeschlagen. */
 export function newTastingData(
-  wine: { name: string; producer: string; region: string | null; country: string | null; type: string | null },
+  wine: { name: string; producer: string | null; region: string | null; country: string | null; type: string | null },
   vintageYear: number | null,
   grapes: string,
   today: string,
@@ -629,7 +629,7 @@ export function newTastingData(
       meta: {
         date: today,
         name: wine.name,
-        producer: wine.producer,
+        producer: wine.producer ?? "",
         region: [wine.region, wine.country].filter(Boolean).join(", "),
         vintage: vintageYear ? String(vintageYear) : "",
         grape: grapes,

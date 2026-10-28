@@ -6,6 +6,8 @@ export type Net = {
   telegram: { method: string; body: Record<string, unknown> }[];
   claude: (body: Record<string, unknown>) => Record<string, unknown>;
   rpc: Record<string, (args: Row) => unknown>;
+  /** Fehler einspielen: liefert für eine Anfrage an PostgREST eine Fehlerantwort statt sie auszuführen. */
+  fail?: (method: string, table: string, body: unknown) => { status: number; body: unknown } | null;
   /** Supabase Storage: „bucket/pfad“ → Inhalt. Optional. */
   storage?: Map<string, { bytes: Uint8Array; type: string }>;
 };
@@ -81,6 +83,8 @@ export function installNet(net: Net) {
     const m = url.pathname.match(/\/rest\/v1\/(rpc\/)?(\w+)$/);
     if (!m) throw new Error(`stub: ${url}`);
     if (m[1]) return json(net.rpc[m[2]]?.(body) ?? null);
+    const failure = net.fail?.(method, m[2], body);
+    if (failure) return json(failure.body, failure.status);
     const table = (net.tables[m[2]] ??= []);
     const filters = [...url.searchParams].filter(([k]) => !["select", "order", "limit", "offset", "on_conflict", "columns"].includes(k));
     let rows = table.filter((r) => filters.every(([k, v]) => matches(r, k, v)));

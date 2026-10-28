@@ -9,6 +9,7 @@ import "server-only";
 import { after } from "next/server";
 import { wineHref } from "@/lib/cellar/wine-page";
 import type { Json } from "@/lib/database.types";
+import { wineName } from "@/lib/format";
 import { MEDIA_KIND_LABELS, labelKinds, type MediaKind } from "@/lib/media/pick";
 import { loadVintageMedia, removeWineMedia, saveWineMedia } from "@/lib/media/store";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
@@ -113,7 +114,7 @@ export async function startAttach(
     kind: "attach",
     step: "waiting",
     ...target,
-    title: `${wine.producer} – ${wine.name} ${yearLabel(target.vintageYear)}`,
+    title: `${wineName(wine)} ${yearLabel(target.vintageYear)}`,
   };
   const { data: job, error: jobError } = await db
     .from("ingest_jobs")

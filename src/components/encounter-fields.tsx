@@ -65,39 +65,36 @@ export function VintageField({ initial, required = true }: { initial?: number | 
   );
 }
 
-export function EncounterFields({
-  values,
-  places,
-  today,
-}: {
-  values: EncounterValues;
-  places: PlaceOption[];
-  today: string;
-}) {
-  const [place, setPlace] = useState(values.placeId ?? "");
-  const ref = useRef<HTMLDivElement>(null);
-  useFormReset(ref, () => setPlace(values.placeId ?? ""));
+/** Datum (Standard heute, nicht in der Zukunft). */
+export function DateField({ value, today }: { value: string; today: string }) {
   return (
-    <div className="stack" ref={ref}>
-      <div className="edit-grid">
-        <label className="field">
-          <span>Verkostet am</span>
-          <input type="date" name="tastedOn" defaultValue={values.tastedOn} max={today} required />
-        </label>
-        <label className="field">
-          <span>Ort</span>
-          <select name="place" value={place} onChange={(e) => setPlace(e.target.value)}>
-            <option value="">– ohne Ort –</option>
-            {places.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-                {p.city ? ` (${p.city})` : ""}
-              </option>
-            ))}
-            <option value="new">➕ Neuer Ort …</option>
-          </select>
-        </label>
-      </div>
+    <label className="field">
+      <span>Verkostet am</span>
+      <input type="date" name="tastedOn" defaultValue={value} max={today} required />
+    </label>
+  );
+}
+
+/** Ort: bestehenden wählen oder neu mit Art und Stadt. */
+export function PlaceField({ placeId, places }: { placeId: string | null; places: PlaceOption[] }) {
+  const [place, setPlace] = useState(placeId ?? "");
+  const ref = useRef<HTMLDivElement>(null);
+  useFormReset(ref, () => setPlace(placeId ?? ""));
+  return (
+    <div className="stack-sm field-wide" ref={ref}>
+      <label className="field">
+        <span>Ort</span>
+        <select name="place" value={place} onChange={(e) => setPlace(e.target.value)}>
+          <option value="">– ohne Ort –</option>
+          {places.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+              {p.city ? ` (${p.city})` : ""}
+            </option>
+          ))}
+          <option value="new">➕ Neuer Ort …</option>
+        </select>
+      </label>
       {place === "new" && (
         <div className="edit-grid encounter-new-place">
           <label className="field">
@@ -121,50 +118,78 @@ export function EncounterFields({
           </label>
         </div>
       )}
-      <div className="edit-grid">
-        <label className="field">
-          <span>Preis</span>
-          <input
-            type="text"
-            name="price"
-            inputMode="decimal"
-            autoComplete="off"
-            defaultValue={values.price == null ? "" : values.price.toFixed(2)}
-          />
-        </label>
-        <label className="field">
-          <span>pro</span>
-          <select name="priceUnit" defaultValue={values.priceUnit ?? "bottle"}>
-            {PRICE_UNITS.map((u) => (
-              <option key={u} value={u}>
-                {PRICE_UNIT_LABELS[u]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Währung</span>
-          <select name="currency" defaultValue={values.currency}>
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Anlass</span>
-          <input type="text" name="occasion" defaultValue={values.occasion ?? ""} autoComplete="off" placeholder="z. B. Geburtstag" />
-        </label>
-        <label className="field">
-          <span>Begleitung</span>
-          <input type="text" name="companions" defaultValue={values.companions ?? ""} autoComplete="off" placeholder="mit wem?" />
-        </label>
-        <label className="field field-wide">
-          <span>Notiz</span>
-          <textarea name="note" rows={3} defaultValue={values.note ?? ""} />
-        </label>
-      </div>
+    </div>
+  );
+}
+
+/** Preis mit Flasche/Glas und Währung. */
+export function PriceFields({ price, priceUnit, currency }: { price: number | null; priceUnit: string | null; currency: string }) {
+  return (
+    <>
+      <label className="field">
+        <span>Preis</span>
+        <input type="text" name="price" inputMode="decimal" autoComplete="off" defaultValue={price == null ? "" : price.toFixed(2)} />
+      </label>
+      <label className="field">
+        <span>pro</span>
+        <select name="priceUnit" defaultValue={priceUnit ?? "bottle"}>
+          {PRICE_UNITS.map((u) => (
+            <option key={u} value={u}>
+              {PRICE_UNIT_LABELS[u]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        <span>Währung</span>
+        <select name="currency" defaultValue={currency}>
+          {CURRENCIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </label>
+    </>
+  );
+}
+
+export function TextField({ name, label, value, placeholder }: { name: string; label: string; value?: string | null; placeholder?: string }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input type="text" name={name} defaultValue={value ?? ""} autoComplete="off" placeholder={placeholder} />
+    </label>
+  );
+}
+
+export function NoteField({ value }: { value?: string | null }) {
+  return (
+    <label className="field field-wide">
+      <span>Notiz</span>
+      <textarea name="note" rows={3} defaultValue={value ?? ""} />
+    </label>
+  );
+}
+
+/** Alle Angaben eines Eintrags (Bearbeiten auf der Weinseite). */
+export function EncounterFields({
+  values,
+  places,
+  today,
+}: {
+  values: EncounterValues;
+  places: PlaceOption[];
+  today: string;
+}) {
+  return (
+    <div className="edit-grid">
+      <DateField value={values.tastedOn} today={today} />
+      <PlaceField placeId={values.placeId} places={places} />
+      <PriceFields price={values.price} priceUnit={values.priceUnit} currency={values.currency} />
+      <TextField name="occasion" label="Anlass" value={values.occasion} placeholder="z. B. Geburtstag" />
+      <TextField name="companions" label="Begleitung" value={values.companions} placeholder="mit wem?" />
+      <NoteField value={values.note} />
     </div>
   );
 }

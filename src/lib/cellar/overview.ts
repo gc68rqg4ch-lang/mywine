@@ -3,7 +3,7 @@
 // cellar_wines (Wein + Jahrgang + Flaschengrösse mit Aufteilung nach Lagerort).
 
 import type { Json, Tables } from "@/lib/database.types";
-import { WINE_TYPE_LABELS, asWineType, todayIso, type WineType } from "@/lib/format";
+import { WINE_TYPE_LABELS, asWineType, compareWineNames, todayIso, type WineType } from "@/lib/format";
 
 export type LocationFilter = { house: string | null; room: string } | null;
 
@@ -29,7 +29,7 @@ export type VintageRow = {
 export type SummaryWine = {
   wine_id: string;
   name: string;
-  producer: string;
+  producer: string | null;
   country: string | null;
   region: string | null;
   type: WineType | null;
@@ -181,7 +181,7 @@ export function toVintageRow(r: Tables<"cellar_wines">, year = currentYear()): V
 export function toSummaryWine(
   r: Pick<Tables<"cellar_wine_summary">, "wine_id" | "name" | "producer" | "country" | "region" | "type" | "grapes">,
 ): SummaryWine | null {
-  if (!r.wine_id || !r.name || !r.producer) return null;
+  if (!r.wine_id || !r.name) return null;
   return {
     wine_id: r.wine_id,
     name: r.name,
@@ -243,7 +243,7 @@ export type GroupUnit = {
 /** Was Liste, Suche und Gruppierung von einem Eintrag brauchen. */
 export type Groupable = {
   name: string;
-  producer: string;
+  producer: string | null;
   country: string | null;
   region: string | null;
   type: WineType | null;
@@ -312,7 +312,7 @@ export function sortVintages(years: (number | null)[]) {
 }
 
 function compareWines(a: SummaryWine, b: SummaryWine) {
-  return a.producer.localeCompare(b.producer, "de-CH") || a.name.localeCompare(b.name, "de-CH");
+  return compareWineNames(a, b);
 }
 
 export function formatVintages(vintages: (number | null)[]) {

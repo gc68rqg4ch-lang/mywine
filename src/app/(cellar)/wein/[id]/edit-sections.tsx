@@ -14,7 +14,7 @@ export function WineEditForm({
   wine: {
     id: string;
     name: string;
-    producer: string;
+    producer: string | null;
     type: WineType | null;
     country: string | null;
     region: string | null;
@@ -31,7 +31,7 @@ export function WineEditForm({
         </label>
         <label className="field">
           <span>Produzent</span>
-          <input type="text" name="producer" defaultValue={wine.producer} required autoComplete="off" />
+          <input type="text" name="producer" defaultValue={wine.producer ?? ""} autoComplete="off" />
         </label>
         <label className="field">
           <span>Typ</span>

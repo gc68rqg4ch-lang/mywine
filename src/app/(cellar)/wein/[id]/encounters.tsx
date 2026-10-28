@@ -6,6 +6,7 @@ import { EncounterFields, RatingField, VintageField, type PlaceOption } from "@/
 import { HalfStars } from "@/components/half-stars";
 import { encounterPrice, placeLabel, type EncounterView } from "@/lib/edit/encounters";
 import { formatDate, formatStarNumber } from "@/lib/format";
+import { DeleteEncounter } from "./delete-encounter";
 import { EditForm } from "./edit-form";
 
 export function WantToBuyToggle({ wineId, value }: { wineId: string; value: boolean }) {
@@ -89,13 +90,7 @@ export function EncounterSection({
                     />
                   ))}
                 </EditForm>
-                <EditForm
-                  hidden={{ kind: "deleteEncounter", encounterId: e.id }}
-                  submitLabel="Eintrag löschen"
-                  confirm={`Eintrag vom ${formatDate(e.tastedOn)} wirklich löschen? Seine Bewertungen werden mitgelöscht.`}
-                  danger
-                  cancel={false}
-                />
+                <DeleteEncounter encounterId={e.id} label={`Eintrag vom ${formatDate(e.tastedOn)}`} />
               </li>
             ) : (
               <li key={e.id} className="stack-sm">

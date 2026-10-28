@@ -20,7 +20,7 @@ export type DetailBottle = {
 
 export type WineDetails = {
   name: string;
-  producer: string;
+  producer: string | null;
   type: WineType | null;
   year: number | null;
   country: string | null;
@@ -94,7 +94,7 @@ export function wineDetailsText(d: WineDetails) {
 
   const lines = [
     `${typeEmoji(d.type)} <b>${e(d.name)} ${d.year ?? "o. J."}</b>`,
-    e(d.producer),
+    d.producer && e(d.producer),
     e(join([d.country && `${flag ? `${flag} ` : ""}${d.country}`, d.region, d.appellation])),
     e(join([d.grapes && `🍇 ${d.grapes}`, d.alcohol != null && `${d.alcohol.toLocaleString("de-CH")} % vol`])),
     drinkWindow && `⏳ Trinkreife ${drinkWindow}`,

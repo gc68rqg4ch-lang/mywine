@@ -1389,7 +1389,7 @@ export type Database = {
           grapes: string[]
           id: string
           name: string
-          producer: string
+          producer: string | null
           region: string | null
           researched_at: string | null
           type: Database["public"]["Enums"]["wine_type"] | null
@@ -1403,7 +1403,7 @@ export type Database = {
           grapes?: string[]
           id?: string
           name: string
-          producer: string
+          producer?: string | null
           region?: string | null
           researched_at?: string | null
           type?: Database["public"]["Enums"]["wine_type"] | null
@@ -1417,7 +1417,7 @@ export type Database = {
           grapes?: string[]
           id?: string
           name?: string
-          producer?: string
+          producer?: string | null
           region?: string | null
           researched_at?: string | null
           type?: Database["public"]["Enums"]["wine_type"] | null
@@ -1628,6 +1628,18 @@ export type Database = {
           p_wine_id: string
         }
         Returns: undefined
+      }
+      delete_bottles: {
+        Args: { p_item_id: string; p_quantity?: number }
+        Returns: number
+      }
+      delete_wine: {
+        Args: { p_wine_id: string }
+        Returns: {
+          storage_bucket: string
+          storage_path: string
+          thumb_path: string
+        }[]
       }
       move_bottles: {
         Args: {

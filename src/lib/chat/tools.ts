@@ -462,7 +462,7 @@ export function chatTools(
 
 async function wineNames(db: AdminClient, ids: string[]) {
   const unique = [...new Set(ids)];
-  const map = new Map<string, { producer: string; name: string }>();
+  const map = new Map<string, { producer: string | null; name: string }>();
   if (!unique.length) return map;
   const { data, error } = await db.from("wines").select("id, producer, name").in("id", unique);
   if (error) throw error;

@@ -15,7 +15,7 @@
 //   H:<subj>:<l>              Nachrecherchieren (Abweichungen danach mit [Ja] [Nein])
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
-import { asWineType, formatStarNumber } from "@/lib/format";
+import { asWineType, formatStarNumber, wineName } from "@/lib/format";
 import type { TgInlineButton, TgInlineKeyboard, TgReplyKeyboard } from "@/lib/telegram/types";
 
 export const PAGE_SIZE = 8;
@@ -302,7 +302,7 @@ export function daysLabel(days: number | null) {
 export type OpenBottleRow = {
   itemId: string;
   wineId: string;
-  producer: string;
+  producer: string | null;
   name: string;
   year: number | null;
   type: string | null;
@@ -315,11 +315,11 @@ export type OpenBottleRow = {
  * Kurze Namen für eine Liste: normalerweise „Name Jahrgang“; ist das doppelt,
  * kommt der Produzent dazu, und erst wenn es dann noch doppelt ist, der Lagerort.
  */
-export function shortNames<T extends { producer: string; name: string; year: number | null; room?: string | null }>(
+export function shortNames<T extends { producer: string | null; name: string; year: number | null; room?: string | null }>(
   rows: T[],
 ) {
   const base = (r: T) => [r.name, r.year ?? "o. J."].join(" ");
-  const withProducer = (r: T) => `${r.producer} ${base(r)}`;
+  const withProducer = (r: T) => wineName({ producer: r.producer, name: base(r) }, " ");
   const count = (f: (r: T) => string) => {
     const m = new Map<string, number>();
     for (const r of rows) m.set(f(r), (m.get(f(r)) ?? 0) + 1);
@@ -335,10 +335,10 @@ export function shortNames<T extends { producer: string; name: string; year: num
 }
 
 /** Weinnamen für eine Liste; bei gleichem Namen mit Produzent. */
-export function uniqueNames(rows: { producer: string; name: string }[]) {
+export function uniqueNames(rows: { producer: string | null; name: string }[]) {
   const counts = new Map<string, number>();
   for (const r of rows) counts.set(r.name, (counts.get(r.name) ?? 0) + 1);
-  return rows.map((r) => ((counts.get(r.name) ?? 0) > 1 ? `${r.producer} ${r.name}` : r.name));
+  return rows.map((r) => ((counts.get(r.name) ?? 0) > 1 ? wineName(r, " ") : r.name));
 }
 
 export function openBottleLine(row: OpenBottleRow, name: string) {

@@ -11,7 +11,7 @@ import {
   formatVintages,
   type DrinkStatus,
 } from "@/lib/cellar/overview";
-import { asWineType, daysSince, formatBottleSize } from "@/lib/format";
+import { asWineType, daysSince, formatBottleSize, wineName } from "@/lib/format";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { answerCallback, editMessage, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
 import { appBaseUrl } from "@/lib/telegram/config";
@@ -88,7 +88,7 @@ async function loadOpenBottles(db: AdminClient): Promise<OpenBottleRow[]> {
     .map((r) => ({
       itemId: r.inventory_item_id!,
       wineId: r.wine_id!,
-      producer: r.producer ?? "",
+      producer: r.producer ?? null,
       name: r.name ?? "",
       year: r.vintage_year,
       type: r.type,
@@ -219,7 +219,7 @@ const READY_EMOJI: Record<DrinkStatus, string> = { overdue: "⚠️", now: "⏰"
 async function readyScreen(db: AdminClient, offset: number, status?: string): Promise<Screen> {
   const wines = await loadCellar(db, null);
   const counts = emptyDrinkCounts();
-  const entries: { wineId: string; type: OpenBottleRow["type"]; producer: string; name: string; year: number | null; status: DrinkStatus; window: string; sealed: number }[] = [];
+  const entries: { wineId: string; type: OpenBottleRow["type"]; producer: string | null; name: string; year: number | null; status: DrinkStatus; window: string; sealed: number }[] = [];
   for (const w of wines) {
     for (const r of w.rows) {
       if (r.sealed === 0) continue;
@@ -287,7 +287,7 @@ async function wineScreen(db: AdminClient, wineId: string, back: ListRef): Promi
   if (!wine || years.length <= 1) return vintageScreen(db, wineId, years[0] ?? wine?.rows[0]?.vintage_year ?? null, back);
   const byYear = (y: number | null) => wine.rows.filter((r) => r.vintage_year === y).reduce((s, r) => s + r.sealed, 0);
   return {
-    text: `<b>${typeEmoji(wine.type)} ${e(wine.producer)} – ${e(wine.name)}</b>\nWelcher Jahrgang?`,
+    text: `<b>${typeEmoji(wine.type)} ${e(wineName(wine))}</b>\nWelcher Jahrgang?`,
     keyboard: {
       inline_keyboard: [
         ...years.map((y) => [btn(`${yearLabel(y)} · ${byYear(y)} Fl.`, { op: "vintage", wineId, year: y, back })]),
@@ -315,7 +315,7 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
   const drinkState = drink ? drinkStatus(drink.drink_from_year, drink.drink_until_year, currentYear()) : null;
   const subject: Subject = { kind: "vintage", wineId, year };
   const lines = [
-    `<b>${typeEmoji(wine.type)} ${e(wine.producer)} – ${e(wine.name)} ${yearLabel(year)}</b>`,
+    `<b>${typeEmoji(wine.type)} ${e(wineName(wine))} ${yearLabel(year)}</b>`,
     sealed || open ? [sealed ? `${sealed} Fl. ungeöffnet` : null, open ? `${open} offen` : null].filter(Boolean).join(" · ") : "Keine Flasche mehr im Bestand.",
     drink && drinkState
       ? `${READY_EMOJI[drinkState]} ${DRINK_STATUS_LABELS[drinkState]} · ${drinkWindowLabel(drink.drink_from_year, drink.drink_until_year)}`
@@ -340,7 +340,7 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
 type Item = NonNullable<Awaited<ReturnType<typeof loadItem>>>;
 
 function itemHeader(item: Item) {
-  return `<b>${typeEmoji(item.type)} ${e(item.producer ?? "")} – ${e(item.name ?? "")} ${yearLabel(item.vintage_year)}</b>`;
+  return `<b>${typeEmoji(item.type)} ${e(wineName({ producer: item.producer, name: item.name ?? "" }))} ${yearLabel(item.vintage_year)}</b>`;
 }
 
 async function itemScreen(db: AdminClient, itemId: string, back: ListRef, status?: string): Promise<Screen> {
@@ -802,7 +802,7 @@ export async function wineButtons(db: AdminClient, refs: WineRef[]): Promise<TgI
     if ("itemId" in r) {
       const i = items.data?.find((x) => x.inventory_item_id === r.itemId);
       return i
-        ? [{ type: i.type, producer: i.producer ?? "", name: i.name ?? "", year: i.vintage_year, room: i.storage_room, action: { op: "item", itemId: r.itemId, back: { kind: "none" } } as MenuAction }]
+        ? [{ type: i.type, producer: i.producer ?? null, name: i.name ?? "", year: i.vintage_year, room: i.storage_room, action: { op: "item", itemId: r.itemId, back: { kind: "none" } } as MenuAction }]
         : [];
     }
     const w = wines.data?.find((x) => x.id === r.wineId);

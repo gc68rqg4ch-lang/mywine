@@ -35,7 +35,6 @@ import { needsVintage, type IngestState, type IngestStep, type WineProposal } fr
 import {
   createInventoryItem,
   findWine,
-  findWineByName,
   listVendors,
   mergeWithKnownWine,
   resolveVendor,
@@ -471,7 +470,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     }
 
     // Bekannter Wein? Über Name + Produzent, ohne Produzent über einen eindeutigen Namen.
-    let known = proposal.producer ? await findWine(db, proposal.name, proposal.producer) : await findWineByName(db, proposal.name);
+    let known = await findWine(db, proposal.name, proposal.producer);
     if (known) proposal = mergeWithKnownWine(proposal, known);
 
     let enriched: IngestState["recognition"] = { model: "text", confidence: 1, notes: null, enriched_fields: [], sources: [] };

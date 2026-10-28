@@ -177,7 +177,7 @@ test("Erfassen: neuer Wein; gleicher Name + Produzent und gleichnamiger Ort werd
   const prepared = await prepareEdit(db, again);
   assert.ok(prepared.ok);
   assert.deepEqual(prepared.preview.notes, [
-    "Diesen Wein gibt es schon – ich hänge den Eintrag dort an.",
+    "Den Wein „Vega Sicilia – Pintia“ gibt es schon – ich hänge den Eintrag dort an.",
     "Den Ort „Kronenhalle“ gibt es schon – ich nehme ihn.",
   ]);
   const result = await applyEdit(db, again);
@@ -188,7 +188,7 @@ test("Erfassen: neuer Wein; gleicher Name + Produzent und gleichnamiger Ort werd
   assert.equal(encounters().at(-1)!.place_id, P1);
 });
 
-test("Prüfungen: Zukunft, Bewertung, Preis, unbekannter Wein/Ort, neuer Wein ohne Produzent", async () => {
+test("Prüfungen: Zukunft, Bewertung, Preis, unbekannter Wein/Ort, neuer Wein ohne Namen", async () => {
   const base = { kind: "addEncounter" as const, wine: { wineId: W }, year: 2019, personId: M, source: "app" as const };
   const err = async (edit: Edit) => {
     const r = await prepareEdit(db, edit);
@@ -200,7 +200,7 @@ test("Prüfungen: Zukunft, Bewertung, Preis, unbekannter Wein/Ort, neuer Wein oh
   assert.equal(await err({ ...base, year: 1700, set: {} }), `Jahrgang: bitte eine Jahreszahl zwischen 1800 und ${Number(today.slice(0, 4)) + 1}.`);
   assert.equal(await err({ ...base, wine: { wineId: "99999999-9999-4999-8999-999999999999" }, set: {} }), "Diesen Wein gibt es nicht mehr.");
   assert.equal(await err({ ...base, set: { place: { placeId: "99999999-9999-4999-8999-999999999999" } } }), "Diesen Ort gibt es nicht mehr.");
-  assert.equal(await err({ ...base, wine: { new: { name: "X", producer: " " } }, set: {} }), "Neuer Wein: Name und Produzent sind nötig.");
+  assert.equal(await err({ ...base, wine: { new: { name: " ", producer: "X" } }, set: {} }), "Bitte den Namen des Weins angeben.");
 });
 
 test("Bearbeiten: Jahrgang, Ort, Preis; Bewertungen des Eintrags ändern bzw. löschen", async () => {

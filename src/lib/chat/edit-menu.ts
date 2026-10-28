@@ -35,7 +35,7 @@ export async function editAreaText(db: AdminClient, wineId: string, year: number
       if (error) throw error;
       lines.push(
         `Name: ${e(w.name)}`,
-        `Produzent: ${e(w.producer)}`,
+        ...(w.producer ? [`Produzent: ${e(w.producer)}`] : []),
         `Typ: ${wineTypeLabel(w.type)}`,
         `Land: ${e(w.country ?? "–")} · Region: ${e(w.region ?? "–")}`,
         `Appellation: ${e(w.appellation ?? "–")}`,

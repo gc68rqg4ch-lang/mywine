@@ -12,9 +12,13 @@ function exactILike(value: string) {
   return value.trim().replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
-/** Sucht einen bestehenden Wein über Name + Produzent (case-insensitiv). */
+/**
+ * Sucht einen bestehenden Wein über Name + Produzent (case-insensitiv); ohne Produzent nur
+ * über den Namen, und nur wenn er eindeutig ist (Nachkauf, „gibt es den Wein schon?“).
+ */
 export async function findWine(db: AdminClient, name: string | null, producer: string | null) {
-  if (!name?.trim() || !producer?.trim()) return null;
+  if (!name?.trim()) return null;
+  if (!producer?.trim()) return findWineByName(db, name);
   const { data, error } = await db
     .from("wines")
     .select("*")
@@ -61,7 +65,8 @@ export async function resolveWine(
     .from("wines")
     .insert({
       name: proposal.name!.trim(),
-      producer: proposal.producer!.trim(),
+      // Produzent darf fehlen (wird später ergänzt bzw. recherchiert).
+      producer: proposal.producer?.trim() || null,
       country: proposal.country,
       region: proposal.region,
       appellation: proposal.appellation,
