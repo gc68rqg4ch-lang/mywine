@@ -105,7 +105,7 @@ Oberstes Ziel: kein falsches Profil. Lieber „${UNKNOWN}“ als geraten.
     maxSearches: 5,
   });
   if (!raw) return null;
-  return validateTasteProfile(raw as TasteResearchRaw, { type, year, documents: documents.map((d) => ({ name: d.name, year: d.year })) });
+  return validateTasteProfile(raw as TasteResearchRaw, { type, year, wineType: wine.type, documents: documents.map((d) => ({ name: d.name, year: d.year })) });
 }
 
 /**

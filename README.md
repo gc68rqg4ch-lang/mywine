@@ -204,6 +204,11 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   `source_note`; nichts Belegtes → kein Profil, Bestehendes bleibt. **Nur jahrgangsgenau:** gespeichert wird nur,
   wenn die Quellen genau den Jahrgang betreffen (`vintage_year` gesetzt); Notizen zu anderen Jahrgängen zählen
   nicht („Keine Angaben zu diesem Jahrgang gefunden.“). Ausnahme: Wein ohne Jahrgang (NV) → Profil für den Wein.
+  **Rotwein = trocken:** Rotwein (`wines.type = 'red'`) mit Süsse „unbekannt“ nach der Prüfung → „trocken“ mit
+  Beleg `{ quote: "Standard: Rotwein ohne Angabe gilt als trocken", source_url: "regel:rotwein-trocken" }`
+  (`applyRedDryRule`). Gültiger Beleg, aber keine Quelle (zählt nicht für die Sicherheit, wird nicht angezeigt).
+  Belegte Süsse gilt; bei Widerspruch der Quellen bleibt „unbekannt“; die Regel allein ergibt kein Profil; andere
+  Typen unverändert; Profile von Hand bleiben (der Fund wird wie immer Vorschlag).
   Klare Beschreibungen werden übersetzt, wenn das Zitat eindeutig ist (`CLEAR_TERMS`: „sturdy/firm/grippy
   tannins“ → Tannin hoch, „full-bodied“ → Körper voll, „crisp/fresh acidity“ → Säure hoch). Sicherheit: hoch = ≥ 2 unabhängige Quellen (Website),
   davon Weingut oder Kritik, ohne Widerspruch; mittel = eine gute Quelle; niedrig = nur Händler. Neue Recherche

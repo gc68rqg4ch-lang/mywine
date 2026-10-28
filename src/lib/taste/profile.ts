@@ -141,6 +141,25 @@ export function confidenceFor(used: TasteSource[], contradictions: number): Conf
 }
 
 /**
+ * Regel statt Quelle: Rotwein ohne gefundene Süsse gilt als „trocken“. Der Beleg zeigt auf
+ * „regel:rotwein-trocken“ – keine Quelle (zählt nicht für die Sicherheit, erscheint nicht als Link).
+ */
+export const RED_DRY_REF = "regel:rotwein-trocken";
+export const RED_DRY_EVIDENCE: Evidence = { quote: "Standard: Rotwein ohne Angabe gilt als trocken", source_url: RED_DRY_REF };
+
+/** Beleg aus einer Regel (kein Zitat einer Quelle) – gilt als gültiger Beleg. */
+export const isRuleEvidence = (e: Pick<Evidence, "source_url">) => e.source_url.startsWith("regel:");
+
+/**
+ * Rotwein (wines.type = 'red') mit Süsse „unbekannt“ → „trocken“ mit Regel-Beleg. Eine belegte
+ * Süsse gilt; widersprechen sich Quellen bei der Süsse, bleibt sie „unbekannt“.
+ */
+export function applyRedDryRule<P extends Pick<TasteProfileData, "values" | "evidence">>(profile: P, wineType: string | null | undefined, contradicted = false): P {
+  if (wineType !== "red" || contradicted || profile.values.sweetness !== UNKNOWN) return profile;
+  return { ...profile, values: { ...profile.values, sweetness: "trocken" }, evidence: { ...profile.evidence, sweetness: [RED_DRY_EVIDENCE] } };
+}
+
+/**
  * Antwort der Recherche prüfen – vor dem Speichern:
  * - nur Quellen zu genau diesem Wein und genau diesem Jahrgang (NV: Quellen zum Wein);
  *   ohne passende Quelle → kein Profil (null);
@@ -148,7 +167,8 @@ export function confidenceFor(used: TasteSource[], contradictions: number): Conf
  *   eindeutige Begriffe im Zitat („sturdy tannins“) gelten (CLEAR_TERMS);
  * - widersprechen sich Quellen → „unbekannt“ und Hinweis;
  * - Aroma nur aus dem Lexikon des Weintyps (passende Gruppe) und mit Beleg; sonst weg;
- * - nichts Belegtes übrig → kein Profil.
+ * - nichts Belegtes übrig → kein Profil;
+ * - Rotwein (wineType 'red') ohne gefundene Süsse → „trocken“ per Regel (applyRedDryRule).
  */
 export function validateTasteProfile(
   raw: TasteResearchRaw,
@@ -157,6 +177,8 @@ export function validateTasteProfile(
     year: number | null;
     /** Beigelegte Datenblätter (nur passende Jahrgänge) – als Quelle „dokument:<Name>“. */
     documents?: { name: string; year: number | null }[];
+    /** wines.type – für die Regel „Rotwein ohne Angabe = trocken“. */
+    wineType?: string | null;
   },
 ): TasteProfileData | null {
   if (!raw.matches_wine) return null;
@@ -229,13 +251,15 @@ export function validateTasteProfile(
 
   const usedSources = [...sources.entries()].filter(([key]) => used.has(key)).map(([, s]) => s);
   const vintageYear = ctx.year;
+  // Erst nach der Prüfung „etwas belegt?“: die Regel allein ergibt kein Profil.
+  const ruled = applyRedDryRule({ values, evidence }, ctx.wineType, contradicted.has("sweetness"));
   return {
-    values,
+    values: ruled.values,
     aromas,
     styleSummary,
     foodPairing,
     sources: usedSources,
-    evidence,
+    evidence: ruled.evidence,
     confidence: confidenceFor(usedSources, notes.length),
     sourceNote: notes.length ? notes.join(" ") : null,
     vintageYear,
