@@ -71,7 +71,7 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
   1. **Flaschen:** „Offen“ (Füllstand, **Ausgetrunken**), „Im Bestand“ (je Charge Lagerort, Anzahl, bezahlt,
      Normalpreis, Rabatt in %), „Flasche öffnen“ (Füllstand, Datum → `public.open_bottle()`) und „Getrunken“.
      Ohne Flaschen dieses Jahrgangs ein kurzer Hinweis und „＋ Flaschen erfassen“ – öffnet den Chat mit Antoine
-     (`t.me/<Bot>`; Name aus `TELEGRAM_BOT_USERNAME`, sonst einmal über `getMe`).
+     (`https://t.me/antoine_winebot`; anderer Name über `TELEGRAM_BOT_USERNAME`).
   2. **Zum Wein** (eine Kachel, Reihenfolge `WINE_DETAIL_FIELDS`/`WINE_SECTIONS` in
      `src/lib/cellar/wine-units.ts`): Typ, Land, Region, Appellation, Alkohol, Flasche; Rebsorten mit % aus
      `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“); Trinkreife (Fenster aus `wine_vintages`,

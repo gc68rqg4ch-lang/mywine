@@ -156,7 +156,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const inVintage = items.filter((i) => i.vintage_year === year);
   const anchor = anchorItem(inVintage);
 
-  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places, deleteSummary, botUrl] = await Promise.all([
+  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places, deleteSummary] = await Promise.all([
     loadRatingsAndTastings(supabase, wine.id, year),
     loadGrapeShares(supabase, wine.id, year),
     loadVintagePhotos(supabase, wine.id, year, inVintage.map((i) => i.inventory_item_id)),
@@ -164,7 +164,6 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     loadDocuments(supabase, wine.id, year),
     loadPlaces(supabase),
     loadWineDeleteSummary(supabase, wine.id),
-    inVintage.length === 0 ? botChatUrl() : Promise.resolve(null),
   ]);
   const suggestions = await loadPendingSuggestions(supabase, { wineId: wine.id, year }).catch((error) => {
     console.error("loading suggestions failed", error);
@@ -294,13 +293,11 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
       {inVintage.length === 0 && (
         <section className="card stack-sm">
           <p className="muted">Keine Flaschen dieses Jahrgangs{options.find((o) => o.year === year)?.tastedOnly ? " – bisher nur verkostet" : ""}.</p>
-          {botUrl ? (
-            <div>
-              <a href={botUrl} className="btn btn-sm" target="_blank" rel="noopener noreferrer">
-                ＋ Flaschen erfassen
-              </a>
-            </div>
-          ) : null}
+          <div>
+            <a href={botChatUrl()} className="btn btn-sm" target="_blank" rel="noopener noreferrer">
+              ＋ Flaschen erfassen
+            </a>
+          </div>
           <p className="muted small">Flaschen erfasst du im Bot Antoine: Foto der Etikette schicken oder den Kauf als Text.</p>
         </section>
       )}
