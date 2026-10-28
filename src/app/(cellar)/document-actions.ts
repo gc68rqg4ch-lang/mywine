@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
-import { DOCUMENT_BUCKET, MAX_DOCUMENT_BYTES, documentPrefix, insertDocumentRow } from "@/lib/media/documents";
+import { DOCUMENT_BUCKET, DOCUMENT_TOO_BIG, MAX_DOCUMENT_BYTES, documentPrefix, insertDocumentRow } from "@/lib/media/documents";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionState } from "./actions";
 
@@ -55,7 +55,7 @@ export async function registerDocument(input: {
   const size = Number(object.metadata?.size ?? 0);
   const mime = String(object.metadata?.mimetype ?? "");
   if (mime !== "application/pdf") return discard("Nur PDF-Dateien.");
-  if (size > MAX_DOCUMENT_BYTES) return discard("Das PDF ist zu gross (max. 10 MB).");
+  if (size > MAX_DOCUMENT_BYTES) return discard(DOCUMENT_TOO_BIG);
 
   let fileName: string;
   try {

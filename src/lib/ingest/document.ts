@@ -11,7 +11,7 @@ import { wineHref } from "@/lib/cellar/wine-page";
 import { PENDING_TTL_MS } from "@/lib/chat/ttl";
 import type { Json } from "@/lib/database.types";
 import { matchWines, type MatchWine, type WineMatch } from "@/lib/media/doc-match";
-import { MAX_BOT_DOCUMENT_BYTES, PDF_MIME, cleanFileName, storeDocument } from "@/lib/media/documents";
+import { MAX_DOCUMENT_BYTES, PDF_MIME, cleanFileName, storeDocument } from "@/lib/media/documents";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { answerCallback, downloadFile, editMessage, sendMessage } from "@/lib/telegram/api";
 import { appBaseUrl } from "@/lib/telegram/config";
@@ -138,7 +138,7 @@ async function save(db: AdminClient, chatId: number, file: NonNullable<DocState[
 export async function handleDocument(msg: TgMessage) {
   const chatId = msg.chat.id;
   const doc = msg.document!;
-  if ((doc.file_size ?? 0) > MAX_BOT_DOCUMENT_BYTES) {
+  if ((doc.file_size ?? 0) > MAX_DOCUMENT_BYTES) {
     await sendMessage(chatId, T.docTooBig);
     return;
   }

@@ -154,7 +154,7 @@ test("Abbrechen, falscher Dateityp, zu gross", async () => {
   assert.match(T.docOnlyPdf, /^Ich nehme nur PDFs an/);
   await sendDoc(pdf("riesig.pdf", 25 * 1024 * 1024));
   assert.equal(sent().at(-1), T.docTooBig);
-  assert.match(T.docTooBig, /App/);
+  assert.doesNotMatch(T.docTooBig, /App/);
   assert.equal(net.tables.ingest_jobs.filter((j) => j.source === "telegram_document").length, 0);
   // Kein echtes PDF (falscher Inhalt): nichts gespeichert, ehrliche Meldung
   net.files!.set("f-fake.pdf", new TextEncoder().encode("hello"));

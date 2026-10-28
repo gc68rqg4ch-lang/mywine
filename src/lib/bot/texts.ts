@@ -3,6 +3,8 @@
 // sparsam. Häufige Meldungen gibt es in Varianten (zufällig gewählt), damit es nicht immer
 // gleich klingt. Texte sind HTML für Telegram: Werte vorher mit escapeHtml (e) entschärfen.
 
+import { DOCUMENT_TOO_BIG } from "@/lib/media/document-limits";
+
 const e = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** Eine Variante zufällig wählen (für Tests: eigene Zufallsquelle). */
@@ -198,7 +200,7 @@ export const T = {
   docSaved: (wine: string) => `📎 Ich habe das Dokument beim ${e(wine)} abgelegt.`,
   docCancelled: "Gut, dann lege ich das Dokument nirgends ab.",
   docOnlyPdf: "Ich nehme nur PDFs an – Fotos vom Etikett natürlich auch.",
-  docTooBig: "Das PDF ist mir zu gross (über 20 MB). Am besten verkleinerst du es und lädst es in der App auf der Weinseite hoch.",
+  docTooBig: DOCUMENT_TOO_BIG,
   docSaveError: "Das Dokument konnte ich leider nicht ablegen – ich habe nichts gespeichert. Schickst du es mir nochmals?",
   docGone: "Dieses Dokument ist nicht mehr bei mir – schick es mir einfach nochmals.",
   openInApp: (url: string) => `<a href="${url}">In der App öffnen</a>`,

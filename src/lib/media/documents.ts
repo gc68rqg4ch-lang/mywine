@@ -9,10 +9,8 @@ import type { Database } from "@/lib/database.types";
 type Db = SupabaseClient<Database>;
 
 export const DOCUMENT_BUCKET = "wine-documents";
-/** App: Upload direkt aus dem Browser. */
-export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
-/** Bot: Telegram liefert Dateien bis 20 MB (auch die Grenze des Buckets). */
-export const MAX_BOT_DOCUMENT_BYTES = 20 * 1024 * 1024;
+/** 20 MB in App und Bot (Grenze des Buckets; Telegram liefert Dateien bis 20 MB). */
+export { DOCUMENT_TOO_BIG, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_MB } from "./document-limits";
 export const PDF_MIME = "application/pdf";
 const SIGNED_SECONDS = 60 * 60;
 

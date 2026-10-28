@@ -200,7 +200,11 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   der Fund wird Vorschlag (`research_suggestions.field = 'taste_profile'`; braucht die Migration
   `research_suggestions_taste_profile`, ohne sie passiert nichts). Nachrecherchieren und Bot suchen das Profil
   immer, der Sammellauf nur bei Weinen ohne Profil; Option „Geschmacksprofil fehlt“ (`?profil=1`) sucht nur das
-  Profil. Kein automatischer Lauf beim Deploy. Weinseite: Karte „Geschmacksprofil“ unter „Zum Wein“, nur für den
+  Profil. Kein automatischer Lauf beim Deploy. **Automatisch nach dem Erfassen** (`src/lib/research/taste-auto.ts`):
+  nach dem Einbuchen (Foto, Text, auch Nachkauf) und nach einem Verkostet-Eintrag (Bot, App, Chat) wird im
+  Hintergrund (`after()`) das Profil für genau diesen Jahrgang gesucht – erst speichern und antworten, dann
+  recherchieren. Gibt es schon ein Profil für den Jahrgang, wird nicht gesucht; ohne Fund oder bei Fehlern
+  (auch API-Limit) keine Meldung, nur Log „taste profile auto failed“. Weinseite: Karte „Geschmacksprofil“ unter „Zum Wein“, nur für den
   gewählten Jahrgang, kurz und knapp (`taste-view.tsx`): einspaltig nur bekannte Merkmale (Name · 5-Punkte-Skala ·
   Wert), eine Reihe Aromen ohne Gruppentitel (Frucht → Floral → Gewürz → Eiche → Reife, höchstens 10), ein bis
   zwei Sätze zum Stil, „Passt zu: …“. Eigene WSET-Verkostungen erscheinen als Ring auf derselben Skala (Michel/
@@ -373,7 +377,9 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Speichern wie in der App** (`storeDocument` / `insertDocumentRow` in `src/lib/media/documents.ts`, gemeinsam
   mit dem Upload der Weinseite): Bucket `wine-documents` unter `app/<wein>/<uuid>.pdf`, Eintrag in `wine_media`
   (kind document, Jahrgang, Originaldateiname). Erst nach dem Eintrag: „📎 Ich habe das Dokument beim The Hype 2020
-  abgelegt.“ mit Link in die App. Andere Dateitypen: „Ich nehme nur PDFs an …“; über 20 MB: Hinweis auf die App.
+  abgelegt.“ mit Link in die App. Andere Dateitypen: „Ich nehme nur PDFs an …“. Grenze 20 MB in App, Bot und
+  Speicher (`src/lib/media/document-limits.ts`); darüber dieselbe Meldung in App und Bot („Das PDF ist leider zu
+  gross (über 20 MB). Magst du es verkleinern und nochmals versuchen?“).
 - Ablauf in `src/lib/ingest/document.ts` (`ingest_jobs`, source `telegram_document`, Knöpfe `dc:<job>:…`).
   ℹ️ Details zeigt „📎 1 Dokument: <Dateiname>“. Im Chat gilt die Regel „nur nach Nachschauen“ auch für Dokumente
   (`get_wine_details` liefert sie).

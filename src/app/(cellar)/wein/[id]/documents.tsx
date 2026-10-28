@@ -1,12 +1,12 @@
 "use client";
 
+import { DOCUMENT_TOO_BIG, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_MB } from "@/lib/media/document-limits";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { docClipLines } from "@/lib/cellar/wine-units";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { ActionState } from "../../actions";
 import { deleteDocument, prepareDocumentUpload, registerDocument } from "../../document-actions";
 
-const MAX_BYTES = 10 * 1024 * 1024;
 const BUCKET = "wine-documents";
 
 export type DocumentItem = { id: string; name: string; url: string | null; vintageYear: number | null };
@@ -44,7 +44,7 @@ export function DocumentClip({ docs, wineId, vintageYear }: { docs: DocumentItem
     if (input.current) input.current.value = "";
     if (!file) return;
     if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) return setState({ error: "Nur PDF-Dateien." });
-    if (file.size > MAX_BYTES) return setState({ error: "Das PDF ist zu gross (max. 10 MB)." });
+    if (file.size > MAX_DOCUMENT_BYTES) return setState({ error: DOCUMENT_TOO_BIG });
     setState(undefined);
     startTransition(async () => {
       const target = await prepareDocumentUpload(wineId);
@@ -127,7 +127,7 @@ export function DocumentClip({ docs, wineId, vintageYear }: { docs: DocumentItem
             aria-hidden
             onChange={(e) => upload(e.target.files?.[0])}
           />
-          <p className="muted small">PDF, max. 10 MB, gilt für {vintageYear != null ? `Jahrgang ${vintageYear}` : "„ohne Jahrgang“"}.</p>
+          <p className="muted small">PDF, max. {MAX_DOCUMENT_MB} MB, gilt für {vintageYear != null ? `Jahrgang ${vintageYear}` : "„ohne Jahrgang“"}.</p>
           {state?.error && (
             <p className="notice notice-error" role="alert">
               {state.error}

@@ -5,6 +5,7 @@ import "server-only";
 // und Bot dieselben Prüfungen und Meldungen haben. Bewertungen eines Eintrags tragen seine
 // encounter_id und das Datum des Eintrags (rated_at).
 
+import { scheduleTasteProfile } from "@/lib/research/taste-auto";
 import type { Database } from "@/lib/database.types";
 import { WINE_TYPE_LABELS, formatMoney, formatStarNumber, todayIso, wineName, type WineType } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
@@ -441,6 +442,8 @@ export async function prepareAddEncounter(db: Db, edit: Extract<Edit, { kind: "a
     async () => {
       const wineId = await save();
       if (prepared.ok) prepared.wineId = wineId;
+      // Geschmacksprofil für diesen Jahrgang im Hintergrund (Bot, App, Chat) – nach der Antwort.
+      scheduleTasteProfile(wineId, edit.year);
       const extra = ratings.length ? ` mit ${ratings.length === 1 ? "1 Bewertung" : `${ratings.length} Bewertungen`}` : "";
       return `${wineTitle(wine, edit.year)} als verkostet am ${date(tastedOn)} gespeichert${extra}`;
     },

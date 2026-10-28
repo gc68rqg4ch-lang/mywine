@@ -4,6 +4,7 @@ import "server-only";
 // abfragen – nur, was noch fehlt –, bei Text vorher Nachkauf/Produzent klären und
 // am Ende eine Zusammenfassung zeigen; dann speichern.
 
+import { scheduleTasteProfile } from "@/lib/research/taste-auto";
 import { after } from "next/server";
 import { apiProblemForBot } from "@/lib/ai/api-errors";
 import { savedWineKeyboard } from "@/lib/chat/menu";
@@ -409,6 +410,8 @@ export async function saveJob(job: IngestJob, chatId: number) {
       return undefined;
     });
     await sendMessage(chatId, savedMessage(state, prices), keyboard);
+    // Geschmacksprofil für genau diesen Jahrgang im Hintergrund (auch beim Nachkauf, falls noch keins da ist).
+    scheduleTasteProfile(wineId, state.proposal.vintage_year ?? null);
   } catch (error) {
     await failJob(db, job.id, chatId, "Das Speichern ist mir nicht gelungen", error, state.source === "text");
   }
