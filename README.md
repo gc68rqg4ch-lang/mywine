@@ -249,6 +249,11 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   Suche). Sammellauf und automatische Suche überspringen einen kürzlich gesuchten Jahrgang nicht, wenn danach ein
   PDF für genau diesen Jahrgang angehängt wurde (`newDocumentSince`). Lade-/Lesefehler: ohne dieses PDF weiter,
   Log „research document failed“. Keine Schemaänderung.
+- **Verwaiste Dateien** (`scripts/cleanup-orphan-files.ts`, Logik in `src/lib/media/orphans.ts`): listet Dateien
+  in `wine-photos` und `wine-documents` ohne Verweis (`wine_media.storage_path`/`thumb_path`, Fotos offener
+  Erfassungen in `ingest_jobs.photo_paths`, `inventory_items.photo_urls`); Dateien unter einer Stunde bleiben
+  (Upload läuft vielleicht). Trockenlauf als Standard, gelöscht wird nur mit `--apply`:
+  `NEXT_PUBLIC_SUPABASE_URL=… SUPABASE_SECRET_KEY=… npx tsx scripts/cleanup-orphan-files.ts [--apply]`.
 - **API-Ausgabenlimit** (`apiProblem`, `usageLimit`, `temporaryProblem`): 400 „usage limits“ = Limit erreicht
   (in der Claude Console gesetzt, die App kann es nicht ändern); 429/529 = vorübergehend; sonst API-Fehler.
   Sammellauf (`runBatch` in `src/lib/research/batch.ts`): Weine strikt nacheinander, beim ersten Limit sofort

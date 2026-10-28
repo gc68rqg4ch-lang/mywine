@@ -105,7 +105,7 @@ test("tasting_notes wird im Code nicht mehr verwendet; Migration zum Löschen li
   const walk = (dir: string): string[] => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)) : [join(dir, f)]));
   const users = walk("src").filter((f) => /\.(ts|tsx)$/.test(f) && f !== join("src", "lib", "database.types.ts") && readFileSync(f, "utf8").includes("tasting_notes"));
   assert.deepEqual(users, []);
-  const drop = readFileSync("supabase/migrations/20261028180000_drop_tasting_notes.sql", "utf8");
+  const drop = readFileSync("supabase/migrations/20261028171446_drop_tasting_notes.sql", "utf8");
   assert.match(drop, /drop table public\.tasting_notes;/);
   const fn = drop.slice(drop.indexOf("CREATE OR REPLACE FUNCTION public.change_vintage"), drop.indexOf("drop table"));
   assert.ok(fn.length > 100 && !fn.includes("tasting_notes"), "change_vintage ohne tasting_notes, vor dem Löschen");

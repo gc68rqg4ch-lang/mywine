@@ -9,7 +9,7 @@ export type Net = {
   /** Fehler einspielen: liefert für eine Anfrage an PostgREST eine Fehlerantwort statt sie auszuführen. */
   fail?: (method: string, table: string, body: unknown) => { status: number; body: unknown } | null;
   /** Supabase Storage: „bucket/pfad“ → Inhalt. Optional. */
-  storage?: Map<string, { bytes: Uint8Array; type: string }>;
+  storage?: Map<string, { bytes: Uint8Array; type: string; createdAt?: string }>;
   /** Telegram-Dateien zum Herunterladen: file_id → Inhalt. Optional (Standard: kleines PDF). */
   files?: Map<string, Uint8Array>;
 };
@@ -149,9 +149,19 @@ async function storage(net: Net, url: URL, method: string, headers: Headers, bod
   const path = decodeURIComponent(url.pathname.replace(/^\/storage\/v1\/object\//, ""));
   const asJson = () => JSON.parse(String(body));
   if (method === "POST" && path.startsWith("list/")) {
+    // Wie Supabase: nur direkte Einträge; Ordner ohne id, Dateien mit id und created_at.
     const bucket = path.slice(5);
-    const prefix = `${bucket}/${asJson().prefix}/`;
-    return json([...files.keys()].filter((k) => k.startsWith(prefix)).map((k) => ({ name: k.slice(prefix.length), id: k })));
+    const { prefix: raw = "", limit = 100, offset = 0 } = asJson();
+    const prefix = raw ? `${bucket}/${raw}/` : `${bucket}/`;
+    const entries = new Map<string, Record<string, unknown>>();
+    for (const [k, f] of files) {
+      if (!k.startsWith(prefix)) continue;
+      const rest = k.slice(prefix.length);
+      const [head, ...more] = rest.split("/");
+      if (more.length) entries.set(head, { name: head, id: null });
+      else entries.set(head, { name: head, id: k, created_at: f.createdAt ?? null, metadata: { size: f.bytes.length } });
+    }
+    return json([...entries.values()].sort((x, y) => String(x.name).localeCompare(String(y.name))).slice(offset, offset + limit));
   }
   if (method === "POST" && path.startsWith("sign/")) {
     const bucket = path.slice(5);
