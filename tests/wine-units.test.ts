@@ -10,12 +10,15 @@ import {
   WINE_SECTIONS,
   closeUnit,
   discardQuestion,
-  docClip,
+  BUY_MARK,
+  WINE_EXTRA_ROWS,
+  docClipLines,
   drinkRow,
+  encounterLine,
+  encounterRows,
   grapeLine,
   markDirty,
   openUnit,
-  shortFileName,
 } from "@/lib/cellar/wine-units";
 import { encounterSummary } from "@/lib/edit/encounters";
 import { editsFromForm } from "@/lib/edit/form";
@@ -53,22 +56,52 @@ test("Ungespeicherte Änderungen: Rückfrage vor dem Wechsel; Nein behält, Ja v
   assert.equal(closeUnit(markDirty(s, "wine"), "wine").open, null);
 });
 
-test("Büroklammer: ohne Dokument nur 📎, eines mit (gekürztem) Namen, mehrere als Anzahl", () => {
-  assert.deepEqual(docClip([]), { text: "📎", label: "Dokument hinzufügen" });
-  assert.deepEqual(docClip(["Preisliste.pdf"]), { text: "📎 Preisliste.pdf", label: "Dokument Preisliste.pdf" });
-  const long = "Technisches Datenblatt Pintia 2019 Vega Sicilia.pdf";
-  const one = docClip([long]);
-  assert.equal(one.text, `📎 ${shortFileName(long)}`);
-  assert.ok(shortFileName(long).length <= 24 && shortFileName(long).endsWith("….pdf"), shortFileName(long));
-  assert.equal(one.label, `Dokument ${long}`, "voller Name als Beschriftung");
-  assert.deepEqual(docClip(["a.pdf", "b.pdf"]), { text: "📎 2 Dokumente", label: "2 Dokumente" });
-  assert.equal(docClip(["a.pdf", "b.pdf", "c.pdf"]).text, "📎 3 Dokumente");
-  assert.equal(shortFileName("Ohne Endung und ziemlich lang geraten"), "Ohne Endung und ziemlic…");
+test("Büroklammer: je Dokument eine Zeile mit vollem Namen und 📎 rechts; ohne Dokument nur 📎", () => {
+  assert.deepEqual(docClipLines([]), { lines: [], label: "Dokument hinzufügen" });
+  assert.deepEqual(docClipLines(["Preisliste.pdf"]), { lines: ["Preisliste.pdf"], label: "Dokument verwalten" });
+  const long = "Technisches Datenblatt Pintia 2019 Vega Sicilia – Ausbau, Lagerung und Trinkfenster.pdf";
+  assert.deepEqual(docClipLines([long]).lines, [long], "lange Namen werden nicht gekürzt (umbrechen)");
+  assert.deepEqual(docClipLines(["a.pdf", long, "c.pdf"]), { lines: ["a.pdf", long, "c.pdf"], label: "3 Dokumente verwalten" });
 });
 
-test("Reihenfolge in „Zum Wein“: eine Tabelle mit Rebsorten und Trinkreife, dann Fotos und Recherche", () => {
+test("Reihenfolge in „Zum Wein“: eine Tabelle mit Rebsorten und Trinkreife, die Fotos als letzte Zeile, dann Recherche", () => {
   assert.deepEqual(WINE_DETAIL_FIELDS, ["Typ", "Land", "Region", "Appellation", "Alkohol", "Flasche", "Rebsorten", "Trinkreife"]);
-  assert.deepEqual(WINE_SECTIONS, ["details", "photos", "research"]);
+  assert.deepEqual(WINE_EXTRA_ROWS, ["Laut Verkostung", "Jahrgang", "Notiz", "Fotos"], "Fotos zuletzt, ohne eigenen Abschnitt");
+  assert.deepEqual(WINE_SECTIONS, ["details", "research"], "kein Abschnitt „Fotos“ mehr");
+});
+
+test("Karte „Verkostet“: leer, Zeilen „2022 · 28.10.2026 · Kronenhalle · ★ 4“, mit/ohne Merker", () => {
+  assert.deepEqual(encounterRows([], true), [], "ohne Einträge keine Zeilen (nur Titel und ＋ Erfassen)");
+  const plain = (t: string | null) => t?.replace(/\u00a0/g, " ") ?? null;
+  const full = { id: "e1", year: 2022, tastedOn: "2026-10-28", place: { name: "Kronenhalle" }, ratings: [{ rating: 4 }] };
+  assert.equal(plain(encounterLine(full)), "2022 · 28.10.2026 · Kronenhalle · ★ 4");
+  assert.ok(encounterLine(full).endsWith("★\u00a04"), "„★ 4“ bricht nicht um");
+  assert.equal(plain(encounterLine({ ...full, place: null, ratings: [] })), "2022 · 28.10.2026", "Fehlendes fällt weg");
+  assert.equal(plain(encounterLine({ ...full, year: null, ratings: [{ rating: 4 }, { rating: 4.5 }] })), "NV · 28.10.2026 · Kronenhalle · ★ 4/4½");
+  const second = { ...full, id: "e2", tastedOn: "2026-09-01", place: null };
+  assert.deepEqual(encounterRows([full, second], false).map((r) => [plain(r.line), r.buy]), [
+    ["2022 · 28.10.2026 · Kronenhalle · ★ 4", null],
+    ["2022 · 01.09.2026 · ★ 4", null],
+  ]);
+  assert.deepEqual(encounterRows([full], true).map((r) => r.buy), [BUY_MARK]);
+  assert.equal(plain(BUY_MARK), "🛒 kaufen");
+});
+
+test("Merker „Kaufen?“ im ✏️-Formular eines Eintrags (nur dort bzw. beim Erfassen)", () => {
+  const W = "11111111-1111-4111-8111-111111111111";
+  const E = "33333333-3333-4333-8333-333333333333";
+  const form = (extra: Record<string, string>) => {
+    const f = new FormData();
+    for (const [k, v] of Object.entries({ kind: "encounter", encounterId: E, wineId: W, wantToBuyField: "1", tastedOn: "2026-10-28", ...extra })) f.set(k, v);
+    return f;
+  };
+  const on = editsFromForm(form({ wantToBuy: "on" }));
+  assert.ok(Array.isArray(on));
+  assert.deepEqual(on.map((e) => e.kind), ["encounter", "wantToBuy"]);
+  assert.deepEqual(on[1], { kind: "wantToBuy", wineId: W, value: true });
+  const off = editsFromForm(form({}));
+  assert.ok(Array.isArray(off));
+  assert.deepEqual(off[1], { kind: "wantToBuy", wineId: W, value: false });
 });
 
 test("Zeilen „Rebsorten“ und „Trinkreife“: mit/ohne Prozent, leere Zeilen fehlen", () => {

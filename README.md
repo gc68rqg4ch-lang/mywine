@@ -76,10 +76,11 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
      `src/lib/cellar/wine-units.ts`): eine Tabelle mit Typ, Land, Region, Appellation, Alkohol, Flasche,
      **Rebsorten** („Cabernet Sauvignon 95 % · Malbec 5 %“, ohne Prozent nur die Namen; aus `wine_grape_shares`,
      jahrgangsspezifisch, sonst „alle Jahrgänge“) und **Trinkreife** (Status antippbar · Fenster aus
-     `wine_vintages`); leere Zeilen fallen weg. Darunter **Fotos** des Jahrgangs (Vorschau mit Overlay; hinzufügen
-     als Vorderseite, Rückseite, Weiteres – der Browser verkleinert auf max. 2000 px JPEG, auch HEIC; der Server
-     legt das Original unter `wine-photos/app/<wine-id>/…` ab und erzeugt das Vorschaubild; je Foto
-     Ersetzen/Löschen mit Rückfrage, Dateien über den Admin-Client nach Prüfung der Mitgliedschaft) und
+     `wine_vintages`); leere Zeilen fallen weg. Als letzte Zeile, ohne Überschrift, die **Fotos** des Jahrgangs
+     (Vorschaubilder, Antippen öffnet gross). Hochladen (Vorderseite, Rückseite, Weiteres – der Browser verkleinert
+     auf max. 2000 px JPEG, auch HEIC; der Server legt das Original unter `wine-photos/app/<wine-id>/…` ab und
+     erzeugt das Vorschaubild), Ersetzen und Löschen (Rückfrage; Dateien über den Admin-Client nach Prüfung der
+     Mitgliedschaft) als eigener Block am Ende des ✏️-Formulars „Zum Wein“ – das gilt sofort. Darunter
      **Recherche** („🔎 Nachrecherchieren“ ergänzt alle leeren Angaben ohne Rückfrage, „Zuletzt recherchiert am …“,
      Link zum Sammellauf `/recherche`). Das ✏️ von „Zum Wein“ öffnet ein Formular für Stammdaten, Rebsorten mit %
      und Trinkfenster des Jahrgangs zusammen (`kind = wineCard` in `src/lib/edit/form.ts` → Bearbeitungen `wine`,
@@ -87,12 +88,14 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
      umbenennen.
   3. **Bewertungen:** subjektiv je Person mit halben Sternen 0–5 in `wine_ratings` (Sterne antippen speichert
      sofort; neueste je Person aus `latest_wine_ratings`, ältere als Verlauf), objektiv die WSET-Verkostungen mit
-     „Neue Verkostung“ und Liste, darunter „Verkostet“ (Einträge kompakt: Datum · Ort · Preis · Sterne).
+     „Neue Verkostung“ und Liste (Untertitel „WSET“), darunter „Verkostet“: ohne Einträge nur Titel und „＋ Erfassen“,
+     sonst je Eintrag eine Zeile „2022 · 28.10.2026 · Kronenhalle · ★ 4“ (Fehlendes fällt weg), dahinter
+     „🛒 kaufen“ beim Merker. Den Merker „Kaufen?“ setzt man beim Erfassen und im ✏️-Formular eines Eintrags.
   - Jahrgangsbezogene Aktionen hängen an einer Flasche des Jahrgangs (offen vor ungeöffnet vor getrunken).
   - **Bearbeiten direkt in der Karte** (`src/components/edit-unit.tsx`, Logik in `src/lib/cellar/wine-units.ts`):
     kein eigener Modus mehr. Jede Einheit hat oben rechts ein kleines ✏️ – Zum Wein (Stammdaten, Rebsorten mit %,
     Trinkfenster; unter „Mehr“ Appellation, Alkohol, Jahrgang umbenennen über `public.change_vintage()`, bestehender
-    Ziel-Jahrgang → Rückfrage und Zusammenführen), Fotos, jede Charge (Anzahl, Lagerort auch teilweise,
+    Ziel-Jahrgang → Rückfrage und Zusammenführen; am Ende die Fotos), jede Charge (Anzahl, Lagerort auch teilweise,
     bezahlt, Händler, Kaufdatum; unter „Mehr“ Normalpreis, Flaschengrösse, Jahrgang nur dieser Charge, Geschenk),
     jede offene (dazu Füllstand, „Geöffnet am“) und getrunkene Flasche („Getrunken am“; unter „Mehr“ zurück auf
     offen), Bewertungen (auch löschen, mit Rückfrage) und jeder Verkostet-Eintrag. Antippen macht nur diese Einheit
@@ -102,10 +105,11 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
     über das gemeinsame Modul. Löschen bleibt im jeweiligen Formular. Felder im Raster mit Beschriftung darüber,
     auf dem iPhone einspaltig.
   - **Dokumente** (PDF, `wine_media.kind = document`, privater Bucket `wine-documents`) des Jahrgangs und ohne
-    Jahrgang als **Büroklammer** im Kopf: „📎 Dateiname“ (gekürzt), „📎 2 Dokumente“ bzw. nur „📎“. Antippen öffnet
-    ein kleines Feld: Dokument antippen öffnet das PDF (signierte URL, neuer Tab), 🗑 löscht mit Rückfrage,
-    „＋ Dokument hinzufügen“ lädt hoch (max. 10 MB; der Browser lädt direkt in den Bucket, weil Vercel nur 4.5 MB pro
-    Request annimmt – der Server prüft danach Ort, Typ und Grösse und trägt das Dokument ein).
+    Jahrgang als **Büroklammer** im Kopf, rechtsbündig: je Dokument eine Zeile mit dem vollen Namen (notfalls
+    umgebrochen) und 📎 ganz rechts; Antippen des Namens öffnet das PDF (signierte URL, neuer Tab). Ohne Dokument nur
+    „📎“. Das 📎 öffnet ein kleines Feld: 🗑 löscht mit Rückfrage, „＋ Dokument hinzufügen“ lädt hoch (max. 10 MB; der
+    Browser lädt direkt in den Bucket, weil Vercel nur 4.5 MB pro Request annimmt – der Server prüft danach Ort, Typ
+    und Grösse und trägt das Dokument ein).
   - **🗑 Wein löschen**: dezenter roter Link ganz unten (siehe „Unwiderruflich löschen“).
 
 ### Gemeinsames Bearbeiten-Modul (App und Bot)

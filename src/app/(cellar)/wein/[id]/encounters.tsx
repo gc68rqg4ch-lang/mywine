@@ -1,27 +1,15 @@
 // Weinseite, Spalte 3: „Verkostet“ – alle Einträge des Weins (alle Jahrgänge), neuester
-// zuerst, kompakt (Datum · Ort · Preis · Sterne); ✏️ je Eintrag öffnet das Formular samt
-// Löschen. Merker „Kaufen?“ jederzeit umschaltbar.
+// zuerst, je eine kompakte Zeile („2022 · 28.10.2026 · Kronenhalle · ★ 4“, dahinter „🛒 kaufen“
+// beim Merker); ✏️ je Eintrag öffnet das Formular samt Merker „Kaufen?“ und Löschen.
 
 import Link from "next/link";
 import { EncounterFields, RatingField, VintageField, type PlaceOption } from "@/components/encounter-fields";
 import { EditUnit } from "@/components/edit-unit";
-import { encounterSummary, type EncounterView } from "@/lib/edit/encounters";
+import { encounterRows } from "@/lib/cellar/wine-units";
+import type { EncounterView } from "@/lib/edit/encounters";
 import { formatDate } from "@/lib/format";
 import { DeleteEncounter } from "./delete-encounter";
 import { EditForm } from "./edit-form";
-
-export function WantToBuyToggle({ wineId, value }: { wineId: string; value: boolean }) {
-  return (
-    <div className="want-to-buy">
-      <span className={value ? "want-badge active" : "want-badge"}>{value ? "🛒 Kaufen? – vorgemerkt" : "Kein Merker „Kaufen?“"}</span>
-      <EditForm
-        hidden={{ kind: "wantToBuy", wineId, value: value ? "0" : "1" }}
-        submitLabel={value ? "Merker entfernen" : "🛒 Kaufen? merken"}
-        cancel={false}
-      />
-    </div>
-  );
-}
 
 export function EncounterSection({
   wineId,
@@ -54,12 +42,9 @@ export function EncounterSection({
           ＋ Erfassen
         </Link>
       </div>
-      <WantToBuyToggle wineId={wineId} value={wantToBuy} />
-      {encounters.length === 0 ? (
-        <p className="muted">Noch nirgends verkostet.</p>
-      ) : (
+      {encounters.length > 0 && (
         <ul className="encounter-list">
-          {encounters.map((e) => (
+          {encounterRows(encounters, wantToBuy).map(({ entry: e, line, buy }) => (
             <EditUnit
               key={e.id}
               as="li"
@@ -67,15 +52,14 @@ export function EncounterSection({
               label={`Eintrag vom ${formatDate(e.tastedOn)}`}
               className="encounter-item"
               title={
-                <span className="stack-sm">
-                  <span>
-                    <span className="year-chip">{e.year ?? "NV"}</span> {encounterSummary(e)}
-                  </span>
+                <span className="encounter-line">
+                  {line}
+                  {buy && <span className="want-chip"> {buy}</span>}
                 </span>
               }
               form={
                 <>
-                  <EditForm hidden={{ kind: "encounter", encounterId: e.id }}>
+                  <EditForm hidden={{ kind: "encounter", encounterId: e.id, wineId, wantToBuyField: "1" }}>
                     <VintageField initial={e.year} />
                     <EncounterFields
                       values={{
@@ -100,7 +84,14 @@ export function EncounterSection({
                         initial={e.ratings.find((r) => r.personId === p.personId)?.rating ?? null}
                       />
                     ))}
+                    <label className="field field-check">
+                      <input type="checkbox" name="wantToBuy" defaultChecked={wantToBuy} />
+                      <span>🛒 Kaufen? – vormerken</span>
+                    </label>
                   </EditForm>
+                  <Link href={`/verkostet/${e.id}/wset`} className="btn btn-ghost btn-sm">
+                    📝 WSET-Verkostung
+                  </Link>
                   <DeleteEncounter
                     encounterId={e.id}
                     label={`Eintrag vom ${formatDate(e.tastedOn)}`}
@@ -109,17 +100,15 @@ export function EncounterSection({
                 </>
               }
             >
-              <span className="row small encounter-extra">
+              {e.tastings.length > 0 && (
+                <span className="row small encounter-extra">
                   {e.tastings.map((t) => (
                     <Link key={t.id} href={`/verkostet/${e.id}/wset?t=${t.id}`} className="link">
                       📝 {[t.quality ?? "WSET", t.points != null ? `${t.points.toLocaleString("de-CH")} / 4` : null, t.person].filter(Boolean).join(" · ")}
                     </Link>
                   ))}
-                  <Link href={`/verkostet/${e.id}/wset`} className="link muted">
-                    📝 WSET
-                  </Link>
-                  {e.note && <span className="muted encounter-note">{e.note}</span>}
                 </span>
+              )}
             </EditUnit>
           ))}
         </ul>

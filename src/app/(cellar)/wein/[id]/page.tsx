@@ -334,7 +334,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   };
   const photoAlt = `${wine.name} ${yearLabel}`;
 
-  // Spalte 2: Zum Wein – eine Tabelle (Stammdaten, Rebsorten, Trinkreife), dann Fotos und Recherche.
+  // Spalte 2: Zum Wein – eine Tabelle (Stammdaten, Rebsorten, Trinkreife, zuletzt die Fotos), dann Recherche.
   const sections: Record<WineSection, ReactNode> = {
     details: (
       <EditUnit
@@ -349,6 +349,16 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             shares={shownShares}
             drinkFrom={vintage?.drink_from_year ?? null}
             drinkUntil={vintage?.drink_until_year ?? null}
+            photos={
+              <WinePhotos
+                wineId={wine.id}
+                vintageYear={year}
+                itemId={anchor?.inventory_item_id ?? null}
+                photos={photos.map(viewerPhoto)}
+                alt={photoAlt}
+                embedded
+              />
+            }
           />
         }
       >
@@ -360,30 +370,13 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
           <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
           <Detail label="Notiz" value={vintage?.notes} />
         </dl>
-        {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}
-      </EditUnit>
-    ),
-    photos: (
-      <EditUnit
-        id="photos"
-        label="Fotos"
-        className="section-divider"
-        title={<h3 className="subsection-title">Fotos</h3>}
-        form={
-          <WinePhotos
-            wineId={wine.id}
-            vintageYear={year}
-            itemId={anchor?.inventory_item_id ?? null}
-            photos={photos.map(viewerPhoto)}
-            alt={photoAlt}
-          />
-        }
-      >
-        {photos.length ? (
-          <PhotoGallery photos={photos.map(viewerPhoto)} alt={photoAlt} />
-        ) : (
-          <p className="muted small">Noch keine Fotos.</p>
+        {/* Fotos als letzte Zeile, ohne Überschrift; Antippen öffnet gross. */}
+        {photos.length > 0 && (
+          <div className="details-photos">
+            <PhotoGallery photos={photos.map(viewerPhoto)} alt={photoAlt} />
+          </div>
         )}
+        {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}
       </EditUnit>
     ),
     research: (
@@ -425,7 +418,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         </EditUnit>
         <div className="stack section-divider">
           <div className="row row-between">
-            <h3 className="subsection-title">Verkostungen (WSET)</h3>
+            <h3 className="subsection-title">WSET</h3>
             {anchor && (
               <Link href={`/flasche/${anchor.inventory_item_id}/verkostung`} className="btn btn-sm btn-primary">
                 Neue Verkostung

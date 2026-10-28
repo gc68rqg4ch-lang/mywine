@@ -26,7 +26,7 @@ function More({ children }: { children: ReactNode }) {
 /**
  * „Zum Wein“ als ein Formular (ein „Speichern“): Stammdaten, Rebsorten mit % und Trinkfenster
  * des Jahrgangs; unter „Mehr“ Appellation, Alkohol und Jahrgang umbenennen (ganzer Jahrgang,
- * bestehender → Rückfrage und zusammenführen).
+ * bestehender → Rückfrage und zusammenführen). Am Ende die Fotos (Hochladen gilt sofort).
  */
 export function WineCardForm({
   wine,
@@ -35,6 +35,7 @@ export function WineCardForm({
   shares,
   drinkFrom,
   drinkUntil,
+  photos,
 }: {
   wine: {
     id: string;
@@ -52,6 +53,8 @@ export function WineCardForm({
   shares: GrapeShare[];
   drinkFrom: number | null;
   drinkUntil: number | null;
+  /** Fotos hochladen, ersetzen, löschen (gilt sofort) – eigener Block am Ende. */
+  photos?: ReactNode;
 }) {
   return (
     <EditForm hidden={{ kind: "wineCard", wineId: wine.id, from: yearInput(year) }} mergeYears={otherYears.map(yearInput)}>
@@ -113,6 +116,12 @@ export function WineCardForm({
           Jahrgang schon, werden beide zusammengeführt.
         </p>
       </More>
+      {photos && (
+        <fieldset className="stack-sm photo-field">
+          <legend className="field-label">Fotos</legend>
+          {photos}
+        </fieldset>
+      )}
     </EditForm>
   );
 }

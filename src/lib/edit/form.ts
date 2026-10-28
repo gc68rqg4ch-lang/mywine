@@ -270,7 +270,10 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
       case "encounter": {
         const set: EncounterChanges = encounterFields(r);
         if (r.has("year") || r.has("nv")) set.year = requiredYear(r);
-        return [{ kind: "encounter", encounterId: r.id("encounterId"), set, ratings: ratingFields(form) }];
+        const edits: Edit[] = [{ kind: "encounter", encounterId: r.id("encounterId"), set, ratings: ratingFields(form) }];
+        // Merker „Kaufen?“ (gilt für den Wein) im selben Formular; unverändert fällt er weg.
+        if (r.has("wantToBuyField")) edits.push({ kind: "wantToBuy", wineId: r.id("wineId"), value: r.has("wantToBuy") });
+        return edits;
       }
       case "deleteEncounter":
         return [{ kind: "deleteEncounter", encounterId: r.id("encounterId") }];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { docClip } from "@/lib/cellar/wine-units";
+import { docClipLines } from "@/lib/cellar/wine-units";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { ActionState } from "../../actions";
 import { deleteDocument, prepareDocumentUpload, registerDocument } from "../../document-actions";
@@ -12,9 +12,10 @@ const BUCKET = "wine-documents";
 export type DocumentItem = { id: string; name: string; url: string | null; vintageYear: number | null };
 
 /**
- * Dokumente (PDF) als Büroklammer im Kopf der Weinseite: „📎 Dateiname“, „📎 2 Dokumente“
- * bzw. nur „📎“. Antippen öffnet ein kleines Feld: Dokument antippen = öffnen (neuer Tab),
- * 🗑 = löschen (Rückfrage), „＋ Dokument hinzufügen“ lädt direkt in den privaten Bucket.
+ * Dokumente (PDF) als Büroklammer im Kopf der Weinseite: je Dokument eine rechtsbündige Zeile
+ * „Dateiname 📎“ (voller Name, notfalls umgebrochen; Antippen öffnet die Datei), ohne Dokument
+ * nur „📎“. Das 📎 öffnet ein kleines Feld: 🗑 = löschen (Rückfrage), „＋ Dokument hinzufügen“
+ * lädt direkt in den privaten Bucket.
  */
 export function DocumentClip({ docs, wineId, vintageYear }: { docs: DocumentItem[]; wineId: string; vintageYear: number | null }) {
   const [state, setState] = useState<ActionState>(undefined);
@@ -22,7 +23,7 @@ export function DocumentClip({ docs, wineId, vintageYear }: { docs: DocumentItem
   const [pending, startTransition] = useTransition();
   const input = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
-  const clip = docClip(docs.map((d) => d.name));
+  const clip = docClipLines(docs.map((d) => d.name));
 
   // Antippen ausserhalb oder Escape schliesst das Feld.
   useEffect(() => {
@@ -63,16 +64,29 @@ export function DocumentClip({ docs, wineId, vintageYear }: { docs: DocumentItem
 
   return (
     <div className="doc-clip" ref={box}>
-      <button
-        type="button"
-        className={docs.length ? "doc-clip-btn" : "doc-clip-btn is-empty"}
-        aria-expanded={open}
-        aria-label={clip.label}
-        title={clip.label}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {clip.text}
-      </button>
+      {/* Je Dokument eine Zeile: voller Name (öffnet die Datei), 📎 rechts (Hinzufügen/Löschen). */}
+      {docs.length > 0 ? (
+        <ul className="doc-clip-lines">
+          {docs.map((d) => (
+            <li key={d.id}>
+              {d.url ? (
+                <a href={d.url} target="_blank" rel="noopener noreferrer" className="doc-clip-name">
+                  {d.name}
+                </a>
+              ) : (
+                <span className="doc-clip-name">{d.name}</span>
+              )}
+              <button type="button" className="doc-clip-btn" aria-expanded={open} aria-label={clip.label} title={clip.label} onClick={() => setOpen((v) => !v)}>
+                📎
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <button type="button" className="doc-clip-btn is-empty" aria-expanded={open} aria-label={clip.label} title={clip.label} onClick={() => setOpen((v) => !v)}>
+          📎
+        </button>
+      )}
       {open && (
         <div className="doc-pop stack-sm" role="dialog" aria-label="Dokumente">
           {docs.length > 0 && (

@@ -2,6 +2,7 @@
 // Immer nur eine Einheit offen; hat sie ungespeicherte Änderungen, wird vor dem Wechsel
 // nachgefragt. Dazu die Reihenfolge in „Zum Wein“ und die Büroklammer für Dokumente.
 
+import { formatDate, formatStarNumber } from "@/lib/format";
 import { formatShare, type GrapeShare } from "@/lib/grapes/shares";
 
 /** Offene Einheit (ID + Bezeichnung für die Rückfrage), ob geändert, letzte Meldung. */
@@ -43,7 +44,7 @@ export function markDirty(state: UnitsState, id: string): UnitsState {
 /** Reihenfolge in „Zum Wein“: eine Tabelle (Rebsorten und Trinkreife als Zeilen), dann Fotos, Recherche. */
 export const WINE_DETAIL_FIELDS = ["Typ", "Land", "Region", "Appellation", "Alkohol", "Flasche", "Rebsorten", "Trinkreife"] as const;
 export type WineDetailField = (typeof WINE_DETAIL_FIELDS)[number];
-export const WINE_SECTIONS = ["details", "photos", "research"] as const;
+export const WINE_SECTIONS = ["details", "research"] as const;
 export type WineSection = (typeof WINE_SECTIONS)[number];
 
 /** Zeile „Rebsorten“: „Cabernet Sauvignon 95 % · Malbec 5 %“, ohne Prozent nur die Namen; leer → null (Zeile fehlt). */
@@ -56,19 +57,34 @@ export function drinkRow(status: string, window: string | null) {
   return status === "unknown" && !window ? null : { status, window };
 }
 
-const CLIP_NAME_MAX = 24;
-
-/** Langen Dateinamen kürzen, Endung bleibt sichtbar: „Sehr langer Prospe….pdf“. */
-export function shortFileName(name: string, max = CLIP_NAME_MAX) {
-  if (name.length <= max) return name;
-  const dot = name.lastIndexOf(".");
-  const ext = dot > 0 && name.length - dot <= 6 ? name.slice(dot) : "";
-  return `${name.slice(0, max - ext.length - 1).trimEnd()}…${ext}`;
+/**
+ * Büroklammer im Kopf: je Dokument eine Zeile mit dem vollen Namen (nicht gekürzt) und 📎 rechts;
+ * ohne Dokument nur „📎“ zum Hinzufügen.
+ */
+export function docClipLines(names: string[]): { lines: string[]; label: string } {
+  if (names.length === 0) return { lines: [], label: "Dokument hinzufügen" };
+  return { lines: names, label: names.length === 1 ? "Dokument verwalten" : `${names.length} Dokumente verwalten` };
 }
 
-/** Büroklammer im Kopf: ohne Dokument nur „📎“, eines mit (gekürztem) Namen, sonst die Anzahl. */
-export function docClip(names: string[]): { text: string; label: string } {
-  if (names.length === 0) return { text: "📎", label: "Dokument hinzufügen" };
-  if (names.length === 1) return { text: `📎 ${shortFileName(names[0])}`, label: `Dokument ${names[0]}` };
-  return { text: `📎 ${names.length} Dokumente`, label: `${names.length} Dokumente` };
+/** Kompakte Zeile eines Verkostet-Eintrags: „2022 · 28.10.2026 · Kronenhalle · ★ 4“ (Fehlendes fällt weg). */
+export function encounterLine(e: { year: number | null; tastedOn: string; place: { name: string } | null; ratings: { rating: number }[] }) {
+  return [
+    e.year ?? "NV",
+    formatDate(e.tastedOn),
+    e.place?.name,
+    // geschütztes Leerzeichen: „★ 4“ bricht nicht um
+    e.ratings.length ? `★\u00a0${e.ratings.map((r) => formatStarNumber(r.rating)).join("/")}` : null,
+  ]
+    .filter((p) => p != null && p !== "")
+    .join(" · ");
 }
+
+/** Karte „Verkostet“: je Eintrag die Zeile, dahinter „🛒 kaufen“, wenn der Merker gesetzt ist. */
+export function encounterRows<T extends Parameters<typeof encounterLine>[0] & { id: string }>(encounters: T[], wantToBuy: boolean) {
+  return encounters.map((e) => ({ entry: e, line: encounterLine(e), buy: wantToBuy ? BUY_MARK : null }));
+}
+
+export const BUY_MARK = "🛒\u00a0kaufen";
+
+/** „Zum Wein“: Zeilen nach den Stammdaten; die Fotos stehen zuletzt (ohne Überschrift). */
+export const WINE_EXTRA_ROWS = ["Laut Verkostung", "Jahrgang", "Notiz", "Fotos"] as const;

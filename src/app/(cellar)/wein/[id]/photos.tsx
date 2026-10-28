@@ -54,12 +54,15 @@ export function WinePhotos({
   itemId,
   photos,
   alt,
+  embedded = false,
 }: {
   wineId: string;
   vintageYear: number | null;
   itemId: string | null;
   photos: WinePhoto[];
   alt: string;
+  /** Im Formular „Zum Wein“: ohne eigenes „Fertig“ (das Formular hat Speichern/Abbrechen). */
+  embedded?: boolean;
 }) {
   const has = (kind: MediaKind) => photos.some((p) => p.kind === kind && !p.legacy);
   const [kind, setKind] = useState<MediaKind>(
@@ -190,7 +193,7 @@ export function WinePhotos({
             {state.ok}
           </p>
         )}
-        {unit && (
+        {unit && !embedded && (
           <div className="row unit-buttons">
             <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => unit.close()}>
               Fertig

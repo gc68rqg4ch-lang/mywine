@@ -2261,22 +2261,42 @@ input[inputmode="decimal"] {
   display: flex;
   justify-content: flex-end;
 }
+.doc-clip-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.doc-clip-lines li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: min(280px, 55vw);
+  text-align: right;
+}
+.doc-clip-name {
+  font-size: 0.85rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  padding-top: 6px;
+}
+a.doc-clip-name:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
 .doc-clip-btn {
-  max-width: 190px;
+  flex: none;
   min-height: 32px;
   padding: 2px 0;
   border: 0;
   background: none;
-  color: var(--muted);
   font: inherit;
   font-size: 0.85rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
-}
-.doc-clip-btn:hover {
-  color: var(--text);
 }
 .doc-clip-btn.is-empty {
   opacity: 0.55;
@@ -2315,4 +2335,26 @@ input[inputmode="decimal"] {
   margin: 0;
   padding: 0;
   border: 0;
+}
+
+/* „Zum Wein“: Fotos als letzte Zeile; im Formular eigener Block */
+.details-photos {
+  padding-top: 4px;
+}
+.photo-field {
+  min-width: 0;
+  margin: 0;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px dashed var(--border);
+}
+
+/* Karte „Verkostet“: eine Zeile je Eintrag, „🛒 kaufen“ dahinter */
+.encounter-line {
+  overflow-wrap: anywhere;
+}
+.want-chip {
+  white-space: nowrap;
+  color: var(--accent);
+  font-weight: 600;
 }
