@@ -428,6 +428,11 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Korrigieren:** Freitext-Antwort, die per `claude-haiku-5-5` in den Vorschlag übernommen wird.
 - **Album:** Telegram schickt jedes Foto einzeln. Alle Fotos eines Albums landen über eine aus
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.
+- **Jahrgang anlegen** (`ensureVintage` in `src/lib/cellar/vintage-row.ts`): die einzige Stelle, die `wine_vintages`
+  anlegt – DB-Funktion `ensure_wine_vintage` (INSERT … ON CONFLICT (wine_id, COALESCE(vintage_year, 0)) DO NOTHING,
+  dann SELECT; Migration `ensure_wine_vintage`), ohne Migration: lesen, anlegen, bei 23505 nochmals lesen. Danach
+  schreibt jeder nur seine Felder per UPDATE (Profilsuche `taste_profile_checked_at`, Trinkfenster
+  `drink_*`/`notes`). Beim Einbuchen wird der Jahrgang gleich mit angelegt.
 - **Trinkfenster bei jedem Einbuchen** (`src/lib/research/drink-window.ts`, `drink-window-auto.ts`,
   `src/lib/cellar/drink-window.ts`): Nach dem Speichern sucht Antoine im Hintergrund das Trinkfenster des Jahrgangs,
   wenn „ab“ und „bis“ leer sind – ein strict-Tool mit Websuche (`report_drink_window`, ohne nullable/min/max):

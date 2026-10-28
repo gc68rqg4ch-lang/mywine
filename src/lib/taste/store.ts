@@ -3,6 +3,7 @@ import "server-only";
 // Geschmacksprofile lesen und schreiben (wine_taste_profiles). Ein Profil pro Wein und
 // Jahrgang (null = allgemein). Kein Upsert: erst lesen, dann ändern bzw. anlegen.
 
+import { ensureVintage } from "@/lib/cellar/vintage-row";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
 import { fromRow, toRow, type StoredTasteProfile, type TasteProfileData } from "./profile";
@@ -65,11 +66,8 @@ export async function tasteCheckedAt(db: Db, wineId: string, year: number | null
 
 /** Nach jeder Profilsuche (auch ohne Fund) vermerken – Jahrgang ggf. anlegen. Kein Upsert: erst lesen. */
 export async function markTasteChecked(db: Db, wineId: string, year: number | null, at = new Date().toISOString()) {
-  const q = db.from("wine_vintages").select("id").eq("wine_id", wineId);
-  const { data: row, error } = await (year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year)).maybeSingle();
+  // Jahrgang sicher holen/anlegen (parallel zur Trinkfenster-Suche), dann nur dieses Feld setzen.
+  const id = await ensureVintage(db, wineId, year);
+  const { error } = await db.from("wine_vintages").update({ taste_profile_checked_at: at }).eq("id", id);
   if (error) throw error;
-  const { error: saveError } = row
-    ? await db.from("wine_vintages").update({ taste_profile_checked_at: at }).eq("id", row.id)
-    : await db.from("wine_vintages").insert({ wine_id: wineId, vintage_year: year, taste_profile_checked_at: at });
-  if (saveError) throw saveError;
 }

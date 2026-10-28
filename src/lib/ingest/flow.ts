@@ -10,6 +10,7 @@ import { REGULAR_HINT, pricesInText } from "./prices";
 import { scheduleTasteProfile } from "@/lib/research/taste-auto";
 import { scheduleDrinkWindow } from "@/lib/research/drink-window-auto";
 import { asDrinkSource, drinkWindowHint, drinkWindowText, saveVintageWindow } from "@/lib/cellar/drink-window";
+import { ensureVintage } from "@/lib/cellar/vintage-row";
 import { sourceNote } from "@/lib/research/compare";
 import { later } from "@/lib/later";
 import { apiLimitForIngest, apiProblemForBot } from "@/lib/ai/api-errors";
@@ -432,6 +433,9 @@ export async function saveJob(job: IngestJob, chatId: number) {
     const wineId = await resolveWine(db, state.proposal, job.matched_wine_id);
     await fillWineGaps(db, wineId, state.proposal);
     await storeGrapes(db, wineId, state);
+    // Jahrgang gleich mit anlegen: die Hintergrund-Suchen (Profil, Trinkfenster) finden ihn dann
+    // schon vor und schreiben nur noch ihre Felder (ensureVintage ist auch bei Gleichzeitigkeit sicher).
+    await ensureVintage(db, wineId, state.proposal.vintage_year).catch((error) => console.error("ensure vintage failed", error));
     await storeDrinkWindow(db, wineId, state);
     await storeBestBefore(db, wineId, state);
     // Händler aus dem Text erst jetzt anlegen bzw. zuordnen.

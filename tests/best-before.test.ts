@@ -121,7 +121,8 @@ test("Kein bzw. unleserliches Datum → nichts gesetzt", async () => {
   assert.equal(state().drink_until_year, null);
   assert.doesNotMatch(lastText(), /Haltbar/);
   await save();
-  assert.equal(net.tables.wine_vintages.length, 0, "kein Trinkfenster, keine Notiz");
+  // Der Jahrgang wird beim Einbuchen angelegt – aber ohne Trinkfenster und ohne Notiz.
+  assert.ok(net.tables.wine_vintages.every((v) => v.drink_until_year == null && v.drink_from_year == null && !v.notes), "kein Trinkfenster, keine Notiz");
 });
 
 test("Bestehende Notiz bleibt, Satz wird angehängt; bestehendes Trinkfenster wird nicht überschrieben (Hinweis)", async () => {

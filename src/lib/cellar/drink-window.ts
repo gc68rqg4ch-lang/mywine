@@ -6,6 +6,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
+import { ensureVintage } from "./vintage-row";
 
 type Db = SupabaseClient<Database>;
 
@@ -68,10 +69,9 @@ export async function saveVintageWindow(
   note: string | null = null,
 ) {
   const meta = { drink_window_source: source, drink_window_note: note?.trim() ? note.trim().slice(0, 300) : null };
-  const write = (v: typeof values) =>
-    target.rowId
-      ? db.from("wine_vintages").update(v).eq("id", target.rowId)
-      : db.from("wine_vintages").insert({ wine_id: target.wineId, vintage_year: target.year, ...v });
+  // Jahrgang sicher holen/anlegen (parallel zur Profilsuche), dann nur die eigenen Felder setzen.
+  const rowId = target.rowId ?? (await ensureVintage(db, target.wineId, target.year));
+  const write = (v: typeof values) => db.from("wine_vintages").update(v).eq("id", rowId);
   let { error } = await write({ ...values, ...meta });
   if (missingColumn(error)) ({ error } = await write(values));
   if (error) throw error;
