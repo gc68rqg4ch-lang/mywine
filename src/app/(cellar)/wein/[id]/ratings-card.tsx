@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { UnitButtons, useEditUnit } from "@/components/edit-unit";
+import { RatingField } from "@/components/encounter-fields";
 import { HalfStars } from "@/components/half-stars";
 import { formatDate } from "@/lib/format";
 import { setRating } from "../../tasting-actions";
@@ -16,14 +18,11 @@ export function PersonRatings({
   itemId,
   ratings,
   ownPersonId = null,
-  editable = false,
 }: {
   itemId: string;
   ratings: PersonRating[];
   /** Angemeldete Person: steht zuerst und ist markiert; die anderen bleiben bewertbar. */
   ownPersonId?: string | null;
-  /** Bearbeiten-Modus: Bewertungen löschen (samt Verlauf, mit Rückfrage). */
-  editable?: boolean;
 }) {
   const ordered = [...ratings].sort((a, b) => Number(b.personId === ownPersonId) - Number(a.personId === ownPersonId));
   const [pending, startTransition] = useTransition();
@@ -71,20 +70,6 @@ export function PersonRatings({
                 <span className="rating-value">
                   {value != null ? value.toLocaleString("de-CH") : "–"}
                 </span>
-                {editable && value != null && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => {
-                      if (window.confirm(`Bewertung von ${r.name} löschen (auch frühere)?`)) update(r.personId, null);
-                    }}
-                    disabled={pending}
-                    aria-label={`Bewertung von ${r.name} löschen`}
-                    title="Bewertung löschen"
-                  >
-                    ✕
-                  </button>
-                )}
                 {r.ratedAt && !(r.personId in local) && (
                   <span className="muted small rating-date">{formatDate(r.ratedAt)}</span>
                 )}
@@ -99,5 +84,50 @@ export function PersonRatings({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * Bewertungen bearbeiten (nach ✏️): je Person Sterne oder „keine“. Gelöschte Bewertungen
+ * (auch frühere) erst nach Rückfrage. Gespeichert wird wie beim Antippen der Sterne.
+ */
+export function RatingsForm({ itemId, ratings }: { itemId: string; ratings: PersonRating[] }) {
+  const unit = useEditUnit();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const changed = ratings.flatMap((r) => {
+      const raw = String(data.get(`rating:${r.personId}`) ?? "");
+      const next = raw === "" ? null : Number(raw);
+      return next === r.rating ? [] : [{ ...r, next }];
+    });
+    const removed = changed.filter((c) => c.next == null).map((c) => c.name);
+    if (removed.length && !window.confirm(`Bewertung von ${removed.join(" und ")} löschen (auch frühere)?`)) return;
+    if (!changed.length) return unit?.close();
+    setError(null);
+    startTransition(async () => {
+      for (const c of changed) {
+        const result = await setRating(itemId, c.personId, c.next);
+        if (!result.ok) return setError(result.error);
+      }
+      unit?.close("Bewertungen gespeichert.");
+    });
+  };
+
+  return (
+    <form onSubmit={submit} className="stack">
+      {ratings.map((r) => (
+        <RatingField key={r.personId} personId={r.personId} name={r.name} initial={r.rating} />
+      ))}
+      {error && (
+        <p className="notice notice-error" role="alert">
+          {error}
+        </p>
+      )}
+      <UnitButtons pending={pending} />
+    </form>
   );
 }

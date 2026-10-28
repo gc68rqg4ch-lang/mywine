@@ -2160,3 +2160,151 @@ input[inputmode="decimal"] {
   color: var(--danger);
   font-weight: 600;
 }
+
+/* Bearbeiten direkt in der Karte: kleines ✏️ oben rechts je Einheit, immer nur eine offen */
+.edit-unit {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.unit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.unit-title {
+  flex: 1;
+  min-width: 0;
+}
+.unit-pencil {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  margin: -6px -6px -6px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 0.95rem;
+  opacity: 0.6;
+  cursor: pointer;
+}
+/* Einheit ohne Titel (offene Flasche): ✏️ oben rechts über dem Inhalt */
+.edit-unit > .unit-pencil {
+  position: absolute;
+  top: 0;
+  right: 0;
+  margin: -6px -6px 0 0;
+}
+.unit-pencil:hover,
+.unit-pencil:focus-visible {
+  opacity: 1;
+  background: var(--surface-2);
+}
+.edit-unit.is-editing > .unit-form {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.unit-form .field input,
+.unit-form .field select,
+.unit-form .field textarea {
+  width: 100%;
+}
+.unit-buttons {
+  padding-top: 4px;
+}
+/* Offene Flasche ohne eigenen Titel: Platz für das ✏️ */
+.bottle-unit .open-bottle-head {
+  padding-right: 36px;
+}
+.bottle-unit .open-bottle {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.bottle-unit + .bottle-unit {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.encounter-item .year-chip {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.encounter-extra {
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.encounter-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+/* Formulare auf dem iPhone einspaltig */
+@media (max-width: 599px) {
+  .edit-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Dokumente als Büroklammer im Kopf */
+.doc-clip {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+}
+.doc-clip-btn {
+  max-width: 190px;
+  min-height: 32px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.doc-clip-btn:hover {
+  color: var(--text);
+}
+.doc-clip-btn.is-empty {
+  opacity: 0.55;
+}
+.doc-pop {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 30;
+  width: min(320px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+  text-align: left;
+}
+
+/* Ganz unten: dezenter Link „🗑 Wein löschen“ */
+.delete-wine {
+  padding-top: 8px;
+  font-size: 0.9rem;
+}
+.doc-pop .doc-list li {
+  flex-wrap: nowrap;
+  justify-content: space-between;
+}
+.doc-pop .doc-link {
+  flex: 1;
+  min-width: 0;
+}

@@ -3,6 +3,7 @@
 // Felder eines Eintrags „Verkostet“ – gemeinsam für Erfassen (/verkostet/neu) und Bearbeiten
 // auf der Weinseite. Die Namen passen zu src/lib/edit/form.ts (addEncounter / encounter).
 
+import { useEditUnit } from "@/components/edit-unit";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { HalfStars } from "@/components/half-stars";
 import { CURRENCIES, PLACE_KINDS, PLACE_KIND_LABELS, PRICE_UNITS, PRICE_UNIT_LABELS } from "@/lib/edit/types";
@@ -187,18 +188,29 @@ export function EncounterFields({
       <DateField value={values.tastedOn} today={today} />
       <PlaceField placeId={values.placeId} places={places} />
       <PriceFields price={values.price} priceUnit={values.priceUnit} currency={values.currency} />
-      <TextField name="occasion" label="Anlass" value={values.occasion} placeholder="z. B. Geburtstag" />
-      <TextField name="companions" label="Begleitung" value={values.companions} placeholder="mit wem?" />
       <NoteField value={values.note} />
+      <details className="more-fields field-wide">
+        <summary>Mehr</summary>
+        <div className="edit-grid">
+          <TextField name="occasion" label="Anlass" value={values.occasion} placeholder="z. B. Geburtstag" />
+          <TextField name="companions" label="Begleitung" value={values.companions} placeholder="mit wem?" />
+        </div>
+      </details>
     </div>
   );
 }
 
 /** Sterne 0–5 in halben Schritten als Formularfeld „rating:<personId>“ (leer = keine). */
 export function RatingField({ personId, name, initial = null }: { personId: string; name: string; initial?: number | null }) {
-  const [value, setValue] = useState<number | null>(initial);
+  const [value, setStars] = useState<number | null>(initial);
   const ref = useRef<HTMLDivElement>(null);
-  useFormReset(ref, () => setValue(initial));
+  const unit = useEditUnit();
+  // Sterne lösen kein input-Ereignis aus: Änderung der Einheit selbst melden.
+  const setValue = (v: number | null) => {
+    setStars(v);
+    unit?.markDirty();
+  };
+  useFormReset(ref, () => setStars(initial));
   return (
     <div className="rating-field" ref={ref}>
       <span className="rating-field-name">{name}</span>

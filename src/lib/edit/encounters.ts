@@ -6,7 +6,7 @@ import "server-only";
 // encounter_id und das Datum des Eintrags (rated_at).
 
 import type { Database } from "@/lib/database.types";
-import { WINE_TYPE_LABELS, formatMoney, todayIso, wineName, type WineType } from "@/lib/format";
+import { WINE_TYPE_LABELS, formatMoney, formatStarNumber, todayIso, wineName, type WineType } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
 import {
   DASH,
@@ -58,6 +58,19 @@ export function encounterPrice(e: { price: number | null; price_unit: string | n
   if (!money) return null;
   const unit = e.price_unit && e.price_unit in PRICE_UNIT_LABELS ? PRICE_UNIT_LABELS[e.price_unit as keyof typeof PRICE_UNIT_LABELS] : null;
   return unit ? `${money} / ${unit}` : money;
+}
+
+/** Kompakte Zusammenfassung eines Eintrags auf der Weinseite: „Datum · Ort · Preis · Sterne“. */
+export function encounterSummary(e: Pick<EncounterView, "tastedOn" | "place" | "price" | "priceUnit" | "currency" | "ratings">) {
+  const ratings = e.ratings.map((r) => `${r.name} ${formatStarNumber(r.rating)} ★`).join(", ");
+  return [
+    date(e.tastedOn),
+    e.place?.name ?? null,
+    encounterPrice({ price: e.price, price_unit: e.priceUnit, currency: e.currency }),
+    ratings || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 const stars = (v: number | null | undefined) => (v == null ? DASH : `${v.toLocaleString("de-CH")} ★`);

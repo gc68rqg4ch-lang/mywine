@@ -1,12 +1,15 @@
 "use client";
 
 import { useActionState, type ReactNode } from "react";
+import { UnitButtons, useEditUnit } from "@/components/edit-unit";
+import type { ActionState } from "../../actions";
 import { saveEdit } from "../../edit-actions";
 
 /**
  * Ein Bearbeiten-Formular der Weinseite: Felder kommen als children (vom Server
- * vorbelegt), gespeichert wird über das gemeinsame Bearbeiten-Modul. „Abbrechen“ setzt
- * die Felder zurück. Optional mit Rückfrage (Löschen, Zusammenführen).
+ * vorbelegt), gespeichert wird über das gemeinsame Bearbeiten-Modul. In einer Einheit
+ * (✏️) schliessen „Abbrechen“ und erfolgreiches Speichern sie; sonst setzt „Abbrechen“ die
+ * Felder zurück. Optional mit Rückfrage (Löschen, Zusammenführen).
  */
 export function EditForm({
   hidden,
@@ -27,7 +30,12 @@ export function EditForm({
   danger?: boolean;
   cancel?: boolean;
 }) {
-  const [state, action, pending] = useActionState(saveEdit, undefined);
+  const unit = useEditUnit();
+  const [state, action, pending] = useActionState(async (prev: ActionState, data: FormData) => {
+    const result = await saveEdit(prev, data);
+    if (result?.ok && unit) unit.close(result.ok);
+    return result;
+  }, undefined);
 
   const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     const data = new FormData(event.currentTarget);
@@ -55,6 +63,9 @@ export function EditForm({
           {state.ok}
         </p>
       )}
+      {unit && !danger ? (
+        <UnitButtons pending={pending} submitLabel={submitLabel} />
+      ) : (
       <div className="row">
         <button type="submit" className={danger ? "btn btn-danger btn-sm" : "btn btn-primary btn-sm"} disabled={pending}>
           {pending ? "Wird gespeichert …" : submitLabel}
@@ -65,6 +76,7 @@ export function EditForm({
           </button>
         )}
       </div>
+      )}
     </form>
   );
 }

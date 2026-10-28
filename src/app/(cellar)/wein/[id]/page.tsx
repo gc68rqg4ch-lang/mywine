@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { viewerPhoto } from "@/components/cellar/wine-card";
 import { PhotoGallery } from "@/components/photo-viewer";
 import { ResearchSuggestions } from "@/components/research-suggestions";
@@ -32,15 +32,18 @@ import { loadDocuments } from "@/lib/media/documents";
 import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
+import { EditUnit, EditUnits } from "@/components/edit-unit";
+import { WINE_DETAIL_FIELDS, WINE_SECTIONS, type WineSection } from "@/lib/cellar/wine-units";
+import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
-import { WineDocuments } from "./documents";
-import { BatchEditor, VintageEditForm, WineEditForm } from "./edit-sections";
-import { GrapeSection } from "./grape-card";
+import { DocumentClip } from "./documents";
+import { BatchForm, VintageEditForm, WineEditForm, type EditBatch } from "./edit-sections";
+import { GrapeForm, GrapeList, ResearchBlock } from "./grape-card";
 import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
-import { PersonRatings, type PersonRating } from "./ratings-card";
+import { PersonRatings, RatingsForm, type PersonRating } from "./ratings-card";
 import { EncounterSection } from "./encounters";
-import { DangerZone } from "./delete-sections";
+import { DeleteWine } from "./delete-sections";
 import { loadWineDeleteSummary } from "@/lib/edit/delete";
 import { wineDeleteSummaryText } from "@/lib/edit/delete-text";
 import { BackLink } from "@/components/back-link";
@@ -153,17 +156,16 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const inVintage = items.filter((i) => i.vintage_year === year);
   const anchor = anchorItem(inVintage);
 
-  // Bearbeiten-Modus (?bearbeiten=1): Formulare statt Anzeige, alle über das gemeinsame Modul.
-  const editing = query.bearbeiten === "1";
-  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places] = await Promise.all([
+  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places, deleteSummary, botUrl] = await Promise.all([
     loadRatingsAndTastings(supabase, wine.id, year),
     loadGrapeShares(supabase, wine.id, year),
     loadVintagePhotos(supabase, wine.id, year, inVintage.map((i) => i.inventory_item_id)),
-    editing ? loadVendorNames(supabase) : Promise.resolve([] as string[]),
+    loadVendorNames(supabase),
     loadDocuments(supabase, wine.id, year),
-    editing ? loadPlaces(supabase) : Promise.resolve([]),
+    loadPlaces(supabase),
+    loadWineDeleteSummary(supabase, wine.id),
+    inVintage.length === 0 ? botChatUrl() : Promise.resolve(null),
   ]);
-  const deleteSummary = editing ? await loadWineDeleteSummary(supabase, wine.id) : null;
   const suggestions = await loadPendingSuggestions(supabase, { wineId: wine.id, year }).catch((error) => {
     console.error("loading suggestions failed", error);
     return [];
@@ -199,24 +201,13 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const tastingItem = (itemId: string | null) => itemId ?? anchor?.inventory_item_id;
 
   const von = typeof query.von === "string" ? { von: query.von } : undefined;
-  const editHref = wineHref(wine.id, year, { ...von, bearbeiten: "1" });
-  const viewHref = wineHref(wine.id, year, von);
+  const bottleTitle = (b: EditBatch) =>
+    b.status === "drunk"
+      ? `${b.drunk_at ? formatDate(zurichDate(b.drunk_at)) : "ohne Datum"}${sizeSuffix(b.bottle_size_ml)}`
+      : `${place(b)} · ${b.quantity} Fl.${sizeSuffix(b.bottle_size_ml)}`;
+  const batchForm = (b: EditBatch) => <BatchForm batch={b} vendors={vendors} />;
 
-  // Bearbeiten: je Charge bzw. Flasche ein Formular (ungeöffnet, offen, getrunken).
-  const batchColumn = (
-    <div className="wine-col wine-col-open">
-      {[...sealed, ...open, ...drunk].map((b) => (
-        <BatchEditor key={b.inventory_item_id} batch={b} vendors={vendors} />
-      ))}
-      {inVintage.length === 0 && (
-        <section className="card">
-          <p className="muted">Keine Flaschen dieses Jahrgangs.</p>
-        </section>
-      )}
-    </div>
-  );
-
-  // Spalte 1: Flasche öffnen (Chargen mit Preisen), offene und getrunkene Flaschen.
+  // Spalte 1: offene Flaschen, Bestand (Chargen), Flasche öffnen, getrunkene – je mit ✏️.
   const openColumn = (
     <div className="wine-col wine-col-open">
       {/* Offene Flaschen zuerst – die trinkt man als Nächstes. */}
@@ -224,22 +215,48 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         <section className="card stack">
           <h2 className="section-title">Offen</h2>
           {open.map((o) => (
-            <OpenBottleControls
+            <EditUnit
               key={o.inventory_item_id}
-              bottle={{
-                itemId: o.inventory_item_id,
-                fillLevel: o.fill_level_percent,
-                price: priceOf(o),
-                label: [
-                  o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)} (${formatDaysSince(o.date_opened)})` : "Offen",
-                  place(o),
-                  o.bottle_size_ml && o.bottle_size_ml !== 750 ? formatBottleSize(o.bottle_size_ml) : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · "),
-              }}
-            />
+              id={`item:${o.inventory_item_id}`}
+              label={`Offene Flasche (${place(o)})`}
+              className="bottle-unit"
+              form={batchForm(o)}
+            >
+              <OpenBottleControls
+                bottle={{
+                  itemId: o.inventory_item_id,
+                  fillLevel: o.fill_level_percent,
+                  price: priceOf(o),
+                  label: [
+                    o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)} (${formatDaysSince(o.date_opened)})` : "Offen",
+                    place(o),
+                    o.bottle_size_ml && o.bottle_size_ml !== 750 ? formatBottleSize(o.bottle_size_ml) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                }}
+              />
+            </EditUnit>
           ))}
+        </section>
+      )}
+      {sealed.length > 0 && (
+        <section className="card stack">
+          <h2 className="section-title">Im Bestand</h2>
+          <ul className="bottle-list">
+            {sealed.map((b) => (
+              <EditUnit
+                key={b.inventory_item_id}
+                as="li"
+                id={`item:${b.inventory_item_id}`}
+                label={`Charge ${place(b)}`}
+                title={<strong>{bottleTitle(b)}</strong>}
+                form={batchForm(b)}
+              >
+                <PriceLine {...priceOf(b)} />
+              </EditUnit>
+            ))}
+          </ul>
         </section>
       )}
       {charges.length > 0 && (
@@ -253,124 +270,162 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
           <h2 className="section-title">Getrunken</h2>
           <ul className="bottle-list">
             {drunk.map((d) => (
-              <li key={d.inventory_item_id} className="stack-sm">
-                <span className="row row-between">
-                  <span>{d.drunk_at ? formatDate(zurichDate(d.drunk_at)) : "ohne Datum"}</span>
-                  {d.personal_wine_rating != null && (
-                    <span className="muted">{formatStarNumber(d.personal_wine_rating)} ★</span>
-                  )}
-                </span>
+              <EditUnit
+                key={d.inventory_item_id}
+                as="li"
+                id={`item:${d.inventory_item_id}`}
+                label={`Getrunkene Flasche vom ${d.drunk_at ? formatDate(zurichDate(d.drunk_at)) : "–"}`}
+                title={
+                  <span className="row row-between">
+                    <span>{bottleTitle(d)}</span>
+                    {d.personal_wine_rating != null && (
+                      <span className="muted">{formatStarNumber(d.personal_wine_rating)} ★</span>
+                    )}
+                  </span>
+                }
+                form={batchForm(d)}
+              >
                 <PriceLine {...priceOf(d)} />
-              </li>
+              </EditUnit>
             ))}
           </ul>
         </section>
       )}
-      {charges.length === 0 && open.length === 0 && drunk.length === 0 && (
-        <section className="card">
-          <p className="muted">Keine Flaschen dieses Jahrgangs.</p>
+      {inVintage.length === 0 && (
+        <section className="card stack-sm">
+          <p className="muted">Keine Flaschen dieses Jahrgangs{options.find((o) => o.year === year)?.tastedOnly ? " – bisher nur verkostet" : ""}.</p>
+          {botUrl ? (
+            <div>
+              <a href={botUrl} className="btn btn-sm" target="_blank" rel="noopener noreferrer">
+                ＋ Flaschen erfassen
+              </a>
+            </div>
+          ) : null}
+          <p className="muted small">Flaschen erfasst du im Bot Antoine: Foto der Etikette schicken oder den Kauf als Text.</p>
         </section>
       )}
     </div>
   );
 
-  // Spalte 2: Zum Wein – Stammdaten, Rebsorten, Trinkreife.
-  const wineColumn = (
-    <div className="wine-col wine-col-wine">
-      <section className="card stack">
-        <h2 className="section-title">Zum Wein</h2>
+  const details: Record<(typeof WINE_DETAIL_FIELDS)[number], ReactNode> = {
+    Typ: <WineTypeIcon type={wine.type} withLabel />,
+    Land: wine.country ? `${flag ? `${flag} ` : ""}${wine.country}` : null,
+    Region: wine.region,
+    Appellation: wine.appellation,
+    Alkohol: wine.alcohol_content != null ? `${wine.alcohol_content.toLocaleString("de-CH")} %` : null,
+    Flasche: sizes,
+  };
+  const photoAlt = `${wine.name} ${yearLabel}`;
+
+  // Spalte 2: Zum Wein – Reihenfolge laut WINE_SECTIONS (Stammdaten, Rebsorten, Trinkreife, Fotos, Recherche).
+  const sections: Record<WineSection, ReactNode> = {
+    details: (
+      <EditUnit
+        id="wine"
+        label="Zum Wein"
+        title={<h2 className="section-title">Zum Wein</h2>}
+        form={<WineEditForm wine={{ ...wine, type: asWineType(wine.type) }} />}
+      >
+        <dl className="details">
+          {WINE_DETAIL_FIELDS.map((f) => (
+            <Detail key={f} label={f} value={details[f]} />
+          ))}
+          <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
+          <Detail label="Notiz" value={vintage?.notes} />
+        </dl>
         {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}
-        {editing ? (
-          <WineEditForm wine={{ ...wine, type: asWineType(wine.type) }} />
-        ) : (
-          <dl className="details">
-            <Detail label="Typ" value={<WineTypeIcon type={wine.type} withLabel />} />
-            <Detail label="Land" value={wine.country ? `${flag ? `${flag} ` : ""}${wine.country}` : null} />
-            <Detail label="Region" value={wine.region} />
-            <Detail label="Appellation" value={wine.appellation} />
-            <Detail
-              label="Alkohol"
-              value={wine.alcohol_content != null ? `${wine.alcohol_content.toLocaleString("de-CH")} %` : null}
-            />
-            <Detail label="Flasche" value={sizes} />
-            <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
-            <Detail label="Notiz" value={vintage?.notes} />
-          </dl>
-        )}
-        {editing && (
-          <div className="stack section-divider">
-            <h3 className="subsection-title">Jahrgang & Trinkfenster</h3>
-            <VintageEditForm
-              key={`${year}:${vintage?.drink_from_year}:${vintage?.drink_until_year}`}
-              wineId={wine.id}
-              year={year}
-              otherYears={options.map((o) => o.year).filter((y) => y !== year)}
-              drinkFrom={vintage?.drink_from_year ?? null}
-              drinkUntil={vintage?.drink_until_year ?? null}
-            />
-          </div>
-        )}
-        <div className="stack section-divider">
-          <h3 className="subsection-title">Fotos</h3>
-          {editing ? (
-            <WinePhotos
-              // Neu mounten, wenn sich Jahrgang oder Fotos ändern (vorgeschlagene Art passt dann wieder).
-              key={`${year}:${photos.length}`}
-              wineId={wine.id}
-              vintageYear={year}
-              itemId={anchor?.inventory_item_id ?? null}
-              photos={photos.map(viewerPhoto)}
-              alt={`${wine.name} ${yearLabel}`}
-            />
-          ) : photos.length ? (
-            <PhotoGallery photos={photos.map(viewerPhoto)} alt={`${wine.name} ${yearLabel}`} />
-          ) : (
-            <p className="muted small">Noch keine Fotos – unter ✏️ Bearbeiten hinzufügen.</p>
-          )}
-        </div>
-        {(editing || documents.length > 0) && (
-          <div className="stack section-divider">
-            <h3 className="subsection-title">Dokumente</h3>
-            <WineDocuments
-              key={`${year}:${documents.length}`}
-              docs={documents}
-              editing={editing}
-              wineId={wine.id}
-              vintageYear={year}
-            />
-          </div>
-        )}
-        {anchor && (
-          <div className="section-divider">
-            <GrapeSection
-              wineId={wine.id}
-              // Neu mounten, wenn sich Jahrgang oder gespeicherte Angaben ändern.
-              key={JSON.stringify([year, grapes])}
+      </EditUnit>
+    ),
+    grapes: (
+      <EditUnit
+        id="grapes"
+        label="Rebsorten"
+        className="section-divider"
+        title={<h3 className="subsection-title">Rebsorten</h3>}
+        form={
+          anchor ? (
+            <GrapeForm
               itemId={anchor.inventory_item_id}
               itemVintage={year}
               shares={grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }))}
-              sharesVintage={grapes?.vintageYear ?? null}
-              sources={grapes?.sources ?? []}
-              editable={editing}
-              researchedOn={formatDate(zurichDate(wine.researched_at))}
             />
-          </div>
+          ) : undefined
+        }
+      >
+        <GrapeList
+          shares={grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }))}
+          sharesVintage={grapes?.vintageYear ?? null}
+          itemVintage={year}
+          sources={grapes?.sources ?? []}
+        />
+      </EditUnit>
+    ),
+    drink: (
+      <EditUnit
+        id="vintage"
+        label="Jahrgang & Trinkfenster"
+        className="section-divider"
+        title={<h3 className="subsection-title">Trinkreife</h3>}
+        form={
+          <VintageEditForm
+            wineId={wine.id}
+            year={year}
+            otherYears={options.map((o) => o.year).filter((y) => y !== year)}
+            drinkFrom={vintage?.drink_from_year ?? null}
+            drinkUntil={vintage?.drink_until_year ?? null}
+          />
+        }
+      >
+        <p>
+          <Link
+            href={drinkStatusHref(status)}
+            className={`drink-badge drink-link drink-${status}`}
+            title="Alle Weine im Bestand mit dieser Trinkreife"
+          >
+            {DRINK_STATUS_LABELS[status]}
+          </Link>
+          {drinkWindow && <span className="muted"> {drinkWindow}</span>}
+        </p>
+        {!drinkWindow && <p className="muted small">Kein Trinkfenster erfasst.</p>}
+        {latestReadiness && <p className="small">Laut Verkostung: {latestReadiness}</p>}
+      </EditUnit>
+    ),
+    photos: (
+      <EditUnit
+        id="photos"
+        label="Fotos"
+        className="section-divider"
+        title={<h3 className="subsection-title">Fotos</h3>}
+        form={
+          <WinePhotos
+            wineId={wine.id}
+            vintageYear={year}
+            itemId={anchor?.inventory_item_id ?? null}
+            photos={photos.map(viewerPhoto)}
+            alt={photoAlt}
+          />
+        }
+      >
+        {photos.length ? (
+          <PhotoGallery photos={photos.map(viewerPhoto)} alt={photoAlt} />
+        ) : (
+          <p className="muted small">Noch keine Fotos.</p>
         )}
-        <div className="stack section-divider">
-          <h3 className="subsection-title">Trinkreife</h3>
-          <p>
-            <Link
-              href={drinkStatusHref(status)}
-              className={`drink-badge drink-link drink-${status}`}
-              title="Alle Weine im Bestand mit dieser Trinkreife"
-            >
-              {DRINK_STATUS_LABELS[status]}
-            </Link>
-            {drinkWindow && <span className="muted"> {drinkWindow}</span>}
-          </p>
-          {!drinkWindow && <p className="muted small">Kein Trinkfenster erfasst.</p>}
-          {latestReadiness && <p className="small">Laut Verkostung: {latestReadiness}</p>}
-        </div>
+      </EditUnit>
+    ),
+    research: (
+      <div className="stack-sm section-divider">
+        <h3 className="subsection-title">Recherche</h3>
+        <ResearchBlock wineId={wine.id} researchedOn={formatDate(zurichDate(wine.researched_at))} />
+      </div>
+    ),
+  };
+  const wineColumn = (
+    <div className="wine-col wine-col-wine">
+      <section className="card stack">
+        {WINE_SECTIONS.map((key) => (
+          <Fragment key={key}>{sections[key]}</Fragment>
+        ))}
       </section>
     </div>
   );
@@ -379,17 +434,22 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const ratingsColumn = (
     <div className="wine-col wine-col-ratings">
       <section className="card stack">
-        <h2 className="section-title">Bewertungen</h2>
-        {anchor && (
-          <PersonRatings
-            key={String(year)}
-            itemId={anchor.inventory_item_id}
-            ratings={ratings}
-            ownPersonId={person?.id ?? null}
-            editable={editing}
-          />
-        )}
-        {legacyRating != null && <p className="muted small">Frühere Bewertung (Import): {formatRating(legacyRating)}</p>}
+        <EditUnit
+          id="ratings"
+          label="Bewertungen"
+          title={<h2 className="section-title">Bewertungen</h2>}
+          form={anchor ? <RatingsForm itemId={anchor.inventory_item_id} ratings={ratings} /> : undefined}
+        >
+          {anchor && (
+            <PersonRatings
+              key={String(year)}
+              itemId={anchor.inventory_item_id}
+              ratings={ratings}
+              ownPersonId={person?.id ?? null}
+            />
+          )}
+          {legacyRating != null && <p className="muted small">Frühere Bewertung (Import): {formatRating(legacyRating)}</p>}
+        </EditUnit>
         <div className="stack section-divider">
           <div className="row row-between">
             <h3 className="subsection-title">Verkostungen (WSET)</h3>
@@ -429,7 +489,6 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         wineId={wine.id}
         year={year}
         encounters={encounters}
-        editing={editing}
         wantToBuy={wine.want_to_buy}
         persons={ratings.map(({ personId, name }) => ({ personId, name }))}
         places={places}
@@ -439,87 +498,78 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   );
 
   return (
-    <div className="stack-lg">
-      <BackLink base={back.href} label={back.label} />
+    <EditUnits>
+      <div className="stack-lg">
+        <BackLink base={back.href} label={back.label} />
 
-      {query.geoeffnet && (
-        <p className="notice notice-ok" role="status">
-          Flasche geöffnet. Viel Genuss!
-        </p>
-      )}
-      {query.ausgetrunken && (
-        <p className="notice notice-ok" role="status">
-          Flasche als ausgetrunken markiert. Zum Wohl!
-        </p>
-      )}
-      {typeof query.ok === "string" && (
-        <p className="notice notice-ok" role="status">
-          {query.ok}
-        </p>
-      )}
-      {query.verkostung && (
-        <p className="notice notice-ok" role="status">
-          Verkostung gespeichert.
-        </p>
-      )}
-
-      <header className="wine-head stack">
-        <div className="detail-header">
-          <div className="stack-sm">
-            <h1 className="page-title">
-              {wine.name} {yearLabel}
-            </h1>
-            {wine.producer && <span className="item-producer">{wine.producer}</span>}
-          </div>
-          <div className="detail-total">
-            <span className="tile-big">
-              {sealedCount} <span>Fl.</span>
-            </span>
-            {open.length > 0 && <span className="muted">+{open.length} offen</span>}
-          </div>
-        </div>
-        <div className="row">
-          {editing ? (
-            <Link href={viewHref} className="btn btn-primary btn-sm">
-              ✓ Fertig
-            </Link>
-          ) : (
-            <Link href={editHref} className="btn btn-sm">
-              ✏️ Bearbeiten
-            </Link>
-          )}
-          {editing && <span className="muted small">Jede Angabe einzeln speichern – „Abbrechen“ setzt sie zurück.</span>}
-        </div>
-        {options.length > 1 && (
-          <nav className="segmented vintage-switch" aria-label="Jahrgang">
-            {options.map((o) => (
-              <Link
-                key={String(o.year)}
-                href={wineHref(wine.id, o.year, editing ? { ...von, bearbeiten: "1" } : von)}
-                className={o.year === year ? "segment active" : "segment"}
-                aria-current={o.year === year ? "page" : undefined}
-                replace
-              >
-                {o.year ?? "o. J."}
-                <span className="segment-count">
-                  {o.sealed + o.open > 0 ? `${o.sealed}${o.open ? `+${o.open}` : ""}` : o.tastedOnly ? "verk." : "getr."}
-                </span>
-              </Link>
-            ))}
-          </nav>
+        {query.geoeffnet && (
+          <p className="notice notice-ok" role="status">
+            Flasche geöffnet. Viel Genuss!
+          </p>
         )}
-      </header>
+        {query.ausgetrunken && (
+          <p className="notice notice-ok" role="status">
+            Flasche als ausgetrunken markiert. Zum Wohl!
+          </p>
+        )}
+        {typeof query.ok === "string" && (
+          <p className="notice notice-ok" role="status">
+            {query.ok}
+          </p>
+        )}
+        {query.verkostung && (
+          <p className="notice notice-ok" role="status">
+            Verkostung gespeichert.
+          </p>
+        )}
 
-      <div className="wine-columns">
-        {editing ? batchColumn : openColumn}
-        {wineColumn}
-        {ratingsColumn}
+        <header className="wine-head stack">
+          <div className="detail-header">
+            <div className="stack-sm">
+              <h1 className="page-title">
+                {wine.name} {yearLabel}
+              </h1>
+              {wine.producer && <span className="item-producer">{wine.producer}</span>}
+            </div>
+            <div className="detail-total">
+              <span className="tile-big">
+                {sealedCount} <span>Fl.</span>
+              </span>
+              {open.length > 0 && <span className="muted">+{open.length} offen</span>}
+              <DocumentClip key={`${year}:${documents.length}`} docs={documents} wineId={wine.id} vintageYear={year} />
+            </div>
+          </div>
+          {options.length > 1 && (
+            <nav className="segmented vintage-switch" aria-label="Jahrgang">
+              {options.map((o) => (
+                <Link
+                  key={String(o.year)}
+                  href={wineHref(wine.id, o.year, von)}
+                  className={o.year === year ? "segment active" : "segment"}
+                  aria-current={o.year === year ? "page" : undefined}
+                  replace
+                >
+                  {o.year ?? "o. J."}
+                  <span className="segment-count">
+                    {o.sealed + o.open > 0 ? `${o.sealed}${o.open ? `+${o.open}` : ""}` : o.tastedOnly ? "verk." : "getr."}
+                  </span>
+                </Link>
+              ))}
+            </nav>
+          )}
+        </header>
+
+        <div className="wine-columns">
+          {openColumn}
+          {wineColumn}
+          {ratingsColumn}
+        </div>
+
+        {/* Ganz unten, dezent: den ganzen Wein löschen (Bestätigung mit Namenseingabe). */}
+        {deleteSummary && (
+          <DeleteWine wineId={wine.id} name={wine.name} summary={wineDeleteSummaryText(deleteSummary)} back={back.href} />
+        )}
       </div>
-
-      {/* Ganz unten, deutlich abgesetzt: den ganzen Wein löschen. */}
-      {editing && deleteSummary && (
-        <DangerZone wineId={wine.id} name={wine.name} summary={wineDeleteSummaryText(deleteSummary)} back={back.href} />
-      )}
-    </div>
+    </EditUnits>
   );
 }

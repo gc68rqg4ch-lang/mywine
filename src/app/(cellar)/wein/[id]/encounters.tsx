@@ -1,11 +1,12 @@
 // Weinseite, Spalte 3: „Verkostet“ – alle Einträge des Weins (alle Jahrgänge), neuester
-// zuerst; im ✏️-Modus bearbeiten/löschen. Merker „Kaufen?“ jederzeit umschaltbar.
+// zuerst, kompakt (Datum · Ort · Preis · Sterne); ✏️ je Eintrag öffnet das Formular samt
+// Löschen. Merker „Kaufen?“ jederzeit umschaltbar.
 
 import Link from "next/link";
 import { EncounterFields, RatingField, VintageField, type PlaceOption } from "@/components/encounter-fields";
-import { HalfStars } from "@/components/half-stars";
-import { encounterPrice, placeLabel, type EncounterView } from "@/lib/edit/encounters";
-import { formatDate, formatStarNumber } from "@/lib/format";
+import { EditUnit } from "@/components/edit-unit";
+import { encounterSummary, type EncounterView } from "@/lib/edit/encounters";
+import { formatDate } from "@/lib/format";
 import { DeleteEncounter } from "./delete-encounter";
 import { EditForm } from "./edit-form";
 
@@ -26,7 +27,6 @@ export function EncounterSection({
   wineId,
   year,
   encounters,
-  editing,
   wantToBuy,
   persons,
   places,
@@ -35,7 +35,6 @@ export function EncounterSection({
   wineId: string;
   year: number | null;
   encounters: EncounterView[];
-  editing: boolean;
   wantToBuy: boolean;
   persons: { personId: string; name: string }[];
   places: PlaceOption[];
@@ -57,74 +56,65 @@ export function EncounterSection({
         <p className="muted">Noch nirgends verkostet.</p>
       ) : (
         <ul className="encounter-list">
-          {encounters.map((e) =>
-            editing ? (
-              <li key={e.id} className="stack">
-                <h3 className="subsection-title">
-                  Eintrag vom {formatDate(e.tastedOn)}
-                  {e.place ? ` · ${e.place.name}` : ""}
-                </h3>
-                <EditForm hidden={{ kind: "encounter", encounterId: e.id }}>
-                  <VintageField initial={e.year} />
-                  <EncounterFields
-                    values={{
-                      year: e.year,
-                      tastedOn: e.tastedOn,
-                      placeId: e.place?.id ?? null,
-                      price: e.price,
-                      priceUnit: e.priceUnit,
-                      currency: e.currency,
-                      occasion: e.occasion,
-                      companions: e.companions,
-                      note: e.note,
-                    }}
-                    places={places}
-                    today={today}
-                  />
-                  {persons.map((p) => (
-                    <RatingField
-                      key={p.personId}
-                      personId={p.personId}
-                      name={p.name}
-                      initial={e.ratings.find((r) => r.personId === p.personId)?.rating ?? null}
-                    />
-                  ))}
-                </EditForm>
-                <DeleteEncounter encounterId={e.id} label={`Eintrag vom ${formatDate(e.tastedOn)}`} />
-              </li>
-            ) : (
-              <li key={e.id} className="stack-sm">
-                <span className="row row-between">
-                  <strong>
-                    {formatDate(e.tastedOn)} · {e.year ?? "NV"}
-                  </strong>
-                  {e.price != null && <span className="muted">{encounterPrice({ price: e.price, price_unit: e.priceUnit, currency: e.currency })}</span>}
-                </span>
-                {e.place && <span>📍 {placeLabel(e.place)}</span>}
-                {(e.occasion || e.companions) && (
-                  <span className="muted small">{[e.occasion, e.companions ? `mit ${e.companions}` : null].filter(Boolean).join(" · ")}</span>
-                )}
-                {e.note && <span className="small">{e.note}</span>}
-                {e.ratings.map((r) => (
-                  <span key={r.personId} className="row small">
-                    <span>{r.name}</span>
-                    <HalfStars value={r.rating} label={`Bewertung ${r.name}`} />
-                    <span className="muted">{formatStarNumber(r.rating)}</span>
+          {encounters.map((e) => (
+            <EditUnit
+              key={e.id}
+              as="li"
+              id={`encounter:${e.id}`}
+              label={`Eintrag vom ${formatDate(e.tastedOn)}`}
+              className="encounter-item"
+              title={
+                <span className="stack-sm">
+                  <span>
+                    <span className="year-chip">{e.year ?? "NV"}</span> {encounterSummary(e)}
                   </span>
-                ))}
-                <span className="row small">
+                </span>
+              }
+              form={
+                <>
+                  <EditForm hidden={{ kind: "encounter", encounterId: e.id }}>
+                    <VintageField initial={e.year} />
+                    <EncounterFields
+                      values={{
+                        year: e.year,
+                        tastedOn: e.tastedOn,
+                        placeId: e.place?.id ?? null,
+                        price: e.price,
+                        priceUnit: e.priceUnit,
+                        currency: e.currency,
+                        occasion: e.occasion,
+                        companions: e.companions,
+                        note: e.note,
+                      }}
+                      places={places}
+                      today={today}
+                    />
+                    {persons.map((p) => (
+                      <RatingField
+                        key={p.personId}
+                        personId={p.personId}
+                        name={p.name}
+                        initial={e.ratings.find((r) => r.personId === p.personId)?.rating ?? null}
+                      />
+                    ))}
+                  </EditForm>
+                  <DeleteEncounter encounterId={e.id} label={`Eintrag vom ${formatDate(e.tastedOn)}`} />
+                </>
+              }
+            >
+              <span className="row small encounter-extra">
                   {e.tastings.map((t) => (
                     <Link key={t.id} href={`/verkostet/${e.id}/wset?t=${t.id}`} className="link">
                       📝 {[t.quality ?? "WSET", t.points != null ? `${t.points.toLocaleString("de-CH")} / 4` : null, t.person].filter(Boolean).join(" · ")}
                     </Link>
                   ))}
-                  <Link href={`/verkostet/${e.id}/wset`} className="btn btn-ghost btn-sm">
-                    📝 WSET-Verkostung
+                  <Link href={`/verkostet/${e.id}/wset`} className="link muted">
+                    📝 WSET
                   </Link>
+                  {e.note && <span className="muted encounter-note">{e.note}</span>}
                 </span>
-              </li>
-            ),
-          )}
+            </EditUnit>
+          ))}
         </ul>
       )}
     </section>

@@ -158,6 +158,14 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
         if (r.has("vintage") && r.text("vintage") !== r.text("vintageBefore")) {
           edits.push({ kind: "batchVintage", itemId, to: r.year("vintage") });
         }
+        // Offene bzw. getrunkene Flasche: deren Felder im selben Formular (ein „Speichern“).
+        if (r.has("fill") || r.has("openedOn")) {
+          const fill = r.int("fill", "Füllstand");
+          const openedOn = r.text("openedOn");
+          edits.push({ kind: "openBottle", itemId, ...(fill != null ? { fill } : {}), ...(openedOn ? { openedOn } : {}) });
+        }
+        if (r.has("reopen")) edits.push({ kind: "reopen", itemId, fill: r.int("reopenFill", "Füllstand") ?? 0 });
+        else if (r.has("drunkOn")) edits.push({ kind: "drunkBottle", itemId, drunkOn: r.text("drunkOn") });
         return edits;
       }
       case "deleteBatch":

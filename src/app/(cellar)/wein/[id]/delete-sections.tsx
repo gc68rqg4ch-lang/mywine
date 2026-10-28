@@ -2,7 +2,9 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { lastListUrl, markRestore } from "@/components/cellar/list-memory";
+import { useEditUnit } from "@/components/edit-unit";
 import { IRREVERSIBLE, deleteBottlesQuestion, nameConfirmed, type DeletableBottle } from "@/lib/edit/delete-text";
+import type { ActionState } from "../../actions";
 import { deleteWineAction, saveEdit } from "../../edit-actions";
 
 /**
@@ -13,7 +15,12 @@ import { deleteWineAction, saveEdit } from "../../edit-actions";
 export function DeleteBottles({ itemId, bottle }: { itemId: string; bottle: DeletableBottle }) {
   const [asking, setAsking] = useState(false);
   const [count, setCount] = useState(1);
-  const [state, action, pending] = useActionState(saveEdit, undefined);
+  const unit = useEditUnit();
+  const [state, action, pending] = useActionState(async (prev: ActionState, data: FormData) => {
+    const result = await saveEdit(prev, data);
+    if (result?.ok) unit?.close(result.ok);
+    return result;
+  }, undefined);
 
   if (!asking) {
     return (
@@ -61,11 +68,11 @@ export function DeleteBottles({ itemId, bottle }: { itemId: string; bottle: Dele
 }
 
 /**
- * Gefahrenzone ganz unten: „🗑 Ganzen Wein löschen“. Zeigt, was alles verschwindet; erst wenn
- * der Weinname eingetippt ist, wird „Endgültig löschen“ aktiv. Danach zurück zur Liste
+ * „🗑 Wein löschen“ als dezenter roter Link ganz unten. Öffnet die Bestätigung: was alles
+ * verschwindet, Name eintippen, erst dann „Endgültig löschen“. Danach zurück zur Liste
  * (gleicher Zustand wie vorher).
  */
-export function DangerZone({ wineId, name, summary, back }: { wineId: string; name: string; summary: string; back: string }) {
+export function DeleteWine({ wineId, name, summary, back }: { wineId: string; name: string; summary: string; back: string }) {
   const [asking, setAsking] = useState(false);
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -85,44 +92,45 @@ export function DangerZone({ wineId, name, summary, back }: { wineId: string; na
     });
   };
 
+  if (!asking) {
+    return (
+      <div className="delete-wine">
+        <button type="button" className="link-btn link-danger" onClick={() => setAsking(true)}>
+          🗑 Wein löschen
+        </button>
+      </div>
+    );
+  }
   return (
-    <section className="card stack danger-zone" aria-labelledby="gefahrenzone">
-      <h2 className="section-title" id="gefahrenzone">
-        Gefahrenzone
+    <section className="card stack danger-zone" aria-labelledby="wein-loeschen">
+      <h2 className="section-title" id="wein-loeschen">
+        🗑 Ganzen Wein löschen
       </h2>
-      {!asking ? (
-        <div>
-          <button type="button" className="btn btn-danger btn-sm" onClick={() => setAsking(true)}>
-            🗑 Ganzen Wein löschen
+      <form onSubmit={submit} className="stack-sm" role="alertdialog" aria-label="Ganzen Wein löschen?">
+        <input type="hidden" name="kind" value="deleteWine" />
+        <input type="hidden" name="wineId" value={wineId} />
+        <p>
+          <strong>„{name}“ mit allem löschen?</strong> Es verschwindet: {summary}.
+        </p>
+        <p className="danger-text">{IRREVERSIBLE}</p>
+        <label className="field">
+          <span>Zur Bestätigung den Namen „{name}“ eintippen</span>
+          <input type="text" name="confirmName" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" autoFocus />
+        </label>
+        {error && (
+          <p className="notice notice-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="row">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAsking(false); setTyped(""); }} disabled={pending}>
+            Abbrechen
+          </button>
+          <button type="submit" className="btn btn-danger btn-sm" disabled={!ok || pending}>
+            {pending ? "Wird gelöscht …" : "Endgültig löschen"}
           </button>
         </div>
-      ) : (
-        <form onSubmit={submit} className="stack-sm" role="alertdialog" aria-label="Ganzen Wein löschen?">
-          <input type="hidden" name="kind" value="deleteWine" />
-          <input type="hidden" name="wineId" value={wineId} />
-          <p>
-            <strong>„{name}“ mit allem löschen?</strong> Es verschwindet: {summary}.
-          </p>
-          <p className="danger-text">{IRREVERSIBLE}</p>
-          <label className="field">
-            <span>Zur Bestätigung den Namen „{name}“ eintippen</span>
-            <input type="text" name="confirmName" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
-          </label>
-          {error && (
-            <p className="notice notice-error" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="row">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAsking(false); setTyped(""); }} disabled={pending}>
-              Abbrechen
-            </button>
-            <button type="submit" className="btn btn-danger btn-sm" disabled={!ok || pending}>
-              {pending ? "Wird gelöscht …" : "Endgültig löschen"}
-            </button>
-          </div>
-        </form>
-      )}
+      </form>
     </section>
   );
 }

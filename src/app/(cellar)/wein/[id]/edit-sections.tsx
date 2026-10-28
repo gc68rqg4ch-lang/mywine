@@ -1,13 +1,25 @@
-// Bearbeiten-Ansicht der Weinseite (?bearbeiten=1): Formulare je Bereich, alle über das
-// gemeinsame Bearbeiten-Modul (src/lib/edit) – dieselben Prüfungen wie im Bot.
+// Formulare der Weinseite (nach ✏️ an Ort und Stelle), alle über das gemeinsame
+// Bearbeiten-Modul (src/lib/edit) – dieselben Prüfungen wie im Bot. Selten Gebrauchtes
+// steht unter „Mehr“.
 
 import { ROOMS } from "@/lib/edit/types";
-import { WINE_TYPE_LABELS, formatDate, todayIso, zurichDate, type InventoryStatus, type WineType } from "@/lib/format";
+import type { ReactNode } from "react";
+import { WINE_TYPE_LABELS, todayIso, zurichDate, type InventoryStatus, type WineType } from "@/lib/format";
 import { DeleteBottles } from "./delete-sections";
 import { EditForm } from "./edit-form";
 
 const yearInput = (year: number | null) => (year == null ? "NV" : String(year));
 const priceInput = (v: number | null) => (v == null ? "" : v.toFixed(2));
+
+/** Selten gebrauchte Felder, zugeklappt. */
+function More({ children }: { children: ReactNode }) {
+  return (
+    <details className="more-fields">
+      <summary>Mehr</summary>
+      <div className="edit-grid">{children}</div>
+    </details>
+  );
+}
 
 export function WineEditForm({
   wine,
@@ -46,10 +58,6 @@ export function WineEditForm({
           </select>
         </label>
         <label className="field">
-          <span>Alkohol (% vol)</span>
-          <input type="text" name="alcohol" inputMode="decimal" defaultValue={wine.alcohol_content?.toString() ?? ""} autoComplete="off" />
-        </label>
-        <label className="field">
           <span>Land</span>
           <input type="text" name="country" defaultValue={wine.country ?? ""} autoComplete="off" />
         </label>
@@ -57,11 +65,17 @@ export function WineEditForm({
           <span>Region</span>
           <input type="text" name="region" defaultValue={wine.region ?? ""} autoComplete="off" />
         </label>
-        <label className="field field-wide">
+      </div>
+      <More>
+        <label className="field">
           <span>Appellation</span>
           <input type="text" name="appellation" defaultValue={wine.appellation ?? ""} autoComplete="off" />
         </label>
-      </div>
+        <label className="field">
+          <span>Alkohol (% vol)</span>
+          <input type="text" name="alcohol" inputMode="decimal" defaultValue={wine.alcohol_content?.toString() ?? ""} autoComplete="off" />
+        </label>
+      </More>
     </EditForm>
   );
 }
@@ -82,7 +96,7 @@ export function VintageEditForm({
 }) {
   return (
     <EditForm hidden={{ kind: "vintage", wineId, from: yearInput(year) }} mergeYears={otherYears.map(yearInput)}>
-      <div className="edit-grid edit-grid-3">
+      <div className="edit-grid">
         <label className="field">
           <span>Jahrgang</span>
           <input type="text" name="to" defaultValue={yearInput(year)} inputMode="numeric" autoComplete="off" />
@@ -121,24 +135,17 @@ export type EditBatch = {
   drunk_at: string | null;
 };
 
-const BATCH_TITLES: Record<InventoryStatus, string> = { sealed: "Charge", open: "Offene Flasche", drunk: "Getrunkene Flasche" };
-
-/** Eine Charge bzw. Flasche: Angaben, Lagerort (auch teilweise), Jahrgang, Status-Felder, Löschen. */
-export function BatchEditor({ batch: b, vendors }: { batch: EditBatch; vendors: string[] }) {
+/**
+ * Eine Charge bzw. offene/getrunkene Flasche als ein Formular (ein „Speichern“): Angaben,
+ * Lagerort (auch teilweise), Status-Felder; darunter getrennt „🗑 Flaschen löschen“.
+ */
+export function BatchForm({ batch: b, vendors }: { batch: EditBatch; vendors: string[] }) {
   const today = todayIso();
   const listId = `vendors-${b.inventory_item_id}`;
   const room = b.storage_room ?? "";
-  const title = [
-    BATCH_TITLES[b.status],
-    b.status === "sealed" ? `${b.quantity} Fl.` : null,
-    b.status !== "drunk" ? (b.storage_room ?? "ohne Lagerort") : formatDate(zurichDate(b.drunk_at)),
-  ]
-    .filter(Boolean)
-    .join(" · ");
 
   return (
-    <section className="card stack">
-      <h2 className="section-title">{title}</h2>
+    <>
       <EditForm
         hidden={{
           kind: "batch",
@@ -149,16 +156,30 @@ export function BatchEditor({ batch: b, vendors }: { batch: EditBatch; vendors: 
         }}
       >
         <div className="edit-grid">
+          {b.status === "open" && (
+            <>
+              <label className="field">
+                <span>Füllstand (%)</span>
+                <input name="fill" type="number" min={1} max={100} step={1} defaultValue={b.fill_level_percent ?? 100} />
+              </label>
+              <label className="field">
+                <span>Geöffnet am</span>
+                <input name="openedOn" type="date" max={today} defaultValue={b.date_opened ?? ""} />
+              </label>
+            </>
+          )}
+          {b.status === "drunk" && (
+            <label className="field">
+              <span>Getrunken am</span>
+              <input name="drunkOn" type="date" max={today} defaultValue={zurichDate(b.drunk_at) ?? ""} required />
+            </label>
+          )}
           {b.status === "sealed" && (
             <label className="field">
               <span>Anzahl Flaschen</span>
               <input name="quantity" type="number" min={1} max={999} defaultValue={b.quantity} required />
             </label>
           )}
-          <label className="field">
-            <span>Flaschengrösse (cl)</span>
-            <input type="text" name="bottleSize" inputMode="decimal" defaultValue={((b.bottle_size_ml ?? 750) / 10).toString()} required />
-          </label>
           {b.status !== "drunk" && (
             <>
               <label className="field">
@@ -181,8 +202,8 @@ export function BatchEditor({ batch: b, vendors }: { batch: EditBatch; vendors: 
             </>
           )}
           <label className="field">
-            <span>Kaufdatum</span>
-            <input name="purchasedAt" type="date" max={today} defaultValue={b.purchased_at ?? ""} />
+            <span>Bezahlt (CHF/Fl.)</span>
+            <input type="text" name="purchasePrice" inputMode="decimal" defaultValue={priceInput(b.purchase_price)} placeholder="leer = unbekannt" autoComplete="off" />
           </label>
           <label className="field">
             <span>Händler</span>
@@ -194,12 +215,18 @@ export function BatchEditor({ batch: b, vendors }: { batch: EditBatch; vendors: 
             </datalist>
           </label>
           <label className="field">
-            <span>Bezahlt (CHF/Fl.)</span>
-            <input type="text" name="purchasePrice" inputMode="decimal" defaultValue={priceInput(b.purchase_price)} placeholder="leer = unbekannt" autoComplete="off" />
+            <span>Kaufdatum</span>
+            <input name="purchasedAt" type="date" max={today} defaultValue={b.purchased_at ?? ""} />
           </label>
+        </div>
+        <More>
           <label className="field">
             <span>Normalpreis (CHF/Fl.)</span>
             <input type="text" name="regularPrice" inputMode="decimal" defaultValue={priceInput(b.regular_price)} placeholder="leer = unbekannt" autoComplete="off" />
+          </label>
+          <label className="field">
+            <span>Flaschengrösse (cl)</span>
+            <input type="text" name="bottleSize" inputMode="decimal" defaultValue={((b.bottle_size_ml ?? 750) / 10).toString()} required />
           </label>
           <label className="field">
             <span>Jahrgang nur dieser {b.status === "sealed" ? "Charge" : "Flasche"}</span>
@@ -209,51 +236,26 @@ export function BatchEditor({ batch: b, vendors }: { batch: EditBatch; vendors: 
             <input name="isGift" type="checkbox" defaultChecked={Boolean(b.is_gift)} />
             <span>Geschenk</span>
           </label>
-        </div>
+          {b.status === "drunk" && (
+            <>
+              <label className="field field-check">
+                <input name="reopen" type="checkbox" />
+                <span>Zurück auf offen</span>
+              </label>
+              <label className="field">
+                <span>Füllstand danach (%)</span>
+                <input name="reopenFill" type="number" min={1} max={100} defaultValue={50} />
+              </label>
+            </>
+          )}
+        </More>
       </EditForm>
-
-      {b.status === "open" && (
-        <EditForm hidden={{ kind: "openBottle", itemId: b.inventory_item_id }}>
-          <div className="edit-grid">
-            <label className="field">
-              <span>Füllstand (%)</span>
-              <input name="fill" type="number" min={1} max={100} step={1} defaultValue={b.fill_level_percent ?? 100} />
-            </label>
-            <label className="field">
-              <span>Geöffnet am</span>
-              <input name="openedOn" type="date" max={today} defaultValue={b.date_opened ?? ""} />
-            </label>
-          </div>
-        </EditForm>
-      )}
-
-      {b.status === "drunk" && (
-        <>
-          <EditForm hidden={{ kind: "drunkBottle", itemId: b.inventory_item_id }}>
-            <label className="field">
-              <span>Getrunken am</span>
-              <input name="drunkOn" type="date" max={today} defaultValue={zurichDate(b.drunk_at) ?? ""} required />
-            </label>
-          </EditForm>
-          <EditForm
-            hidden={{ kind: "reopen", itemId: b.inventory_item_id }}
-            submitLabel="Zurück auf offen"
-            confirm="Diese Flasche wieder als offen führen?"
-            cancel={false}
-          >
-            <label className="field">
-              <span>Füllstand danach (%)</span>
-              <input name="fill" type="number" min={1} max={100} defaultValue={50} />
-            </label>
-          </EditForm>
-        </>
-      )}
 
       {/* Löschen = falsch erfasst (nicht öffnen/austrinken) – deutlich abgesetzt. */}
       <DeleteBottles
         itemId={b.inventory_item_id}
         bottle={{ status: b.status, quantity: b.quantity, storage_room: b.storage_room, drunk_at: b.drunk_at }}
       />
-    </section>
+    </>
   );
 }

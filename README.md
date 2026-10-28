@@ -65,40 +65,43 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
     `deleteEncounter`, `wantToBuy`), damit der Bot sie später nutzt; Liste in `src/lib/cellar/tasted.ts`.
 - **Weinseite** (`/wein/[id]?jahrgang=2019`): eine Seite pro Wein, Ziel aller Klicks aus Bestand, Offen und
   Getrunken (`wineHref` in `src/lib/cellar/wine-page.ts`). Kopf über die volle Breite: Name, Produzent,
-  Jahrgang-Umschalter (`ohne` = ohne Jahrgang), Flaschenzahl. Darunter drei feste Spalten (iPad quer); hochkant
-  links Öffnen mit Bewertungen darunter, rechts „Zum Wein“; iPhone eine Spalte (Öffnen, Zum Wein, Bewertungen).
-  Alles Jahrgangsabhängige folgt der Auswahl.
-  1. **Flasche öffnen** (gibt es offene Flaschen, steht die Kachel „Offen“ darüber): Chargen mit Lagerort, Anzahl, bezahltem Preis, Normalpreis und Rabatt in % (je Charge
-     im Bearbeiten-Modus); Füllstand, Datum, Knopf → `public.open_bottle()` mit der `inventory_item`-ID der Charge.
-     Darunter offene Flaschen (Füllstand, **Ausgetrunken**; `drunk_at` setzt die DB) und getrunkene Flaschen,
-     jeweils mit Preis. Ohne ungeöffnete Flasche fehlt nur der Öffnen-Bereich.
-  2. **Zum Wein** (eine Kachel, Abschnitte mit Trennlinie): Stammdaten (Typ, Land, Region, Appellation, Alkohol, Fotos), Rebsorten mit Prozentanteil aus
-     `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“), bearbeitbar (`source = manual`) und per
-     **Nachrecherchieren** neu recherchierbar; Trinkreife (Fenster aus `wine_vintages`, dazu die letzte Verkostung).
-     **Fotos** des Jahrgangs als Vorschau mit demselben Overlay; **📷 Foto hinzufügen** (Vorderseite, Rückseite,
-     Weiteres): der Browser verkleinert auf max. 2000 px JPEG (auch HEIC vom iPhone), der Server legt das Original
-     unter `wine-photos/app/<wine-id>/…` ab, erzeugt das Vorschaubild und schreibt `wine_media`.
-     **Dokumente** (PDF, `wine_media.kind = document`, privater Bucket `wine-documents`) des Jahrgangs und ohne
-     Jahrgang mit 📄 und Dateiname; Antippen öffnet das PDF über eine signierte URL in einem neuen Tab. Im
-     Bearbeiten-Modus hochladen (max. 10 MB; der Browser lädt direkt in den Bucket, weil Vercel nur 4.5 MB pro
-     Request annimmt – der Server prüft danach Ort, Typ und Grösse und trägt das Dokument ein) und löschen mit
-     Rückfrage (Datei serverseitig mitgelöscht). **Nachrecherchieren** (ergänzt alle leeren Angaben des Weins,
-     ohne Rückfrage) und der Link zum Sammellauf (`/recherche`) stehen auch in der normalen Ansicht; `/recherche` ist zudem in der Navigation (🔎). Je Foto
-     **Ersetzen** und **Löschen** mit Rückfrage; eine neue Vorder-/Rückseite ersetzt die vorhandene (ebenfalls
-     nach Rückfrage). Gelöscht werden Zeile, Original und Vorschaubild – die Dateien über den Admin-Client
-     (Mitglieder dürfen im Bucket nur lesen und hochladen), erst nach Prüfung der Mitgliedschaft.
-  3. **Bewertungen:** subjektiv je Person mit halben Sternen 0–5 in `wine_ratings` (neueste je Person aus
-     `latest_wine_ratings`; pro Person und Tag eine, ältere als Verlauf) sowie objektiv die WSET-Verkostungen mit
-     „Neue Verkostung“ und Liste.
+  Jahrgang-Umschalter (`ohne` = ohne Jahrgang), Flaschenzahl und darunter die **Büroklammer** für Dokumente.
+  Darunter drei feste Spalten (iPad quer); hochkant links Flaschen mit Bewertungen darunter, rechts „Zum Wein“;
+  iPhone eine Spalte. Alles Jahrgangsabhängige folgt der Auswahl.
+  1. **Flaschen:** „Offen“ (Füllstand, **Ausgetrunken**), „Im Bestand“ (je Charge Lagerort, Anzahl, bezahlt,
+     Normalpreis, Rabatt in %), „Flasche öffnen“ (Füllstand, Datum → `public.open_bottle()`) und „Getrunken“.
+     Ohne Flaschen dieses Jahrgangs ein kurzer Hinweis und „＋ Flaschen erfassen“ – öffnet den Chat mit Antoine
+     (`t.me/<Bot>`; Name aus `TELEGRAM_BOT_USERNAME`, sonst einmal über `getMe`).
+  2. **Zum Wein** (eine Kachel, Reihenfolge `WINE_DETAIL_FIELDS`/`WINE_SECTIONS` in
+     `src/lib/cellar/wine-units.ts`): Typ, Land, Region, Appellation, Alkohol, Flasche; Rebsorten mit % aus
+     `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“); Trinkreife (Fenster aus `wine_vintages`,
+     dazu die letzte Verkostung); **Fotos** des Jahrgangs (Vorschau mit Overlay; hinzufügen als Vorderseite,
+     Rückseite, Weiteres – der Browser verkleinert auf max. 2000 px JPEG, auch HEIC; der Server legt das Original
+     unter `wine-photos/app/<wine-id>/…` ab und erzeugt das Vorschaubild; je Foto Ersetzen/Löschen mit Rückfrage,
+     Dateien über den Admin-Client nach Prüfung der Mitgliedschaft); **Recherche** („🔎 Nachrecherchieren“ ergänzt
+     alle leeren Angaben ohne Rückfrage, „Zuletzt recherchiert am …“, Link zum Sammellauf `/recherche`).
+  3. **Bewertungen:** subjektiv je Person mit halben Sternen 0–5 in `wine_ratings` (Sterne antippen speichert
+     sofort; neueste je Person aus `latest_wine_ratings`, ältere als Verlauf), objektiv die WSET-Verkostungen mit
+     „Neue Verkostung“ und Liste, darunter „Verkostet“ (Einträge kompakt: Datum · Ort · Preis · Sterne).
   - Jahrgangsbezogene Aktionen hängen an einer Flasche des Jahrgangs (offen vor ungeöffnet vor getrunken).
-  - **✏️ Bearbeiten** (`?bearbeiten=1`): Formulare statt Anzeige, jedes mit Speichern/Abbrechen – Wein (Name,
-    Produzent, Typ, Land, Region, Appellation, Alkohol; gleicher Name + Produzent wie ein anderer Wein wird
-    abgelehnt), Jahrgang (über `public.change_vintage()`, ganzer Jahrgang samt Bewertungen, Verkostungen,
-    Rebsorten, Fotos; bestehender Ziel-Jahrgang → Rückfrage und Zusammenführen) und Trinkfenster, je Charge
-    Anzahl, Flaschengrösse, Lagerort (auch nur ein Teil der Flaschen), Kaufdatum, Händler, Geschenk, Preise,
-    Jahrgang nur dieser Charge und „🗑 Flaschen löschen“ (siehe unten); offene Flasche: Füllstand, „Geöffnet am“; getrunkene:
-    „Getrunken am“, zurück auf offen. Rebsorten (Bearbeiten, Nachrecherchieren), Fotos (hinzufügen, ersetzen,
-    löschen) und Bewertungen löschen gibt es nur hier; in der Anzeige bleiben Öffnen, Füllstand und Sterne.
+  - **Bearbeiten direkt in der Karte** (`src/components/edit-unit.tsx`, Logik in `src/lib/cellar/wine-units.ts`):
+    kein eigener Modus mehr. Jede Einheit hat oben rechts ein kleines ✏️ – Zum Wein (Name, Produzent, Typ, Land,
+    Region; unter „Mehr“ Appellation, Alkohol), Jahrgang & Trinkfenster (über `public.change_vintage()`, bestehender
+    Ziel-Jahrgang → Rückfrage und Zusammenführen), Rebsorten, Fotos, jede Charge (Anzahl, Lagerort auch teilweise,
+    bezahlt, Händler, Kaufdatum; unter „Mehr“ Normalpreis, Flaschengrösse, Jahrgang nur dieser Charge, Geschenk),
+    jede offene (dazu Füllstand, „Geöffnet am“) und getrunkene Flasche („Getrunken am“; unter „Mehr“ zurück auf
+    offen), Bewertungen (auch löschen, mit Rückfrage) und jeder Verkostet-Eintrag. Antippen macht nur diese Einheit
+    zum Formular, unten genau ein „Speichern“ / „Abbrechen“ (Fotos: „Fertig“, Hochladen gilt sofort). Immer nur
+    eine Einheit offen; hat sie ungespeicherte Änderungen, fragt die App vor dem Wechsel (und beim Verlassen der
+    Seite). Eine Charge/Flasche ist ein Formular (`kind = batch` samt Füllstand bzw. „Getrunken am“), gespeichert
+    über das gemeinsame Modul. Löschen bleibt im jeweiligen Formular. Felder im Raster mit Beschriftung darüber,
+    auf dem iPhone einspaltig.
+  - **Dokumente** (PDF, `wine_media.kind = document`, privater Bucket `wine-documents`) des Jahrgangs und ohne
+    Jahrgang als **Büroklammer** im Kopf: „📎 Dateiname“ (gekürzt), „📎 2 Dokumente“ bzw. nur „📎“. Antippen öffnet
+    ein kleines Feld: Dokument antippen öffnet das PDF (signierte URL, neuer Tab), 🗑 löscht mit Rückfrage,
+    „＋ Dokument hinzufügen“ lädt hoch (max. 10 MB; der Browser lädt direkt in den Bucket, weil Vercel nur 4.5 MB pro
+    Request annimmt – der Server prüft danach Ort, Typ und Grösse und trägt das Dokument ein).
+  - **🗑 Wein löschen**: dezenter roter Link ganz unten (siehe „Unwiderruflich löschen“).
 
 ### Gemeinsames Bearbeiten-Modul (App und Bot)
 
@@ -118,7 +121,7 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   Chargen > 1 mit wählbarer Anzahl (Standard 1). Läuft über `public.delete_bottles(p_item_id, p_quantity)` (NULL
   oder ≥ Anzahl = ganze Position) mit genau einem Journal-Eintrag „deleted“. Die letzte Flasche weg → der Wein
   bleibt mit Bewertungen und Verkostungen. Auch das Chat-Tool `propose_delete_bottles` geht diesen Weg.
-- **Ganzer Wein** (`deleteWine`): ganz unten auf der Weinseite im ✏️-Modus in der roten „Gefahrenzone“. Die
+- **Ganzer Wein** (`deleteWine`): „🗑 Wein löschen“ ganz unten auf der Weinseite öffnet die rote Bestätigung. Die
   Rückfrage zeigt, was alles verschwindet („7 Flaschen …, 3 Bewertungen, …, 4 Fotos, 1 PDF“); erst wenn der
   Weinname eingetippt ist, wird „Endgültig löschen“ aktiv. `public.delete_wine(p_wine_id)` löscht alles ohne
   Journal und liefert die Storage-Pfade; danach werden Originale und Vorschaubilder aus den Buckets entfernt
@@ -229,7 +232,7 @@ Datenbank noch API-Schlüssel und legen nichts in der Produktions-DB an:
 Abgedeckt: Bot-Zugang und `/id` (`access`), Bewerten (`rating`), Wein-Menü (`wine-menu`), Details (`details`),
 Erfassung per Foto, Text, Nachkauf und Jahrgang-Pflicht (`photo-ingest`, `text-ingest`, `ingest-helpers`),
 Fotos nachreichen (`photo-attach`, `media-*`), Bearbeiten-Modul inkl. `move_bottles` und `change_vintage`
-(`edit`), unwiderruflich löschen – Flaschen und ganzer Wein samt Dateien (`delete`), Weinseite (`wine-page`), Übersicht, Typ-Filter und Gruppierungen inkl. Trinkreife (`overview`,
+(`edit`), Weinseite mit Bearbeiten in der Karte, Büroklammer und Reihenfolge (`wine-units`), unwiderruflich löschen – Flaschen und ganzer Wein samt Dateien (`delete`), Weinseite (`wine-page`), Übersicht, Typ-Filter und Gruppierungen inkl. Trinkreife (`overview`,
 `lists`, `drink-status`), Verkostung (`tasting`), Recherche mit Lücken, Vorschlägen und Limit-Stopp
 (`research`, `api-errors`) sowie die Schema-Grenzen der Claude API (`schema-limits`).
 

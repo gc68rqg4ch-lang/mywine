@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useRef, useState, useTransition } from "react";
+import { useEditUnit } from "@/components/edit-unit";
 import { PhotoGallery, type ViewerPhoto } from "@/components/photo-viewer";
 import { MEDIA_KIND_LABELS, type MediaKind } from "@/lib/media/pick";
 import { deleteWinePhoto, uploadWinePhoto } from "../../photo-actions";
@@ -73,6 +74,8 @@ export function WinePhotos({
   const input = useRef<HTMLInputElement>(null);
   const target = useRef<Target>({ kind, replace: [] });
   const busy = uploading || deleting || preparing;
+  // Hochladen/Löschen gilt sofort; „Fertig“ schliesst die Einheit.
+  const unit = useEditUnit();
 
   /** Dateiauswahl öffnen – direkt im Tipp, sonst blockiert Safari den Dialog. */
   const pick = (next: Target) => {
@@ -186,6 +189,13 @@ export function WinePhotos({
           <p className="muted small" role="status">
             {state.ok}
           </p>
+        )}
+        {unit && (
+          <div className="row unit-buttons">
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => unit.close()}>
+              Fertig
+            </button>
+          </div>
         )}
       </div>
     </div>

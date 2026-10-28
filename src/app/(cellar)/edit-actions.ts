@@ -22,7 +22,7 @@ export async function saveEdit(_prev: ActionState, formData: FormData): Promise<
   revalidatePath("/", "layout");
   // Jahrgang umbenannt: die Seite zeigt danach den neuen Jahrgang (der alte gibt es nicht mehr).
   if (edits.some((e) => e.kind === "vintage") && result.wineId) {
-    redirect(wineHref(result.wineId, result.year ?? null, { bearbeiten: "1", ok: result.message }));
+    redirect(wineHref(result.wineId, result.year ?? null, { ok: result.message }));
   }
   return { ok: result.message };
 }
