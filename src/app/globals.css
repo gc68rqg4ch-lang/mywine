@@ -1683,13 +1683,19 @@ input[inputmode="decimal"] {
   .wine-col-wine {
     display: contents;
   }
-  .wine-col-wine > .card {
+  .wine-col-main {
     grid-area: wine;
   }
   .wine-col-taste {
     grid-area: taste;
   }
 }
+/* Notizen zum Wein: Zeilenumbrüche kommen als <br>, lange Wörter brechen um. */
+.wine-notes {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .wine-head .detail-header {
   align-items: flex-start;
 }

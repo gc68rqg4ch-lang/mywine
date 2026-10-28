@@ -1,3 +1,4 @@
+import { loadWineNotes } from "@/lib/cellar/notes";
 import "server-only";
 
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
@@ -146,7 +147,10 @@ export function chatTools(
       run: async ({ query, room, type }) => {
         let wines = await loadCellar(db, room ?? null);
         if (type) wines = wines.filter((w) => w.type === type);
-        if (query) wines = wines.filter((w) => matchesQuery(w, query) || w.rows.some((r) => String(r.vintage_year) === query.trim()));
+        if (query) {
+          const notes = await loadWineNotes(db, wines.map((w) => w.wine_id));
+          wines = wines.filter((w) => matchesQuery(w, query, notes.get(w.wine_id)) || w.rows.some((r) => String(r.vintage_year) === query.trim()));
+        }
         const total = wines.reduce((s, w) => s + w.sealed, 0);
         return json({
           wines_found: wines.length,

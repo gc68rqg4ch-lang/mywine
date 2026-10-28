@@ -544,7 +544,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
   const sameYear = <Q extends { eq: (c: "vintage_year", v: number) => Q; is: (c: "vintage_year", v: null) => Q }>(q: Q) =>
     year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
   const [{ data: wine, error }, grapes, vintage, bottles, ratings, persons, tasting, documents, suggestions] = await Promise.all([
-    db.from("wines").select("name, producer, type, country, region, appellation, alcohol_content, grapes").eq("id", wineId).maybeSingle(),
+    db.from("wines").select("name, producer, type, country, region, appellation, alcohol_content, grapes, notes").eq("id", wineId).maybeSingle(),
     loadGrapeShares(db, wineId, year),
     sameYear(db.from("wine_vintages").select("drink_from_year, drink_until_year").eq("wine_id", wineId)).maybeSingle(),
     sameYear(
@@ -594,6 +594,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     suggestions,
     // Letzte Einträge „Verkostet“ (alle Jahrgänge; andere Jahrgänge mit Jahr).
     taste: taste ? tasteLine(taste) : null,
+    notes: wine.notes,
     encounters: encounters
       .slice(0, 3)
       .map((x) => (x.year !== year ? `${x.year ?? "NV"} · ${encounterSummary(x)}` : encounterSummary(x))),

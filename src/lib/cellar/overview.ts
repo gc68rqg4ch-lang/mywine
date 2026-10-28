@@ -322,8 +322,10 @@ export function formatVintages(vintages: (number | null)[]) {
 // ---------------------------------------------------------------------------
 // Suche
 
-export function matchesQuery(wine: Groupable, query: string) {
+/** Suche: Wein, Produzent, Herkunft, Rebsorten, Jahrgänge und – falls mitgegeben – die Notizen zum Wein. */
+export function matchesQuery(wine: Groupable, query: string, notes?: string | null) {
   const haystack = [
+    notes,
     wine.name,
     wine.producer,
     wine.country,

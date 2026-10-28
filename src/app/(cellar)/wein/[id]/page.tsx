@@ -37,7 +37,8 @@ import { WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, giftLabel, grapeLine, type
 import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { DocumentClip } from "./documents";
-import { BatchForm, WineCardForm, type EditBatch } from "./edit-sections";
+import { BatchForm, WineCardForm, WineNotesForm, type EditBatch } from "./edit-sections";
+import { WineNotesView } from "@/components/wine-notes";
 import { ResearchHead } from "./research-head";
 import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
@@ -399,11 +400,24 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   };
   const wineColumn = (
     <div className="wine-col wine-col-wine">
-      <section className="card stack">
-        {WINE_SECTIONS.map((key) => (
-          <Fragment key={key}>{sections[key]}</Fragment>
-        ))}
-      </section>
+      {/* „Zum Wein“ und darunter „Notizen“ – auch auf dem iPad quer zusammen in Spalte 2. */}
+      <div className="wine-col wine-col-main">
+        <section className="card stack">
+          {WINE_SECTIONS.map((key) => (
+            <Fragment key={key}>{sections[key]}</Fragment>
+          ))}
+        </section>
+        <section className="card stack wine-notes-card">
+          <EditUnit
+            id="notes"
+            label="Notizen"
+            title={<h2 className="section-title">Notizen</h2>}
+            form={<WineNotesForm wineId={wine.id} notes={wine.notes} />}
+          >
+            <WineNotesView notes={wine.notes} />
+          </EditUnit>
+        </section>
+      </div>
       {/* Geschmacksprofil direkt nach „Zum Wein“ (iPhone, iPad hochkant); iPad quer zuoberst in Spalte 3
           über „Bewertungen“ – dann löst das CSS die Spalte auf (display: contents, Bereich „taste“). */}
       <div className="wine-col wine-col-taste">

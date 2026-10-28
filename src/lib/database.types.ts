@@ -1404,6 +1404,7 @@ export type Database = {
           grapes: string[]
           id: string
           name: string
+          notes: string | null
           producer: string | null
           region: string | null
           researched_at: string | null
@@ -1418,6 +1419,7 @@ export type Database = {
           grapes?: string[]
           id?: string
           name: string
+          notes?: string | null
           producer?: string | null
           region?: string | null
           researched_at?: string | null
@@ -1432,6 +1434,7 @@ export type Database = {
           grapes?: string[]
           id?: string
           name?: string
+          notes?: string | null
           producer?: string | null
           region?: string | null
           researched_at?: string | null

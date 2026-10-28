@@ -1,3 +1,4 @@
+import { loadWineNotes } from "@/lib/cellar/notes";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ListView } from "@/components/cellar/list-view";
@@ -89,7 +90,8 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
   }
 
   const entries = buildDrunkEntries(bottles, grapes, ratingsByWine, (persons.data ?? []).map((p) => p.name));
-  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query)) : entries;
+  const notes = state.query ? await loadWineNotes(supabase, entries.map((e) => e.wine_id)) : null;
+  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query, notes?.get(e.wine_id))) : entries;
   const [windows, photo] = await Promise.all([
     loadDrinkWindows(supabase, wineIds),
     loadLabelPhotos(supabase, visible.map((e) => e.wine_id)),

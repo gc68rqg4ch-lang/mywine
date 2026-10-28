@@ -1,3 +1,4 @@
+import { loadWineNotes } from "@/lib/cellar/notes";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ListView } from "@/components/cellar/list-view";
@@ -66,7 +67,8 @@ export default async function TastedPage({ searchParams }: PageProps<"/verkostet
   const stock = new Map((stats.data ?? []).flatMap((s) => (s.wine_id ? [[s.wine_id, s.bottles_in_stock ?? 0] as const] : [])));
 
   const entries = buildTastedEntries(encounters.data ?? [], wines, grapes, ratingsByWine, stock, (persons.data ?? []).map((p) => p.name));
-  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query)) : entries;
+  const notes = state.query ? await loadWineNotes(supabase, entries.map((e) => e.wine_id)) : null;
+  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query, notes?.get(e.wine_id))) : entries;
   const [windows, photo] = await Promise.all([
     loadDrinkWindows(supabase, wineIds),
     loadLabelPhotos(supabase, visible.map((e) => e.wine_id)),

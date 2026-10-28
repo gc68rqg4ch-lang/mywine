@@ -1,3 +1,4 @@
+import { loadWineNotes } from "@/lib/cellar/notes";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ListView } from "@/components/cellar/list-view";
@@ -84,7 +85,8 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
     vendors,
   );
   const inStock = wines.filter((w) => w.sealed > 0);
-  const visible = state.query ? inStock.filter((w) => matchesQuery(w, state.query)) : inStock;
+  const notes = state.query ? await loadWineNotes(supabase, inStock.map((w) => w.wine_id)) : null;
+  const visible = state.query ? inStock.filter((w) => matchesQuery(w, state.query, notes?.get(w.wine_id))) : inStock;
   const [ratings, photo] = await Promise.all([
     loadRatingsByWine(supabase, visible.map((w) => w.wine_id)),
     loadLabelPhotos(supabase, visible.map((w) => w.wine_id)),

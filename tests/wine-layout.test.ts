@@ -31,7 +31,7 @@ test("Position: iPhone und iPad hochkant Zum Wein → Geschmacksprofil → Bewer
   const wide = media(1000);
   assert.match(wide, /grid-template-areas: "open wine taste" "open wine ratings";/);
   assert.match(wide, /\.wine-col-wine \{\s*display: contents;/);
-  assert.match(wide, /\.wine-col-wine > \.card \{\s*grid-area: wine;/);
+  assert.match(wide, /\.wine-col-main \{\s*grid-area: wine;/);
   assert.match(wide, /\.wine-col-taste \{\s*grid-area: taste;/);
 });
 

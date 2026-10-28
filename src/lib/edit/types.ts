@@ -100,6 +100,8 @@ export type NewWine = {
 export type Edit =
   /** Stammdaten des Weins (alle Jahrgänge). */
   | { kind: "wine"; wineId: string; set: WineChanges }
+  /** Freie Notizen zum Wein (wines.notes, mehrzeilig); leer → NULL. */
+  | { kind: "wineNotes"; wineId: string; notes: string | null }
   /** Ganzen Jahrgang umbenennen (change_vintage), ggf. zusammenführen. null = ohne Jahrgang. */
   | { kind: "vintage"; wineId: string; from: number | null; to: number | null }
   /** Trinkfenster eines Jahrgangs. */

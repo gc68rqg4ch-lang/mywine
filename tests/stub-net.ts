@@ -28,6 +28,7 @@ function matches(row: Row, col: string, expr: string): boolean {
   const v = field(row, col);
   const unq = (s: string) => s.replace(/^"|"$/g, "");
   switch (op) {
+    case "not": return !matches(row, col, raw);
     case "eq": return String(v) === raw;
     case "neq": return String(v) !== raw;
     case "is": return raw === "null" ? v == null : String(v) === raw;

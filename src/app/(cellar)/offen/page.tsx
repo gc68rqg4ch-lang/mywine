@@ -1,3 +1,4 @@
+import { loadWineNotes } from "@/lib/cellar/notes";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ListView } from "@/components/cellar/list-view";
@@ -48,7 +49,8 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
   );
   const grapes = await loadGrapeNames(supabase, rows.map((r) => ({ id: r.wine_id, grapes: r.grapes })));
   const entries = rows.map((r) => toOpenEntry(r, grapes.get(r.wine_id) ?? []));
-  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query)) : entries;
+  const notes = state.query ? await loadWineNotes(supabase, entries.map((e) => e.wine_id)) : null;
+  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query, notes?.get(e.wine_id))) : entries;
   const thisYear = currentYear();
   const [ratings, photo] = await Promise.all([
     loadRatingsByWine(supabase, visible.map((e) => e.wine_id)),

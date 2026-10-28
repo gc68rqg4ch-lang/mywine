@@ -109,6 +109,14 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
     Seite). Eine Charge/Flasche ist ein Formular (`kind = batch` samt Füllstand bzw. „Getrunken am“), gespeichert
     über das gemeinsame Modul. Löschen bleibt im jeweiligen Formular. Felder im Raster mit Beschriftung darüber,
     auf dem iPhone einspaltig.
+  - **Notizen** (`wines.notes`, Migration `wines_notes`; Import-Notizen aus `tasting_notes` mit Jahrgang als
+    Präfix übernommen): eigene Karte nach „Zum Wein“, vor Bewertungen (iPad quer in Spalte 2 unter „Zum Wein“,
+    `.wine-col-main`). Anzeige mit Zeilenumbrüchen, ohne Notiz „Noch keine Notizen“; ✏️ öffnet ein mehrzeiliges
+    Feld (Bearbeiten-Modul `wineNotes`: getrimmt, CRLF → LF, leer → NULL, höchstens 10 000 Zeichen). Die Suche in
+    Bestand, Offen, Getrunken, Verkostet (und im Chat) findet auch Notiztext (`loadWineNotes`, nur beim Suchen).
+    Bot: „ℹ️ Details“ zeigt „🗒 Notizen“ (bis 1000 Zeichen), Bearbeiten nur in der App. `tasting_notes` wird nicht
+    mehr verwendet; `20261028180000_drop_tasting_notes.sql` (noch einzuspielen) passt `change_vintage` an und löscht
+    die Tabelle.
   - **Dokumente** (PDF, `wine_media.kind = document`, privater Bucket `wine-documents`) des Jahrgangs und ohne
     Jahrgang als **Büroklammer** im Kopf, rechtsbündig: je Dokument eine Zeile mit dem vollen Namen (notfalls
     umgebrochen) und 📎 ganz rechts; Antippen des Namens öffnet das PDF (signierte URL, neuer Tab). Ohne Dokument nur

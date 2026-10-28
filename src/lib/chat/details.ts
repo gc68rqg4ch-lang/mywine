@@ -43,7 +43,17 @@ export type WineDetails = {
   encounters?: string[];
   /** Geschmacksprofil als eine Zeile („Kräftig, trocken, viel Tannin – Brombeere, Vanille“). */
   taste?: string | null;
+  /** Notizen zum Wein (wines.notes), mehrzeilig – nur anzeigen, bearbeitet wird in der App. */
+  notes?: string | null;
 };
+
+/** Notizen im Bot höchstens so lang (Telegram-Nachrichten haben eine Grenze); Rest in der App. */
+export const MAX_NOTES_IN_DETAILS = 1000;
+
+function notesText(notes: string) {
+  const short = notes.length > MAX_NOTES_IN_DETAILS ? `${notes.slice(0, MAX_NOTES_IN_DETAILS).trimEnd()} …` : notes;
+  return `🗒 <b>Notizen</b>\n${e(short)}`;
+}
 
 const e = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const join = (parts: (string | null | undefined | false)[], sep = " · ") => parts.filter(Boolean).join(sep);
@@ -116,6 +126,7 @@ export function wineDetailsText(d: WineDetails) {
     d.ratings.length && `⭐ ${e(join(d.ratings.map((r) => `${r.person} ${formatStarNumber(r.rating)}`)))}`,
     d.taste && `👅 ${e(d.taste)}`,
     tasting && `📝 ${e(tasting)}`,
+    d.notes?.trim() ? notesText(d.notes.trim()) : null,
     ...(d.encounters ?? []).map((line, i) => `${i === 0 ? "🍽 Verkostet: " : "🍽 "}${e(line)}`),
     d.documents?.length
       ? `📎 ${d.documents.length === 1 ? "1 Dokument" : `${d.documents.length} Dokumente`}: ${e(d.documents.slice(0, 3).join(", "))}${d.documents.length > 3 ? " …" : ""}${d.appUrl ? ` – <a href="${d.appUrl}">auf der Weinseite</a>` : ""}`

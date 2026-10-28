@@ -135,6 +135,30 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
   });
 }
 
+/** Höchstlänge der Notizen zum Wein. */
+export const MAX_WINE_NOTES = 10_000;
+
+/** Notizen: getrimmt, Zeilenumbrüche bleiben (CRLF → LF); leer → NULL (DB-Check: nie leer). */
+export const cleanNotes = (text: string | null | undefined) => {
+  const t = (text ?? "").replace(/\r\n?/g, "\n").trim();
+  return t ? t : null;
+};
+
+async function prepareWineNotes(db: Db, wineId: string, raw: string | null): Promise<PreparedEdit> {
+  const wine = await loadWine(db, wineId);
+  if (!wine) return fail("Diesen Wein gibt es nicht mehr.");
+  const notes = cleanNotes(raw);
+  if ((notes?.length ?? 0) > MAX_WINE_NOTES) return fail(`Die Notizen sind zu lang (höchstens ${MAX_WINE_NOTES.toLocaleString("de-CH")} Zeichen).`);
+  const preview = (v: string | null) => (v == null ? DASH : v.length > 60 || v.includes("\n") ? `${v.split("\n")[0].slice(0, 60)} …` : v);
+  const changes: EditChange[] = [];
+  if ((wine.notes ?? null) !== notes) changes.push({ label: "Notizen", before: preview(wine.notes ?? null), after: preview(notes) });
+  return ready({ title: wineTitle(wine), action: "Notizen", changes, notes: [] }, wineId, async () => {
+    const { error } = await db.from("wines").update({ notes }).eq("id", wineId);
+    if (error) throw error;
+    return notes ? "die Notizen gespeichert" : "die Notizen gelöscht";
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Jahrgang
 
@@ -643,6 +667,8 @@ export async function prepareEdit(db: Db, edit: Edit): Promise<PreparedEdit> {
   switch (edit.kind) {
     case "wine":
       return prepareWine(db, edit.wineId, edit.set);
+    case "wineNotes":
+      return prepareWineNotes(db, edit.wineId, edit.notes);
     case "vintage":
       return prepareVintage(db, edit.wineId, edit.from, edit.to);
     case "drinkWindow":

@@ -159,6 +159,9 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
     switch (r.text("kind")) {
       case "wine":
         return [{ kind: "wine", wineId: r.id("wineId"), set: wineSet(r) }];
+      case "wineNotes":
+        // Mehrzeilig: Umbrüche bleiben, getrimmt wird im Bearbeiten-Modul (leer → NULL).
+        return [{ kind: "wineNotes", wineId: r.id("wineId"), notes: r.text("notes") || null }];
       case "wineCard": {
         // „Zum Wein“ als ein Formular: Stammdaten, Rebsorten des Jahrgangs (nur wenn geändert –
         // sonst würden Angaben „alle Jahrgänge“ zu eigenen des Jahrgangs), Trinkfenster, zuletzt
