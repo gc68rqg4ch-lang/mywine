@@ -7,7 +7,7 @@ import { PhotoGallery } from "@/components/photo-viewer";
 import { ResearchSuggestions } from "@/components/research-suggestions";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
-import { DRINK_STATUS_LABELS, countryFlag, drinkStatus, drinkStatusHref, drinkWindowLabel } from "@/lib/cellar/overview";
+import { countryFlag, drinkWindowLabel } from "@/lib/cellar/overview";
 import {
   anchorItem,
   parseVintageParam,
@@ -43,6 +43,8 @@ import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, RatingsForm, type PersonRating } from "./ratings-card";
 import { EncounterSection } from "./encounters";
+import { TasteCard } from "./taste-card";
+import { loadTasteProfile } from "@/lib/taste/store";
 import { DeleteWine } from "./delete-sections";
 import { loadWineDeleteSummary } from "@/lib/edit/delete";
 import { wineDeleteSummaryText } from "@/lib/edit/delete-text";
@@ -156,7 +158,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const inVintage = items.filter((i) => i.vintage_year === year);
   const anchor = anchorItem(inVintage);
 
-  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places, deleteSummary] = await Promise.all([
+  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places, deleteSummary, tasteProfile] = await Promise.all([
     loadRatingsAndTastings(supabase, wine.id, year),
     loadGrapeShares(supabase, wine.id, year),
     loadVintagePhotos(supabase, wine.id, year, inVintage.map((i) => i.inventory_item_id)),
@@ -164,6 +166,11 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     loadDocuments(supabase, wine.id, year),
     loadPlaces(supabase),
     loadWineDeleteSummary(supabase, wine.id),
+    // Jahrgangsspezifisches Profil, sonst das allgemeine.
+    loadTasteProfile(supabase, wine.id, year).catch((error) => {
+      console.error("loading taste profile failed", error);
+      return null;
+    }),
   ]);
   // Einziger Eintrag „Verkostet“ ohne Flaschen: Löschen fragt, ob auch der Wein weg soll.
   const emptyWine =
@@ -194,7 +201,6 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     price: priceOf(i),
   }));
 
-  const status = drinkStatus(vintage?.drink_from_year ?? null, vintage?.drink_until_year ?? null, Number(today.slice(0, 4)));
   const drinkWindow = drinkWindowLabel(vintage?.drink_from_year ?? null, vintage?.drink_until_year ?? null);
   const latestReadiness = tastings.find((t) => t.readiness)?.readiness ?? null;
   const flag = countryFlag(wine.country);
@@ -310,7 +316,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   );
 
   const shownShares = grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }));
-  const drink = drinkRow(status, drinkWindow);
+  const drink = drinkRow(drinkWindow);
   const details: Record<WineDetailField, ReactNode> = {
     Typ: <WineTypeIcon type={wine.type} withLabel />,
     Land: wine.country ? `${flag ? `${flag} ` : ""}${wine.country}` : null,
@@ -319,18 +325,8 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     Alkohol: wine.alcohol_content != null ? `${wine.alcohol_content.toLocaleString("de-CH")} %` : null,
     Flasche: sizes,
     Rebsorten: grapeLine(shownShares),
-    Trinkreife: drink && (
-      <>
-        <Link
-          href={drinkStatusHref(status)}
-          className={`drink-badge drink-link drink-${status}`}
-          title="Alle Weine im Bestand mit dieser Trinkreife"
-        >
-          {DRINK_STATUS_LABELS[status]}
-        </Link>
-        {drink.window && <span> · {drink.window}</span>}
-      </>
-    ),
+    // Nur das Fenster („2025–2029“); den Status zeigen die Listen.
+    Trinkreife: drink,
   };
   const photoAlt = `${wine.name} ${yearLabel}`;
 
@@ -382,7 +378,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     research: (
       <div className="stack-sm section-divider">
         <h3 className="subsection-title">Recherche</h3>
-        <ResearchBlock wineId={wine.id} researchedOn={formatDate(zurichDate(wine.researched_at))} />
+        <ResearchBlock wineId={wine.id} year={year} researchedOn={formatDate(zurichDate(wine.researched_at))} />
       </div>
     ),
   };
@@ -393,6 +389,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
           <Fragment key={key}>{sections[key]}</Fragment>
         ))}
       </section>
+      <TasteCard wineId={wine.id} wineType={wine.type} year={year} profile={tasteProfile} tastings={tastings} />
     </div>
   );
 

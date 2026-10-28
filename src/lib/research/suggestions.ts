@@ -9,6 +9,7 @@ import type { Database, Json } from "@/lib/database.types";
 import { applyEdit, NOTHING } from "@/lib/edit/edit";
 import type { Edit, WineChanges } from "@/lib/edit/types";
 import type { GrapeShare } from "@/lib/grapes/shares";
+import type { TasteProfileData } from "@/lib/taste/profile";
 import { SUGGESTION_LABELS, displayValue, sameValue, type SuggestionField } from "./compare";
 
 type Db = SupabaseClient<Database>;
@@ -123,6 +124,10 @@ async function editFor(db: Db, row: { wine_id: string; vintage_year: number | nu
   const field = row.field as SuggestionField;
   const wineField = WINE_FIELD[field];
   if (wineField) return { kind: "wine", wineId: row.wine_id, set: { [wineField]: row.suggested_value } as WineChanges };
+  if (field === "taste_profile") {
+    // Übernommen: das recherchierte Profil gilt wieder als Recherche (mit Quellen und Belegen).
+    return { kind: "tasteProfile", wineId: row.wine_id, profile: row.suggested_value as unknown as TasteProfileData, source: "research" };
+  }
   if (field === "grapes") {
     return { kind: "grapes", wineId: row.wine_id, year: row.vintage_year, shares: row.suggested_value as GrapeShare[], source: "research" };
   }

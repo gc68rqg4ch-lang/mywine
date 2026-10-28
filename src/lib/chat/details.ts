@@ -41,6 +41,8 @@ export type WineDetails = {
   suggestions?: number;
   /** Letzte Einträge „Verkostet“, schon als Zeile („12.10.2026 · Kronenhalle · Michel 4½ ★“). */
   encounters?: string[];
+  /** Geschmacksprofil als eine Zeile („Kräftig, trocken, viel Tannin – Brombeere, Vanille“). */
+  taste?: string | null;
 };
 
 const e = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -112,6 +114,7 @@ export function wineDetailsText(d: WineDetails) {
     ),
     ...priceLines.map((p) => `💰 ${e(p)}`),
     d.ratings.length && `⭐ ${e(join(d.ratings.map((r) => `${r.person} ${formatStarNumber(r.rating)}`)))}`,
+    d.taste && `👅 ${e(d.taste)}`,
     tasting && `📝 ${e(tasting)}`,
     ...(d.encounters ?? []).map((line, i) => `${i === 0 ? "🍽 Verkostet: " : "🍽 "}${e(line)}`),
     d.documents

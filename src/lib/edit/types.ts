@@ -4,6 +4,7 @@
 
 import type { WineType } from "@/lib/format";
 import type { GrapeShare } from "@/lib/grapes/shares";
+import type { TasteProfileData } from "@/lib/taste/profile";
 
 /** Lagerorte im Haus (storage_room); storage_house ist immer „Zuhause“. */
 export const ROOMS = ["Weinkeller", "Wohnzimmer"] as const;
@@ -144,7 +145,9 @@ export type Edit =
   /** Eintrag löschen – samt seinen Bewertungen; WSET-Verkostungen bleiben (ohne Eintrag). */
   | { kind: "deleteEncounter"; encounterId: string }
   /** Merker „Kaufen?“ */
-  | { kind: "wantToBuy"; wineId: string; value: boolean };
+  | { kind: "wantToBuy"; wineId: string; value: boolean }
+  /** Geschmacksprofil (Jahrgang in profile.vintageYear); von Hand → source manual. */
+  | { kind: "tasteProfile"; wineId: string; profile: TasteProfileData; source: "manual" | "research" };
 
 export type EditKind = Edit["kind"];
 

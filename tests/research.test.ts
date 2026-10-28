@@ -20,6 +20,7 @@ const W3 = "33333333-3333-4333-8333-333333333333";
 const W4 = "44444444-4444-4444-8444-444444444444";
 const MICHEL = "86c222d0-3a8c-4d5f-9564-f5654769ecd6";
 const prompts: string[] = [];
+const tastePrompts: string[] = [];
 let answer: Record<string, unknown> | null = null;
 /** Gesetzt: die API antwortet mit diesem Fehler. */
 let failWith: ReturnType<typeof claudeError> | null = null;
@@ -52,8 +53,16 @@ const net: Net = {
   rpc: {},
   claude: (body) => {
     const prompt = String((body.messages as { content: string }[])[0].content);
+    if (failWith) {
+      prompts.push(prompt);
+      return failWith;
+    }
+    // Geschmacksprofil: eigener Aufruf (hier ohne passende Quelle → kein Profil).
+    if ((body.tools as { name: string }[]).some((t) => t.name === "report_taste_profile")) {
+      tastePrompts.push(prompt);
+      return claudeTool("report_taste_profile", { matches_wine: false, same_vintage: false, sources: [], fields: {}, aromas: [], evidence: [], contradictions: [], style_summary: "", food_pairing: [] });
+    }
     prompts.push(prompt);
-    if (failWith) return failWith;
     if (prompt.includes("Macan")) {
       // Ungültige Werte: werden verworfen statt gespeichert
       return claudeTool("report_wine_details", {
@@ -181,11 +190,25 @@ test("Ungültige Antwort (Alkohol 40 %, Jahr 1700, 2017.5, 140 %): nichts gespei
   assert.ok(net.tables.wines.find((w) => w.id === W3)!.researched_at, "researched_at auch ohne Fund gesetzt");
 });
 
-test("Wein ohne Flaschen: keine Recherche", async () => {
+test("Wein ohne Flaschen wird recherchiert: Stammdaten und Profil; verkostete Jahrgänge zählen", async () => {
+  // Früher: ohne Flaschen „complete“ ohne Recherche (wineGaps → null). Jetzt wird recherchiert.
   const count = prompts.length;
-  assert.equal((await researchAndFillWine(db, W4, "all")).status, "complete");
-  assert.equal(prompts.length, count);
-  assert.equal(net.tables.wines.find((w) => w.id === W4)!.researched_at, undefined, "ohne Recherche kein Datum");
+  const tasteCount = tastePrompts.length;
+  const outcome = await researchAndFillWine(db, W4, "all");
+  assert.notEqual(outcome.status, "complete");
+  assert.equal(prompts.length, count + 1, "Stammdaten gesucht");
+  assert.doesNotMatch(prompts.at(-1)!.split("Bei uns gespeichert")[0], /Jahrgang \d{4}/, "ohne Jahrgänge");
+  assert.equal(tastePrompts.length, tasteCount + 1, "Geschmacksprofil gesucht");
+  assert.equal(outcome.taste, "none");
+  assert.ok(net.tables.wines.find((w) => w.id === W4)!.researched_at, "researched_at gesetzt");
+  // Nur verkostet (wine_encounters): der Jahrgang wird mit recherchiert (Umfang „alle“).
+  net.tables.wine_encounters = [{ id: "e1", wine_id: W4, vintage_year: 2020 }];
+  await researchAndFillWine(db, W4, "all");
+  assert.match(prompts.at(-1)!, /Jahrgang 2020: Trinkfenster/);
+  const data = await loadGapData(db);
+  assert.deepEqual(wineGaps(data.wines.find((w) => w.id === W4)!, data, "all")?.vintages.map((v) => v.year), [2020]);
+  assert.equal(wineGaps(data.wines.find((w) => w.id === W4)!, data, "cellar"), null, "im Bestand zählen nur Flaschen");
+  net.tables.wine_encounters = [];
 });
 
 test("7-Tage-Regel für „kürzlich geprüfte überspringen“", async () => {

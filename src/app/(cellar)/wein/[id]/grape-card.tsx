@@ -94,11 +94,12 @@ export function GrapeRowsField({ shares, year }: { shares: GrapeShare[]; year: n
 }
 
 /** Recherche in „Zum Wein“: „🔎 Nachrecherchieren“ und „Zuletzt recherchiert am …“. */
-export function ResearchBlock({ wineId, researchedOn = null }: { wineId: string; researchedOn?: string | null }) {
+export function ResearchBlock({ wineId, year, researchedOn = null }: { wineId: string; year?: number | null; researchedOn?: string | null }) {
   const [researchState, researchAction, researching] = useActionState(researchWineFromPage, undefined);
   return (
     <form action={researchAction} className="stack-sm">
       <input type="hidden" name="wineId" value={wineId} />
+      {year !== undefined && <input type="hidden" name="year" value={year == null ? "nv" : String(year)} />}
       <div className="row row-between">
         <button type="submit" className="btn btn-sm" disabled={researching}>
           {researching ? "Recherchiere …" : "🔎 Nachrecherchieren"}
@@ -109,8 +110,8 @@ export function ResearchBlock({ wineId, researchedOn = null }: { wineId: string;
       </div>
       {researching && (
         <p className="muted small" role="status">
-          Ich ergänze alle leeren Angaben dieses Weins (Herkunft, Alkohol, Trinkfenster, Rebsorten mit %) – das kann ein bis
-          zwei Minuten dauern.
+          Ich ergänze alle leeren Angaben dieses Weins (Herkunft, Alkohol, Trinkfenster, Rebsorten mit %) und suche das
+          Geschmacksprofil – das kann ein bis zwei Minuten dauern.
         </p>
       )}
       {!researching && <Notice state={researchState} />}

@@ -34,11 +34,14 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const complete = params.vollstaendig === "1";
   // „In den letzten 7 Tagen geprüfte überspringen“ – Standard an; ?kuerzlich=1 schaltet es aus.
   const skipRecent = params.kuerzlich !== "1";
-  const href = (next: { alle?: boolean; vollstaendig?: boolean; skipRecent?: boolean }) => {
+  // „Geschmacksprofil fehlt“: nur Weine ohne Profil, nur das Profil recherchieren.
+  const profile = params.profil === "1";
+  const href = (next: { alle?: boolean; vollstaendig?: boolean; skipRecent?: boolean; profil?: boolean }) => {
     const q = new URLSearchParams();
     if (next.alle ?? scope === "all") q.set("alle", "1");
     if (next.vollstaendig ?? complete) q.set("vollstaendig", "1");
     if (!(next.skipRecent ?? skipRecent)) q.set("kuerzlich", "1");
+    if (next.profil ?? profile) q.set("profil", "1");
     const query = q.toString();
     return `/recherche${query ? `?${query}` : ""}`;
   };
@@ -51,9 +54,12 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const cellar = inScope("cellar").filter(needsResearch);
   const all = inScope("all").filter(needsResearch);
   const counts = { cellar: gapCounts(cellar), all: gapCounts(all) };
-  const chosen = complete ? inScope(scope) : scope === "all" ? all : cellar;
-  const recent = chosen.filter((g) => researchedRecently(g.wine));
-  const selected = skipRecent ? chosen.filter((g) => !researchedRecently(g.wine)) : chosen;
+  const noProfile = (s: ResearchScope) => inScope(s).filter((g) => !data.withProfile.has(g.wine.id));
+  const profileCounts = { cellar: noProfile("cellar").length, all: noProfile("all").length };
+  const chosen = profile ? noProfile(scope) : complete ? inScope(scope) : scope === "all" ? all : cellar;
+  // Beim Profil zählt die 7-Tage-Regel nicht: die bisherige Recherche hat kein Profil gesucht.
+  const recent = profile ? [] : chosen.filter((g) => researchedRecently(g.wine));
+  const selected = skipRecent && !profile ? chosen.filter((g) => !researchedRecently(g.wine)) : chosen;
   const completeCount = selected.filter((g) => !needsResearch(g)).length;
   const list = selected.sort(
     (a, b) => compareWineNames(a.wine, b.wine),
@@ -63,8 +69,8 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
     producer: g.wine.producer,
     name: g.wine.name,
     years: g.vintages.map((v) => v.year),
-    gaps: [...g.gaps.map((k) => GAP_LABELS[k]), ...(g.basics ? ["Land/Typ"] : [])],
-    complete: !needsResearch(g),
+    gaps: profile ? ["Geschmacksprofil"] : [...g.gaps.map((k) => GAP_LABELS[k]), ...(g.basics ? ["Land/Typ"] : [])],
+    complete: profile ? false : !needsResearch(g),
   }));
 
   return (
@@ -74,7 +80,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
         <p className="muted">
           Ich suche pro Wein alle leeren Angaben im Web und ergänze sie in einem Durchgang: Produzent, Land, Region,
           Appellation, Typ, Alkohol, Trinkfenster je Jahrgang und Rebsorten mit %. Vorhandene Angaben überschreibe ich
-          nie.
+          nie. Dazu das Geschmacksprofil – nur mit Belegen aus Quellen zu genau diesem Wein; sonst lasse ich es leer.
         </p>
       </div>
 
@@ -117,6 +123,11 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
                 <td>{counts.all[k]}</td>
               </tr>
             ))}
+            <tr>
+              <th scope="row">Geschmacksprofil fehlt</th>
+              <td>{profileCounts.cellar}</td>
+              <td>{profileCounts.all}</td>
+            </tr>
             <tr className="gap-total">
               <th scope="row">Weine mit Lücken</th>
               <td>{cellar.length}</td>
@@ -124,18 +135,32 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
             </tr>
           </tbody>
         </table>
-        <p className="muted small">„Im Bestand“ = Weine mit ungeöffneten oder offenen Flaschen, egal an welchem Lagerort; „alle“ = auch ausgetrunkene.</p>
+        <p className="muted small">„Im Bestand“ = Weine mit ungeöffneten oder offenen Flaschen, egal an welchem Lagerort; „alle“ = auch ausgetrunkene und nur verkostete.</p>
       </section>
 
       <nav className="segmented" aria-label="Umfang">
         <Link href={href({ alle: false })} className={scope === "cellar" ? "segment active" : "segment"} aria-current={scope === "cellar" ? "page" : undefined}>
-          Nur Weine im Bestand ({cellar.length})
+          Nur Weine im Bestand ({profile ? profileCounts.cellar : cellar.length})
         </Link>
         <Link href={href({ alle: true })} className={scope === "all" ? "segment active" : "segment"} aria-current={scope === "all" ? "page" : undefined}>
-          Alle Weine, auch ausgetrunkene ({all.length})
+          Alle Weine, auch ausgetrunkene ({profile ? profileCounts.all : all.length})
         </Link>
       </nav>
 
+      <Link href={href({ profil: !profile })} className="check-toggle" role="switch" aria-checked={profile}>
+        <span className="check-box" aria-hidden>
+          {profile ? "✓" : ""}
+        </span>
+        <span>
+          Geschmacksprofil fehlt
+          <span className="muted small">
+            {" "}
+            – {profile ? "ich suche nur das Profil, bei Weinen ohne Profil" : "nur Weine ohne Geschmacksprofil, nur das Profil suchen"}
+          </span>
+        </span>
+      </Link>
+
+      {!profile && (
       <Link
         href={href({ vollstaendig: !complete })}
         className="check-toggle"
@@ -153,7 +178,9 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
           </span>
         </span>
       </Link>
+      )}
 
+      {!profile && (
       <Link href={href({ skipRecent: !skipRecent })} className="check-toggle" role="switch" aria-checked={skipRecent}>
         <span className="check-box" aria-hidden>
           {skipRecent ? "✓" : ""}
@@ -166,12 +193,14 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
           </span>
         </span>
       </Link>
+      )}
 
       {/* key: bei Wechsel von Umfang oder Optionen frisch beginnen */}
       <BatchResearch
-        key={`${scope}:${complete}:${skipRecent}`}
+        key={`${scope}:${complete}:${skipRecent}:${profile}`}
         candidates={candidates}
         scope={scope}
+        taste={profile ? "only" : "missing"}
         skipped={skipRecent ? recent.length : 0}
       />
     </div>

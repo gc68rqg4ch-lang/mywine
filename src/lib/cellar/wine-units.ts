@@ -52,9 +52,9 @@ export function grapeLine(shares: GrapeShare[]) {
   return shares.length ? shares.map(formatShare).join(" · ") : null;
 }
 
-/** Zeile „Trinkreife“: Status und Fenster; ohne beides (unbekannt, kein Fenster) → null (Zeile fehlt). */
-export function drinkRow(status: string, window: string | null) {
-  return status === "unknown" && !window ? null : { status, window };
+/** Zeile „Trinkreife“ auf der Weinseite: nur das Fenster („2025–2029“, ohne Status); ohne Fenster → null (Zeile fehlt). */
+export function drinkRow(window: string | null) {
+  return window || null;
 }
 
 /**

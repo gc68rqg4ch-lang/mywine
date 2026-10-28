@@ -179,6 +179,29 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   Trinkfenster nur leere Teile, Rebsorten nur ohne % bzw. ganz fehlend, manuelle bleiben); Rebsorten mit
   `source = research`. Gilt für 🔎 Nachrecherchieren auf der Weinseite (ohne Rückfrage, alle Jahrgänge mit
   Flaschen), den Sammellauf und die Erfassung im Bot. `wines.grapes` bleibt vorerst bestehen.
+  **Weine ohne Flaschen** (nur verkostet) werden auch recherchiert: Früher lieferte `wineGaps` ohne Flaschen
+  `null` und die Recherche meldete „complete“, ohne zu suchen. Jetzt zählen Jahrgänge aus „Verkostet“
+  (`wine_encounters`) im Umfang „alle“ wie Flaschen; ohne Flaschen und ohne Verkostet werden die Stammdaten
+  und das Geschmacksprofil gesucht.
+- **Geschmacksprofil aus der Recherche** (`wine_taste_profiles`, `src/lib/taste/`, `src/lib/research/taste.ts`).
+  Oberstes Ziel: kein falsches Profil – lieber „unbekannt“ oder gar kein Profil als geraten. Keine Freigabe:
+  Belegtes gilt sofort. Eigener strict-Tool-Aufruf (`report_taste_profile`) nach der Stammdaten-Recherche;
+  Merkmale als enum mit „unbekannt“ (keine nullable Felder), Aromen als enum aus dem Lexikon des Weintyps.
+  `validateTasteProfile` prüft vor dem Speichern: nur Quellen zu genau diesem Wein; jedes Merkmal, Aroma,
+  Beschreibung und Speiseempfehlung braucht ein Zitat (≤ 25 Wörter) mit `source_url` aus den Quellen, sonst
+  „unbekannt“ bzw. weg; WSET-Begriffe nur bei klarer Entsprechung; Widersprüche → „unbekannt“ plus Hinweis in
+  `source_note`; nichts Belegtes → kein Profil, Bestehendes bleibt. Gleicher Jahrgang belegt → `vintage_year`,
+  sonst allgemeines Profil (Jahrgang der Quelle in `sources`). Sicherheit: hoch = ≥ 2 unabhängige Quellen (Website),
+  davon Weingut oder Kritik, ohne Widerspruch; mittel = eine gute Quelle; niedrig = nur Händler. Neue Recherche
+  überschreibt nur Profile mit `source = research`; ein Profil von Hand (✏️ in der Karte, `source = manual`) bleibt,
+  der Fund wird Vorschlag (`research_suggestions.field = 'taste_profile'`; braucht die Migration
+  `research_suggestions_taste_profile`, ohne sie passiert nichts). Nachrecherchieren und Bot suchen das Profil
+  immer, der Sammellauf nur bei Weinen ohne Profil; Option „Geschmacksprofil fehlt“ (`?profil=1`) sucht nur das
+  Profil. Kein automatischer Lauf beim Deploy. Weinseite: Karte „Geschmacksprofil“ unter „Zum Wein“ (Balken,
+  Aromen nach Gruppe, Beschreibung, Speisen, „Laut Recherche · Sicherheit hoch · 3 Quellen“ → Quellen und Belege,
+  „nicht jahrgangsspezifisch“, Vergleich mit den eigenen WSET-Verkostungen, ohne Profil „🔎 Geschmacksprofil
+  recherchieren“). Bot ℹ️ Details: eine Zeile („👅 Vollmundig, trocken, viel Tannin – Brombeere, Kaffee“). Ohne
+  Fund melden App und Bot „Keine verlässlichen Angaben gefunden.“
 - **API-Fehler** (`src/lib/ai/api-errors.ts`): Das Nutzungslimit (400 „reached your specified API usage
   limits“) wird erkannt – der Sammellauf stoppt sofort und meldet „Das monatliche API-Limit ist erreicht. Wieder
   verfügbar am …“ (Datum aus der Meldung), ebenso Nachrecherchieren auf der Weinseite und der Bot in der Ich-Form

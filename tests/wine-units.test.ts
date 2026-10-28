@@ -112,9 +112,8 @@ test("Zeilen „Rebsorten“ und „Trinkreife“: mit/ohne Prozent, leere Zeile
   assert.equal(grapeLine([{ grape: "Tempranillo", percent: null }, { grape: "Garnacha", percent: null }]), "Tempranillo · Garnacha");
   assert.equal(grapeLine([{ grape: "Merlot", percent: 60 }, { grape: "Cabernet Franc", percent: null }]), "Merlot 60 % · Cabernet Franc");
   assert.equal(grapeLine([]), null, "keine Rebsorten → Zeile fehlt");
-  assert.deepEqual(drinkRow("ready", "2025–2029"), { status: "ready", window: "2025–2029" });
-  assert.deepEqual(drinkRow("wait", null), { status: "wait", window: null });
-  assert.equal(drinkRow("unknown", null), null, "unbekannt ohne Fenster → Zeile fehlt");
+  assert.equal(drinkRow("2025–2029"), "2025–2029", "nur das Fenster, ohne Status");
+  assert.equal(drinkRow(null), null, "ohne Fenster → Zeile fehlt");
 });
 
 test("Formular „Zum Wein“: Stammdaten, Rebsorten und Trinkfenster mit einem Speichern", () => {

@@ -13,6 +13,7 @@ import { wineName } from "@/lib/format";
 import type { SuggestionField } from "@/lib/research/compare";
 import { decideSuggestion, loadPendingSuggestions, type Suggestion } from "@/lib/research/suggestions";
 import { researchAndFillWine } from "@/lib/research/wine";
+import { NO_RELIABLE_PROFILE } from "@/lib/taste/profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { answerCallback, editMessage, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
 import type { Actor } from "@/lib/telegram/actor";
@@ -32,6 +33,7 @@ const AT: Record<SuggestionField, string> = {
   drink_from_year: "beim Trinkfenster (ab)",
   drink_until_year: "beim Trinkfenster (bis)",
   grapes: "bei den Rebsorten",
+  taste_profile: "beim Geschmacksprofil",
 };
 
 export function suggestionQuestion(s: Pick<Suggestion, "field" | "vintageYear" | "current" | "suggested" | "sourceNote">) {
@@ -68,7 +70,7 @@ export async function runBotResearch(chatId: number, wineId: string, year: numbe
   const db = createAdminClient();
   await tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => undefined);
   try {
-    const outcome = await researchAndFillWine(db, wineId, "all");
+    const outcome = await researchAndFillWine(db, wineId, "all", { taste: "always", year });
     const suggestions = await loadPendingSuggestions(db, { wineId });
     const base = appBaseUrl();
     const link = base ? `\n<a href="${base}${wineHref(wineId, year)}">In der App öffnen</a>` : "";
@@ -81,6 +83,7 @@ export async function runBotResearch(chatId: number, wineId: string, year: numbe
         : outcome.status === "nothing"
           ? "Deine Angaben stimmen mit der Recherche überein."
           : null,
+      outcome.taste === "none" ? `Geschmacksprofil: ${NO_RELIABLE_PROFILE}` : null,
     ].filter(Boolean);
     await sendMessage(chatId, `${lines.join("\n")}${link}`);
     for (const s of suggestions) await sendMessage(chatId, suggestionQuestion(s), keyboard(s.id));

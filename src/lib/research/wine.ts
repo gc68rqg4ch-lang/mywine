@@ -2,7 +2,9 @@ import "server-only";
 
 // Einen Wein vollständig recherchieren: alle leeren Angaben in einem Durchgang (Stammdaten,
 // Alkohol, Trinkfenster je Jahrgang, Rebsorten mit %). Vorhandenes wird nie überschrieben;
-// Rebsorten mit source = research. Für „Nachrecherchieren“ auf der Weinseite und den Sammellauf.
+// Rebsorten mit source = research. Danach in einem eigenen Aufruf das Geschmacksprofil.
+// Für „Nachrecherchieren“ auf der Weinseite, den Sammellauf und den Bot. Auch Weine ohne
+// Flaschen (nur verkostet) werden recherchiert – Jahrgänge dann aus „Verkostet“.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
@@ -11,9 +13,10 @@ import { formatShares, hasAnyPercent } from "@/lib/grapes/shares";
 import { replaceGrapeShares } from "@/lib/grapes/store";
 import { researchWineWeb } from "@/lib/ingest/recognize";
 import { recordSuggestion } from "./suggestions";
+import { researchTasteProfile, saveResearchedProfile } from "./taste";
 import type { EnrichableField } from "@/lib/ingest/schema";
 import { grapesOnlyAddPercent, sameGrapes, sameValue, sourceNote, type SuggestionField } from "./compare";
-import { wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
+import { TASTED, wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
 
 type Db = SupabaseClient<Database>;
 
@@ -22,18 +25,25 @@ const WINE_COLUMNS = "id, name, producer, country, region, appellation, type, al
 /** Alles, was die Lückenberechnung braucht – für einen Wein oder alle Weine. */
 export async function loadGapData(db: Db, wineId?: string) {
   const one = <Q extends { eq: (c: "wine_id", v: string) => Q }>(q: Q) => (wineId ? q.eq("wine_id", wineId) : q);
-  const [wines, items, vintages, shares] = await Promise.all([
+  const [wines, items, encounters, vintages, shares, profiles] = await Promise.all([
     wineId ? db.from("wines").select(WINE_COLUMNS).eq("id", wineId) : db.from("wines").select(WINE_COLUMNS),
     one(db.from("inventory_items").select("wine_id, vintage_year, status")),
+    one(db.from("wine_encounters").select("wine_id, vintage_year")),
     one(db.from("wine_vintages").select("wine_id, vintage_year, drink_from_year, drink_until_year")),
     one(db.from("wine_grape_shares").select("wine_id, vintage_year, grape, percent, source")),
+    one(db.from("wine_taste_profiles").select("wine_id")),
   ]);
-  for (const r of [wines, items, vintages, shares]) if (r.error) throw r.error;
+  for (const r of [wines, items, encounters, vintages, shares, profiles]) if (r.error) throw r.error;
   return {
     wines: (wines.data ?? []) as GapWine[],
-    items: (items.data ?? []) as GapItem[],
+    // Verkostete Jahrgänge zählen wie Flaschen (nur im Umfang „alle“).
+    items: [
+      ...((items.data ?? []) as GapItem[]),
+      ...(encounters.data ?? []).map((e) => ({ wine_id: e.wine_id, vintage_year: e.vintage_year, status: TASTED })),
+    ],
     vintages: (vintages.data ?? []) as GapVintage[],
     shares: (shares.data ?? []) as GapShare[],
+    withProfile: new Set((profiles.data ?? []).map((p) => p.wine_id)),
   };
 }
 
@@ -43,6 +53,12 @@ export type ResearchOutcome = {
   filled: string[];
   /** Neue bzw. aktualisierte Vorschläge (Abweichungen) – nichts überschrieben. */
   suggested: number;
+  /**
+   * Geschmacksprofil: saved = gespeichert (gilt sofort), suggested = Vorschlag (Profil von Hand),
+   * none = keine verlässlichen Angaben (Bestehendes bleibt), unchanged = Vorschlag schon offen
+   * bzw. abgelehnt, skipped = nicht gesucht (schon vorhanden).
+   */
+  taste?: "saved" | "suggested" | "none" | "unchanged" | "skipped";
   /** Bei status „error“: was schiefging (Nutzungslimit → Lauf sofort stoppen). */
   error?: { kind: "usage_limit" | "api" | "other"; message: string };
   seconds: number;
@@ -61,17 +77,56 @@ const WINE_FIELDS = ["producer", "country", "region", "appellation", "type", "al
 const yearLabel = (year: number | null) => (year == null ? "NV" : String(year));
 
 /**
+ * Geschmacksprofil: always = immer suchen (Weinseite, Bot), missing = nur ohne Profil
+ * (Sammellauf), only = nur das Profil (Option „Geschmacksprofil fehlt“, Knopf in der Karte).
+ */
+export type TasteMode = "always" | "missing" | "only";
+
+/** Jahrgang fürs Profil: angegeben, sonst der einzige bekannte Jahrgang, sonst allgemein (null). */
+function tasteYear(gaps: WineGaps, year: number | null | undefined) {
+  if (year !== undefined) return year;
+  const years = [...new Set(gaps.vintages.map((v) => v.year))];
+  return years.length === 1 ? years[0] : null;
+}
+
+/**
  * Recherchiert einen Wein (immer alle Angaben) und wertet aus: Leeres wird direkt gefüllt,
  * Abweichungen werden zu Vorschlägen (research_suggestions) – nie überschrieben.
- * Jahrgänge: die mit Flaschen im gewählten Umfang (sonst alle mit Flaschen).
+ * Jahrgänge: die mit Flaschen im gewählten Umfang (sonst alle mit Flaschen oder verkostet;
+ * ohne beides nur die Stammdaten).
  */
-export async function researchAndFillWine(db: Db, wineId: string, scope: ResearchScope): Promise<ResearchOutcome> {
+export async function researchAndFillWine(
+  db: Db,
+  wineId: string,
+  scope: ResearchScope,
+  options: { taste?: TasteMode; year?: number | null } = {},
+): Promise<ResearchOutcome> {
   const started = Date.now();
   const seconds = () => Math.round((Date.now() - started) / 1000);
   const data = await loadGapData(db, wineId);
   const wine = data.wines[0];
-  const gaps: WineGaps | null = wine ? (wineGaps(wine, data, scope) ?? wineGaps(wine, data, "all")) : null;
-  if (!wine || !gaps) return { status: "complete", filled: [], suggested: 0, seconds: seconds() };
+  if (!wine) return { status: "complete", filled: [], suggested: 0, seconds: seconds() };
+  // Früher: ohne Flaschen → gar keine Recherche. Jetzt: Verkostet-Jahrgänge bzw. nur Stammdaten.
+  const gaps: WineGaps = wineGaps(wine, data, scope) ?? wineGaps(wine, data, "all") ?? { wine, gaps: [], basics: true, vintages: [] };
+  const tasteMode = options.taste ?? "always";
+
+  const filled: string[] = [];
+  let suggested = 0;
+  const taste = async (): Promise<ResearchOutcome["taste"]> => {
+    if (tasteMode === "missing" && data.withProfile.has(wineId)) return "skipped";
+    const profile = await researchTasteProfile(wine, tasteYear(gaps, options.year));
+    if (!profile) return "none";
+    const saved = await saveResearchedProfile(db, wineId, profile);
+    if (saved === "saved") filled.push("Geschmacksprofil");
+    if (saved === "suggested") suggested++;
+    return saved;
+  };
+
+  if (tasteMode === "only") {
+    const result = await taste();
+    await markResearched(db, wineId);
+    return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, seconds: seconds() };
+  }
 
   const found = await researchWineWeb({
     wine: {
@@ -86,13 +141,12 @@ export async function researchAndFillWine(db: Db, wineId: string, scope: Researc
     vintages: gaps.vintages.map((v) => ({ year: v.year, knownGrapes: v.knownGrapes })),
   });
   if (!found) {
+    const result = await taste();
     await markResearched(db, wineId);
-    return { status: "nothing", filled: [], suggested: 0, seconds: seconds() };
+    return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, seconds: seconds() };
   }
 
   const note = sourceNote(found.sources);
-  const filled: string[] = [];
-  let suggested = 0;
   const suggest = async (field: SuggestionField, year: number | null, current: unknown, value: unknown) => {
     const r = await recordSuggestion(db, { wineId, year, field, current, suggested: value, note });
     if (r !== "skipped") suggested++;
@@ -161,8 +215,16 @@ export async function researchAndFillWine(db: Db, wineId: string, scope: Researc
     }
   }
 
+  // Eigener Aufruf fürs Profil. Scheitert er, bleibt das Ergänzte gespeichert und wird gemeldet.
+  let tasteResult: ResearchOutcome["taste"];
+  try {
+    tasteResult = await taste();
+  } catch (error) {
+    if (!filled.length && !suggested) throw error;
+    console.error("taste research failed", wineId, error);
+  }
   await markResearched(db, wineId);
-  return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, seconds: seconds() };
+  return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: tasteResult, seconds: seconds() };
 }
 
 /** Nach jeder erfolgreichen Recherche – auch ohne Fund – für „kürzlich geprüfte überspringen“. */

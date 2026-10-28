@@ -3,6 +3,7 @@
 
 import { parsePrice } from "@/lib/format";
 import type { GrapeShare } from "@/lib/grapes/shares";
+import { TASTE_KEYS, UNKNOWN } from "@/lib/taste/profile";
 import {
   CURRENCIES,
   PLACE_KINDS,
@@ -280,6 +281,32 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
         return [{ kind: "deleteEncounter", encounterId: r.id("encounterId") }];
       case "wantToBuy":
         return [{ kind: "wantToBuy", wineId: r.id("wineId"), value: r.text("value") === "1" }];
+      case "tasteProfile": {
+        // Von Hand: Merkmale (Auswahl), Aromen („Gruppe|Aroma“), Beschreibung, Speisen (Komma-Liste).
+        const aromas: Record<string, string[]> = {};
+        for (const v of form.getAll("aroma").map(String)) {
+          const [group, aroma] = v.split("|");
+          if (group && aroma) aromas[group] = [...(aromas[group] ?? []), aroma];
+        }
+        return [
+          {
+            kind: "tasteProfile",
+            wineId: r.id("wineId"),
+            source: "manual",
+            profile: {
+              values: Object.fromEntries(TASTE_KEYS.map((k) => [k, r.text(`taste_${k}`) || UNKNOWN])) as Record<(typeof TASTE_KEYS)[number], string>,
+              aromas,
+              styleSummary: r.text("styleSummary") || null,
+              foodPairing: r.text("foodPairing").split(/[,;\n]/).map((f) => f.trim()).filter(Boolean),
+              sources: [],
+              evidence: {},
+              confidence: null,
+              sourceNote: null,
+              vintageYear: r.year("year"),
+            },
+          },
+        ];
+      }
       default:
         return { error: "Unbekannte Bearbeitung." };
     }

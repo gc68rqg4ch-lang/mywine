@@ -12,6 +12,7 @@ import { RecognitionSchema, TastedTextSchema, TextEntrySchema, WineProposalSchem
 import { SAT_TYPES, newTastingData } from "@/lib/tasting/sat";
 import { applyExtraction, missingCategories } from "@/lib/tasting/bot-draft";
 import { chatTools } from "@/lib/chat/tools";
+import { tasteResearchSchema } from "@/lib/research/taste";
 
 // Zähler selbst: nullable und anyOf zählen, verschachtelt auch
 assert.equal(countUnionParams({ type: "object", properties: { a: { type: ["string", "null"] }, b: { anyOf: [{ type: "string" }, { type: "null" }] }, c: { type: "object", properties: { d: { type: ["number", "null"] } } } } }), 3);
@@ -25,6 +26,8 @@ const counts: [string, number][] = [
   ["Verkostet per Text", countUnionParams(outputFormat(TastedTextSchema))],
   ["Websuche Stammdaten (strict)", countUnionParams(toolInputSchema(EnrichmentSchema))],
   ["Websuche Rebsorten (strict)", countUnionParams(toolInputSchema(GrapeResearchSchema))],
+  // Geschmacksprofil: eigener Aufruf, Merkmale als enum mit „unbekannt“ – ganz ohne Unions.
+  ...SAT_TYPES.map(({ type }) => [`Websuche Geschmacksprofil ${type} (strict)`, countUnionParams(toolInputSchema(tasteResearchSchema(type)))] as [string, number]),
   ["Chat-Tools gesamt", chatTools({} as never, []).reduce((s, t) => s + countUnionParams((t as { input_schema?: unknown }).input_schema), 0)],
 ];
 console.log(counts.map(([n, c]) => `${n}: ${c}`).join("\n"));
@@ -42,6 +45,7 @@ assert.ok(strictSchemaProblems(toolInputSchema(z.object({ year: z.number().int()
 const strictSchemas: [string, unknown][] = [
   ["Websuche Stammdaten (strict Tool)", toolInputSchema(EnrichmentSchema)],
   ["Websuche Rebsorten (strict Tool)", toolInputSchema(GrapeResearchSchema)],
+  ...SAT_TYPES.map(({ type }) => [`Websuche Geschmacksprofil ${type} (strict Tool)`, toolInputSchema(tasteResearchSchema(type))] as [string, unknown]),
   ...SAT_TYPES.map(({ type }) => [`Verkostung ${type} (strukturierte Ausgabe)`, outputFormat(extractionSchema(type))] as [string, unknown]),
   ["Foto-Erkennung (strukturierte Ausgabe)", outputFormat(RecognitionSchema)],
   ["Foto-Korrektur (strukturierte Ausgabe)", outputFormat(WineProposalSchema)],
@@ -82,3 +86,9 @@ assert.equal(sat.fields.saeure, "hoch"); assert.equal(sat.fields.klarheit, undef
 assert.deepEqual(missingCategories(sat), ["Abgang", "Entwicklungsstadium", "Tannin", "Körper", "Trinkreife"]);
 assert.throws(() => extractionSchema("rot").parse({ ...raw, fields: { ...raw.fields, saeure: null } }), "null ist kein gültiger Wert mehr");
 console.log("schema limit tests ok");
+// Geschmacksprofil: null-frei (Unions = 0), Merkmale mit „unbekannt“ als enum-Wert.
+for (const { type } of SAT_TYPES) {
+  const schema = toolInputSchema(tasteResearchSchema(type)) as { properties: { fields: { properties: Record<string, { enum: string[] }> } } };
+  assert.equal(countUnionParams(schema), 0, `Geschmacksprofil ${type}: keine nullable Felder`);
+  for (const [key, field] of Object.entries(schema.properties.fields.properties)) assert.equal(field.enum[0], "unbekannt", key);
+}

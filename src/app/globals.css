@@ -2358,3 +2358,70 @@ a.doc-clip-name:hover {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* Karte „Geschmacksprofil“ */
+.taste-values {
+  display: grid;
+  gap: 6px;
+}
+.taste-row {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.taste-row dd {
+  margin: 0;
+}
+.taste-bar-wrap {
+  display: grid;
+  grid-template-columns: minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.taste-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.taste-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.taste-aromas {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chip-static {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  cursor: default;
+}
+.chip-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip-check:has(input:checked) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.taste-sources > summary {
+  cursor: pointer;
+}
+.taste-source-list,
+.taste-evidence {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 4px;
+}
+.taste-compare td,
+.taste-compare th {
+  font-size: 0.9rem;
+}

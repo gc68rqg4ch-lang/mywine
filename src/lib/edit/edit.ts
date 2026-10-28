@@ -30,6 +30,7 @@ import {
   type PreparedEdit,
 } from "./helpers";
 import { prepareDeleteBottles, prepareDeleteWine } from "./delete";
+import { prepareTasteProfile } from "./taste";
 import { prepareAddEncounter, prepareDeleteEncounter, prepareEncounter, prepareWantToBuy } from "./encounters";
 import {
   ROOMS,
@@ -670,6 +671,8 @@ export async function prepareEdit(db: Db, edit: Edit): Promise<PreparedEdit> {
       return prepareDeleteEncounter(db, edit.encounterId);
     case "wantToBuy":
       return prepareWantToBuy(db, edit.wineId, edit.value);
+    case "tasteProfile":
+      return prepareTasteProfile(db, edit);
   }
 }
 

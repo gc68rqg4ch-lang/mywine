@@ -6,7 +6,8 @@ import { useRef, useState } from "react";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { afterWine } from "@/lib/research/batch";
 import type { ResearchScope } from "@/lib/research/gaps";
-import type { ResearchOutcome } from "@/lib/research/wine";
+import type { ResearchOutcome, TasteMode } from "@/lib/research/wine";
+import { NO_RELIABLE_PROFILE } from "@/lib/taste/profile";
 import { researchWine } from "../research-actions";
 
 export type BatchCandidate = {
@@ -42,10 +43,13 @@ const minutes = (seconds: number) => Math.max(1, Math.round(seconds / 60));
 export function BatchResearch({
   candidates: initial,
   scope,
+  taste = "missing",
   skipped = 0,
 }: {
   candidates: BatchCandidate[];
   scope: ResearchScope;
+  /** „only“: nur das Geschmacksprofil (Option „Geschmacksprofil fehlt“). */
+  taste?: TasteMode;
   /** In den letzten 7 Tagen recherchiert – nicht in candidates. */
   skipped?: number;
 }) {
@@ -78,7 +82,7 @@ export function BatchResearch({
       setRows((r) => ({ ...r, [c.wineId]: { state: "running" } }));
       let outcome: ResearchOutcome;
       try {
-        outcome = await researchWine(c.wineId, scope);
+        outcome = await researchWine(c.wineId, scope, taste);
       } catch {
         outcome = { status: "error", filled: [], suggested: 0, seconds: 0 };
       }
@@ -100,7 +104,9 @@ export function BatchResearch({
       <p className="empty">
         {skipped
           ? `Nichts zu tun – ${skipped === 1 ? "1 Wein wurde" : `${skipped} Weine wurden`} in den letzten 7 Tagen schon geprüft.`
-          : "Keine Lücken – hier gibt es nichts zu recherchieren. 🎉"}
+          : taste === "only"
+            ? "Alle Weine haben ein Geschmacksprofil. 🎉"
+            : "Keine Lücken – hier gibt es nichts zu recherchieren. 🎉"}
       </p>
     );
   }
@@ -236,7 +242,9 @@ export function BatchResearch({
                           .filter(Boolean)
                           .join(" · ")
                       : row.status === "nothing"
-                        ? "Nichts Neues gefunden"
+                        ? taste === "only" || row.taste === "none"
+                          ? NO_RELIABLE_PROFILE
+                          : "Nichts Neues gefunden"
                         : row.status === "complete"
                           ? "Schon vollständig"
                           : (row.error?.message ?? "Fehler – später nochmals versuchen")

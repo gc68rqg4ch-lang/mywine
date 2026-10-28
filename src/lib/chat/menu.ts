@@ -1,5 +1,7 @@
 import "server-only";
 
+import { tasteLine } from "@/lib/taste/profile";
+import { loadTasteProfile } from "@/lib/taste/store";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   DRINK_STATUS_LABELS,
@@ -500,7 +502,10 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     countDocuments(db, wineId, year).catch(() => 0),
     countPendingSuggestions(db, wineId).catch(() => 0),
   ]);
-  const encounters = await loadWineEncounters(db, wineId).catch(() => []);
+  const [encounters, taste] = await Promise.all([
+    loadWineEncounters(db, wineId).catch(() => []),
+    loadTasteProfile(db, wineId, year).catch(() => null),
+  ]);
   if (error) throw error;
   if (!wine) return null;
   const last = tasting.data?.[0];
@@ -529,6 +534,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     documents,
     suggestions,
     // Letzte Einträge „Verkostet“ (alle Jahrgänge; andere Jahrgänge mit Jahr).
+    taste: taste ? tasteLine(taste) : null,
     encounters: encounters
       .slice(0, 3)
       .map((x) => (x.year !== year ? `${x.year ?? "NV"} · ${encounterSummary(x)}` : encounterSummary(x))),

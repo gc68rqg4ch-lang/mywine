@@ -1,5 +1,5 @@
 // Lücken je Wein für die Recherche (rein, ohne DB): welche Angaben fehlen – im Bestand
-// (ungeöffnete oder offene Flaschen) bzw. über alle Jahrgänge mit Flaschen.
+// (ungeöffnete oder offene Flaschen) bzw. über alle Jahrgänge mit Flaschen oder „Verkostet“.
 
 export type ResearchScope = "cellar" | "all";
 
@@ -55,9 +55,12 @@ export type WineGaps = {
   vintages: VintageGap[];
 };
 
+/** Status für verkostete Jahrgänge (wine_encounters) – zählen nur im Umfang „alle“. */
+export const TASTED = "tasted";
+
 const inScope = (status: string, scope: ResearchScope) => scope === "all" || status === "sealed" || status === "open";
 
-/** Lücken eines Weins für die Jahrgänge mit Flaschen im gewählten Umfang; null = keine Flaschen im Umfang. */
+/** Lücken eines Weins für die Jahrgänge mit Flaschen (bzw. verkostet) im gewählten Umfang; null = keine im Umfang. */
 export function wineGaps(
   wine: GapWine,
   data: { items: GapItem[]; vintages: GapVintage[]; shares: GapShare[] },

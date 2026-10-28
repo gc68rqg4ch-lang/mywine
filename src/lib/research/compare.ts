@@ -4,6 +4,7 @@
 
 import { WINE_TYPE_LABELS, type WineType } from "@/lib/format";
 import { formatShares, type GrapeShare } from "@/lib/grapes/shares";
+import { TASTE_KEYS, tasteLine, type TasteProfileData } from "@/lib/taste/profile";
 
 export const SUGGESTION_FIELDS = [
   "producer",
@@ -15,6 +16,7 @@ export const SUGGESTION_FIELDS = [
   "drink_from_year",
   "drink_until_year",
   "grapes",
+  "taste_profile",
 ] as const;
 export type SuggestionField = (typeof SUGGESTION_FIELDS)[number];
 
@@ -28,6 +30,7 @@ export const SUGGESTION_LABELS: Record<SuggestionField, string> = {
   drink_from_year: "Trinkreif ab",
   drink_until_year: "Trinkreif bis",
   grapes: "Rebsorten",
+  taste_profile: "Geschmacksprofil",
 };
 
 /** Für den Vergleich: klein, ohne Akzente, Leerräume vereinheitlicht. */
@@ -63,9 +66,21 @@ export function sameValue(field: SuggestionField, a: unknown, b: unknown): boole
       return a === b;
     case "grapes":
       return sameGrapes(a as GrapeShare[], b as GrapeShare[]);
+    case "taste_profile":
+      return sameTaste(a as TasteProfileData, b as TasteProfileData);
     default:
       return normText(String(a)) === normText(String(b));
   }
+}
+
+/** Gleiches Geschmacksprofil: gleiche Merkmale und gleiche Aromen (Reihenfolge egal). */
+export function sameTaste(a: Pick<TasteProfileData, "values" | "aromas">, b: Pick<TasteProfileData, "values" | "aromas">) {
+  const aromas = (p: Pick<TasteProfileData, "aromas">) =>
+    Object.entries(p.aromas ?? {})
+      .flatMap(([group, list]) => list.map((x) => `${group}/${x}`))
+      .sort()
+      .join("|");
+  return TASTE_KEYS.every((k) => a.values?.[k] === b.values?.[k]) && aromas(a) === aromas(b);
 }
 
 /** Rebsorten ohne % gespeichert, Recherche hat % für dieselben Sorten → direkt ergänzen statt vorschlagen. */
@@ -91,6 +106,8 @@ export function displayValue(field: SuggestionField, value: unknown): string {
       return WINE_TYPE_LABELS[value as WineType] ?? String(value);
     case "grapes":
       return formatShares(value as GrapeShare[]) || "–";
+    case "taste_profile":
+      return tasteLine(value as TasteProfileData) ?? "–";
     default:
       return String(value);
   }
