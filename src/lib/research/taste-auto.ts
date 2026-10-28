@@ -8,6 +8,7 @@ import "server-only";
 // oder Fehler (auch API-Limit): keine Meldung an die Person, nur ins Log.
 // Angehängte PDFs dieses Jahrgangs gehen als zusätzliche Quelle mit. Neues PDF (force): gesucht
 // wird auch, wenn der Jahrgang in den letzten 12 Monaten schon gesucht wurde.
+// Seiten aus Händler-Shops (zuerst der Händler der Flasche) gehen ebenfalls mit.
 
 import { later } from "@/lib/later";
 import type { AdminClient } from "@/lib/supabase/admin";
@@ -32,7 +33,8 @@ export async function autoTasteProfile(
       { researchTasteProfile, saveResearchedProfile },
       { withinRecentMonths, newDocumentSince },
       { loadResearchDocuments },
-    ] = await Promise.all([import("@/lib/taste/store"), import("./taste"), import("./gaps"), import("./documents")]);
+      { loadShopPages },
+    ] = await Promise.all([import("@/lib/taste/store"), import("./taste"), import("./gaps"), import("./documents"), import("./shops")]);
     if (await loadExactTasteProfile(db, wineId, year)) return "exists";
     if (!options.force) {
       const checkedAt = await tasteCheckedAt(db, wineId, year);
@@ -41,8 +43,11 @@ export async function autoTasteProfile(
     const { data: wine, error } = await db.from("wines").select("name, producer, type, region, country").eq("id", wineId).maybeSingle();
     if (error) throw error;
     if (!wine) return "none";
-    const documents = await loadResearchDocuments(db, { id: wineId, name: wine.name }, [year]);
-    const profile = await researchTasteProfile(wine, year, documents);
+    const [documents, pages] = await Promise.all([
+      loadResearchDocuments(db, { id: wineId, name: wine.name }, [year]),
+      loadShopPages(db, { id: wineId, ...wine }, [year]),
+    ]);
+    const profile = await researchTasteProfile(wine, year, documents, pages);
     await markTasteChecked(db, wineId, year);
     if (!profile) return "none";
     return await saveResearchedProfile(db, wineId, profile);

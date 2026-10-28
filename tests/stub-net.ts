@@ -12,6 +12,11 @@ export type Net = {
   storage?: Map<string, { bytes: Uint8Array; type: string; createdAt?: string }>;
   /** Telegram-Dateien zum Herunterladen: file_id → Inhalt. Optional (Standard: kleines PDF). */
   files?: Map<string, Uint8Array>;
+  /**
+   * Andere Websites (Händler-Shops): Adresse → Antwort; url = Adresse nach einer Weiterleitung.
+   * Ohne Eintrag bzw. null: 404 (kein echter Netzverkehr).
+   */
+  web?: (url: string) => { status?: number; body: string; type?: string; url?: string } | null;
 };
 const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(data === undefined ? null : JSON.stringify(data), { status, headers: { "content-type": "application/json", ...headers } });
@@ -91,6 +96,12 @@ export function installNet(net: Net) {
       // Fehlerantwort der API: { status, body } mit einem HTTP-Status ≠ 200
       const answer = net.claude(body);
       return typeof answer.status === "number" && answer.body ? json(answer.body, answer.status) : json(answer);
+    }
+    if (!url.pathname.startsWith("/rest/v1/")) {
+      const page = net.web?.(url.toString());
+      const res = new Response(page?.body ?? "", { status: page ? (page.status ?? 200) : 404, headers: { "content-type": page?.type ?? "text/html" } });
+      Object.defineProperty(res, "url", { value: page?.url ?? url.toString() });
+      return res;
     }
     const m = url.pathname.match(/\/rest\/v1\/(rpc\/)?(\w+)$/);
     if (!m) throw new Error(`stub: ${url}`);

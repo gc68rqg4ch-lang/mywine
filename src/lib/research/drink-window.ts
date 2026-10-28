@@ -5,6 +5,9 @@ import "server-only";
 // Typ, Herkunft, Rebsorten, Qualitätsstufe und Jahrgang. Ein Aufruf mit Websuche, strict-Tool ohne
 // nullable-Felder und ohne min/max (0 bzw. leer = nichts). Gespeichert wird nach der Rangfolge in
 // cellar/drink-window.ts; nie bei einem Fehler (auch nicht beim API-Limit).
+// Händler-Shops zuerst: nennt eine Shop-Seite genau dieses Jahrgangs ein Trinkfenster (Mövenpick
+// „Genussreif Jetzt bis 2035“), gilt es als Quelle (research) – ohne API-Aufruf. Sonst gehen die
+// gefundenen Shop-Seiten als zusätzliche Quelle in die Websuche.
 
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -15,6 +18,7 @@ import { formatShares } from "@/lib/grapes/shares";
 import { asDrinkSource, decideDrinkWindow, drinkWindowText, saveVintageWindow, type FoundWindow } from "@/lib/cellar/drink-window";
 import { recordSuggestion } from "./suggestions";
 import { sourceNote } from "./compare";
+import { loadShopPages, shopDocuments, shopPagesNote, type ShopPage } from "./shops";
 
 type Db = SupabaseClient<Database>;
 
@@ -86,9 +90,17 @@ export function evaluateDrinkWindow(raw: DrinkWindowRaw, year: number | null, no
 }
 
 /** Websuche (bzw. Schätzung) für einen Jahrgang. Fehler (auch API-Limit) werden weitergegeben. */
-export async function researchDrinkWindow(wine: DrinkWine, year: number | null, grapes: string | null): Promise<FoundWindow | null> {
+export async function researchDrinkWindow(
+  wine: DrinkWine,
+  year: number | null,
+  grapes: string | null,
+  /** Händlerseiten genau dieses Jahrgangs (zusätzlich zur Websuche). */
+  pages: ShopPage[] = [],
+): Promise<FoundWindow | null> {
   if (!wine.name) return null;
   const now = new Date().getFullYear();
+  const fromShop = shopDrinkWindow(pages, year, now);
+  if (fromShop) return fromShop;
   const raw = await webResearch({
     prompt: `Gesucht ist das Trinkfenster (trinkreif ab/bis) dieses Weins: ${JSON.stringify({
       name: wine.name,
@@ -103,13 +115,41 @@ export async function researchDrinkWindow(wine: DrinkWine, year: number | null, 
     })}
 - Suche Angaben von Weingut, Kritikern oder Händlern zu ${year != null ? `genau Jahrgang ${year}` : "genau diesem Wein (ohne Jahrgang)"}. ${year != null ? "Angaben zu anderen Jahrgängen zählen nicht." : ""} Gefunden: drink_from/drink_until, sources, ein wörtliches Zitat; die Schätzungsfelder 0 bzw. leer.
 - Keine passende Quelle: drink_from/drink_until 0, sources leer, quote leer – und schätze das Trinkfenster als Weinkenner anhand von Weintyp, Land/Region/Appellation, Rebsorten, Qualitätsstufe (z. B. Reserva, Gran Reserva, Grand Cru, Riserva) und Jahrgang (heute ist ${now}): estimate_from/estimate_until und estimate_reason (ein kurzer Satz auf Deutsch).
-- Jahre als vierstellige Zahl.`,
+- Jahre als vierstellige Zahl.${shopPagesNote(pages)}`,
     toolName: "report_drink_window",
+    pages: shopDocuments(pages),
     toolDescription: "Meldet das Trinkfenster des Weins mit Quelle bzw. eine begründete Schätzung.",
     schema: DrinkWindowSchema,
     maxSearches: 4,
   });
   return raw ? evaluateDrinkWindow(raw, year, now) : null;
+}
+
+/**
+ * Trinkfenster laut Händlerseite (rein): erste Seite mit Angabe, Jahre plausibel wie bei der
+ * Websuche („Jetzt bis 2035“ → nur „bis“). Sonst null.
+ */
+export function shopDrinkWindow(pages: ShopPage[], year: number | null, now = new Date().getFullYear()): FoundWindow | null {
+  for (const page of pages) {
+    if (!page.drink || page.year !== year) continue;
+    const found = evaluateDrinkWindow(
+      {
+        matches_wine: true,
+        same_vintage: true,
+        drink_from: page.drink.from ?? 0,
+        drink_until: page.drink.until ?? 0,
+        sources: [{ url: page.url, title: page.title, kind: "merchant", vintage: year ?? 0 }],
+        quote: page.title,
+        estimate_from: 0,
+        estimate_until: 0,
+        estimate_reason: "",
+      },
+      year,
+      now,
+    );
+    if (found?.source === "research") return found;
+  }
+  return null;
 }
 
 export type DrinkWindowResult = "exists" | "set" | "suggested" | "unchanged" | "none";
@@ -138,7 +178,8 @@ export async function findAndStoreDrinkWindow(
   if ((options.onlyIfEmpty ?? true) && (existing?.from != null || existing?.until != null)) return { result: "exists" };
 
   const grapeText = grapes?.shares.length ? formatShares(grapes.shares) : wine.grapes.join(", ") || null;
-  const found = await researchDrinkWindow(wine, year, grapeText);
+  const pages = await loadShopPages(db, { id: wineId, name: wine.name, producer: wine.producer, appellation: wine.appellation, region: wine.region, country: wine.country }, [year]);
+  const found = await researchDrinkWindow(wine, year, grapeText, pages);
   if (!found) return { result: "none" };
 
   const decision = decideDrinkWindow(existing, found);

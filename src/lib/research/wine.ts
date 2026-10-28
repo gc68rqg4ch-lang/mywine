@@ -20,6 +20,7 @@ import { markTasteChecked } from "@/lib/taste/store";
 import type { EnrichableField } from "@/lib/ingest/schema";
 import { grapesOnlyAddPercent, sameGrapes, sameValue, sourceNote, type SuggestionField } from "./compare";
 import { loadResearchDocuments, documentsNote, type ResearchDocument } from "./documents";
+import { loadShopPages, shopDocuments, shopPagesNote, type ShopPage } from "./shops";
 import { TASTED, profileKey, type DocumentRow, tasteTargets, wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
 
 type Db = SupabaseClient<Database>;
@@ -141,10 +142,20 @@ export async function researchAndFillWine(
   const runTaste = tasteMode === "always" || targets.includes(profileYear);
   // Angehängte PDFs nur für die gesuchten Jahrgänge laden (Profil bzw. Recherche).
   const docYears = [...new Set([...(tasteMode === "only" ? [] : gaps.vintages.map((v) => v.year)), ...(runTaste ? [profileYear] : [])])];
-  const documents: ResearchDocument[] = await loadResearchDocuments(db, { id: wine.id, name: wine.name }, docYears);
+  // Händler-Shops (zuerst der Händler der Flasche): dieselben Jahrgänge, Profiljahrgang zuerst.
+  const shopYears = [...new Set([...(runTaste ? [profileYear] : []), ...docYears])];
+  const [documents, pages]: [ResearchDocument[], ShopPage[]] = await Promise.all([
+    loadResearchDocuments(db, { id: wine.id, name: wine.name }, docYears),
+    loadShopPages(db, wine, shopYears),
+  ]);
   const taste = async (): Promise<ResearchOutcome["taste"]> => {
     if (!runTaste) return "skipped";
-    const profile = await researchTasteProfile(wine, profileYear, documents.filter((d) => d.year === profileYear));
+    const profile = await researchTasteProfile(
+      wine,
+      profileYear,
+      documents.filter((d) => d.year === profileYear),
+      pages.filter((p) => p.year === profileYear),
+    );
     // Jede Profilsuche vermerken – auch ohne Fund (nicht bei einem Fehler).
     await markTasteChecked(db, wineId, profileYear);
     if (!profile) return "none";
@@ -172,6 +183,7 @@ export async function researchAndFillWine(
     },
     vintages: gaps.vintages.map((v) => ({ year: v.year, knownGrapes: v.knownGrapes })),
     ...researchDocs(documents, gaps.vintages.map((v) => v.year)),
+    ...researchPages(pages, gaps.vintages.map((v) => v.year)),
   });
   if (!found) {
     const result = await taste();
@@ -286,6 +298,12 @@ export async function researchAndFillWine(
 function researchDocs(documents: ResearchDocument[], years: (number | null)[]) {
   const docs = documents.filter((d) => years.includes(d.year));
   return docs.length ? { documents: docs, documentsNote: documentsNote(docs) } : {};
+}
+
+/** Händlerseiten für die Jahrgänge der Recherche (zusätzlich zur Websuche). */
+function researchPages(pages: ShopPage[], years: (number | null)[]) {
+  const list = pages.filter((p) => years.includes(p.year));
+  return list.length ? { pages: shopDocuments(list), pagesNote: shopPagesNote(list) } : {};
 }
 
 /** Nach jeder erfolgreichen Recherche – auch ohne Fund – für „kürzlich geprüfte überspringen“. */

@@ -5,6 +5,7 @@ import "server-only";
 // falsches Profil – geprüft wird in validateTasteProfile (taste/profile.ts) vor dem Speichern.
 
 import { documentsNote, type ResearchDocument } from "./documents";
+import { shopDocuments, shopPagesNote, type ShopPage } from "./shops";
 import { z } from "zod";
 import { webResearch } from "@/lib/ingest/recognize";
 import { satTypeForWine, type SatType } from "@/lib/tasting/sat";
@@ -84,6 +85,8 @@ export async function researchTasteProfile(
   year: number | null,
   /** Angehängte Datenblätter genau dieses Jahrgangs (zusätzlich zur Websuche). */
   documents: ResearchDocument[] = [],
+  /** Händlerseiten genau dieses Jahrgangs (zusätzlich zur Websuche). */
+  pages: ShopPage[] = [],
 ): Promise<TasteProfileData | null> {
   if (!wine.name) return null;
   const type = satTypeForWine(wine.type);
@@ -97,9 +100,10 @@ Oberstes Ziel: kein falsches Profil. Lieber „${UNKNOWN}“ als geraten.
 - Übersetze klare Beschreibungen in die WSET-Begriffe, wenn das Zitat eindeutig ist: ${CLEAR_TERMS.map((t) => `„${t.example}“ → ${TASTE_FIELDS.find((f) => f.key === t.key)!.label} ${t.value}`).join(", ")}. Unklar → „${UNKNOWN}“. Nie das nächstbeste Aroma wählen.
 - Aromen nur aus diesem Lexikon (Gruppe → Aromen): ${JSON.stringify(Object.fromEntries(lexicon))}
 - Widersprechen sich Quellen klar bei einem Merkmal: Merkmal „${UNKNOWN}“ und Eintrag in contradictions.
-- style_summary: ein, höchstens zwei kurze Sätze auf Deutsch; food_pairing: kurze Begriffe. Beide nur aus den Quellen, je mit Beleg (field style_summary bzw. food_pairing).${documentsNote(documents)}`,
+- style_summary: ein, höchstens zwei kurze Sätze auf Deutsch; food_pairing: kurze Begriffe. Beide nur aus den Quellen, je mit Beleg (field style_summary bzw. food_pairing).${documentsNote(documents)}${shopPagesNote(pages)}`,
     toolName: "report_taste_profile",
     documents,
+    pages: shopDocuments(pages),
     toolDescription: "Meldet das belegte Geschmacksprofil des Weins mit Quellen und Zitaten.",
     schema: tasteResearchSchema(type),
     maxSearches: 5,

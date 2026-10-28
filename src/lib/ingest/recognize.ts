@@ -160,24 +160,29 @@ export async function webResearch<T>(options: {
   maxSearches: number;
   /** Angehängte PDFs (Datenblätter) als zusätzliche Quelle – neben der Websuche. */
   documents?: { name: string; base64: string }[];
+  /** Seiten aus Händler-Shops (Text) als zusätzliche Quelle – zitiert mit ihrer URL. */
+  pages?: { url: string; title: string; text: string }[];
 }): Promise<T | null> {
   const text = `${options.prompt}\nRufe am Ende genau einmal ${options.toolName} auf.`;
+  const blocks: Anthropic.Beta.BetaRequestDocumentBlock[] = [
+    ...(options.documents ?? []).map(
+      (d): Anthropic.Beta.BetaRequestDocumentBlock => ({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: d.base64 },
+        title: d.name,
+      }),
+    ),
+    ...(options.pages ?? []).map(
+      (p): Anthropic.Beta.BetaRequestDocumentBlock => ({
+        type: "document",
+        source: { type: "text", media_type: "text/plain", data: p.text },
+        title: p.title,
+        context: `Händlerseite ${p.url}`,
+      }),
+    ),
+  ];
   const messages: Anthropic.Beta.BetaMessageParam[] = [
-    {
-      role: "user",
-      content: options.documents?.length
-        ? [
-            ...options.documents.map(
-              (d): Anthropic.Beta.BetaRequestDocumentBlock => ({
-                type: "document",
-                source: { type: "base64", media_type: "application/pdf", data: d.base64 },
-                title: d.name,
-              }),
-            ),
-            { type: "text", text },
-          ]
-        : text,
-    },
+    { role: "user", content: blocks.length ? [...blocks, { type: "text", text }] : text },
   ];
   const inputSchema = toolInputSchema(options.schema);
   const problems = strictSchemaProblems(inputSchema);
@@ -299,6 +304,9 @@ export async function researchWineWeb(input: {
   documents?: { name: string; year: number | null; base64: string }[];
   /** Hinweis im Prompt zu den Datenblättern. */
   documentsNote?: string;
+  /** Seiten aus Händler-Shops (Text) und der Hinweis dazu im Prompt. */
+  pages?: { url: string; title: string; text: string }[];
+  pagesNote?: string;
 }): Promise<WineResearch | null> {
   if (!input.wine.name) return null;
   const label = (year: number | null) => (year == null ? "ohne Jahrgang (NV) – als 0 melden" : String(year));
@@ -311,9 +319,10 @@ Melde den Wert aus den Quellen, auch wenn er von unseren Angaben abweicht – wi
 Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech Sheet) des Produzenten, sonst seriöse Händler oder Fachpresse. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null bzw. leere Liste.
 - Für jeden genannten Jahrgang genau einen Eintrag in vintages.
 - Rebsorten: percent nur, wenn eine Quelle den Anteil für genau diesen Jahrgang belegt (Cuvées ändern sich); reinsortig = 100; sonst Rebsorten mit percent null. Internationale Schreibweise (Cabernet Sauvignon, Tempranillo …).
-- Land auf Deutsch.${input.documentsNote ?? ""}`,
+- Land auf Deutsch.${input.documentsNote ?? ""}${input.pagesNote ?? ""}`,
     toolName: "report_wine_details",
     documents: input.documents,
+    pages: input.pages,
     toolDescription: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
     schema: EnrichmentSchema,
     maxSearches: Math.min(8, 3 + input.vintages.length),

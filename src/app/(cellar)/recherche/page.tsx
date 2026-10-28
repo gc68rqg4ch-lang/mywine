@@ -98,7 +98,8 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
         <h1 className="page-title">Recherche</h1>
         <p className="muted">
           Ich suche pro Wein alle leeren Angaben im Web und ergänze sie in einem Durchgang: Produzent, Land, Region,
-          Appellation, Typ, Alkohol, Trinkfenster je Jahrgang und Rebsorten mit %. Vorhandene Angaben überschreibe ich
+          Appellation, Typ, Alkohol, Trinkfenster je Jahrgang und Rebsorten mit %. Zuerst schaue ich im Shop des
+          Händlers der Flasche nach, dann bei den anderen Schweizer Händlern. Vorhandene Angaben überschreibe ich
           nie. Dazu das Geschmacksprofil – nur mit Belegen aus Quellen zu genau diesem Wein; sonst lasse ich es leer.
         </p>
       </div>
@@ -221,7 +222,28 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
       </Link>
       )}
 
-      {!windowMode && (
+      {profile && (
+      <Link href={href({ skipRecent: !skipRecent })} className="check-toggle" role="switch" aria-checked={!skipRecent}>
+        <span className="check-box" aria-hidden>
+          {!skipRecent ? "✓" : ""}
+        </span>
+        <span>
+          Auch kürzlich ohne Fund gesuchte erneut prüfen
+          <span className="muted small">
+            {" "}
+            – {skipRecent
+              ? `${recent.length} ${recent.length === 1 ? "Wein wurde" : "Weine wurden"} in den letzten ${RECENT_MONTHS} Monaten ohne Fund gesucht und ${recent.length === 1 ? "wird" : "werden"} übersprungen`
+              : `ich suche auch die ${recent.length} in den letzten ${RECENT_MONTHS} Monaten ohne Fund gesuchten nochmals`}
+          </span>
+        </span>
+      </Link>
+      )}
+
+      {windowMode && (
+        <p className="muted small">Trinkfenster fehlt: Ich suche jedes Mal neu, auch wenn ich schon einmal ohne Fund gesucht habe.</p>
+      )}
+
+      {!windowMode && !profile && (
       <Link href={href({ skipRecent: !skipRecent })} className="check-toggle" role="switch" aria-checked={skipRecent}>
         <span className="check-box" aria-hidden>
           {skipRecent ? "✓" : ""}
@@ -230,7 +252,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
           In den letzten {RECENT_MONTHS} Monaten recherchierte überspringen
           <span className="muted small">
             {" "}
-            – übersprungen, weil in den letzten {RECENT_MONTHS} Monaten {profile ? "nach dem Profil gesucht" : "recherchiert"}:{" "}
+            – übersprungen, weil in den letzten {RECENT_MONTHS} Monaten recherchiert:{" "}
             {skipRecent ? recent.length : 0}
             {!skipRecent && recent.length ? ` (ausgeschaltet – ${recent.length} werden nochmals gesucht)` : ""}
           </span>
