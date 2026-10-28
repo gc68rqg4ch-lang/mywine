@@ -45,8 +45,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   const params = await searchParams;
   const state = readListState(params, BASE_GROUPINGS);
 
-  const { supabase } = await getMemberSession();
-  const { filter, selected } = await getLocationFilter();
+  const [{ supabase }, { filter, selected }] = await Promise.all([getMemberSession(), getLocationFilter()]);
   const year = todayIso().slice(0, 4);
   const thisYear = currentYear();
 
@@ -57,7 +56,8 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
     .gte("occurred_at", `${year}-01-01T00:00:00+01:00`);
   if (filter) purchasesQuery = purchasesQuery.ilike("storage_to", storagePattern(filter));
 
-  const [summary, vintageRows, items, purchases] = await Promise.all([
+  // Alles in einem Schritt: Bewertungen und Etiketten aller Weine gleich mit (statt danach).
+  const [summary, vintageRows, items, purchases, ratings, photo] = await Promise.all([
     supabase.from("cellar_wine_summary").select("wine_id, name, producer, country, region, type, grapes"),
     supabase.from("cellar_wines").select("*"),
     withLocation(
@@ -68,6 +68,8 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
       filter,
     ),
     purchasesQuery,
+    loadRatingsByWine(supabase, null),
+    loadLabelPhotos(supabase, null),
   ]);
   for (const r of [summary, vintageRows, items, purchases]) if (r.error) throw r.error;
 
@@ -87,10 +89,6 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   const inStock = wines.filter((w) => w.sealed > 0);
   const notes = state.query ? await loadWineNotes(supabase, inStock.map((w) => w.wine_id)) : null;
   const visible = state.query ? inStock.filter((w) => matchesQuery(w, state.query, notes?.get(w.wine_id))) : inStock;
-  const [ratings, photo] = await Promise.all([
-    loadRatingsByWine(supabase, visible.map((w) => w.wine_id)),
-    loadLabelPhotos(supabase, visible.map((w) => w.wine_id)),
-  ]);
   const entries = visible.map((w) => ({ ...w, ratings: ratings.get(w.wine_id) ?? [] }));
 
   const totals = cellarTotals(wines);

@@ -540,33 +540,6 @@ export type Database = {
           },
         ]
       }
-      tags: {
-        Row: {
-          color: string | null
-          created_at: string
-          description: string | null
-          id: string
-          name: string
-          sort_order: number
-        }
-        Insert: {
-          color?: string | null
-          created_at?: string
-          description?: string | null
-          id?: string
-          name: string
-          sort_order?: number
-        }
-        Update: {
-          color?: string | null
-          created_at?: string
-          description?: string | null
-          id?: string
-          name?: string
-          sort_order?: number
-        }
-        Relationships: []
-      }
       telegram_chat_messages: {
         Row: {
           chat_id: number
@@ -960,60 +933,6 @@ export type Database = {
           },
           {
             foreignKeyName: "wine_ratings_wine_id_fkey"
-            columns: ["wine_id"]
-            isOneToOne: false
-            referencedRelation: "wines"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      wine_tags: {
-        Row: {
-          created_at: string
-          tag_id: string
-          wine_id: string
-        }
-        Insert: {
-          created_at?: string
-          tag_id: string
-          wine_id: string
-        }
-        Update: {
-          created_at?: string
-          tag_id?: string
-          wine_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "wine_tags_tag_id_fkey"
-            columns: ["tag_id"]
-            isOneToOne: false
-            referencedRelation: "tags"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "wine_tags_wine_id_fkey"
-            columns: ["wine_id"]
-            isOneToOne: false
-            referencedRelation: "cellar_overview"
-            referencedColumns: ["wine_id"]
-          },
-          {
-            foreignKeyName: "wine_tags_wine_id_fkey"
-            columns: ["wine_id"]
-            isOneToOne: false
-            referencedRelation: "cellar_wine_summary"
-            referencedColumns: ["wine_id"]
-          },
-          {
-            foreignKeyName: "wine_tags_wine_id_fkey"
-            columns: ["wine_id"]
-            isOneToOne: false
-            referencedRelation: "tasted_wines"
-            referencedColumns: ["wine_id"]
-          },
-          {
-            foreignKeyName: "wine_tags_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
             referencedRelation: "wines"

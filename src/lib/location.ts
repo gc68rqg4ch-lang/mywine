@@ -3,7 +3,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import type { LocationFilter } from "@/lib/cellar/overview";
-import { getMemberSession } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 
 export const LOCATION_COOKIE = "mywine_lagerort";
 
@@ -24,7 +24,9 @@ export function locationKey(house: string | null, room: string) {
  * selected = null bedeutet „Alle“. Pro Request gecacht.
  */
 export const getLocationFilter = cache(async () => {
-  const { supabase } = await getMemberSession();
+  // Parallel zur Mitgliedschafts-Prüfung (nicht danach): RLS liefert Nicht-Mitgliedern nichts,
+  // und jede Seite prüft die Mitgliedschaft ohnehin selbst (getMemberSession).
+  const supabase = await createClient();
   const { data } = await supabase.from("storage_locations").select("*");
   const rows = (data ?? []).filter((r): r is typeof r & { storage_room: string } => !!r.storage_room);
   const houses = new Set(rows.map((r) => r.storage_house ?? ""));

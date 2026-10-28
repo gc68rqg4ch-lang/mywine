@@ -6,9 +6,7 @@ import { getMemberSession } from "@/lib/auth";
 import { getLocationFilter, withLocation } from "@/lib/location";
 
 export default async function CellarLayout({ children }: LayoutProps<"/">) {
-  const { supabase, email, person } = await getMemberSession();
-
-  const location = await getLocationFilter();
+  const [{ supabase, email, person }, location] = await Promise.all([getMemberSession(), getLocationFilter()]);
   const { count: openCount } = await withLocation(
     supabase.from("inventory_items").select("id", { count: "exact", head: true }).eq("status", "open"),
     location.filter,

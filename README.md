@@ -249,6 +249,15 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   Suche). Sammellauf und automatische Suche überspringen einen kürzlich gesuchten Jahrgang nicht, wenn danach ein
   PDF für genau diesen Jahrgang angehängt wurde (`newDocumentSince`). Lade-/Lesefehler: ohne dieses PDF weiter,
   Log „research document failed“. Keine Schemaänderung.
+- **Ladezeit** (gemessen 28.10.): Fotos laufen über die eigene Route `/media/wine-photos/<pfad>`
+  (`src/app/media/[bucket]/[...path]/route.ts`, URL aus `mediaUrl` in `src/lib/media/url.ts`): stabile URL,
+  Anmeldung geprüft (Storage-RLS: nur Mitglieder), `Cache-Control: private, max-age=31536000, immutable`
+  (Pfade sind eindeutig), Nicht-Bilder nur als Download. Früher wurde jede Seite neu signiert (andere URL bei
+  jedem Aufruf, Supabase sendet zudem `no-cache`) – der Browser lud alle Vorschaubilder jedes Mal neu. Listen
+  zeigen nur Vorschaubilder (`loading="lazy"`), das Original erst im Overlay. Abfragen laufen parallel:
+  Lagerort-Filter gleichzeitig mit der Mitgliedschaft, Bestand lädt Bewertungen und Etiketten im selben Schritt,
+  Weinseite lädt Wein, Flaschen und „Verkostet“ gleichzeitig und alles Übrige in einem Schritt (vorher bis zu 8
+  Abfrage-Runden nacheinander, jetzt 4).
 - **Verwaiste Dateien** (`scripts/cleanup-orphan-files.ts`, Logik in `src/lib/media/orphans.ts`): listet Dateien
   in `wine-photos` und `wine-documents` ohne Verweis (`wine_media.storage_path`/`thumb_path`, Fotos offener
   Erfassungen in `ingest_jobs.photo_paths`, `inventory_items.photo_urls`); Dateien unter einer Stunde bleiben

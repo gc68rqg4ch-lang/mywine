@@ -1,19 +1,19 @@
 import "server-only";
 
-// Etikettfotos (wine_media) speichern und für die Anzeige signieren. Die Originale
-// und die Vorschaubilder liegen im privaten Bucket wine-photos.
+// Etikettfotos (wine_media) speichern und für die Anzeige vorbereiten. Die Originale
+// und die Vorschaubilder liegen im privaten Bucket wine-photos; angezeigt werden sie über die
+// eigene Route /media/… (stabile URL, Browser-Cache) – ohne Signier-Aufruf beim Seitenaufbau.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 import type { Database } from "@/lib/database.types";
 import { pickLabels, thumbPathFor, vintagePhotos, type MediaKind, type MediaRow } from "./pick";
+import { mediaUrl } from "./url";
 
 type Db = SupabaseClient<Database>;
 
 export const PHOTO_BUCKET = "wine-photos";
 export const THUMB_WIDTH = 160;
-/** Signierte URLs gelten eine Stunde – länger bleibt eine Seite selten offen. */
-const SIGNED_SECONDS = 60 * 60;
 
 const MEDIA_COLUMNS =
   "id, wine_id, inventory_item_id, kind, vintage_year, storage_path, thumb_path, sort_order, created_at" as const;
@@ -121,32 +121,25 @@ export async function loadVintageMedia(db: Db, wineId: string, year: number | nu
   return data satisfies MediaRow[];
 }
 
-/** Ein Foto, wie es Liste und Overlay brauchen (signierte URLs). `legacy` = nur in photo_urls, ohne wine_media. */
+/** Ein Foto, wie es Liste und Overlay brauchen (URLs der Bildroute). `legacy` = nur in photo_urls, ohne wine_media. */
 export type ViewPhoto = { id: string; kind: MediaKind; thumb: string; full: string; legacy?: boolean };
 
-async function loadRows(db: Db, wineIds: string[], kinds: MediaKind[]) {
-  if (!wineIds.length) return [];
+/** wineIds null = alle Weine. */
+async function loadRows(db: Db, wineIds: string[] | null, kinds: MediaKind[]) {
+  if (wineIds && !wineIds.length) return [];
   let query = db.from("wine_media").select(MEDIA_COLUMNS).in("kind", kinds).eq("storage_bucket", PHOTO_BUCKET);
   // Lange Listen nicht in die URL packen: dann alle Etiketten laden und hier filtern.
-  if (wineIds.length <= 100) query = query.in("wine_id", wineIds);
+  if (wineIds && wineIds.length <= 100) query = query.in("wine_id", wineIds);
   const { data, error } = await query;
   if (error) throw error;
+  if (!wineIds) return data satisfies MediaRow[];
   const wanted = new Set(wineIds);
   return (data satisfies MediaRow[]).filter((r) => wanted.has(r.wine_id));
 }
 
-/** Signiert alle Pfade mit einem einzigen Aufruf. */
-async function signPaths(db: Db, paths: string[]) {
-  const unique = [...new Set(paths)];
-  const urls = new Map<string, string>();
-  if (!unique.length) return urls;
-  const { data, error } = await db.storage.from(PHOTO_BUCKET).createSignedUrls(unique, SIGNED_SECONDS);
-  if (error) {
-    console.error("signing photos failed", error);
-    return urls;
-  }
-  for (const d of data ?? []) if (d.path && d.signedUrl) urls.set(d.path, d.signedUrl);
-  return urls;
+/** URLs der Bildroute für alle Pfade – ohne Netz (früher: ein Signier-Aufruf je Seite). */
+function photoUrls(paths: string[]) {
+  return new Map([...new Set(paths)].map((p) => [p, mediaUrl(p)] as const));
 }
 
 function toView(row: MediaRow, urls: Map<string, string>): ViewPhoto | null {
@@ -159,21 +152,18 @@ export type LabelPair = { front: ViewPhoto; back: ViewPhoto | null };
 
 /**
  * Etikettfotos für eine Liste: alle Vorder-/Rückseiten der Weine auf der Seite,
- * mit einem Abfrage- und einem Signier-Aufruf. `pick(wineId, jahrgang)` wählt dann
+ * mit einem einzigen Abfrage-Aufruf (URLs ohne Netz). `pick(wineId, jahrgang)` wählt dann
  * je Karte den gewünschten bzw. neuesten Jahrgang.
  */
-export async function loadLabelPhotos(db: Db, wineIds: string[]) {
-  const rows = await loadRows(db, [...new Set(wineIds)], ["label_front", "label_back"]).catch((error) => {
+export async function loadLabelPhotos(db: Db, wineIds: string[] | null) {
+  const rows = await loadRows(db, wineIds && [...new Set(wineIds)], ["label_front", "label_back"]).catch((error) => {
     // Ohne Fotos geht die Liste trotzdem (Trauben-Symbol).
     console.error("loading label photos failed", error);
     return [] as MediaRow[];
   });
   const byWine = new Map<string, MediaRow[]>();
   for (const r of rows) byWine.set(r.wine_id, [...(byWine.get(r.wine_id) ?? []), r]);
-  const urls = await signPaths(
-    db,
-    rows.flatMap((r) => [r.storage_path, ...(r.thumb_path ? [r.thumb_path] : [])]),
-  );
+  const urls = photoUrls(rows.flatMap((r) => [r.storage_path, ...(r.thumb_path ? [r.thumb_path] : [])]));
   return (wineId: string, year: number | null | undefined): LabelPair | null => {
     const picked = pickLabels(byWine.get(wineId) ?? [], year);
     const front = picked && toView(picked.front, urls);
@@ -200,7 +190,7 @@ export async function loadVintagePhotos(db: Db, wineId: string, year: number | n
   );
   const external = [...new Set((legacy.data ?? []).flatMap((r) => r.photo_urls))].filter((p) => p.startsWith("https://"));
 
-  const urls = await signPaths(db, [
+  const urls = photoUrls([
     ...media.flatMap((r) => [r.storage_path, ...(r.thumb_path ? [r.thumb_path] : [])]),
     ...legacyPaths,
   ]);

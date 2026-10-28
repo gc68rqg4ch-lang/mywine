@@ -9,10 +9,12 @@ import { latestByPerson, type PersonRating, type RatingRow } from "./lists";
 type Db = SupabaseClient<Database>;
 
 /** Neueste Bewertung je Person und Wein (über alle Jahrgänge), Personen in fester Reihenfolge. */
-export async function loadRatingsByWine(db: Db, wineIds: string[]): Promise<Map<string, PersonRating[]>> {
-  if (!wineIds.length) return new Map();
+export async function loadRatingsByWine(db: Db, wineIds: string[] | null): Promise<Map<string, PersonRating[]>> {
+  if (wineIds && !wineIds.length) return new Map();
+  // null = alle Weine (z. B. Bestand: gleichzeitig mit der Liste laden statt danach).
+  const query = db.from("latest_wine_ratings").select("wine_id, person_name, rating, rated_at");
   const [ratings, persons] = await Promise.all([
-    db.from("latest_wine_ratings").select("wine_id, person_name, rating, rated_at").in("wine_id", wineIds),
+    wineIds ? query.in("wine_id", wineIds) : query,
     db.from("persons").select("name").order("sort_order"),
   ]);
   if (ratings.error) throw ratings.error;

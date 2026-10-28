@@ -20,8 +20,7 @@ export const metadata: Metadata = { title: "Offene Flaschen" };
 export default async function OpenBottlesPage({ searchParams }: PageProps<"/offen">) {
   const params = await searchParams;
   const state = readListState(params, BASE_GROUPINGS);
-  const { supabase } = await getMemberSession();
-  const { filter } = await getLocationFilter();
+  const [{ supabase }, { filter }] = await Promise.all([getMemberSession(), getLocationFilter()]);
 
   const [{ data, error }, withoutRoom] = await Promise.all([
     withLocation(

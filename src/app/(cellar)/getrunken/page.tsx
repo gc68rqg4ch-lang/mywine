@@ -35,8 +35,7 @@ function ratingsText(e: DrunkEntry) {
 export default async function DrunkBottlesPage({ searchParams }: PageProps<"/getrunken">) {
   const params = await searchParams;
   const state = readListState(params, GROUPINGS);
-  const { supabase } = await getMemberSession();
-  const { filter } = await getLocationFilter();
+  const [{ supabase }, { filter }] = await Promise.all([getMemberSession(), getLocationFilter()]);
   const year = todayIso().slice(0, 4);
 
   const [{ data, error }, withoutRoom, persons] = await Promise.all([

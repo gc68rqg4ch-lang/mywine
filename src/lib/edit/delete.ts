@@ -51,10 +51,17 @@ export async function prepareDeleteBottles(db: Db, itemId: string, count?: numbe
 }
 
 /** Was beim Löschen des ganzen Weins verschwindet (für App-Dialog und Bot-Übersicht). */
-export async function loadWineDeleteSummary(db: Db, wineId: string): Promise<WineDeleteSummary | null> {
-  const { data: wine, error } = await db.from("wines").select("id").eq("id", wineId).maybeSingle();
-  if (error) throw error;
-  if (!wine) return null;
+export async function loadWineDeleteSummary(
+  db: Db,
+  wineId: string,
+  /** Weinseite: der Wein ist schon geladen – die Prüfung „gibt es ihn?“ entfällt (eine Abfrage-Runde weniger). */
+  options: { exists?: boolean } = {},
+): Promise<WineDeleteSummary | null> {
+  if (!options.exists) {
+    const { data: wine, error } = await db.from("wines").select("id").eq("id", wineId).maybeSingle();
+    if (error) throw error;
+    if (!wine) return null;
+  }
   const count = async (table: "wine_ratings" | "wine_tastings" | "wine_encounters") => {
     const { count: n, error: e } = await db.from(table).select("id", { count: "exact", head: true }).eq("wine_id", wineId);
     if (e) throw e;

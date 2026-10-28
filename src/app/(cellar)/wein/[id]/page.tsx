@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Fragment, type ReactNode } from "react";
+import { Fragment, cache, type ReactNode } from "react";
 import { viewerPhoto } from "@/components/cellar/wine-card";
 import { PhotoGallery } from "@/components/photo-viewer";
 import { ResearchSuggestions } from "@/components/research-suggestions";
@@ -66,12 +66,13 @@ const BACK_LINKS: Record<string, { href: string; label: string }> = {
 
 type Supabase = Awaited<ReturnType<typeof getMemberSession>>["supabase"];
 
-async function loadWine(id: string) {
+/** Pro Request nur einmal (Seite und Titel teilen sich die Abfrage). */
+const loadWine = cache(async (id: string) => {
   if (!UUID_RE.test(id)) return null;
   const { supabase } = await getMemberSession();
   const { data } = await supabase.from("wines").select("*").eq("id", id).maybeSingle();
   return data;
-}
+});
 
 export async function generateMetadata({ params }: PageProps<"/wein/[id]">): Promise<Metadata> {
   const wine = await loadWine((await params).id);
@@ -80,15 +81,18 @@ export async function generateMetadata({ params }: PageProps<"/wein/[id]">): Pro
 
 /** Alle Flaschen des Weins (ungeöffnet, offen, getrunken), mit „Geschenk von“ (nicht in cellar_overview). */
 async function loadItems(supabase: Supabase, wineId: string) {
-  const gifts = await supabase.from("inventory_items").select("id, gift_from").eq("wine_id", wineId);
+  // Beide Abfragen gleichzeitig (unabhängig voneinander).
+  const [gifts, { data, error }] = await Promise.all([
+    supabase.from("inventory_items").select("id, gift_from").eq("wine_id", wineId),
+    supabase
+      .from("cellar_overview")
+      .select(
+        "inventory_item_id, vintage_year, status, quantity, bottle_size_ml, storage_house, storage_room, purchase_price, regular_price, currency, purchased_at, vendor_name, is_gift, fill_level_percent, date_opened, drunk_at, personal_wine_rating, vintage_rating",
+      )
+      .eq("wine_id", wineId),
+  ]);
   if (gifts.error) throw gifts.error;
   const giftFrom = new Map((gifts.data ?? []).filter((g) => g.gift_from != null).map((g) => [g.id, g.gift_from]));
-  const { data, error } = await supabase
-    .from("cellar_overview")
-    .select(
-      "inventory_item_id, vintage_year, status, quantity, bottle_size_ml, storage_house, storage_room, purchase_price, regular_price, currency, purchased_at, vendor_name, is_gift, fill_level_percent, date_opened, drunk_at, personal_wine_rating, vintage_rating",
-    )
-    .eq("wine_id", wineId);
   if (error) throw error;
   return (data ?? []).flatMap((r) =>
     r.inventory_item_id && r.status
@@ -162,43 +166,42 @@ function GiftLine({ item }: { item: { is_gift: boolean | null; gift_from: string
 const sizeSuffix = (ml: number | null) => (ml && ml !== 750 ? ` · ${formatBottleSize(ml)}` : "");
 
 export default async function WinePage({ params, searchParams }: PageProps<"/wein/[id]">) {
-  const { id } = await params;
-  const query = await searchParams;
-  const wine = await loadWine(id);
+  const [{ id }, query, { supabase, person }] = await Promise.all([params, searchParams, getMemberSession()]);
+  // Wein, Flaschen und „Verkostet“ gleichzeitig (alle brauchen nur die ID aus der URL).
+  const [wine, items, encounters] = await Promise.all([
+    loadWine(id),
+    UUID_RE.test(id) ? loadItems(supabase, id) : [],
+    UUID_RE.test(id) ? loadWineEncounters(supabase, id) : [],
+  ]);
   if (!wine) notFound();
-
-  const { supabase, person } = await getMemberSession();
   const today = todayIso();
-  const [items, encounters] = await Promise.all([loadItems(supabase, wine.id), loadWineEncounters(supabase, wine.id)]);
   // Jahrgänge mit Flaschen sowie solche, die nur verkostet wurden.
   const options = withTastedYears(vintageOptions(items), encounters.map((e) => e.year));
   const year = pickVintage(options, parseVintageParam(query.jahrgang), items);
   const inVintage = items.filter((i) => i.vintage_year === year);
   const anchor = anchorItem(inVintage);
 
-  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places, deleteSummary, tasteProfile] = await Promise.all([
+  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places, deleteSummary, tasteProfile, leavesEmpty, suggestions] = await Promise.all([
     loadRatingsAndTastings(supabase, wine.id, year),
     loadGrapeShares(supabase, wine.id, year),
     loadVintagePhotos(supabase, wine.id, year, inVintage.map((i) => i.inventory_item_id)),
     loadVendorNames(supabase),
     loadDocuments(supabase, wine.id, year),
     loadPlaces(supabase),
-    loadWineDeleteSummary(supabase, wine.id),
+    loadWineDeleteSummary(supabase, wine.id, { exists: true }),
     // Jahrgangsspezifisches Profil, sonst das allgemeine.
     loadTasteProfile(supabase, wine.id, year).catch((error) => {
       console.error("loading taste profile failed", error);
       return null;
     }),
+    // Einziger Eintrag „Verkostet“ ohne Flaschen: Löschen fragt, ob auch der Wein weg soll.
+    items.length === 0 && encounters.length === 1 ? wouldLeaveEmptyWine(supabase, encounters[0].id) : false,
+    loadPendingSuggestions(supabase, { wineId: wine.id, year }).catch((error) => {
+      console.error("loading suggestions failed", error);
+      return [];
+    }),
   ]);
-  // Einziger Eintrag „Verkostet“ ohne Flaschen: Löschen fragt, ob auch der Wein weg soll.
-  const emptyWine =
-    items.length === 0 && encounters.length === 1 && (await wouldLeaveEmptyWine(supabase, encounters[0].id))
-      ? { encounterId: encounters[0].id, wineId: wine.id, name: wine.name, question: EMPTY_WINE_QUESTION }
-      : null;
-  const suggestions = await loadPendingSuggestions(supabase, { wineId: wine.id, year }).catch((error) => {
-    console.error("loading suggestions failed", error);
-    return [];
-  });
+  const emptyWine = leavesEmpty ? { encounterId: encounters[0].id, wineId: wine.id, name: wine.name, question: EMPTY_WINE_QUESTION } : null;
 
   const sealed = inVintage.filter((i) => i.status === "sealed" && i.quantity > 0);
   const open = inVintage.filter((i) => i.status === "open");
