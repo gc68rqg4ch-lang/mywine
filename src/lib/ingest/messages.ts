@@ -157,6 +157,11 @@ export function priceKeyboard(jobId: string): TgInlineKeyboard {
   };
 }
 
+/** Geschenk: Normalpreis (Wert) pro Flasche – Betrag schreiben oder „🤷 Weiss ich nicht“. */
+export function giftValueKeyboard(jobId: string): TgInlineKeyboard {
+  return { inline_keyboard: [[{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }], cancelRow(jobId)] };
+}
+
 /** Geschenk: „Von wem?“ – Name schreiben oder „Überspringen“. */
 export function giftFromKeyboard(jobId: string): TgInlineKeyboard {
   return { inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipgift", jobId) }], cancelRow(jobId)] };
@@ -317,7 +322,13 @@ export function textSummaryMessage(state: IngestState) {
     "📝 <b>Zusammenfassung</b>",
     ...wineSummaryLines(state),
     e(purchase),
-    state.is_gift ? T.giftLine(state.gift_from ?? null) : prices ? e(prices) : null,
+    state.is_gift
+      ? [T.giftLine(state.gift_from ?? null), state.regular_price != null ? e(`Normalpreis ${formatMoney(state.regular_price, "CHF")}`) : null]
+          .filter(Boolean)
+          .join(" · ")
+      : prices
+        ? e(prices)
+        : null,
     "",
     state.restock ? "Soll ich das als neue Charge zum bestehenden Wein speichern?" : "Soll ich das so speichern?",
   ]

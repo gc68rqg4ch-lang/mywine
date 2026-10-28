@@ -35,6 +35,16 @@ export const VARIANTS = {
     "Magst du mir die Anzahl als ganze Zahl schreiben? Z. B. <i>3</i> oder <i>24</i>.",
     "Wie viele Flaschen sind es? Bitte eine ganze Zahl ab 1, z. B. <i>24</i>.",
   ],
+  giftValue: [
+    "Weisst du ungefähr, was eine Flasche normalerweise kostet? Schreib mir einfach den Betrag, z. B. <i>38</i>.",
+    "Und was ist eine Flasche ungefähr wert? Ein Betrag genügt, z. B. <i>34.80</i>.",
+    "Kennst du den Normalpreis pro Flasche? Z. B. <i>38</i> – sonst tippe „🤷 Weiss ich nicht“.",
+  ],
+  giftValueRetry: [
+    "Den Betrag verstehe ich nicht ganz – was kostet eine Flasche normalerweise? Z. B. <i>38</i> oder <i>34.80</i>.",
+    "Magst du mir den Normalpreis als Betrag schreiben, z. B. <i>38</i>? Sonst tippe „🤷 Weiss ich nicht“.",
+    "Bitte einen Betrag über 0, z. B. <i>34.80</i> – oder „🤷 Weiss ich nicht“.",
+  ],
   giftFrom: ["🎁 Wie schön, ein Geschenk! Von wem?", "🎁 Ein Geschenk – schön! Von wem ist er?", "🎁 Wie nett! Von wem hast du ihn bekommen?"],
   done: ["Wunderbar, dann ist alles notiert.", "Schön – alles festgehalten.", "Perfekt, ich habe alles."],
   cancelled: ["Gut, dann lassen wir das – ich habe nichts gespeichert.", "Kein Problem, ich habe nichts gespeichert.", "Alles klar, ich lasse es bleiben."],
@@ -137,6 +147,10 @@ export const T = {
   priceRetry: "Was hast du pro Flasche bezahlt? Z. B. <i>24.50</i> – oder tippe „🎁 Geschenk“ bzw. „Überspringen“.",
   /** Geschenk: „Von wem?“ (Varianten). */
   giftFromAsk: (random?: () => number) => say("giftFrom", random),
+  /** Geschenk: Normalpreis (Wert) pro Flasche? (Varianten) */
+  giftValueAsk: (random?: () => number) => say("giftValue", random),
+  /** Kein gültiger Betrag (0, negativ, kein Betrag): freundlich nochmals fragen (Varianten). */
+  giftValueRetry: (random?: () => number) => say("giftValueRetry", random),
   /** Statt Preis: „🎁 Geschenk von Marc“ bzw. „🎁 Geschenk“. */
   giftLine: (from: string | null) => (from ? `🎁 Geschenk von ${e(from)}` : "🎁 Geschenk"),
   regularPrice: "Und was kostet er normalerweise?",

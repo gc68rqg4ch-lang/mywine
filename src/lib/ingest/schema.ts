@@ -161,7 +161,7 @@ export const TextEntrySchema = WineProposalSchema.extend({
     quantity: z.number().int().describe("Anzahl Flaschen; 0 = nicht genannt"),
     storage_room: z.enum(["", "Weinkeller", "Wohnzimmer"]).describe("Lagerort; leer = nicht genannt"),
     price: z.number().describe("Bezahlter Preis pro Flasche in CHF; 0 = nicht genannt"),
-    regular_price: z.number().describe("Normalpreis pro Flasche in CHF; 0 = nicht genannt"),
+    regular_price: z.number().describe("Normalpreis pro Flasche in CHF (bei einem Geschenk: Wert pro Flasche); 0 = nicht genannt"),
     vendor: z.string().describe("Händler; leer = nicht genannt"),
     // Nicht nullable (Grenze von 16 Union-Feldern pro Schema): false bzw. leer = nicht genannt.
     gift: z.boolean().describe("true, wenn der Wein ein Geschenk ist (geschenkt bekommen, Mitbringsel)"),

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { later } from "@/lib/later";
-import { cleanGiftFrom } from "./gift";
+import { cleanGiftFrom, parseGiftValue } from "./gift";
 import { findDocumentAwaitingText, handleDocument, handleDocumentCallback, handleDocumentSearch, isDocumentCallback, isPdfDocument } from "./document";
 import { after } from "next/server";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
@@ -35,6 +35,7 @@ import {
 import {
   HELP_TEXT,
   cancelKeyboard,
+  giftValueKeyboard,
   parseCallbackData,
   parsePrice,
   parseQuantity,
@@ -672,9 +673,11 @@ async function handleText(msg: TgMessage, actor: Actor) {
       return;
     }
     case "regular_price": {
-      const regularPrice = parsePrice(text);
+      // Geschenk: Wert pro Flasche – nur Beträge über 0; „🤷 Weiss ich nicht“ bleibt als Knopf.
+      const regularPrice = state.is_gift ? parseGiftValue(text) : parsePrice(text);
       if (regularPrice == null) {
-        await sendMessage(chatId, T.regularPriceRetry, cancelKeyboard(job.id));
+        if (state.is_gift) await sendMessage(chatId, T.giftValueRetry(), giftValueKeyboard(job.id));
+        else await sendMessage(chatId, T.regularPriceRetry, cancelKeyboard(job.id));
         return;
       }
       await advanceTo(db, job, chatId, "regular_price", { regular_price: regularPrice });
