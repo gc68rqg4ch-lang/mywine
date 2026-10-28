@@ -67,24 +67,55 @@ export type FilterOptions = {
 
 const sorted = (values: Iterable<string>) => [...new Set(values)].sort((a, b) => a.localeCompare(b, "de-CH"));
 
-/**
- * Auswahl im Filterfeld: nur Werte, die in der Liste vorkommen; gewählte Werte bleiben
- * immer sichtbar (sonst liessen sie sich nicht abwählen).
- */
-export function filterOptions(entries: Filterable[], f: ListFilters, year: number): FilterOptions {
-  const units = entries.flatMap((e) => e.units.filter((u) => u.count > 0));
-  const inCountry = f.countries.length ? entries.filter((e) => e.country != null && f.countries.includes(e.country)) : entries;
-  const present = new Set(units.map((u) => unitStatus(u, year)));
+/** Beitrag eines Eintrags zur Auswahl im Filterfeld (klein, für die Suche im Browser). */
+export type OptionPart = {
+  country: string | null;
+  region: string | null;
+  grapes: string[];
+  years: number[];
+  priceClasses: string[];
+  drink: DrinkStatus[];
+  persons: string[];
+  vendors: string[];
+};
+
+export function optionPart(e: Filterable, year: number): OptionPart {
+  const units = e.units.filter((u) => u.count > 0);
   return {
-    countries: sorted([...entries.flatMap((e) => (e.country ? [e.country] : [])), ...f.countries]),
-    regions: sorted([...inCountry.flatMap((e) => (e.region ? [e.region] : [])), ...f.regions]),
-    grapes: sorted([...entries.flatMap((e) => e.grapes), ...f.grapes]),
-    years: [...new Set(units.flatMap((u) => (u.vintage_year == null ? [] : [u.vintage_year])))].sort((a, b) => a - b),
-    priceClasses: PRICE_CLASSES.filter((c) => units.some((u) => u.price_class === c) || f.priceClasses.includes(c)),
-    drink: DRINK_STATUS_ORDER.filter((s) => present.has(s) || f.drink.includes(s)),
-    persons: sorted(entries.flatMap((e) => (e.ratings ?? []).map((r) => r.person))),
-    vendors: sorted([...units.flatMap((u) => u.vendors ?? []), ...f.vendors]),
+    country: e.country,
+    region: e.region,
+    grapes: e.grapes,
+    years: [...new Set(units.flatMap((u) => (u.vintage_year == null ? [] : [u.vintage_year])))],
+    priceClasses: [...new Set(units.flatMap((u) => (u.price_class ? [u.price_class] : [])))],
+    drink: [...new Set(units.map((u) => unitStatus(u, year)))],
+    persons: [...new Set((e.ratings ?? []).map((r) => r.person))],
+    vendors: [...new Set(units.flatMap((u) => u.vendors ?? []))],
   };
+}
+
+/**
+ * Auswahl im Filterfeld aus den Beiträgen: nur Werte, die in der Liste vorkommen; gewählte
+ * Werte bleiben immer sichtbar (sonst liessen sie sich nicht abwählen).
+ */
+export function mergeOptions(parts: OptionPart[], f: ListFilters): FilterOptions {
+  const inCountry = f.countries.length ? parts.filter((p) => p.country != null && f.countries.includes(p.country)) : parts;
+  const drink = new Set(parts.flatMap((p) => p.drink));
+  const prices = new Set(parts.flatMap((p) => p.priceClasses));
+  return {
+    countries: sorted([...parts.flatMap((p) => (p.country ? [p.country] : [])), ...f.countries]),
+    regions: sorted([...inCountry.flatMap((p) => (p.region ? [p.region] : [])), ...f.regions]),
+    grapes: sorted([...parts.flatMap((p) => p.grapes), ...f.grapes]),
+    years: [...new Set(parts.flatMap((p) => p.years))].sort((a, b) => a - b),
+    priceClasses: PRICE_CLASSES.filter((c) => prices.has(c) || f.priceClasses.includes(c)),
+    drink: DRINK_STATUS_ORDER.filter((s) => drink.has(s) || f.drink.includes(s)),
+    persons: sorted(parts.flatMap((p) => p.persons)),
+    vendors: sorted([...parts.flatMap((p) => p.vendors), ...f.vendors]),
+  };
+}
+
+/** Auswahl im Filterfeld für eine Liste von Einträgen. */
+export function filterOptions(entries: Filterable[], f: ListFilters, year: number): FilterOptions {
+  return mergeOptions(entries.map((e) => optionPart(e, year)), f);
 }
 
 /** Trinkfenster je Wein + Jahrgang an die Einheiten hängen (Getrunken, Verkostet). */
@@ -113,4 +144,14 @@ export function typeCounts<T extends Filterable>(entries: T[], mode: "bottles" |
     const count = mode === "wines" ? list.length : list.reduce((s, e) => s + e.units.reduce((n, u) => n + u.count, 0), 0);
     return { type, count };
   }).filter((c) => c.type !== "unknown" || c.count > 0);
+}
+
+/** Wie typeCounts, aber als Beiträge je Eintrag ([ID, Anzahl]) – gezählt wird live im Browser. */
+export function typeCountParts<T extends Filterable>(entries: T[], mode: "bottles" | "wines", idOf: (e: T) => string): { type: TypeFilter; parts: [string, number][] }[] {
+  return TYPE_ORDER.map((type) => ({
+    type,
+    parts: entries
+      .filter((e) => typeOf(e) === type)
+      .map((e): [string, number] => [idOf(e), mode === "wines" ? 1 : e.units.reduce((n, u) => n + u.count, 0)]),
+  })).filter(({ type, parts }) => type !== "unknown" || parts.length > 0);
 }

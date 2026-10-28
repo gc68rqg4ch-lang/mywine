@@ -1,6 +1,6 @@
 import { loadDrinkWindows } from "@/lib/cellar/load";
 import { withDrinkWindows } from "@/lib/cellar/filters";
-import { loadWineNotes } from "@/lib/cellar/notes";
+import { loadAllWineNotes } from "@/lib/cellar/notes";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ListView } from "@/components/cellar/list-view";
@@ -21,7 +21,6 @@ import {
   drinkCounts,
   drinkStatusHref,
   formatVintages,
-  matchesQuery,
   originLabel,
   toSummaryWine,
   toVintageRow,
@@ -60,7 +59,8 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   if (filter) purchasesQuery = purchasesQuery.ilike("storage_to", storagePattern(filter));
 
   // Alles in einem Schritt: Bewertungen und Etiketten aller Weine gleich mit (statt danach).
-  const [summary, vintageRows, items, purchases, ratings, photo, windows] = await Promise.all([
+  // Notizen für die Suche (im Browser) – parallel, ohne auf die Liste der Weine zu warten.
+  const [summary, vintageRows, items, purchases, ratings, photo, windows, notes] = await Promise.all([
     supabase.from("cellar_wine_summary").select("wine_id, name, producer, country, region, type, grapes"),
     supabase.from("cellar_wines").select("*"),
     withLocation(
@@ -75,6 +75,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
     loadLabelPhotos(supabase, null),
     // Herkunft der Trinkfenster (Schätzungen mit „≈“).
     loadDrinkWindows(supabase, null),
+    loadAllWineNotes(supabase),
   ]);
   for (const r of [summary, vintageRows, items, purchases]) if (r.error) throw r.error;
 
@@ -96,9 +97,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
     (w) => w.wine_id,
   );
   const inStock = wines.filter((w) => w.sealed > 0);
-  const notes = state.query ? await loadWineNotes(supabase, inStock.map((w) => w.wine_id)) : null;
-  const visible = state.query ? inStock.filter((w) => matchesQuery(w, state.query, notes?.get(w.wine_id))) : inStock;
-  const entries = visible.map((w) => ({ ...w, ratings: ratings.get(w.wine_id) ?? [] }));
+  const entries = inStock.map((w) => ({ ...w, ratings: ratings.get(w.wine_id) ?? [] }));
 
   const totals = cellarTotals(wines);
   const drink = drinkCounts(wines);
@@ -181,6 +180,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
         state={state}
         groupings={BASE_GROUPINGS}
         entries={entries}
+        notes={(e) => notes.get(e.wine_id)}
         year={thisYear}
         empty="Keine ungeöffneten Flaschen hier."
         itemKey={({ wine }) => wine.wine_id}

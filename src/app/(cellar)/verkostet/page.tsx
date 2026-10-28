@@ -9,7 +9,7 @@ import { withDrinkWindows } from "@/lib/cellar/filters";
 import { readListState } from "@/lib/cellar/list-params";
 import { loadDrinkWindows } from "@/lib/cellar/load";
 import type { RatingRow } from "@/lib/cellar/lists";
-import { TASTED_GROUPINGS, currentYear, formatVintages, matchesQuery, originLabel } from "@/lib/cellar/overview";
+import { TASTED_GROUPINGS, currentYear, formatVintages, originLabel } from "@/lib/cellar/overview";
 import { buildTastedEntries, tastedTotals, type TastedEntry, type TastedWineInfo } from "@/lib/cellar/tasted";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { asWineType, formatDate, formatStarNumber, todayIso } from "@/lib/format";
@@ -67,14 +67,14 @@ export default async function TastedPage({ searchParams }: PageProps<"/verkostet
   const stock = new Map((stats.data ?? []).flatMap((s) => (s.wine_id ? [[s.wine_id, s.bottles_in_stock ?? 0] as const] : [])));
 
   const entries = buildTastedEntries(encounters.data ?? [], wines, grapes, ratingsByWine, stock, (persons.data ?? []).map((p) => p.name));
-  const notes = state.query ? await loadWineNotes(supabase, entries.map((e) => e.wine_id)) : null;
-  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query, notes?.get(e.wine_id))) : entries;
-  const [windows, photo] = await Promise.all([
+  // Notizen für die Suche (im Browser) gleich mit.
+  const [windows, photo, notes] = await Promise.all([
     loadDrinkWindows(supabase, wineIds),
-    loadLabelPhotos(supabase, visible.map((e) => e.wine_id)),
+    loadLabelPhotos(supabase, entries.map((e) => e.wine_id)),
+    loadWineNotes(supabase, entries.map((e) => e.wine_id)),
   ]);
   // Trinkfenster je Jahrgang für den Filter „Trinkreife“.
-  const filterable = withDrinkWindows(visible, windows, (e) => e.wine_id);
+  const filterable = withDrinkWindows(entries, windows, (e) => e.wine_id);
   const totals = tastedTotals(entries, year);
   const href = (e: TastedEntry, vintages?: (number | null)[]) =>
     wineHref(e.wine_id, vintages?.length === 1 ? vintages[0] : e.latestVintage, { von: "verkostet" });
@@ -132,9 +132,10 @@ export default async function TastedPage({ searchParams }: PageProps<"/verkostet
         state={state}
         groupings={TASTED_GROUPINGS}
         entries={filterable}
+        notes={(e) => notes.get(e.wine_id)}
         year={currentYear()}
         countMode="wines"
-        countLabel={(n) => `${n}×`}
+        countUnit="times"
         empty="Noch nichts verkostet – oben „Verkostet erfassen“."
         itemKey={({ wine }) => wine.wine_id}
         renderItem={({ wine, bottles, vintages }) => (

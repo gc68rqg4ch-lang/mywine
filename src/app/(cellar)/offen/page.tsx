@@ -9,7 +9,7 @@ import { loadRatingsByWine } from "@/lib/cellar/load";
 import { WineCard } from "@/components/cellar/wine-card";
 import { FillGauge } from "@/components/fill-gauge";
 import { getMemberSession } from "@/lib/auth";
-import { BASE_GROUPINGS, currentYear, drinkBadges, matchesQuery, originLabel } from "@/lib/cellar/overview";
+import { BASE_GROUPINGS, currentYear, drinkBadges, originLabel } from "@/lib/cellar/overview";
 import { openTotals, toOpenEntry } from "@/lib/cellar/lists";
 import { asWineType, formatBottleSize, formatDaysSince } from "@/lib/format";
 import { loadLabelPhotos } from "@/lib/media/store";
@@ -50,16 +50,16 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
   );
   const grapes = await loadGrapeNames(supabase, rows.map((r) => ({ id: r.wine_id, grapes: r.grapes })));
   const entries = rows.map((r) => toOpenEntry(r, grapes.get(r.wine_id) ?? []));
-  const notes = state.query ? await loadWineNotes(supabase, entries.map((e) => e.wine_id)) : null;
-  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query, notes?.get(e.wine_id))) : entries;
   const thisYear = currentYear();
-  const [ratings, photo, windows] = await Promise.all([
-    loadRatingsByWine(supabase, visible.map((e) => e.wine_id)),
-    loadLabelPhotos(supabase, visible.map((e) => e.wine_id)),
-    loadDrinkWindows(supabase, visible.map((e) => e.wine_id)),
+  // Notizen für die Suche (im Browser) gleich mit.
+  const [ratings, photo, windows, notes] = await Promise.all([
+    loadRatingsByWine(supabase, entries.map((e) => e.wine_id)),
+    loadLabelPhotos(supabase, entries.map((e) => e.wine_id)),
+    loadDrinkWindows(supabase, entries.map((e) => e.wine_id)),
+    loadWineNotes(supabase, entries.map((e) => e.wine_id)),
   ]);
   // Herkunft der Trinkfenster (Schätzungen mit „≈“).
-  const withRatings = withDrinkWindows(visible, windows, (e) => e.wine_id).map((e) => ({ ...e, ratings: ratings.get(e.wine_id) ?? [] }));
+  const withRatings = withDrinkWindows(entries, windows, (e) => e.wine_id).map((e) => ({ ...e, ratings: ratings.get(e.wine_id) ?? [] }));
   const totals = openTotals(entries);
   const hidden = withoutRoom.count ?? 0;
 
@@ -106,6 +106,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
         state={state}
         groupings={BASE_GROUPINGS}
         entries={withRatings}
+        notes={(e) => notes.get(e.wine_id)}
         year={thisYear}
         empty="Gerade ist keine Flasche offen."
         itemKey={({ wine }) => wine.itemId}

@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import type { FilterOptions } from "@/lib/cellar/filters";
+import { useMemo, useState, useTransition } from "react";
+import { useLiveSearch } from "@/components/cellar/live-search";
+import { mergeOptions, type OptionPart } from "@/lib/cellar/filters";
 import { EMPTY_FILTERS, activeFilterCount, listHref, toggle, type ListFilters, type ListState } from "@/lib/cellar/list-params";
 import { DRINK_STATUS_LABELS } from "@/lib/cellar/overview";
 
@@ -11,18 +12,24 @@ const stars = (n: number) => `${n.toLocaleString("de-CH")} ★`;
 
 /**
  * Knopf „Filter“ neben der Suche: öffnet ein Feld mit Auswahlknöpfen. Jede Auswahl gilt
- * sofort (URL), Filter sind kombinierbar; „Zurücksetzen“ löscht alle.
+ * sofort (URL), Filter sind kombinierbar; „Zurücksetzen“ löscht alle. Die Auswahl richtet sich
+ * live nach der Suche (Beiträge je Eintrag, zusammengeführt über die sichtbaren).
  */
-export function FilterPanel({ basePath, state, options }: { basePath: string; state: ListState; options: FilterOptions }) {
+export function FilterPanel({ basePath, state, optionParts }: { basePath: string; state: ListState; optionParts: [string, OptionPart][] }) {
   const router = useRouter();
+  const { query, visible } = useLiveSearch();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const f = state.filters;
   const count = activeFilterCount(f);
+  const options = useMemo(
+    () => mergeOptions(optionParts.flatMap(([id, part]) => (visible == null || visible.has(id) ? [part] : [])), f),
+    [optionParts, visible, f],
+  );
 
   const apply = (next: Partial<ListFilters>) => {
     const filters = { ...f, ...next };
-    startTransition(() => router.replace(listHref(basePath, state, { filters }), { scroll: false }));
+    startTransition(() => router.replace(listHref(basePath, { ...state, query }, { filters }), { scroll: false }));
   };
 
   const chips = (title: string, values: string[], selected: string[], key: keyof ListFilters, show: (v: string) => string = (v) => v) =>

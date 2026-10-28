@@ -4,6 +4,8 @@
 // davor. Abgleich: Gross-/Kleinschreibung, Akzente, Satzzeichen, Füllwörter (de, la, …) und
 // Zusätze wie Bodegas oder Quinta egal; Name mit und ohne vorangestellten Produzenten gleich.
 
+import { foldText } from "@/lib/text/fold";
+
 /** Qualitäts-/Reifestufen und Gattungswörter – allein kein vollständiger Weinname. */
 const GENERIC = new Set([
   "reserva", "gran", "grande", "grand", "riserva", "crianza", "reserve", "vin", "vino", "cuvee", "tinto", "tinta",
@@ -20,15 +22,7 @@ const HOUSE_WORDS = new Set([
   "domaine", "tenuta", "cantina", "cantine", "herdade", "estate", "weinkellerei", "kellerei", "vinedos", "vinas",
 ]);
 
-const words = (text: string | null | undefined) =>
-  (text ?? "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean);
+const words = (text: string | null | undefined) => foldText(text).split(" ").filter(Boolean);
 
 /** Nur Stufe bzw. Gattungswort („Reserva“, „Gran Reserva“, „Grand Vin“, „Cuvée“, „Tinto“)? */
 export function isGenericName(name: string | null | undefined) {

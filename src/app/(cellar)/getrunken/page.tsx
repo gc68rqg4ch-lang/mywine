@@ -12,7 +12,6 @@ import {
   BASE_GROUPINGS,
   currentYear,
   formatVintages,
-  matchesQuery,
   originLabel,
   type GroupBy,
 } from "@/lib/cellar/overview";
@@ -89,14 +88,14 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
   }
 
   const entries = buildDrunkEntries(bottles, grapes, ratingsByWine, (persons.data ?? []).map((p) => p.name));
-  const notes = state.query ? await loadWineNotes(supabase, entries.map((e) => e.wine_id)) : null;
-  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query, notes?.get(e.wine_id))) : entries;
-  const [windows, photo] = await Promise.all([
+  // Notizen für die Suche (im Browser) gleich mit.
+  const [windows, photo, notes] = await Promise.all([
     loadDrinkWindows(supabase, wineIds),
-    loadLabelPhotos(supabase, visible.map((e) => e.wine_id)),
+    loadLabelPhotos(supabase, entries.map((e) => e.wine_id)),
+    loadWineNotes(supabase, entries.map((e) => e.wine_id)),
   ]);
   // Trinkfenster je Jahrgang für den Filter „Trinkreife“.
-  const filterable = withDrinkWindows(visible, windows, (e) => e.wine_id);
+  const filterable = withDrinkWindows(entries, windows, (e) => e.wine_id);
   const totals = drunkTotals(entries, year);
   const hidden = withoutRoom.count ?? 0;
 
@@ -143,6 +142,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
         state={state}
         groupings={GROUPINGS}
         entries={filterable}
+        notes={(e) => notes.get(e.wine_id)}
         year={currentYear()}
         empty="Noch keine Flaschen ausgetrunken."
         itemKey={({ wine }) => wine.wine_id}

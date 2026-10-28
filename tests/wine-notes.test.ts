@@ -84,7 +84,8 @@ test("Suche in den Listen findet den Wein über den Notiztext", async () => {
   const loaded = await loadWineNotes(db, [W, W2]);
   assert.deepEqual([...loaded], [[W2, "2021: zu Wild dekantieren"]], "nur Weine mit Notizen");
   for (const f of ["src/app/(cellar)/page.tsx", "src/app/(cellar)/getrunken/page.tsx", "src/app/(cellar)/offen/page.tsx", "src/app/(cellar)/verkostet/page.tsx"]) {
-    assert.match(readFileSync(f, "utf8"), /matchesQuery\(\w, state\.query, notes\?\.get\(\w\.wine_id\)\)/, f);
+    // Suche im Browser: die Notizen gehen als Suchtext an die Liste.
+    assert.match(readFileSync(f, "utf8"), /notes=\{\(e\) => notes\.get\(e\.wine_id\)\}/, f);
   }
 });
 

@@ -2,6 +2,7 @@
 // Reine Funktionen auf den Zeilen der Views cellar_wine_summary (Wein) und
 // cellar_wines (Wein + Jahrgang + Flaschengrösse mit Aufteilung nach Lagerort).
 
+import { matchesTerms, queryTerms, searchText } from "./search";
 import { drinkWindowText } from "./drink-window";
 import type { Json, Tables } from "@/lib/database.types";
 import { WINE_TYPE_LABELS, asWineType, compareWineNames, todayIso, type WineType } from "@/lib/format";
@@ -328,23 +329,7 @@ export function formatVintages(vintages: (number | null)[]) {
 
 /** Suche: Wein, Produzent, Herkunft, Rebsorten, Jahrgänge und – falls mitgegeben – die Notizen zum Wein. */
 export function matchesQuery(wine: Groupable, query: string, notes?: string | null) {
-  const haystack = [
-    notes,
-    wine.name,
-    wine.producer,
-    wine.country,
-    wine.region,
-    ...wine.grapes,
-    ...wine.vintages.map((v) => (v == null ? "" : String(v))),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLocaleLowerCase("de-CH");
-  return query
-    .toLocaleLowerCase("de-CH")
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((term) => haystack.includes(term));
+  return matchesTerms(searchText(wine, notes), queryTerms(query));
 }
 
 // ---------------------------------------------------------------------------

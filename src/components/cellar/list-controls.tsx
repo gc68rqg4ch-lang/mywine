@@ -1,54 +1,86 @@
+"use client";
+
 import Link from "next/link";
+import { useRef } from "react";
 import { FilterPanel } from "@/components/cellar/filter-panel";
+import { useLiveSearch } from "@/components/cellar/live-search";
 import { TypeChips, type TypeCount } from "@/components/cellar/type-tabs";
-import type { FilterOptions } from "@/lib/cellar/filters";
-import { listHref, listSearchParams, type ListState } from "@/lib/cellar/list-params";
+import type { OptionPart } from "@/lib/cellar/filters";
+import { listHref, type ListState } from "@/lib/cellar/list-params";
 import { GROUP_BY_LABELS, type GroupBy } from "@/lib/cellar/overview";
 
 /**
  * Suche mit Filter-Knopf, Gruppierung und – ausser bei „Weintyp“ – der Weintyp-Filter.
- * Alles läuft über die URL (Links und ein GET-Formular), damit „Zurück“ den Zustand behält.
+ * Die Suche filtert schon beim Tippen (im Browser, siehe live-search.tsx); Gruppierung, Typ und
+ * Filter laufen über die URL (Links), damit „Zurück“ den Zustand behält – mit der aktuellen Suche.
  */
 export function ListControls({
   basePath,
   state,
   groupings,
   typeCounts,
-  options,
+  optionParts,
   placeholder = "Suche: Wein, Produzent, Region, Traube, Jahrgang …",
 }: {
   basePath: string;
   state: ListState;
   groupings: GroupBy[];
   typeCounts: TypeCount[];
-  options: FilterOptions;
+  optionParts: [string, OptionPart][];
   placeholder?: string;
 }) {
-  // Beim Suchen bleiben Gruppierung, Typ und Filter erhalten.
-  const keep = [...listSearchParams({ ...state, query: "", open: [] }).entries()];
+  const { query, setQuery } = useLiveSearch();
+  const input = useRef<HTMLInputElement>(null);
+  const live = { ...state, query };
 
   return (
     <div className="controls">
       <div className="search-row">
-        <form className="search" role="search" action={basePath}>
-          {keep.map(([name, value], i) => (
-            <input key={`${name}:${i}`} type="hidden" name={name} value={value} />
-          ))}
-          <input type="search" name="q" defaultValue={state.query} placeholder={placeholder} aria-label="Suche" />
-          {state.query && (
-            <Link href={listHref(basePath, state, { query: "", open: [] })} className="btn btn-ghost" aria-label="Suche zurücksetzen">
+        <form
+          className="search"
+          role="search"
+          action={basePath}
+          onSubmit={(e) => {
+            // Enter: gefiltert ist schon – nur die Tastatur schliessen, kein Neuladen.
+            e.preventDefault();
+            input.current?.blur();
+          }}
+        >
+          <input
+            ref={input}
+            type="search"
+            name="q"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={placeholder}
+            aria-label="Suche"
+            autoComplete="off"
+            enterKeyHint="search"
+          />
+          {query && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              aria-label="Suche zurücksetzen"
+              // Fokus bleibt im Feld (Tastatur bleibt offen).
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setQuery("");
+                input.current?.focus();
+              }}
+            >
               ✕
-            </Link>
+            </button>
           )}
         </form>
-        <FilterPanel basePath={basePath} state={state} options={options} />
+        <FilterPanel basePath={basePath} state={state} optionParts={optionParts} />
       </div>
       <nav className="segmented" aria-label="Gruppieren nach">
         {groupings.map((g) => (
           <Link
             key={g}
             // Neue Gruppierung: Typ zurücksetzen (Weintyp → Rot, sonst alle); Suche und Filter bleiben.
-            href={listHref(basePath, state, { groupBy: g, open: [], type: null })}
+            href={listHref(basePath, live, { groupBy: g, open: [], type: null })}
             className={g === state.groupBy ? "segment active" : "segment"}
             aria-current={g === state.groupBy ? "page" : undefined}
             scroll={false}
