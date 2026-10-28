@@ -428,6 +428,13 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Korrigieren:** Freitext-Antwort, die per `claude-haiku-5-5` in den Vorschlag übernommen wird.
 - **Album:** Telegram schickt jedes Foto einzeln. Alle Fotos eines Albums landen über eine aus
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.
+- **Einzelfotos kurz nacheinander** (z. B. Vorder- und Rückseite als zwei Nachrichten): Kam innert 15 s
+  (`PHOTO_JOIN_MS`) schon ein Foto dieses Chats, gehört das neue in denselben Ablauf (`findOpenPhotoJob`) –
+  solange er noch sammelt (`received`), erkannt wird (`processing`, die Erkennung läuft dann nochmals mit allen
+  Fotos) oder vor der ersten Antwort steht (Frage „gekauft oder verkostet?“ bzw. erster Vorschlag, `photo_join`;
+  dann „📷 … lege ich zum selben Wein“, keine zweite Frage). Gleichzeitige Webhook-Aufrufe: Unique-Index
+  `ingest_jobs_one_received_photo_job` (höchstens ein sammelnder Foto-Ablauf pro Chat) – der zweite bekommt
+  23505 und hängt sein Foto an. Lässt sich ein Foto keinem Ablauf zuordnen, sagt Antoine es.
 - **Zugang:** Webhook prüft `X-Telegram-Bot-Api-Secret-Token`. Freigeschaltet sind alle Telegram-User, deren ID in
   `persons.telegram_user_id` steht; `TELEGRAM_ALLOWED_USER_ID` gilt als Rückfall für Michel. Unbekannte bekommen im
   Einzelchat nur „Ich kenne dich noch nicht – deine Telegram-ID ist …“, sonst nichts. `/id` zeigt die eigene ID.

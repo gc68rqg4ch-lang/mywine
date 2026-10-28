@@ -23,7 +23,10 @@ import {
   advanceJob,
   claimJob,
   deleteJobPhotos,
+  appendJobPhoto,
   ensureJob,
+  findOpenPhotoJob,
+  type OpenPhotoJob,
   findJobAwaitingText,
   jobIdFor,
   jobState,
@@ -199,26 +202,38 @@ async function handlePhoto(msg: TgMessage) {
     return;
   }
 
+  // Zu welchem Ablauf gehört das Foto? Album oder einzeln: kam innert 15 s schon ein Foto
+  // dieses Chats, gehört es dazu (solange dort noch niemand geantwortet hat) – sonst neuer Ablauf.
+  const target = await photoTarget(db, chatId, msg);
+  if (!target) {
+    console.error("photo not assigned", chatId, msg.message_id);
+    await sendMessage(chatId, T.photoNotAssigned);
+    return;
+  }
+  const jobId = target.jobId;
   // Neues Foto = neues Anliegen: angefangene Rückfragen (auch „Neuer Wein“) werden verworfen –
-  // ausser dem eigenen Album (weitere Fotos davon).
-  const jobId = jobIdFor(chatId, msg.media_group_id ?? `m${msg.message_id}`);
+  // ausser dem eigenen Ablauf (weitere Fotos davon).
   await supersede(db, chatId, "photo", [jobId]);
-  await ensureJob(db, jobId, chatId);
-  await noteIntent(db, jobId, chatId, msg.caption);
+  if (target.phase === "received") await noteIntent(db, jobId, chatId, msg.caption);
 
-  // Foto sofort sichern; die Erkennung startet erst, wenn das Album vollständig ist.
+  // Foto sofort sichern; die Erkennung startet erst, wenn keine weiteren Fotos mehr kommen.
   const { bytes, filePath } = await downloadFile(file.fileId);
   const ext = extensionOf(filePath) ?? "jpg";
-  const { error: uploadError } = await db.storage
-    .from(PHOTO_BUCKET)
-    .upload(`${photoFolder(jobId)}/${msg.message_id}.${ext}`, bytes, {
-      contentType: IMAGE_TYPES[ext],
-      upsert: true,
-    });
+  const path = `${photoFolder(jobId)}/${msg.message_id}.${ext}`;
+  const { error: uploadError } = await db.storage.from(PHOTO_BUCKET).upload(path, bytes, {
+    contentType: IMAGE_TYPES[ext],
+    upsert: true,
+  });
   if (uploadError) throw uploadError;
 
-  if (!(await touchReceivedJob(db, jobId))) {
-    await sendMessage(chatId, T.photoTooLate);
+  if (target.phase !== "received" || !(await touchReceivedJob(db, jobId))) {
+    // Erkennung läuft schon bzw. erste Frage gestellt: Foto an den Ablauf hängen (die laufende
+    // Erkennung nimmt es noch mit). Geht das nicht mehr, sagt Antoine es – nie stillschweigend.
+    if (await appendJobPhoto(db, jobId, path, msg.message_id)) {
+      if (target.phase === "asked") await sendMessage(chatId, T.photoAdded());
+    } else {
+      await sendMessage(chatId, T.photoTooLate);
+    }
     return;
   }
 
@@ -227,6 +242,23 @@ async function handlePhoto(msg: TgMessage) {
     await sleep(ALBUM_QUIET_MS + 1000);
     await processJob(jobId, chatId);
   });
+}
+
+/**
+ * Ablauf für ein neues Foto: ein offener Foto-Ablauf dieses Chats (innert 15 s), sonst ein
+ * neuer (Album: über media_group_id, einzeln: über die Nachricht). Legen zwei gleichzeitige
+ * Aufrufe beide einen neuen an, lässt die DB (Unique-Index) nur einen zu – der andere hängt
+ * sein Foto an diesen.
+ */
+async function photoTarget(db: AdminClient, chatId: number, msg: TgMessage): Promise<{ jobId: string; phase: OpenPhotoJob["phase"] } | null> {
+  const open = await findOpenPhotoJob(db, chatId);
+  if (open) return { jobId: open.job.id, phase: open.phase };
+  const jobId = jobIdFor(chatId, msg.media_group_id ?? `m${msg.message_id}`);
+  if (await ensureJob(db, jobId, chatId)) return { jobId, phase: "received" };
+  const winner = await findOpenPhotoJob(db, chatId);
+  if (winner) return { jobId: winner.job.id, phase: winner.phase };
+  // Kaum möglich (der andere Ablauf ist in derselben Sekunde weitergelaufen).
+  return null;
 }
 
 /**
@@ -270,21 +302,27 @@ export async function processJob(jobId: string, chatId: number) {
   if (!job) return;
 
   try {
-    const photos = await listJobPhotos(db, jobId);
+    let photos = await listJobPhotos(db, jobId);
     if (photos.length === 0) throw new Error("Keine Fotos gefunden.");
-
-    await db
-      .from("ingest_jobs")
-      .update({
-        photo_paths: photos.map((p) => p.path),
-        telegram_message_ids: photos.map((p) => p.messageId),
-      })
-      .eq("id", jobId);
+    const savePhotos = (list: typeof photos) =>
+      db
+        .from("ingest_jobs")
+        .update({ photo_paths: list.map((p) => p.path), telegram_message_ids: list.map((p) => p.messageId) })
+        .eq("id", jobId);
+    await savePhotos(photos);
 
     await sendMessage(chatId, T.photosReceived(photos.length));
 
-    const images = await loadImages(db, photos.map((p) => p.path));
-    const recognition = await recognizeLabel(images);
+    let recognition = await recognizeLabel(await loadImages(db, photos.map((p) => p.path)));
+    // Kam während der Erkennung noch ein Foto dazu (z. B. die Rückseite einzeln): nochmals mit
+    // allen erkennen – erst dann die eine Rückfrage. Höchstens zweimal.
+    for (let round = 0; round < 2; round++) {
+      const now = await listJobPhotos(db, jobId);
+      if (now.length <= photos.length) break;
+      photos = now;
+      await savePhotos(photos);
+      recognition = await recognizeLabel(await loadImages(db, photos.map((p) => p.path)));
+    }
 
     // Gekauft oder nur verkostet? Bildtext bzw. „wir verkosten einen Wein“ vorher entscheidet;
     // sonst zuerst fragen – nie ungefragt einbuchen.
@@ -298,7 +336,7 @@ export async function processJob(jobId: string, chatId: number) {
       await askPhotoIntent(db, jobId, chatId, recognition, before?.caption);
       return;
     }
-    await continuePhotoPurchase(db, jobId, chatId, recognition, before?.caption);
+    await continuePhotoPurchase(db, jobId, chatId, recognition, before?.caption, { firstQuestion: true });
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }

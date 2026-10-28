@@ -133,6 +133,8 @@ export type IngestState = {
   vintage_uncertain?: boolean;
   /** Die Person hat den Jahrgang bestätigt (auch „ohne Jahrgang“). */
   vintage_confirmed?: boolean;
+  /** Erster Vorschlag ohne vorherige Rückfrage: weitere Fotos innert 15 s gehören noch dazu. */
+  photo_join?: boolean;
   recognition: {
     model: string;
     confidence: number;

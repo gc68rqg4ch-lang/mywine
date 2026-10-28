@@ -30,7 +30,45 @@ export function photoFolder(jobId: string) {
   return `telegram/${jobId}`;
 }
 
-/** Legt den Job an, falls es ihn noch nicht gibt (erstes Foto eines Albums). */
+/**
+ * Fotos desselben Chats, die so kurz nacheinander kommen, gehören in denselben Ablauf – auch
+ * einzeln geschickt (Vorder- und Rückseite als zwei Nachrichten). 15 s: genug, um das zweite
+ * Foto auszuwählen und zu schicken (beim Heida-Fall 1,1 s, von Hand meist 2–8 s); kurz genug,
+ * dass die nächste Flasche in der Regel einen eigenen Ablauf bekommt.
+ */
+export const PHOTO_JOIN_MS = 15_000;
+
+/** Ablauf, der noch Fotos annimmt: sammelt, wird erkannt oder steht vor der ersten Antwort. */
+export type OpenPhotoJob = { job: IngestJob; phase: "received" | "processing" | "asked" };
+
+/**
+ * Offener Foto-Ablauf dieses Chats mit Aktivität in den letzten 15 s. „asked“ nur vor der
+ * ersten Antwort: Frage „gekauft oder verkostet?“ bzw. der erste Vorschlag (photo_join).
+ */
+export async function findOpenPhotoJob(db: AdminClient, chatId: number, now = Date.now()): Promise<OpenPhotoJob | null> {
+  const { data, error } = await db
+    .from("ingest_jobs")
+    .select("*")
+    .eq("telegram_chat_id", chatId)
+    .eq("source", "telegram")
+    .in("status", ["received", "processing", "needs_review"])
+    .gte("updated_at", new Date(now - PHOTO_JOIN_MS).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  if (data.status === "received") return { job: data, phase: "received" };
+  if (data.status === "processing") return { job: data, phase: "processing" };
+  const state = jobState(data);
+  if (state?.step === "intent" || (state?.step === "review" && state.photo_join)) return { job: data, phase: "asked" };
+  return null;
+}
+
+/**
+ * Legt den Job an, falls es ihn noch nicht gibt (erstes Foto eines Albums bzw. Einzelfoto).
+ * false = ein anderer Foto-Ablauf dieses Chats sammelt schon (Unique-Index, gleichzeitige Aufrufe).
+ */
 export async function ensureJob(db: AdminClient, jobId: string, chatId: number) {
   const { error } = await db
     .from("ingest_jobs")
@@ -38,7 +76,31 @@ export async function ensureJob(db: AdminClient, jobId: string, chatId: number) 
       { id: jobId, source: "telegram", telegram_chat_id: chatId, status: "received" },
       { onConflict: "id", ignoreDuplicates: true },
     );
+  if (error?.code === "23505") return false;
   if (error) throw error;
+  return true;
+}
+
+/**
+ * Foto an einen laufenden Ablauf hängen (photo_paths), ohne Änderungen anderer zu überschreiben:
+ * nur wenn sich der Eintrag seit dem Lesen nicht geändert hat (sonst neu lesen, höchstens 5×).
+ */
+export async function appendJobPhoto(db: AdminClient, jobId: string, path: string, messageId: number) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: job, error } = await db.from("ingest_jobs").select("photo_paths, telegram_message_ids, updated_at, status").eq("id", jobId).maybeSingle();
+    if (error) throw error;
+    if (!job || !["processing", "needs_review"].includes(job.status)) return false;
+    if (job.photo_paths.includes(path)) return true;
+    const { data: updated, error: updateError } = await db
+      .from("ingest_jobs")
+      .update({ photo_paths: [...job.photo_paths, path], telegram_message_ids: [...job.telegram_message_ids, messageId] })
+      .eq("id", jobId)
+      .eq("updated_at", job.updated_at)
+      .select("id");
+    if (updateError) throw updateError;
+    if (updated?.length) return true;
+  }
+  return false;
 }
 
 /**
@@ -109,7 +171,8 @@ export async function advanceJob(
   const allowed = Array.isArray(from) ? from : [from];
   if (!allowed.includes(current.step)) return null;
 
-  const next: IngestState = { ...current, ...patch };
+  // Jede Antwort beendet „weitere Fotos gehören noch dazu“ (photo_join).
+  const next: IngestState = { ...current, ...patch, photo_join: undefined };
   const { data, error } = await db
     .from("ingest_jobs")
     .update({ extracted: toJson(next), ...columns })

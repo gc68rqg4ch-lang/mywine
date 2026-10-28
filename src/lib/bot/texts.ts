@@ -135,6 +135,10 @@ export const T = {
 
   // --- Fotos
   photoOnly: "Schick mir bitte ein Foto vom Etikett (am besten JPEG oder PNG).",
+  /** Foto kam kurz nach der ersten Frage: gehört noch zum selben Wein (Varianten). */
+  photoAdded: (random?: () => number) =>
+    pick(["📷 Danke, das Foto lege ich zum selben Wein.", "📷 Das Foto nehme ich gleich zu diesem Wein dazu."], random),
+  photoNotAssigned: "Dieses Foto konnte ich leider keinem Wein zuordnen – magst du es mir nochmals schicken?",
   photoTooLate: "Dieses Foto kam etwas spät – ich bin mit den anderen schon dran. Schick mir das Album sonst einfach nochmals.",
   photoTooLateAttach: "Dieses Foto kam etwas spät – ich ordne die anderen schon zu.",
   photosReceived: (n: number, random?: () => number) => say(n === 1 ? "photoReceived" : "photosReceived", random),

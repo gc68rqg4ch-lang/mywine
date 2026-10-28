@@ -125,6 +125,8 @@ export async function continuePhotoPurchase(
   recognition: RecognitionResult,
   /** Bildtext des Albums: „Geschenk von Marc“ wird direkt übernommen. */
   caption?: string | null,
+  /** Erste Frage an die Person (ohne vorherige Rückfrage): weitere Fotos innert 15 s gehören dazu. */
+  options: { firstQuestion?: boolean } = {},
 ) {
   try {
     let proposal = recognition.proposal;
@@ -152,6 +154,7 @@ export async function continuePhotoPurchase(
     const state: IngestState = {
       step: "review",
       intent: "bought",
+      ...(options.firstQuestion ? { photo_join: true } : {}),
       ...(gift ? giftPatch(gift.from, giftValueInText(caption)) : {}),
       // Anzahl im Bildtext („6 Flaschen“): nicht nochmals fragen.
       ...(captionQuantity ? { quantity: captionQuantity } : {}),
