@@ -223,6 +223,19 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   Sara). Quellen, Belege und Sicherheit bleiben in der DB, die App zeigt sie nicht. Ohne Profil „🔎
   Geschmacksprofil recherchieren“. Bot ℹ️ Details: eine Zeile („👅 Vollmundig, trocken, viel Tannin – Brombeere, Kaffee“). Ohne
   Fund melden App und Bot „Keine verlässlichen Angaben gefunden.“
+- **Angehängte PDFs als Quelle** (`src/lib/research/documents.ts`, `pdf-text.ts`): Nachrecherchieren, „🔎
+  Geschmacksprofil recherchieren“, Sammellauf und die automatische Profilsuche schicken die PDFs des Weins als
+  Dokument an Claude – zusätzlich zur Websuche. Nur für den gesuchten Jahrgang: PDFs mit diesem `vintage_year`;
+  PDFs ohne Jahrgang nur, wenn der Jahrgang im PDF-Text eindeutig steht („Jahrgang/Vintage/Añada 2019“ oder
+  „<Weinname> 2019“) und passt; andere Jahrgänge nie. Über 5 MB oder über 10 Seiten → übersprungen. Text, der sich
+  ohne Bibliothek nicht lesen lässt (z. B. CID-Schriften), gilt als „Jahrgang unklar“. Werte aus dem PDF folgen
+  denselben Regeln (Zitat, Widerspruch → unbekannt, nur leere Felder, Profil von Hand → Vorschlag); Quelle
+  `{ url: null, document: "<Dateiname>", title: "Dokument: <Dateiname>", kind: "document" }`, Belege mit
+  `source_url = "dokument:<Dateiname>"`. **Neues PDF** (App oder Bot, `insertDocumentRow`) mit Jahrgang und ohne
+  Profil dafür → Profilsuche im Hintergrund, auch innerhalb der 12 Monate (PDF ohne Jahrgang: keine automatische
+  Suche). Sammellauf und automatische Suche überspringen einen kürzlich gesuchten Jahrgang nicht, wenn danach ein
+  PDF für genau diesen Jahrgang angehängt wurde (`newDocumentSince`). Lade-/Lesefehler: ohne dieses PDF weiter,
+  Log „research document failed“. Keine Schemaänderung.
 - **API-Fehler** (`src/lib/ai/api-errors.ts`): Das Nutzungslimit (400 „reached your specified API usage
   limits“) wird erkannt – der Sammellauf stoppt sofort und meldet „Das monatliche API-Limit ist erreicht. Wieder
   verfügbar am …“ (Datum aus der Meldung), ebenso Nachrecherchieren auf der Weinseite und der Bot in der Ich-Form

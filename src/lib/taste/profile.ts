@@ -28,16 +28,23 @@ export function tasteOptions(key: TasteKey): string[] {
   return PALATE_FIELDS.find((f) => f.key === sat)?.options ?? [];
 }
 
-export const SOURCE_KINDS = ["producer", "critic", "merchant", "other"] as const;
+export const SOURCE_KINDS = ["producer", "critic", "merchant", "other", "document"] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   producer: "Weingut",
   critic: "Kritik",
   merchant: "Händler",
   other: "Andere",
+  document: "Dokument",
 };
 
-export type TasteSource = { url: string; title: string; kind: SourceKind; vintage: number | null };
+/** Quelle: Webseite (url) oder angehängtes Datenblatt (document = Dateiname, url = null). */
+export type TasteSource = { url: string | null; title: string; kind: SourceKind; vintage: number | null; document?: string };
+
+/** Kennung eines Datenblatts in Quellen und Belegen („dokument:<Dateiname>“, keine URL). */
+export const DOCUMENT_REF = "dokument:";
+/** Schlüssel einer Quelle (für Belege und die Zählung unabhängiger Quellen). */
+export const sourceRef = (s: Pick<TasteSource, "url" | "document">) => s.url ?? `${DOCUMENT_REF}${s.document ?? ""}`;
 export type Evidence = { source_url: string; quote: string };
 export type Confidence = "hoch" | "mittel" | "niedrig";
 
@@ -126,7 +133,8 @@ export function aromaGroups(type: SatType) {
 /** Sicherheit: hoch = ≥ 2 unabhängige Quellen, davon Weingut oder Kritik, ohne Widerspruch; mittel = 1 gute Quelle; sonst niedrig. */
 export function confidenceFor(used: TasteSource[], contradictions: number): Confidence {
   const good = used.some((s) => s.kind === "producer" || s.kind === "critic");
-  const hosts = new Set(used.map((s) => host(s.url)).filter(Boolean));
+  // Unabhängig = verschiedene Websites bzw. verschiedene Datenblätter.
+  const hosts = new Set(used.map((s) => (s.url ? host(s.url) : sourceRef(s))).filter(Boolean));
   if (hosts.size >= 2 && good && contradictions === 0) return "hoch";
   if (good) return "mittel";
   return "niedrig";
@@ -142,13 +150,28 @@ export function confidenceFor(used: TasteSource[], contradictions: number): Conf
  * - Aroma nur aus dem Lexikon des Weintyps (passende Gruppe) und mit Beleg; sonst weg;
  * - nichts Belegtes übrig → kein Profil.
  */
-export function validateTasteProfile(raw: TasteResearchRaw, ctx: { type: SatType; year: number | null }): TasteProfileData | null {
+export function validateTasteProfile(
+  raw: TasteResearchRaw,
+  ctx: {
+    type: SatType;
+    year: number | null;
+    /** Beigelegte Datenblätter (nur passende Jahrgänge) – als Quelle „dokument:<Name>“. */
+    documents?: { name: string; year: number | null }[];
+  },
+): TasteProfileData | null {
   if (!raw.matches_wine) return null;
   // Jahrgangswein: nur Notizen zu genau diesem Jahrgang; andere Jahrgänge zählen nicht.
   if (ctx.year != null && !raw.same_vintage) return null;
   const sources = new Map<string, TasteSource>();
   for (const s of raw.sources) {
     const url = normUrl(s.url);
+    // Datenblatt: nur beigelegte, mit dem bekannten Jahrgang des Dokuments.
+    if (url.startsWith(DOCUMENT_REF)) {
+      const doc = ctx.documents?.find((d) => `${DOCUMENT_REF}${d.name}` === url);
+      if (!doc || (ctx.year != null && doc.year !== ctx.year)) continue;
+      sources.set(url, { url: null, document: doc.name, title: `Dokument: ${doc.name}`, kind: "document", vintage: doc.year });
+      continue;
+    }
     if (!/^https?:\/\//.test(url) || !host(url)) continue;
     const kind = (SOURCE_KINDS as readonly string[]).includes(s.kind) ? s.kind : "other";
     const vintage = Number.isInteger(s.vintage) && s.vintage > 1800 ? s.vintage : null;
@@ -204,7 +227,7 @@ export function validateTasteProfile(raw: TasteResearchRaw, ctx: { type: SatType
   const pairing = raw.food_pairing.map((f) => f.trim()).filter(Boolean).slice(0, 6);
   const foodPairing = pairing.length && proof("food_pairing", raw.evidence.filter((e) => e.field === "food_pairing")) ? pairing : [];
 
-  const usedSources = [...sources.values()].filter((s) => used.has(s.url));
+  const usedSources = [...sources.entries()].filter(([key]) => used.has(key)).map(([, s]) => s);
   const vintageYear = ctx.year;
   return {
     values,

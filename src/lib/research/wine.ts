@@ -17,7 +17,8 @@ import { researchTasteProfile, saveResearchedProfile } from "./taste";
 import { markTasteChecked } from "@/lib/taste/store";
 import type { EnrichableField } from "@/lib/ingest/schema";
 import { grapesOnlyAddPercent, sameGrapes, sameValue, sourceNote, type SuggestionField } from "./compare";
-import { TASTED, profileKey, tasteTargets, wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
+import { loadResearchDocuments, documentsNote, type ResearchDocument } from "./documents";
+import { TASTED, profileKey, type DocumentRow, tasteTargets, wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
 
 type Db = SupabaseClient<Database>;
 
@@ -26,15 +27,16 @@ const WINE_COLUMNS = "id, name, producer, country, region, appellation, type, al
 /** Alles, was die Lückenberechnung braucht – für einen Wein oder alle Weine. */
 export async function loadGapData(db: Db, wineId?: string) {
   const one = <Q extends { eq: (c: "wine_id", v: string) => Q }>(q: Q) => (wineId ? q.eq("wine_id", wineId) : q);
-  const [wines, items, encounters, vintages, shares, profiles] = await Promise.all([
+  const [wines, items, encounters, vintages, shares, profiles, documents] = await Promise.all([
     wineId ? db.from("wines").select(WINE_COLUMNS).eq("id", wineId) : db.from("wines").select(WINE_COLUMNS),
     one(db.from("inventory_items").select("wine_id, vintage_year, status")),
     one(db.from("wine_encounters").select("wine_id, vintage_year")),
     one(db.from("wine_vintages").select("wine_id, vintage_year, drink_from_year, drink_until_year, taste_profile_checked_at")),
     one(db.from("wine_grape_shares").select("wine_id, vintage_year, grape, percent, source")),
     one(db.from("wine_taste_profiles").select("wine_id, vintage_year")),
+    one(db.from("wine_media").select("wine_id, vintage_year, created_at").eq("kind", "document")),
   ]);
-  for (const r of [wines, items, encounters, vintages, shares, profiles]) if (r.error) throw r.error;
+  for (const r of [wines, items, encounters, vintages, shares, profiles, documents]) if (r.error) throw r.error;
   return {
     wines: (wines.data ?? []) as GapWine[],
     // Verkostete Jahrgänge zählen wie Flaschen (nur im Umfang „alle“).
@@ -46,6 +48,8 @@ export async function loadGapData(db: Db, wineId?: string) {
     shares: (shares.data ?? []) as GapShare[],
     /** Vorhandene Profile je Wein und Jahrgang (profileKey). */
     profiles: new Set((profiles.data ?? []).map((p) => profileKey(p.wine_id, p.vintage_year))),
+    /** Angehängte PDFs (ohne Inhalt) – ein neues PDF hebt die 12-Monats-Regel fürs Profil auf. */
+    documents: (documents.data ?? []) as DocumentRow[],
   };
 }
 
@@ -132,9 +136,13 @@ export async function researchAndFillWine(
   const targets = tasteTargets(gaps, data, { skipRecent: options.skipRecent ?? true });
   const profileYear =
     tasteMode === "always" || options.year !== undefined ? tasteYear(gaps, options.year) : (targets[0] ?? tasteYear(gaps, undefined));
+  const runTaste = tasteMode === "always" || targets.includes(profileYear);
+  // Angehängte PDFs nur für die gesuchten Jahrgänge laden (Profil bzw. Recherche).
+  const docYears = [...new Set([...(tasteMode === "only" ? [] : gaps.vintages.map((v) => v.year)), ...(runTaste ? [profileYear] : [])])];
+  const documents: ResearchDocument[] = await loadResearchDocuments(db, { id: wine.id, name: wine.name }, docYears);
   const taste = async (): Promise<ResearchOutcome["taste"]> => {
-    if (tasteMode !== "always" && !targets.includes(profileYear)) return "skipped";
-    const profile = await researchTasteProfile(wine, profileYear);
+    if (!runTaste) return "skipped";
+    const profile = await researchTasteProfile(wine, profileYear, documents.filter((d) => d.year === profileYear));
     // Jede Profilsuche vermerken – auch ohne Fund (nicht bei einem Fehler).
     await markTasteChecked(db, wineId, profileYear);
     if (!profile) return "none";
@@ -161,6 +169,7 @@ export async function researchAndFillWine(
       alcohol_content: wine.alcohol_content,
     },
     vintages: gaps.vintages.map((v) => ({ year: v.year, knownGrapes: v.knownGrapes })),
+    ...researchDocs(documents, gaps.vintages.map((v) => v.year)),
   });
   if (!found) {
     const result = await taste();
@@ -247,6 +256,12 @@ export async function researchAndFillWine(
   }
   await markResearched(db, wineId);
   return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: tasteResult, tasteYear: profileYear, seconds: seconds() };
+}
+
+/** PDFs für die Jahrgänge der Recherche (zusätzlich zur Websuche). */
+function researchDocs(documents: ResearchDocument[], years: (number | null)[]) {
+  const docs = documents.filter((d) => years.includes(d.year));
+  return docs.length ? { documents: docs, documentsNote: documentsNote(docs) } : {};
 }
 
 /** Nach jeder erfolgreichen Recherche – auch ohne Fund – für „kürzlich geprüfte überspringen“. */

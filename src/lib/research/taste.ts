@@ -4,6 +4,7 @@ import "server-only";
 // 9 nullable Felder). Merkmale als enum mit „unbekannt“ statt nullable. Oberstes Ziel: kein
 // falsches Profil – geprüft wird in validateTasteProfile (taste/profile.ts) vor dem Speichern.
 
+import { documentsNote, type ResearchDocument } from "./documents";
 import { z } from "zod";
 import { webResearch } from "@/lib/ingest/recognize";
 import { satTypeForWine, type SatType } from "@/lib/tasting/sat";
@@ -15,6 +16,7 @@ import {
   UNKNOWN,
   aromaGroups,
   tasteOptions,
+  sourceRef,
   validateTasteProfile,
   type TasteKey,
   type TasteProfileData,
@@ -77,7 +79,12 @@ export function tasteResearchSchema(type: SatType) {
 export type TasteWine = { name: string; producer: string | null; type: string | null; region?: string | null; country?: string | null };
 
 /** Recherche + Prüfung. null = keine verlässlichen Angaben (keine passende Quelle, nichts belegt). */
-export async function researchTasteProfile(wine: TasteWine, year: number | null): Promise<TasteProfileData | null> {
+export async function researchTasteProfile(
+  wine: TasteWine,
+  year: number | null,
+  /** Angehängte Datenblätter genau dieses Jahrgangs (zusätzlich zur Websuche). */
+  documents: ResearchDocument[] = [],
+): Promise<TasteProfileData | null> {
   if (!wine.name) return null;
   const type = satTypeForWine(wine.type);
   const lexicon = aromaGroups(type);
@@ -90,14 +97,15 @@ Oberstes Ziel: kein falsches Profil. Lieber „${UNKNOWN}“ als geraten.
 - Übersetze klare Beschreibungen in die WSET-Begriffe, wenn das Zitat eindeutig ist: ${CLEAR_TERMS.map((t) => `„${t.example}“ → ${TASTE_FIELDS.find((f) => f.key === t.key)!.label} ${t.value}`).join(", ")}. Unklar → „${UNKNOWN}“. Nie das nächstbeste Aroma wählen.
 - Aromen nur aus diesem Lexikon (Gruppe → Aromen): ${JSON.stringify(Object.fromEntries(lexicon))}
 - Widersprechen sich Quellen klar bei einem Merkmal: Merkmal „${UNKNOWN}“ und Eintrag in contradictions.
-- style_summary: ein, höchstens zwei kurze Sätze auf Deutsch; food_pairing: kurze Begriffe. Beide nur aus den Quellen, je mit Beleg (field style_summary bzw. food_pairing).`,
+- style_summary: ein, höchstens zwei kurze Sätze auf Deutsch; food_pairing: kurze Begriffe. Beide nur aus den Quellen, je mit Beleg (field style_summary bzw. food_pairing).${documentsNote(documents)}`,
     toolName: "report_taste_profile",
+    documents,
     toolDescription: "Meldet das belegte Geschmacksprofil des Weins mit Quellen und Zitaten.",
     schema: tasteResearchSchema(type),
     maxSearches: 5,
   });
   if (!raw) return null;
-  return validateTasteProfile(raw as TasteResearchRaw, { type, year });
+  return validateTasteProfile(raw as TasteResearchRaw, { type, year, documents: documents.map((d) => ({ name: d.name, year: d.year })) });
 }
 
 /**
@@ -116,7 +124,7 @@ export async function saveResearchedProfile(db: Db, wineId: string, profile: Tas
       field: "taste_profile",
       current,
       suggested: profile,
-      note: sourceNote(profile.sources.map((s) => s.url)),
+      note: sourceNote(profile.sources.map(sourceRef)),
     });
     return r === "skipped" ? "unchanged" : "suggested";
   } catch (error) {

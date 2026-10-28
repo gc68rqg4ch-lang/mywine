@@ -138,11 +138,25 @@ export async function webResearch<T>(options: {
   toolDescription: string;
   schema: z.ZodType<T>;
   maxSearches: number;
+  /** Angehängte PDFs (Datenblätter) als zusätzliche Quelle – neben der Websuche. */
+  documents?: { name: string; base64: string }[];
 }): Promise<T | null> {
+  const text = `${options.prompt}\nRufe am Ende genau einmal ${options.toolName} auf.`;
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     {
       role: "user",
-      content: `${options.prompt}\nRufe am Ende genau einmal ${options.toolName} auf.`,
+      content: options.documents?.length
+        ? [
+            ...options.documents.map(
+              (d): Anthropic.Beta.BetaRequestDocumentBlock => ({
+                type: "document",
+                source: { type: "base64", media_type: "application/pdf", data: d.base64 },
+                title: d.name,
+              }),
+            ),
+            { type: "text", text },
+          ]
+        : text,
     },
   ];
   const inputSchema = toolInputSchema(options.schema);
@@ -186,8 +200,9 @@ export async function webResearch<T>(options: {
   return null;
 }
 
+/** Web-Quellen (http/https) und beigelegte Datenblätter („dokument:<Name>“). */
 export function cleanSources(sources: string[]) {
-  return sources.filter((s) => /^https?:\/\//.test(s)).slice(0, 5);
+  return sources.filter((s) => /^https?:\/\//.test(s) || /^dokument:.+/.test(s)).slice(0, 5);
 }
 
 /**
@@ -260,6 +275,10 @@ export type WineResearch = {
 export async function researchWineWeb(input: {
   wine: Pick<WineProposal, "name" | EnrichableField>;
   vintages: ResearchVintage[];
+  /** Angehängte Datenblätter der gesuchten Jahrgänge (zusätzlich zur Websuche). */
+  documents?: { name: string; year: number | null; base64: string }[];
+  /** Hinweis im Prompt zu den Datenblättern. */
+  documentsNote?: string;
 }): Promise<WineResearch | null> {
   if (!input.wine.name) return null;
   const label = (year: number | null) => (year == null ? "ohne Jahrgang (NV) – als 0 melden" : String(year));
@@ -272,8 +291,9 @@ Melde den Wert aus den Quellen, auch wenn er von unseren Angaben abweicht – wi
 Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech Sheet) des Produzenten, sonst seriöse Händler oder Fachpresse. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null bzw. leere Liste.
 - Für jeden genannten Jahrgang genau einen Eintrag in vintages.
 - Rebsorten: percent nur, wenn eine Quelle den Anteil für genau diesen Jahrgang belegt (Cuvées ändern sich); reinsortig = 100; sonst Rebsorten mit percent null. Internationale Schreibweise (Cabernet Sauvignon, Tempranillo …).
-- Land auf Deutsch.`,
+- Land auf Deutsch.${input.documentsNote ?? ""}`,
     toolName: "report_wine_details",
+    documents: input.documents,
     toolDescription: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
     schema: EnrichmentSchema,
     maxSearches: Math.min(8, 3 + input.vintages.length),

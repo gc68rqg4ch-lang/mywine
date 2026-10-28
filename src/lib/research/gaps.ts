@@ -53,6 +53,9 @@ export type GapVintage = {
   taste_profile_checked_at?: string | null;
 };
 
+/** Angehängtes PDF (wine_media, kind document) – nur Wein, Jahrgang und Zeitpunkt. */
+export type DocumentRow = { wine_id: string; vintage_year: number | null; created_at: string };
+
 /** Schlüssel „Wein|Jahrgang“ für vorhandene Geschmacksprofile. */
 export const profileKey = (wineId: string, year: number | null) => `${wineId}|${year ?? "nv"}`;
 export type GapShare = { wine_id: string; vintage_year: number | null; grape: string; percent: number | null; source: string };
@@ -130,11 +133,12 @@ export function gapCounts(list: WineGaps[]) {
 
 /**
  * Jahrgänge ohne Geschmacksprofil (neueste zuerst, NV zuletzt). Jahrgänge mit Profil nie;
- * mit skipRecent auch keine, die in den letzten 12 Monaten (ohne Fund) gesucht wurden.
+ * mit skipRecent auch keine, die in den letzten 12 Monaten (ohne Fund) gesucht wurden – ausser,
+ * seit dieser Suche wurde ein PDF für genau diesen Jahrgang angehängt.
  */
 export function tasteTargets(
   g: WineGaps,
-  data: { vintages: GapVintage[]; profiles: Set<string> },
+  data: { vintages: GapVintage[]; profiles: Set<string>; documents?: DocumentRow[] },
   options: { skipRecent: boolean; now?: number },
 ): (number | null)[] {
   const years = [...new Set(g.vintages.map((v) => v.year))];
@@ -142,6 +146,13 @@ export function tasteTargets(
     data.vintages.find((v) => v.wine_id === g.wine.id && v.vintage_year === y)?.taste_profile_checked_at ?? null;
   return years
     .filter((y) => !data.profiles.has(profileKey(g.wine.id, y)))
-    .filter((y) => !options.skipRecent || !withinRecentMonths(checked(y), options.now))
+    .filter((y) => !options.skipRecent || !withinRecentMonths(checked(y), options.now) || newDocumentSince(data.documents, g.wine.id, y, checked(y)))
     .sort((a, b) => (b ?? -1) - (a ?? -1));
+}
+
+/** Wurde nach der letzten Profilsuche ein PDF für diesen Wein und Jahrgang angehängt? */
+export function newDocumentSince(docs: DocumentRow[] | undefined, wineId: string, year: number | null, checkedAt: string | null) {
+  if (!checkedAt) return false;
+  const since = Date.parse(checkedAt);
+  return (docs ?? []).some((d) => d.wine_id === wineId && d.vintage_year === year && Date.parse(d.created_at) > since);
 }

@@ -5,6 +5,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
+import { scheduleTasteProfile } from "@/lib/research/taste-auto";
 
 type Db = SupabaseClient<Database>;
 
@@ -69,6 +70,7 @@ export const isPdfBytes = (bytes: Uint8Array) => bytes.length > 4 && String.from
 /**
  * Dokument eintragen (wine_media, kind document) – gemeinsam für App und Bot. Die Datei liegt
  * schon im Bucket; klappt der Eintrag nicht, wird sie wieder gelöscht (removeOnError).
+ * Mit Jahrgang und noch ohne Profil dafür: Profilsuche im Hintergrund (auch innerhalb von 12 Monaten).
  */
 export async function insertDocumentRow(
   db: Db,
@@ -93,6 +95,7 @@ export async function insertDocumentRow(
     await removeOnError(doc.path);
     throw error;
   }
+  if (doc.vintageYear != null) scheduleTasteProfile(doc.wineId, doc.vintageYear, { force: true });
   return { id: data.id, fileName };
 }
 
