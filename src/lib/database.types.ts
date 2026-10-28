@@ -1099,7 +1099,9 @@ export type Database = {
           alcohol: string | null
           aromas: Json
           body: string | null
+          confidence: string | null
           created_at: string
+          evidence: Json
           finish: string | null
           flavour_intensity: string | null
           food_pairing: string[]
@@ -1107,6 +1109,7 @@ export type Database = {
           researched_at: string | null
           source: string
           source_note: string | null
+          sources: Json
           style_summary: string | null
           sweetness: string | null
           tannin: string | null
@@ -1119,7 +1122,9 @@ export type Database = {
           alcohol?: string | null
           aromas?: Json
           body?: string | null
+          confidence?: string | null
           created_at?: string
+          evidence?: Json
           finish?: string | null
           flavour_intensity?: string | null
           food_pairing?: string[]
@@ -1127,6 +1132,7 @@ export type Database = {
           researched_at?: string | null
           source?: string
           source_note?: string | null
+          sources?: Json
           style_summary?: string | null
           sweetness?: string | null
           tannin?: string | null
@@ -1139,7 +1145,9 @@ export type Database = {
           alcohol?: string | null
           aromas?: Json
           body?: string | null
+          confidence?: string | null
           created_at?: string
+          evidence?: Json
           finish?: string | null
           flavour_intensity?: string | null
           food_pairing?: string[]
@@ -1147,6 +1155,7 @@ export type Database = {
           researched_at?: string | null
           source?: string
           source_note?: string | null
+          sources?: Json
           style_summary?: string | null
           sweetness?: string | null
           tannin?: string | null
