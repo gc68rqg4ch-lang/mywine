@@ -29,6 +29,13 @@ type Extracted = {
 export const isSavedTasted = (job: Pick<Job, "source" | "extracted">) =>
   job.source === "telegram_tasted" && Boolean((job.extracted as Extracted | null)?.encounterId);
 
+/**
+ * „📷 Neuer Wein“ wartet noch leer auf Foto oder Beschreibung (Schritt describe) – ohne Inhalt.
+ * Wird er durch das Foto/Album bzw. die Beschreibung abgelöst, ist das die Antwort darauf:
+ * still schliessen, keine Meldung „… lasse ich beiseite“.
+ */
+export const isEmptyNewWine = (job: Pick<Job, "extracted">) => (job.extracted as Extracted | null)?.step === "describe";
+
 /** Worum es im Ablauf ging – für „Den angefangenen Pintia 2019 lasse ich mal beiseite.“ */
 export function flowSubject(job: Pick<Job, "source" | "extracted">): FlowSubject {
   const x = (job.extracted ?? {}) as Extracted;
@@ -84,8 +91,10 @@ export async function expireStale(db: AdminClient, chatId: number, now = Date.no
     const done = await close(db, job, EXPIRED_ERROR);
     if (done && job.status === "needs_review") closed.push(done);
   }
-  if (closed.length) {
-    await sendMessage(chatId, closed.map((j) => T.laidAside(flowSubject(j))).join("\n"));
+  // Nur Abläufe mit Inhalt melden; ein leerer „Neuer Wein“ verfällt still.
+  const reported = closed.filter((j) => !isEmptyNewWine(j));
+  if (reported.length) {
+    await sendMessage(chatId, reported.map((j) => T.laidAside(flowSubject(j))).join("\n"));
   }
   return closed;
 }
@@ -111,8 +120,11 @@ export async function supersede(db: AdminClient, chatId: number, reason: Superse
     const done = await close(db, job, null);
     if (done) closed.push(done);
   }
-  if (closed.length) {
-    await sendMessage(chatId, closed.map((j) => T.laidAside(flowSubject(j))).join("\n"));
+  // Ein leerer „Neuer Wein“ (wartet nur auf Foto oder Beschreibung) wird durch genau diese
+  // Antwort abgelöst – still. Gemeldet wird nur, was wirklich Inhalt hatte (z. B. erkannter Wein).
+  const reported = closed.filter((j) => !isEmptyNewWine(j));
+  if (reported.length) {
+    await sendMessage(chatId, reported.map((j) => T.laidAside(flowSubject(j))).join("\n"));
   }
   return closed;
 }

@@ -6,7 +6,7 @@ import "server-only";
 
 import { cleanGiftFrom, giftInText } from "./gift";
 import { scheduleTasteProfile } from "@/lib/research/taste-auto";
-import { after } from "next/server";
+import { later } from "@/lib/later";
 import { apiProblemForBot } from "@/lib/ai/api-errors";
 import { savedWineKeyboard } from "@/lib/chat/menu";
 import type { Database } from "@/lib/database.types";
@@ -276,7 +276,7 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
       await sendMessage(chatId, textSummaryMessage(state), confirmKeyboard(job.id));
       return;
     case "saving":
-      after(() => saveJob(job, chatId));
+      later(() => saveJob(job, chatId));
       return;
   }
 }
@@ -284,7 +284,7 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
 /** [Ja] in der Zusammenfassung: speichern. */
 export async function confirmAndSave(db: AdminClient, job: IngestJob, chatId: number) {
   const saving = await advanceJob(db, job, "confirm", { step: "saving" });
-  if (saving) after(() => saveJob(saving, chatId));
+  if (saving) later(() => saveJob(saving, chatId));
   return Boolean(saving);
 }
 
@@ -554,10 +554,10 @@ export async function startTextIngest(chatId: number, text: string, jobId?: stri
   await sendMessage(chatId, T.readingText);
   await tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => undefined);
   const jobIdFinal = id;
-  after(() => processTextJob(jobIdFinal, chatId, text.slice(0, 2000)));
+  later(() => processTextJob(jobIdFinal, chatId, text.slice(0, 2000)));
 }
 
-/** Erkennung, Recherche und erste Rückfrage (läuft per after(); exportiert für Tests). */
+/** Erkennung, Recherche und erste Rückfrage (läuft per later(); exportiert für Tests). */
 export async function processTextJob(jobId: string, chatId: number, text: string) {
   const db = createAdminClient();
   try {

@@ -488,6 +488,9 @@ Foto zuordnen, Chat-Vorschläge mit Ja/Nein und Blättern im Menü:
   Menüs laufen 10 Minuten nach dem letzten Senden bzw. Weiterblättern ab (`date`/`edit_date` der Nachricht). Der
   DB-Job `expire-stale-ingest-jobs` (pg_cron, alle 2 Min., Ablauf nach 10 Min.) ist nur das Sicherheitsnetz;
   `cleanup-cron-run-details` löscht Cron-Protokolle älter als 7 Tage.
+- **„📷 Neuer Wein“ wartet leer** (Schritt `describe`): Ein Foto/Album bzw. eine Beschreibung ist die Antwort
+  darauf – der wartende Ablauf wird still geschlossen (Album) bzw. weiterverwendet (Text), ohne „Den angefangenen
+  neuen Wein lasse ich mal beiseite.“ (`isEmptyNewWine` in `pending.ts`). Gemeldet wird nur, was Inhalt hatte.
 - **Neues Anliegen verwirft den alten Ablauf:** neues Foto, Menü-Knopf, Befehl oder ein Text, der nicht als Antwort
   passt und nach einem neuen Wein aussieht („Ich habe die angefangene Erfassung von … verworfen.“). Ein schon
   gespeicherter Verkostet-Eintrag (nur noch Ergänzungen offen) wird still abgeschlossen.

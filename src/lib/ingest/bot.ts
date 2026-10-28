@@ -1,5 +1,6 @@
 import "server-only";
 
+import { later } from "@/lib/later";
 import { cleanGiftFrom } from "./gift";
 import { findDocumentAwaitingText, handleDocument, handleDocumentCallback, handleDocumentSearch, isDocumentCallback, isPdfDocument } from "./document";
 import { after } from "next/server";
@@ -217,7 +218,8 @@ async function handlePhoto(msg: TgMessage) {
     return;
   }
 
-  after(async () => {
+  // Nach der Antwort (after); ausserhalb einer Anfrage (Tests) über runLater().
+  later(async () => {
     await sleep(ALBUM_QUIET_MS + 1000);
     await processJob(jobId, chatId);
   });

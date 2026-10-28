@@ -102,9 +102,24 @@ export function installNet(net: Net) {
     const single = (headers.get("accept") ?? "").includes("vnd.pgrst.object");
     const wantsRows = (headers.get("prefer") ?? "").includes("return=representation") || method === "GET";
     if (method === "POST") {
-      const inserted = [body].flat().map((r: Row) => ({ id: `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...r }));
-      table.push(...inserted);
-      rows = inserted;
+      // Upsert (on_conflict): vorhandene Zeile mit gleichen Schlüsselwerten ignorieren bzw. ergänzen.
+      const conflict = url.searchParams.get("on_conflict")?.split(",");
+      const prefer = headers.get("prefer") ?? "";
+      const same = (r: Row) => (conflict ? table.find((t) => conflict.every((c) => t[c] === r[c])) : undefined);
+      const fresh: Row[] = [];
+      const touched: Row[] = [];
+      for (const r of [body].flat() as Row[]) {
+        const existing = same(r);
+        if (existing && prefer.includes("ignore-duplicates")) continue;
+        if (existing && prefer.includes("merge-duplicates")) {
+          Object.assign(existing, r, { updated_at: new Date().toISOString() });
+          touched.push(existing);
+          continue;
+        }
+        fresh.push({ id: `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...r });
+      }
+      table.push(...fresh);
+      rows = [...touched, ...fresh];
     } else if (method === "PATCH") {
       for (const r of rows) Object.assign(r, body, { updated_at: new Date().toISOString() });
     } else if (method === "DELETE") {
