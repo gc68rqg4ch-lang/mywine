@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { GroupedList } from "@/components/cellar/grouped-list";
-import { ListControls } from "@/components/cellar/list-controls";
-import { applyTypeFilter, readListParams } from "@/lib/cellar/list-params";
+import { ListView } from "@/components/cellar/list-view";
+import { readListState } from "@/lib/cellar/list-params";
+import { loadRatingsByWine } from "@/lib/cellar/load";
 import { WineCard } from "@/components/cellar/wine-card";
 import { FillGauge } from "@/components/fill-gauge";
 import { getMemberSession } from "@/lib/auth";
-import { BASE_GROUPINGS, currentYear, drinkBadges, groupWines, matchesQuery, originLabel } from "@/lib/cellar/overview";
+import { BASE_GROUPINGS, currentYear, drinkBadges, matchesQuery, originLabel } from "@/lib/cellar/overview";
 import { openTotals, toOpenEntry } from "@/lib/cellar/lists";
-import { formatBottleSize, formatDaysSince } from "@/lib/format";
+import { asWineType, formatBottleSize, formatDaysSince } from "@/lib/format";
 import { loadLabelPhotos } from "@/lib/media/store";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { loadGrapeNames } from "@/lib/grapes/store";
@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Offene Flaschen" };
 
 export default async function OpenBottlesPage({ searchParams }: PageProps<"/offen">) {
   const params = await searchParams;
-  const { query, groupBy, type } = readListParams(params, BASE_GROUPINGS);
+  const state = readListState(params, BASE_GROUPINGS);
   const { supabase } = await getMemberSession();
   const { filter } = await getLocationFilter();
 
@@ -27,7 +27,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
       supabase
         .from("cellar_overview")
         .select(
-          "inventory_item_id, wine_id, name, producer, country, region, type, grapes, vintage_year, purchase_price, fill_level_percent, date_opened, bottle_size_ml, drink_from_year, drink_until_year",
+          "inventory_item_id, wine_id, name, producer, country, region, type, grapes, vintage_year, purchase_price, fill_level_percent, date_opened, bottle_size_ml, drink_from_year, drink_until_year, vendor_name",
         )
         .eq("status", "open"),
       filter,
@@ -43,16 +43,18 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
 
   const rows = (data ?? []).flatMap((r) =>
     r.inventory_item_id && r.wine_id && r.name && r.producer
-      ? [{ ...r, inventory_item_id: r.inventory_item_id, wine_id: r.wine_id, name: r.name, producer: r.producer }]
+      ? [{ ...r, inventory_item_id: r.inventory_item_id, wine_id: r.wine_id, name: r.name, producer: r.producer, type: asWineType(r.type) }]
       : [],
   );
   const grapes = await loadGrapeNames(supabase, rows.map((r) => ({ id: r.wine_id, grapes: r.grapes })));
   const entries = rows.map((r) => toOpenEntry(r, grapes.get(r.wine_id) ?? []));
-  const visible = query ? entries.filter((e) => matchesQuery(e, query)) : entries;
-  const { types, filtered } = applyTypeFilter(visible, type);
+  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query)) : entries;
   const thisYear = currentYear();
-  const groups = groupWines(filtered, groupBy, thisYear);
-  const photo = await loadLabelPhotos(supabase, filtered.map((e) => e.wine_id));
+  const [ratings, photo] = await Promise.all([
+    loadRatingsByWine(supabase, visible.map((e) => e.wine_id)),
+    loadLabelPhotos(supabase, visible.map((e) => e.wine_id)),
+  ]);
+  const withRatings = visible.map((e) => ({ ...e, ratings: ratings.get(e.wine_id) ?? [] }));
   const totals = openTotals(entries);
   const hidden = withoutRoom.count ?? 0;
 
@@ -94,12 +96,12 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
         </div>
       </section>
 
-      <ListControls basePath="/offen" groupBy={groupBy} groupings={BASE_GROUPINGS} query={query} type={type} types={types} />
-
-      <GroupedList
-        groups={groups}
-        groupBy={groupBy}
-        query={query}
+      <ListView
+        basePath="/offen"
+        state={state}
+        groupings={BASE_GROUPINGS}
+        entries={withRatings}
+        year={thisYear}
         empty="Gerade ist keine Flasche offen."
         itemKey={({ wine }) => wine.itemId}
         renderItem={({ wine }) => (

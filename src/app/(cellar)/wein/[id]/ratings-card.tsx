@@ -98,7 +98,6 @@ export function PersonRatings({
           {error}
         </p>
       )}
-      <p className="muted small">Subjektiv, halbe Sterne. Pro Person gilt die neueste Bewertung; ältere bleiben als Verlauf erhalten.</p>
     </div>
   );
 }

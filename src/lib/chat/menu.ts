@@ -11,7 +11,7 @@ import {
   formatVintages,
   type DrinkStatus,
 } from "@/lib/cellar/overview";
-import { daysSince, formatBottleSize } from "@/lib/format";
+import { asWineType, daysSince, formatBottleSize } from "@/lib/format";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { answerCallback, editMessage, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
 import { appBaseUrl } from "@/lib/telegram/config";
@@ -464,7 +464,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
   return {
     name: wine.name,
     producer: wine.producer,
-    type: wine.type,
+    type: asWineType(wine.type),
     year,
     country: wine.country,
     region: wine.region,

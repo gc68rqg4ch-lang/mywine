@@ -35,7 +35,7 @@ test("Einteilung: über dem Höhepunkt, jetzt trinken, trinkreif, noch lagern, u
   assert.equal(drinkStatus(null, 2020, Y), "overdue");
   assert.equal(drinkStatusText(2024, 2032, Y), "Trinkreif · 2024–2032");
   assert.equal(drinkStatusText(null, null, Y), "Unbekannt · kein Trinkfenster");
-  assert.equal(drinkStatusHref("ready"), "/?gruppe=trinkreife&reife=ready#gruppe-trinkreife-ready");
+  assert.equal(drinkStatusHref("ready"), "/?gruppe=trinkreife&auf=ready#gruppe-trinkreife-ready");
 });
 
 const wine = (id: string, name: string): SummaryWine => ({

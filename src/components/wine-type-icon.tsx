@@ -1,4 +1,4 @@
-import { wineTypeLabel, type WineType } from "@/lib/format";
+import { asWineType, wineTypeLabel, type WineType } from "@/lib/format";
 
 // Einheitlich gezeichnete Trauben-Symbole je Weintyp (24×24-Raster).
 // Eine Traube = sechs Beeren (3-2-1), Stiel und Blatt. Jede Beere hat eine dunklere
@@ -6,11 +6,11 @@ import { wineTypeLabel, type WineType } from "@/lib/format";
 
 type Palette = { fill: [string, string]; stroke: string };
 
-const PALETTES: Record<"red" | "white" | "amber" | "orange" | "unknown", Palette> = {
+const PALETTES: Record<"red" | "white" | "amber" | "dark" | "unknown", Palette> = {
   red: { fill: ["#7a2246", "#9b3159"], stroke: "#3b0d20" },
   white: { fill: ["#c8d36b", "#b3c252"], stroke: "#6f7d26" },
   amber: { fill: ["#dc9a2e", "#c47f1f"], stroke: "#83500d" },
-  orange: { fill: ["#ea8b3c", "#d5722a"], stroke: "#934611" },
+  dark: { fill: ["#4a1730", "#5e1f3c"], stroke: "#22060f" },
   unknown: { fill: ["#b9afaa", "#a39893"], stroke: "#776e6a" },
 };
 
@@ -38,7 +38,7 @@ function Cluster({ palette, transform }: { palette: Palette; transform?: string 
   );
 }
 
-function paletteFor(type: WineType | null | undefined) {
+function paletteFor(type: WineType | null) {
   switch (type) {
     case "red":
       return PALETTES.red;
@@ -46,10 +46,9 @@ function paletteFor(type: WineType | null | undefined) {
     case "sparkling":
       return PALETTES.white;
     case "sweet":
-    case "fortified":
       return PALETTES.amber;
-    case "orange":
-      return PALETTES.orange;
+    case "fortified":
+      return PALETTES.dark;
     default:
       return PALETTES.unknown;
   }
@@ -60,13 +59,15 @@ export function WineTypeIcon({
   size = 22,
   withLabel = false,
 }: {
-  type: WineType | null | undefined;
+  /** Typ aus der DB (Unbekanntes → neutrale Traube). */
+  type: string | null | undefined;
   size?: number;
   withLabel?: boolean;
 }) {
-  const label = wineTypeLabel(type ?? null);
+  const t = asWineType(type);
+  const label = wineTypeLabel(t);
   let content;
-  if (type === "rose") {
+  if (t === "rose") {
     // Rosé: je eine rote und eine weisse Traube.
     content = (
       <>
@@ -74,7 +75,7 @@ export function WineTypeIcon({
         <Cluster palette={PALETTES.white} transform="translate(8.6 2.4) scale(0.7)" />
       </>
     );
-  } else if (type === "sparkling") {
+  } else if (t === "sparkling") {
     // Schaumwein: weisse Traube mit kleinen Perlen.
     content = (
       <>
@@ -86,8 +87,33 @@ export function WineTypeIcon({
         </g>
       </>
     );
+  } else if (t === "sweet") {
+    // Süsswein: goldene Traube mit Honigtropfen.
+    content = (
+      <>
+        <Cluster palette={PALETTES.amber} transform="translate(-1.2 2.6) scale(0.86)" />
+        <path
+          d="M20 3.2c1.4 2 2.2 3.3 2.2 4.4a2.2 2.2 0 0 1-4.4 0c0-1.1.8-2.4 2.2-4.4Z"
+          fill="#e8a922"
+          stroke="#9a6608"
+          strokeWidth="0.6"
+        />
+        <circle cx="19.4" cy="7.3" r="0.55" fill="#fff" opacity="0.6" />
+      </>
+    );
+  } else if (t === "fortified") {
+    // Likörwein: dunkle Traube mit kleinem Dessertglas.
+    content = (
+      <>
+        <Cluster palette={PALETTES.dark} transform="translate(-1.6 2.6) scale(0.86)" />
+        <g stroke="#5b3a1e" strokeWidth="0.7" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17.6 3.4h4.2l-.5 3a1.6 1.6 0 0 1-3.2 0Z" fill="#8a2d1f" />
+          <path d="M19.7 8v2.6M18.4 10.6h2.6" fill="none" />
+        </g>
+      </>
+    );
   } else {
-    content = <Cluster palette={paletteFor(type)} />;
+    content = <Cluster palette={paletteFor(t)} />;
   }
 
   return (

@@ -1,0 +1,116 @@
+// Filter der Listen (Bestand, Offen, Getrunken, Verkostet) – reine Funktionen.
+// Wein-Ebene: Land, Region, Rebsorte, Bewertung. Einheiten-Ebene (Jahrgang, Preisklasse,
+// Trinkreife, Händler): ein Eintrag behält nur passende Einheiten (z. B. nur die Flaschen
+// des passenden Jahrgangs) und fällt weg, wenn keine bleibt.
+
+import { TYPE_ORDER, typeOf, type ListFilters, type TypeFilter } from "./list-params";
+import { DRINK_STATUS_ORDER, PRICE_CLASSES, drinkStatus, sortVintages, type DrinkStatus, type Groupable, type GroupUnit } from "./overview";
+
+export type Filterable = Groupable & { ratings?: { person: string; rating: number }[] };
+
+const unitStatus = (u: GroupUnit, year: number) => drinkStatus(u.drink_from_year ?? null, u.drink_until_year ?? null, year);
+
+function unitFilterActive(f: ListFilters) {
+  return f.yearFrom != null || f.yearTo != null || f.priceClasses.length > 0 || f.drink.length > 0 || f.vendors.length > 0;
+}
+
+function unitMatches(u: GroupUnit, f: ListFilters, year: number) {
+  if (f.yearFrom != null && (u.vintage_year == null || u.vintage_year < f.yearFrom)) return false;
+  if (f.yearTo != null && (u.vintage_year == null || u.vintage_year > f.yearTo)) return false;
+  if (f.priceClasses.length && !(u.price_class != null && f.priceClasses.includes(u.price_class))) return false;
+  if (f.drink.length && !f.drink.includes(unitStatus(u, year))) return false;
+  // Ohne Händler fällt die Einheit bei aktivem Händler-Filter weg.
+  if (f.vendors.length && !(u.vendors ?? []).some((v) => f.vendors.includes(v))) return false;
+  return true;
+}
+
+function wineMatches(e: Filterable, f: ListFilters) {
+  if (f.countries.length && !(e.country != null && f.countries.includes(e.country))) return false;
+  if (f.regions.length && !(e.region != null && f.regions.includes(e.region))) return false;
+  if (f.grapes.length && !e.grapes.some((g) => f.grapes.includes(g))) return false;
+  if (f.minRating != null) {
+    const min = f.minRating;
+    const ratings = (e.ratings ?? []).filter((r) => f.ratingBy == null || r.person === f.ratingBy);
+    if (!ratings.some((r) => r.rating >= min)) return false;
+  }
+  return true;
+}
+
+/** Wendet alle Filter an; year = aktuelles Jahr (für die Trinkreife). */
+export function applyFilters<T extends Filterable>(entries: T[], f: ListFilters, year: number): T[] {
+  const units = unitFilterActive(f);
+  const out: T[] = [];
+  for (const e of entries) {
+    if (!wineMatches(e, f)) continue;
+    if (!units) {
+      out.push(e);
+      continue;
+    }
+    const kept = e.units.filter((u) => unitMatches(u, f, year));
+    if (!kept.some((u) => u.count > 0)) continue;
+    out.push({ ...e, units: kept, vintages: sortVintages([...new Set(kept.map((u) => u.vintage_year))]) });
+  }
+  return out;
+}
+
+export type FilterOptions = {
+  countries: string[];
+  /** Regionen – bei gewähltem Land nur dessen Regionen. */
+  regions: string[];
+  grapes: string[];
+  years: number[];
+  priceClasses: string[];
+  drink: DrinkStatus[];
+  persons: string[];
+  vendors: string[];
+};
+
+const sorted = (values: Iterable<string>) => [...new Set(values)].sort((a, b) => a.localeCompare(b, "de-CH"));
+
+/**
+ * Auswahl im Filterfeld: nur Werte, die in der Liste vorkommen; gewählte Werte bleiben
+ * immer sichtbar (sonst liessen sie sich nicht abwählen).
+ */
+export function filterOptions(entries: Filterable[], f: ListFilters, year: number): FilterOptions {
+  const units = entries.flatMap((e) => e.units.filter((u) => u.count > 0));
+  const inCountry = f.countries.length ? entries.filter((e) => e.country != null && f.countries.includes(e.country)) : entries;
+  const present = new Set(units.map((u) => unitStatus(u, year)));
+  return {
+    countries: sorted([...entries.flatMap((e) => (e.country ? [e.country] : [])), ...f.countries]),
+    regions: sorted([...inCountry.flatMap((e) => (e.region ? [e.region] : [])), ...f.regions]),
+    grapes: sorted([...entries.flatMap((e) => e.grapes), ...f.grapes]),
+    years: [...new Set(units.flatMap((u) => (u.vintage_year == null ? [] : [u.vintage_year])))].sort((a, b) => a - b),
+    priceClasses: PRICE_CLASSES.filter((c) => units.some((u) => u.price_class === c) || f.priceClasses.includes(c)),
+    drink: DRINK_STATUS_ORDER.filter((s) => present.has(s) || f.drink.includes(s)),
+    persons: sorted(entries.flatMap((e) => (e.ratings ?? []).map((r) => r.person))),
+    vendors: sorted([...units.flatMap((u) => u.vendors ?? []), ...f.vendors]),
+  };
+}
+
+/** Trinkfenster je Wein + Jahrgang an die Einheiten hängen (Getrunken, Verkostet). */
+export function withDrinkWindows<T extends Groupable>(
+  entries: T[],
+  windows: { wine_id: string; vintage_year: number | null; drink_from_year: number | null; drink_until_year: number | null }[],
+  wineId: (e: T) => string,
+): T[] {
+  const byKey = new Map(windows.map((w) => [`${w.wine_id}|${w.vintage_year}`, w]));
+  return entries.map((e) => ({
+    ...e,
+    units: e.units.map((u) => {
+      const w = byKey.get(`${wineId(e)}|${u.vintage_year}`);
+      return w ? { ...u, drink_from_year: w.drink_from_year, drink_until_year: w.drink_until_year } : u;
+    }),
+  }));
+}
+
+/**
+ * Anzahl je Weintyp für Knöpfe und Chips: Flaschen (Einheiten) bzw. Weine (Verkostet).
+ * Die sechs Typen immer, „Unbekannt“ nur, wenn vorhanden.
+ */
+export function typeCounts<T extends Filterable>(entries: T[], mode: "bottles" | "wines"): { type: TypeFilter; count: number }[] {
+  return TYPE_ORDER.map((type) => {
+    const list = entries.filter((e) => typeOf(e) === type);
+    const count = mode === "wines" ? list.length : list.reduce((s, e) => s + e.units.reduce((n, u) => n + u.count, 0), 0);
+    return { type, count };
+  }).filter((c) => c.type !== "unknown" || c.count > 0);
+}

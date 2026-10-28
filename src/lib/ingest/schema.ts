@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { Constants } from "@/lib/database.types";
+import { WINE_TYPES } from "@/lib/format";
 import { normalizeGrapeShares, type GrapeSource } from "@/lib/grapes/shares";
 
-const wineType = z.enum(Constants.public.Enums.wine_type);
+const wineType = z.enum(WINE_TYPES);
 
 export const GrapeShareSchema = z.object({
   grape: z.string().describe("Rebsorte, z. B. Tempranillo"),
@@ -20,7 +20,7 @@ export const WineProposalSchema = z.object({
   country: z.string().nullable().describe("Land auf Deutsch, z. B. Spanien, Frankreich, Schweiz, USA"),
   region: z.string().nullable().describe("Weinbauregion, z. B. Rioja, Bordeaux, California"),
   appellation: z.string().nullable().describe("Herkunftsbezeichnung/Appellation, z. B. Napa Valley, Priorat DOQ"),
-  type: wineType.nullable().describe("red, white, rose, sparkling, sweet, fortified oder orange"),
+  type: wineType.nullable().describe("red, white, rose, sparkling, sweet oder fortified"),
   grape_shares: z
     .array(GrapeShareSchema)
     .describe("Rebsorten mit Anteil; percent nur, wenn der Anteil angegeben ist, sonst null"),

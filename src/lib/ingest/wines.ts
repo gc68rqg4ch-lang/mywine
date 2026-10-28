@@ -2,6 +2,7 @@ import "server-only";
 
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { Tables } from "@/lib/database.types";
+import { asWineType } from "@/lib/format";
 import { grapeNames, type StorageRoom, type WineProposal } from "./schema";
 
 type Wine = Tables<"wines">;
@@ -37,7 +38,7 @@ export function mergeWithKnownWine(proposal: WineProposal, wine: Wine): WineProp
     country: wine.country ?? proposal.country,
     region: wine.region ?? proposal.region,
     appellation: wine.appellation ?? proposal.appellation,
-    type: wine.type ?? proposal.type,
+    type: asWineType(wine.type) ?? proposal.type,
     alcohol_content: wine.alcohol_content ?? proposal.alcohol_content,
   };
 }

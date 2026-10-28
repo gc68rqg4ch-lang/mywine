@@ -1,21 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { GroupedList } from "@/components/cellar/grouped-list";
-import { ListControls } from "@/components/cellar/list-controls";
-import { applyTypeFilter, readListParams } from "@/lib/cellar/list-params";
+import { ListView } from "@/components/cellar/list-view";
+import { withDrinkWindows } from "@/lib/cellar/filters";
+import { readListState } from "@/lib/cellar/list-params";
+import { loadDrinkWindows } from "@/lib/cellar/load";
 import { BottleCount, WineCard } from "@/components/cellar/wine-card";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
 import {
   BASE_GROUPINGS,
+  currentYear,
   formatVintages,
-  groupWines,
   matchesQuery,
   originLabel,
   type GroupBy,
 } from "@/lib/cellar/overview";
 import { buildDrunkEntries, drunkTotals, type DrunkBottle, type DrunkEntry, type RatingRow } from "@/lib/cellar/lists";
-import { formatDate, formatStarNumber, todayIso } from "@/lib/format";
+import { asWineType, formatDate, formatStarNumber, todayIso } from "@/lib/format";
 import { loadLabelPhotos } from "@/lib/media/store";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { loadGrapeNames } from "@/lib/grapes/store";
@@ -32,7 +33,7 @@ function ratingsText(e: DrunkEntry) {
 
 export default async function DrunkBottlesPage({ searchParams }: PageProps<"/getrunken">) {
   const params = await searchParams;
-  const { query, groupBy, type } = readListParams(params, GROUPINGS);
+  const state = readListState(params, GROUPINGS);
   const { supabase } = await getMemberSession();
   const { filter } = await getLocationFilter();
   const year = todayIso().slice(0, 4);
@@ -42,7 +43,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
       supabase
         .from("inventory_items")
         .select(
-          "id, wine_id, vintage_year, quantity, purchase_price, drunk_at, personal_wine_rating, wine:wines(name, producer, country, region, type, grapes)",
+          "id, wine_id, vintage_year, quantity, purchase_price, drunk_at, personal_wine_rating, vendor:vendors(name), wine:wines(name, producer, country, region, type, grapes)",
         )
         .eq("status", "drunk"),
       filter,
@@ -65,7 +66,8 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
             purchase_price: r.purchase_price,
             drunk_at: r.drunk_at,
             legacy_rating: r.personal_wine_rating,
-            wine: { name: r.wine.name, producer: r.wine.producer, country: r.wine.country, region: r.wine.region, type: r.wine.type },
+            vendor_name: r.vendor?.name ?? null,
+            wine: { name: r.wine.name, producer: r.wine.producer, country: r.wine.country, region: r.wine.region, type: asWineType(r.wine.type) },
           },
         ]
       : [],
@@ -87,10 +89,13 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
   }
 
   const entries = buildDrunkEntries(bottles, grapes, ratingsByWine, (persons.data ?? []).map((p) => p.name));
-  const visible = query ? entries.filter((e) => matchesQuery(e, query)) : entries;
-  const { types, filtered } = applyTypeFilter(visible, type);
-  const groups = groupWines(filtered, groupBy);
-  const photo = await loadLabelPhotos(supabase, filtered.map((e) => e.wine_id));
+  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query)) : entries;
+  const [windows, photo] = await Promise.all([
+    loadDrinkWindows(supabase, wineIds),
+    loadLabelPhotos(supabase, visible.map((e) => e.wine_id)),
+  ]);
+  // Trinkfenster je Jahrgang für den Filter „Trinkreife“.
+  const filterable = withDrinkWindows(visible, windows, (e) => e.wine_id);
   const totals = drunkTotals(entries, year);
   const hidden = withoutRoom.count ?? 0;
 
@@ -132,12 +137,12 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
         </div>
       </section>
 
-      <ListControls basePath="/getrunken" groupBy={groupBy} groupings={GROUPINGS} query={query} type={type} types={types} />
-
-      <GroupedList
-        groups={groups}
-        groupBy={groupBy}
-        query={query}
+      <ListView
+        basePath="/getrunken"
+        state={state}
+        groupings={GROUPINGS}
+        entries={filterable}
+        year={currentYear()}
         empty="Noch keine Flaschen ausgetrunken."
         itemKey={({ wine }) => wine.wine_id}
         renderItem={({ wine, bottles, vintages }) => (

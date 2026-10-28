@@ -46,7 +46,7 @@ Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. 
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
 - name: der Weinname ohne Produzent und ohne Jahrgang (z. B. "Reserva", "Les Pagodes de Cos"). Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist.
 - country: auf Deutsch (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
-- type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira), orange.
+- type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira).
 - bottle_size_ml: aus der Füllmenge (75 cl = 750, 37,5 cl = 375, 1,5 l = 1500).
 - grape_shares: Rebsorten, die auf dem Etikett stehen; percent nur, wenn der Anteil aufgedruckt ist (z. B. "85 % Tempranillo"), sonst null. Bei reinsortigen Weinen ("100 % Merlot" oder Sortenbezeichnung wie "Pinot Noir") ist percent 100.
 - vintage_certain: true nur, wenn der Jahrgang klar auf dem Etikett steht. Fehlt er oder ist er unleserlich, ist vintage_year null bzw. vintage_certain false – rate keinen Jahrgang.

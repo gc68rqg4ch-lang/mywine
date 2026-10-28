@@ -35,6 +35,7 @@ export function toOpenEntry(
     bottle_size_ml: number | null;
     drink_from_year?: number | null;
     drink_until_year?: number | null;
+    vendor_name?: string | null;
   },
   grapes: string[],
 ): OpenEntry {
@@ -55,6 +56,7 @@ export function toOpenEntry(
         count: 1,
         drink_from_year: r.drink_from_year ?? null,
         drink_until_year: r.drink_until_year ?? null,
+        vendors: r.vendor_name ? [r.vendor_name] : [],
       },
     ],
     fill: r.fill_level_percent,
@@ -89,6 +91,7 @@ export type DrunkBottle = {
   drunk_at: string | null;
   /** Alte Bewertung aus dem Import (ohne Person). */
   legacy_rating: number | null;
+  vendor_name?: string | null;
   wine: WineInfo;
 };
 
@@ -142,6 +145,7 @@ export function buildDrunkEntries(
       price_class: priceClass(b.purchase_price),
       count: b.quantity,
       drunk_on: zurichDate(b.drunk_at),
+      vendors: b.vendor_name ? [b.vendor_name] : [],
     }));
     const latest = [...list].sort((a, b) => (b.drunk_at ?? "").localeCompare(a.drunk_at ?? ""))[0];
     const ratings = latestByPerson(ratingsByWine.get(wineId) ?? []).sort(

@@ -15,7 +15,7 @@
 //   H:<subj>:<l>              Nachrecherchieren (Abweichungen danach mit [Ja] [Nein])
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
-import { formatStarNumber, type WineType } from "@/lib/format";
+import { asWineType, formatStarNumber } from "@/lib/format";
 import type { TgInlineButton, TgInlineKeyboard, TgReplyKeyboard } from "@/lib/telegram/types";
 
 export const PAGE_SIZE = 8;
@@ -23,22 +23,22 @@ export const PAGE_SIZE = 8;
 // ---------------------------------------------------------------------------
 // Weintypen
 
-export type TypeCode = "r" | "w" | "p" | "s" | "y" | "o" | "u";
+export type TypeCode = "r" | "w" | "p" | "s" | "y" | "f" | "u";
 
-export const TYPE_CODES: TypeCode[] = ["r", "w", "p", "s", "y", "o", "u"];
+export const TYPE_CODES: TypeCode[] = ["r", "w", "p", "s", "y", "f", "u"];
 
 const TYPE_INFO: Record<TypeCode, { emoji: string; label: string }> = {
   r: { emoji: "🍷", label: "Rot" },
   w: { emoji: "🥂", label: "Weiss" },
   p: { emoji: "🌸", label: "Rosé" },
   s: { emoji: "🍾", label: "Schaumwein" },
-  y: { emoji: "🍯", label: "Süss/Likör" },
-  o: { emoji: "🟠", label: "Orange" },
+  y: { emoji: "🍯", label: "Süsswein" },
+  f: { emoji: "🥃", label: "Likörwein" },
   u: { emoji: "🍇", label: "Unbekannt" },
 };
 
-export function typeCode(type: WineType | null | undefined): TypeCode {
-  switch (type) {
+export function typeCode(type: string | null | undefined): TypeCode {
+  switch (asWineType(type)) {
     case "red":
       return "r";
     case "white":
@@ -48,16 +48,15 @@ export function typeCode(type: WineType | null | undefined): TypeCode {
     case "sparkling":
       return "s";
     case "sweet":
-    case "fortified":
       return "y";
-    case "orange":
-      return "o";
+    case "fortified":
+      return "f";
     default:
       return "u";
   }
 }
 
-export const typeEmoji = (type: WineType | null | undefined) => TYPE_INFO[typeCode(type)].emoji;
+export const typeEmoji = (type: string | null | undefined) => TYPE_INFO[typeCode(type)].emoji;
 export const typeInfo = (code: TypeCode) => TYPE_INFO[code];
 
 // ---------------------------------------------------------------------------
@@ -306,7 +305,7 @@ export type OpenBottleRow = {
   producer: string;
   name: string;
   year: number | null;
-  type: WineType | null;
+  type: string | null;
   fill: number | null;
   days: number | null;
   room: string | null;

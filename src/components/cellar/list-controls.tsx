@@ -1,87 +1,63 @@
 import Link from "next/link";
-import { WineTypeIcon } from "@/components/wine-type-icon";
+import { FilterPanel } from "@/components/cellar/filter-panel";
+import { TypeChips, type TypeCount } from "@/components/cellar/type-tabs";
+import type { FilterOptions } from "@/lib/cellar/filters";
+import { listHref, listSearchParams, type ListState } from "@/lib/cellar/list-params";
 import { GROUP_BY_LABELS, type GroupBy } from "@/lib/cellar/overview";
-import { TYPE_ORDER, type TypeFilter } from "@/lib/cellar/list-params";
-import { WINE_TYPE_LABELS } from "@/lib/format";
-
-type ListState = { groupBy: GroupBy; query: string; type: TypeFilter | null };
 
 /**
- * Suche, Gruppierung und – ausser bei „Weintyp“ – der Weintyp-Filter.
- * Alles läuft über die URL (Links und ein GET-Formular).
+ * Suche mit Filter-Knopf, Gruppierung und – ausser bei „Weintyp“ – der Weintyp-Filter.
+ * Alles läuft über die URL (Links und ein GET-Formular), damit „Zurück“ den Zustand behält.
  */
 export function ListControls({
   basePath,
-  groupBy,
+  state,
   groupings,
-  query,
-  type,
-  types,
+  typeCounts,
+  options,
   placeholder = "Suche: Wein, Produzent, Region, Traube, Jahrgang …",
 }: {
   basePath: string;
-  groupBy: GroupBy;
+  state: ListState;
   groupings: GroupBy[];
-  query: string;
-  /** Gewählter Typ (null = alle). */
-  type: TypeFilter | null;
-  /** Typen, die in der aktuellen Liste (nach Lagerort und Suche) vorkommen. */
-  types: TypeFilter[];
+  typeCounts: TypeCount[];
+  options: FilterOptions;
   placeholder?: string;
 }) {
-  const href = (next: Partial<ListState>) => {
-    const s: ListState = { groupBy, query, type, ...next };
-    const p = new URLSearchParams();
-    if (s.groupBy !== "typ") p.set("gruppe", s.groupBy);
-    if (s.query) p.set("q", s.query);
-    if (s.type && s.groupBy !== "typ") p.set("typ", s.type);
-    const qs = p.toString();
-    return qs ? `${basePath}?${qs}` : basePath;
-  };
-  const shownTypes = TYPE_ORDER.filter((t) => types.includes(t) || t === type);
+  // Beim Suchen bleiben Gruppierung, Typ und Filter erhalten.
+  const keep = [...listSearchParams({ ...state, query: "", open: [] }).entries()];
 
   return (
     <div className="controls">
-      <form className="search" role="search" action={basePath}>
-        {groupBy !== "typ" && <input type="hidden" name="gruppe" value={groupBy} />}
-        {type && groupBy !== "typ" && <input type="hidden" name="typ" value={type} />}
-        <input type="search" name="q" defaultValue={query} placeholder={placeholder} aria-label="Suche" />
-        {query && (
-          <Link href={href({ query: "" })} className="btn btn-ghost" aria-label="Suche zurücksetzen">
-            ✕
-          </Link>
-        )}
-      </form>
+      <div className="search-row">
+        <form className="search" role="search" action={basePath}>
+          {keep.map(([name, value], i) => (
+            <input key={`${name}:${i}`} type="hidden" name={name} value={value} />
+          ))}
+          <input type="search" name="q" defaultValue={state.query} placeholder={placeholder} aria-label="Suche" />
+          {state.query && (
+            <Link href={listHref(basePath, state, { query: "", open: [] })} className="btn btn-ghost" aria-label="Suche zurücksetzen">
+              ✕
+            </Link>
+          )}
+        </form>
+        <FilterPanel basePath={basePath} state={state} options={options} />
+      </div>
       <nav className="segmented" aria-label="Gruppieren nach">
         {groupings.map((g) => (
           <Link
             key={g}
-            href={href({ groupBy: g })}
-            className={g === groupBy ? "segment active" : "segment"}
-            aria-current={g === groupBy ? "page" : undefined}
+            // Neue Gruppierung: Typ zurücksetzen (Weintyp → Rot, sonst alle); Suche und Filter bleiben.
+            href={listHref(basePath, state, { groupBy: g, open: [], type: null })}
+            className={g === state.groupBy ? "segment active" : "segment"}
+            aria-current={g === state.groupBy ? "page" : undefined}
+            scroll={false}
           >
             {GROUP_BY_LABELS[g]}
           </Link>
         ))}
       </nav>
-      {groupBy !== "typ" && shownTypes.length > 1 && (
-        <nav className="type-filter" aria-label="Weintyp">
-          <Link href={href({ type: null })} className={type ? "chip" : "chip active"} aria-current={type ? undefined : "page"}>
-            Alle
-          </Link>
-          {shownTypes.map((t) => (
-            <Link
-              key={t}
-              href={href({ type: t })}
-              className={t === type ? "chip active" : "chip"}
-              aria-current={t === type ? "page" : undefined}
-            >
-              <WineTypeIcon type={t === "unknown" ? null : t} size={18} />
-              {t === "unknown" ? "Unbekannt" : WINE_TYPE_LABELS[t]}
-            </Link>
-          ))}
-        </nav>
-      )}
+      {state.groupBy !== "typ" && <TypeChips basePath={basePath} state={state} counts={typeCounts} />}
     </div>
   );
 }

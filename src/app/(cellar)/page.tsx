@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { GroupedList } from "@/components/cellar/grouped-list";
-import { ListControls } from "@/components/cellar/list-controls";
-import { applyTypeFilter, readListParams } from "@/lib/cellar/list-params";
+import { ListView } from "@/components/cellar/list-view";
+import { readListState } from "@/lib/cellar/list-params";
+import { loadRatingsByWine } from "@/lib/cellar/load";
 import { BottleCount, WineCard } from "@/components/cellar/wine-card";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
@@ -17,12 +17,11 @@ import {
   drinkCounts,
   drinkStatusHref,
   formatVintages,
-  groupWines,
   matchesQuery,
-  isDrinkStatus,
   originLabel,
   toSummaryWine,
   toVintageRow,
+  unitKey,
   type LocationFilter,
 } from "@/lib/cellar/overview";
 import { daysSince, formatMoney, todayIso } from "@/lib/format";
@@ -43,9 +42,7 @@ function storagePattern(filter: NonNullable<LocationFilter>) {
 
 export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   const params = await searchParams;
-  const { query, groupBy, type } = readListParams(params, BASE_GROUPINGS);
-  // ?reife=…: von einem Trinkreife-Status – diese Gruppe aufklappen.
-  const openKey = groupBy === "trinkreife" && isDrinkStatus(params.reife) ? params.reife : null;
+  const state = readListState(params, BASE_GROUPINGS);
 
   const { supabase } = await getMemberSession();
   const { filter, selected } = await getLocationFilter();
@@ -65,7 +62,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
     withLocation(
       supabase
         .from("cellar_overview")
-        .select("inventory_item_id, status, stock_value, stock_value_regular, date_opened, name, vintage_year, type")
+        .select("inventory_item_id, wine_id, status, stock_value, stock_value_regular, date_opened, name, vintage_year, type, bottle_size_ml, vendor_name")
         .in("status", ["sealed", "open"]),
       filter,
     ),
@@ -73,16 +70,26 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   ]);
   for (const r of [summary, vintageRows, items, purchases]) if (r.error) throw r.error;
 
+  // Händler der ungeöffneten Flaschen je Wein, Jahrgang und Grösse (Filter „Händler“).
+  const vendors = new Map<string, string[]>();
+  for (const i of items.data ?? []) {
+    if (i.status !== "sealed" || !i.wine_id || !i.vendor_name) continue;
+    const key = unitKey(i.wine_id, i.vintage_year, i.bottle_size_ml);
+    vendors.set(key, [...new Set([...(vendors.get(key) ?? []), i.vendor_name])]);
+  }
   const wines = buildCellarWines(
     (summary.data ?? []).map(toSummaryWine).filter(nonNull),
     (vintageRows.data ?? []).map((r) => toVintageRow(r, thisYear)).filter(nonNull),
     filter,
+    vendors,
   );
   const inStock = wines.filter((w) => w.sealed > 0);
-  const visible = query ? inStock.filter((w) => matchesQuery(w, query)) : inStock;
-  const { types, filtered } = applyTypeFilter(visible, type);
-  const groups = groupWines(filtered, groupBy, thisYear);
-  const photo = await loadLabelPhotos(supabase, filtered.map((w) => w.wine_id));
+  const visible = state.query ? inStock.filter((w) => matchesQuery(w, state.query)) : inStock;
+  const [ratings, photo] = await Promise.all([
+    loadRatingsByWine(supabase, visible.map((w) => w.wine_id)),
+    loadLabelPhotos(supabase, visible.map((w) => w.wine_id)),
+  ]);
+  const entries = visible.map((w) => ({ ...w, ratings: ratings.get(w.wine_id) ?? [] }));
 
   const totals = cellarTotals(wines);
   const drink = drinkCounts(wines);
@@ -163,13 +170,12 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
         </div>
       </section>
 
-      <ListControls basePath="/" groupBy={groupBy} groupings={BASE_GROUPINGS} query={query} type={type} types={types} />
-
-      <GroupedList
-        groups={groups}
-        groupBy={groupBy}
-        query={query}
-        openKey={openKey}
+      <ListView
+        basePath="/"
+        state={state}
+        groupings={BASE_GROUPINGS}
+        entries={entries}
+        year={thisYear}
         empty="Keine ungeöffneten Flaschen hier."
         itemKey={({ wine }) => wine.wine_id}
         renderItem={({ wine, bottles, vintages }) => (
@@ -184,7 +190,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
             aside={
               <BottleCount
                 bottles={bottles}
-                note={wine.open > 0 && groupBy !== "jahrgang" && groupBy !== "preis" && groupBy !== "trinkreife" ? `+${wine.open} offen` : null}
+                note={wine.open > 0 && ["typ", "land", "rebsorte"].includes(state.groupBy) ? `+${wine.open} offen` : null}
               />
             }
           />

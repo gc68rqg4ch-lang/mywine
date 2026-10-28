@@ -3,7 +3,7 @@
 // cellar_wines (Wein + Jahrgang + Flaschengrösse mit Aufteilung nach Lagerort).
 
 import type { Json, Tables } from "@/lib/database.types";
-import { WINE_TYPE_LABELS, todayIso, type WineType } from "@/lib/format";
+import { WINE_TYPE_LABELS, asWineType, todayIso, type WineType } from "@/lib/format";
 
 export type LocationFilter = { house: string | null; room: string } | null;
 
@@ -81,7 +81,7 @@ export function drinkStatusText(from: number | null, until: number | null, year:
 
 /** Bestand nach Trinkreife gruppiert, diese Gruppe aufgeklappt und angesprungen. */
 export function drinkStatusHref(status: DrinkStatus) {
-  return `/?gruppe=trinkreife&reife=${status}#${groupAnchor("trinkreife", status)}`;
+  return `/?gruppe=trinkreife&auf=${status}#${groupAnchor("trinkreife", status)}`;
 }
 
 export function isDrinkStatus(value: unknown): value is DrinkStatus {
@@ -188,7 +188,7 @@ export function toSummaryWine(
     producer: r.producer,
     country: r.country,
     region: r.region,
-    type: r.type,
+    type: asWineType(r.type),
     grapes: r.grapes ?? [],
   };
 }
@@ -233,6 +233,8 @@ export type GroupUnit = {
   drunk_on?: string | null;
   /** Ort (nur Verkostet). */
   place?: string | null;
+  /** Händler der Flaschen dieser Einheit (Filter „Händler“). */
+  vendors?: string[];
   /** Trinkfenster des Jahrgangs (Gruppierung „Trinkreife“). */
   drink_from_year?: number | null;
   drink_until_year?: number | null;
@@ -259,10 +261,15 @@ export type CellarWine = SummaryWine & Groupable & {
   rows: CellarVintage[];
 };
 
+/** Schlüssel für Händler je Wein, Jahrgang und Flaschengrösse (Bestand). */
+export const unitKey = (wineId: string, year: number | null, sizeMl: number | null) => `${wineId}|${year ?? ""}|${sizeMl ?? ""}`;
+
 export function buildCellarWines(
   wines: SummaryWine[],
   rows: VintageRow[],
   filter: LocationFilter,
+  /** Händler der ungeöffneten Flaschen je unitKey (im gewählten Lagerort). */
+  vendors: Map<string, string[]> = new Map(),
 ): CellarWine[] {
   const byWine = new Map<string, CellarVintage[]>();
   for (const row of rows) {
@@ -292,6 +299,7 @@ export function buildCellarWines(
           count: r.sealed,
           drink_from_year: r.drink_from_year,
           drink_until_year: r.drink_until_year,
+          vendors: vendors.get(unitKey(r.wine_id, r.vintage_year, r.bottle_size_ml)) ?? [],
         })),
       rows: wineRows,
     });
@@ -358,7 +366,7 @@ export type WineGroup<T extends Groupable = CellarWine> = {
 };
 
 const TYPE_ORDER: (WineType | "unknown")[] = [
-  "red", "white", "rose", "sparkling", "sweet", "fortified", "orange", "unknown",
+  "red", "white", "rose", "sparkling", "sweet", "fortified", "unknown",
 ];
 
 const MONTHS = [

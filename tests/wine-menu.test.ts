@@ -26,7 +26,7 @@ const NEW = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const PM = "86c222d0-3a8c-4d5f-9564-f5654769ecd6", PS = "c7690541-4e68-4051-aa8f-6a2920fea55b";
 
 const subjects = [{ kind: "item", itemId: I1 } as const, { kind: "vintage", wineId: W1, year: 2022 } as const, { kind: "vintage", wineId: W1, year: null } as const];
-const lists = [{ kind: "open" }, { kind: "ready" }, { kind: "stock" }, { kind: "type", code: "y" }, { kind: "none" }] as const;
+const lists = [{ kind: "open" }, { kind: "ready" }, { kind: "stock" }, { kind: "type", code: "f" }, { kind: "none" }] as const;
 const actions: MenuAction[] = [];
 for (const back of lists) {
   actions.push({ op: "list", list: back, offset: 0 }, { op: "list", list: back, offset: 16 });
@@ -53,7 +53,9 @@ for (const bad of ["L:x", "O:" + I1, "G:" + I1 + ":9:o", "S:o" + I1 + ":c7690541
 }
 assert.equal(formatStars(4.5), "4½"); assert.equal(formatStars(1), "1"); assert.equal(formatStars(0.5), "½");
 assert.equal(menuKeyFor("🍷 Offen"), "open"); assert.equal(menuKeyFor("📷 Neuer Wein"), "newWine"); assert.equal(menuKeyFor("Offen"), null);
-assert.equal(typeCode("fortified"), "y"); assert.equal(typeCode(null), "u");
+assert.equal(typeCode("sweet"), "y"); assert.equal(typeCode("fortified"), "f"); assert.equal(typeCode(null), "u");
+// Orange gibt es nicht mehr (auch nicht aus alten DB-Werten): neutrale Traube.
+assert.equal(typeCode("orange"), "u"); assert.equal(decodeMenu("L:to"), null);
 assert.deepEqual(
   shortNames([
     { producer: "A", name: "Cab", year: 2021, room: "K" }, { producer: "B", name: "Cab", year: 2021, room: "K" },

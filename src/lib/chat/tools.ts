@@ -12,7 +12,7 @@ import {
   toVintageRow,
   type CellarWine,
 } from "@/lib/cellar/overview";
-import { daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
+import { WINE_TYPES, daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { Edit, EditPreview } from "@/lib/edit/types";
@@ -26,7 +26,6 @@ export type PendingProposal =
   /** Bearbeitung über das gemeinsame Modul (liegt bis zur Antwort in ingest_jobs). */
   | { edit: Edit; preview: EditPreview; text: string };
 
-const WINE_TYPES = ["red", "white", "rose", "sparkling", "sweet", "fortified", "orange"] as const;
 const DRINK_STATUSES = ["overdue", "now", "ready", "wait", "unknown"] as const;
 
 const nonNull = <T,>(v: T | null): v is T => v != null;

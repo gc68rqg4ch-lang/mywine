@@ -1,17 +1,18 @@
 import { Fragment, type ReactNode } from "react";
+import { GroupDetails } from "@/components/cellar/group-details";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { groupAnchor, type GroupBy, type GroupItem, type Groupable, type WineGroup } from "@/lib/cellar/overview";
 
 /**
- * Einklappbare Gruppen mit Trauben-Symbol bzw. Flagge und Flaschenzahl. Beim Laden
- * zugeklappt; bei aktiver Suche sind nur Gruppen mit Treffern da – die gehen auf.
- * openKey: diese Gruppe ist aufgeklappt (Sprungziel über groupAnchor, z. B. aus der Trinkreife).
+ * Einklappbare Gruppen mit Trauben-Symbol bzw. Flagge und Zahl. Aufgeklappt sind die Gruppen
+ * aus der URL (?auf=…, z. B. nach „Zurück“ oder einem Tipp auf die Trinkreife); bei aktiver
+ * Suche sind nur Gruppen mit Treffern da – die gehen alle auf.
  */
 export function GroupedList<T extends Groupable>({
   groups,
   groupBy,
   query,
-  openKey,
+  openKeys = [],
   countLabel = (n) => `${n} Fl.`,
   empty,
   itemKey,
@@ -20,7 +21,7 @@ export function GroupedList<T extends Groupable>({
   groups: WineGroup<T>[];
   groupBy: GroupBy;
   query: string;
-  openKey?: string | null;
+  openKeys?: string[];
   /** Zahl im Gruppenkopf: Flaschen (Standard) bzw. z. B. Verkostungen. */
   countLabel?: (n: number) => string;
   empty: string;
@@ -30,7 +31,7 @@ export function GroupedList<T extends Groupable>({
   if (groups.length === 0) return <p className="empty">{query ? "Keine Weine passen zur Suche." : empty}</p>;
 
   const list = (items: GroupItem<T>[]) => (
-    <ul className="list">
+    <ul className="list list-cols">
       {items.map((item) => (
         <Fragment key={itemKey(item)}>{renderItem(item)}</Fragment>
       ))}
@@ -40,11 +41,11 @@ export function GroupedList<T extends Groupable>({
   return (
     <div className="groups">
       {groups.map((group) => (
-        <details
-          key={`${groupBy}:${group.key || "none"}:${query}:${openKey ?? ""}`}
+        <GroupDetails
+          key={`${groupBy}:${group.key || "none"}:${query}:${openKeys.join("|")}`}
           id={groupAnchor(groupBy, group.key)}
-          className="group"
-          open={query !== "" || (openKey != null && group.key === openKey)}
+          groupKey={group.key}
+          initialOpen={query !== "" || openKeys.includes(group.key)}
         >
           <summary>
             {groupBy === "typ" && <WineTypeIcon type={group.wineType ?? null} size={24} />}
@@ -67,7 +68,7 @@ export function GroupedList<T extends Groupable>({
                 </section>
               ))
             : list(group.items)}
-        </details>
+        </GroupDetails>
       ))}
     </div>
   );

@@ -6,6 +6,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
+import { asWineType } from "@/lib/format";
 import { formatShares, hasAnyPercent } from "@/lib/grapes/shares";
 import { replaceGrapeShares } from "@/lib/grapes/store";
 import { researchWineWeb } from "@/lib/ingest/recognize";
@@ -79,7 +80,7 @@ export async function researchAndFillWine(db: Db, wineId: string, scope: Researc
       country: wine.country,
       region: wine.region,
       appellation: wine.appellation,
-      type: wine.type as Database["public"]["Enums"]["wine_type"] | null,
+      type: asWineType(wine.type),
       alcohol_content: wine.alcohol_content,
     },
     vintages: gaps.vintages.map((v) => ({ year: v.year, knownGrapes: v.knownGrapes })),

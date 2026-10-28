@@ -17,6 +17,7 @@ import {
   withTastedYears,
 } from "@/lib/cellar/wine-page";
 import {
+  asWineType,
   formatBottleSize,
   formatDate,
   formatDaysSince,
@@ -39,6 +40,7 @@ import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, type PersonRating } from "./ratings-card";
 import { EncounterSection } from "./encounters";
+import { BackLink } from "@/components/back-link";
 import { loadPlaces, loadWineEncounters } from "@/lib/edit/encounters";
 
 // Server Actions dieser Seite (z. B. Nachrecherchieren mit Websuche) brauchen Zeit.
@@ -275,7 +277,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         <h2 className="section-title">Zum Wein</h2>
         {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}
         {editing ? (
-          <WineEditForm wine={wine} />
+          <WineEditForm wine={{ ...wine, type: asWineType(wine.type) }} />
         ) : (
           <dl className="details">
             <Detail label="Typ" value={<WineTypeIcon type={wine.type} withLabel />} />
@@ -434,9 +436,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
 
   return (
     <div className="stack-lg">
-      <Link href={back.href} className="back">
-        ← {back.label}
-      </Link>
+      <BackLink base={back.href} label={back.label} />
 
       {query.geoeffnet && (
         <p className="notice notice-ok" role="status">

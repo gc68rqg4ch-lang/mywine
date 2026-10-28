@@ -7,7 +7,7 @@ import "server-only";
 
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { formatBottleSize, wineTypeLabel, zurichDate } from "@/lib/format";
+import { WINE_TYPES, formatBottleSize, wineTypeLabel, zurichDate } from "@/lib/format";
 import { prepareEdit } from "@/lib/edit/edit";
 import { ROOMS, previewLines, type BatchChanges, type Edit, type WineChanges } from "@/lib/edit/types";
 import { formatShares } from "@/lib/grapes/shares";
@@ -16,7 +16,6 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import { fillAfterGlasses, type Proposal } from "./proposals";
 import type { PendingProposal } from "./tools";
 
-const WINE_TYPES = ["red", "white", "rose", "sparkling", "sweet", "fortified", "orange"] as const;
 const json = (value: unknown) => JSON.stringify(value);
 const MAX_PENDING = 3;
 

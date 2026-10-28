@@ -7,7 +7,7 @@ import "server-only";
 
 import type { PostgrestError } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-import { WINE_TYPE_LABELS, formatBottleSize, formatMoney, zurichDate, type WineType } from "@/lib/format";
+import { WINE_TYPE_LABELS, asWineType, formatBottleSize, formatMoney, wineTypeLabel, zurichDate, type WineType } from "@/lib/format";
 import { formatShares, normalizeGrapeShares, percentSum } from "@/lib/grapes/shares";
 import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
 import { isValidRating, saveRating } from "@/lib/ratings";
@@ -87,7 +87,7 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
   const next = {
     name: set.name === undefined ? wine.name : clean(set.name),
     producer: set.producer === undefined ? wine.producer : clean(set.producer),
-    type: set.type === undefined ? wine.type : set.type,
+    type: set.type === undefined ? asWineType(wine.type) : set.type,
     country: set.country === undefined ? wine.country : clean(set.country),
     region: set.region === undefined ? wine.region : clean(set.region),
     appellation: set.appellation === undefined ? wine.appellation : clean(set.appellation),
@@ -120,7 +120,7 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
   const changes: EditChange[] = [];
   diff(changes, "Name", wine.name, name);
   diff(changes, "Produzent", wine.producer, producer);
-  diff(changes, "Typ", wine.type ? WINE_TYPE_LABELS[wine.type] : DASH, next.type ? WINE_TYPE_LABELS[next.type] : DASH);
+  diff(changes, "Typ", asWineType(wine.type) ? wineTypeLabel(wine.type) : DASH, next.type ? WINE_TYPE_LABELS[next.type] : DASH);
   diff(changes, "Land", show(wine.country), show(next.country));
   diff(changes, "Region", show(wine.region), show(next.region));
   diff(changes, "Appellation", show(wine.appellation), show(next.appellation));

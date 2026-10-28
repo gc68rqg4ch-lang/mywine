@@ -102,9 +102,22 @@ Verschieben (ganz oder teilweise) läuft nur über `public.move_bottles()`: atom
 Charge am Ziel zusammen und schreibt genau einen Journal-Eintrag „verschoben“. Wird „Getrunken am“ geändert,
 zieht ein Trigger den Journal-Eintrag „getrunken“ mit.
   - `/flasche/[id]` leitet auf die Weinseite mit dem Jahrgang der Flasche weiter (Bot-Links, Lesezeichen).
-- **Weintyp-Filter:** in Bestand, Offen und Getrunken bei den Gruppierungen Land, Rebsorte, Jahrgang,
-  Preisklasse (und „Getrunken am“): Alle / Rot / Weiss / … mit Trauben-Symbolen, nur vorhandene Typen
-  (`?typ=`), zusätzlich zur Lagerort-Wahl.
+- **Listen allgemein** (Bestand, Offen, Getrunken, Verkostet – gemeinsame Ansicht `src/components/cellar/list-view.tsx`):
+  - **Weintypen:** Rot, Weiss, Rosé, Schaumwein, Süsswein, Likörwein (`WINE_TYPES` in `src/lib/format.ts`). Orange gibt es
+    nicht mehr (DB: Check-Constraint `wines_type_not_orange`; alte Werte gelten als „Unbekannt“).
+  - **Gruppierung „Weintyp“:** grosse Knöpfe statt aufklappbarer Zeilen, darunter direkt die Liste des gewählten Typs
+    (Standard Rot). Alle sechs Typen immer sichtbar, leere mit 0 und blass; Anzahl Flaschen (Verkostet: Weine).
+    „Unbekannt“ nur, wenn es solche Weine gibt. In den anderen Gruppierungen bleibt der Weintyp-Filter (Alle + sechs Typen).
+  - **Filter** (Knopf neben der Suche, Anzahl aktiver Filter am Knopf, „Zurücksetzen“): Land, Region (bei gewähltem
+    Land nur dessen Regionen), Rebsorte (eine davon), Jahrgang von–bis, Preisklasse, Trinkreife, Bewertung ab x Sternen
+    (Michel / Sara / eine von beiden), Händler. Nur Werte aus der aktuellen Liste. Jahrgang, Preisklasse, Trinkreife und
+    Händler wirken je Flasche (ein Wein zeigt nur die passenden Flaschen). Reine Funktionen in `src/lib/cellar/filters.ts`.
+  - **Zustand in der URL** (`src/lib/cellar/list-params.ts`): `gruppe`, `q`, `typ`, aufgeklappte Gruppen `auf`, Filter
+    `land`, `region`, `traube`, `jv`/`jb`, `preis`, `reife`, `sterne`/`von_person`, `haendler`. „← Bestand“ (bzw. Offen,
+    Getrunken, Verkostet) auf der Weinseite und die Browser-Zurück-Taste führen genau dorthin zurück, inkl.
+    Scroll-Position (sessionStorage, `ListMemory`/`BackLink`). Der Lagerort bleibt im Cookie.
+  - **Karten:** Inhalt oben ausgerichtet (Trinkreife direkt unter Jahrgang/Land), Platzhalter ohne Foto so gross wie ein
+    Vorschaubild, lange Namen umbrechen. Spalten: iPhone 1, iPad hochkant 2, iPad quer 3.
 - **WSET-Verkostung** (`/flasche/[id]/verkostung`, bearbeiten mit `?t=<id>`): Nachbau des
   [Verkostungs-Tools](https://gc68rqg4ch-lang.github.io/WSET-Verkostungs-tool/) mit gleichen Feldern, Optionen,
   Aromen-Lexikon und Punkte-Logik (`src/lib/tasting/sat.ts`). Gespeichert in `wine_tastings`: Stil, Qualität,
@@ -316,7 +329,7 @@ Ablauf in `src/lib/ingest/flow.ts`, `ingest_jobs.source = 'text'`:
   📷 Neuer Wein. Bestand zeigt zuerst die Weintypen, dann die Weine des Typs. ⏰ Trinkreif nutzt dieselbe
   Einteilung wie die App (⚠️ über dem Höhepunkt, ⏰ jetzt trinken, ✅ trinkreif, ⏳ noch lagern, ❔ unbekannt).
 - **Listen:** pro Wein eine Zeile mit Emoji statt Weintyp (🍷 Rot, 🥂 Weiss, 🌸 Rosé, 🍾 Schaumwein,
-  🍯 Süss/Likör, 🟠 Orange), z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“; Produzent bzw. Lagerort nur, wenn nötig
+  🍯 Süsswein, 🥃 Likörwein), z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“; Produzent bzw. Lagerort nur, wenn nötig
   zur Unterscheidung. Darunter je Wein ein Knopf (8 pro Seite, dann „Mehr…“).
 - **ℹ️ Details** im Wein-Menü: kompakte Nachricht zum Jahrgang (Name, Produzent, Herkunft mit Flagge, Rebsorten
   mit %, Alkohol, Trinkreife, Flaschen je Lagerort, offene Flaschen mit Füllstand, Preise mit Rabatt, Bewertungen,

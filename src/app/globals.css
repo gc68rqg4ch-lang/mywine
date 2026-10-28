@@ -430,8 +430,12 @@ input[type="range"] {
 }
 
 .item {
+  position: relative;
+  flex: 1;
+  min-width: 0;
   display: flex;
-  align-items: center;
+  /* Inhalt oben: die Zeilen rutschen nicht nach unten, wenn die Nachbarkarte höher ist. */
+  align-items: flex-start;
   gap: 12px;
   padding: 12px 14px;
   background: var(--surface);
@@ -607,48 +611,44 @@ input[type="range"] {
 
 .item-wrap {
   position: relative;
+  display: flex;
 }
+/* Vorschaubild bzw. Trauben-Symbol: immer gleich gross, damit der Text nicht verrutscht. */
 .item-thumb-slot {
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 36px;
   height: 48px;
 }
-/* Liegt über dem Platzhalter in der Karte, ist aber kein Teil des Links. */
+/* Das Foto liegt über dem Karten-Link (eigener Knopf für das Overlay). */
 .item-thumb {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
+  position: relative;
+  z-index: 1;
   width: 36px;
   height: 48px;
 }
-
-/* Trinkreife in der Karte: eigene Links über einem Platzhalter in der letzten Zeile, gleich
-   ausgerichtet wie der Karteninhalt (Rand + Innenabstand, Symbol bzw. Bild, Abstand). */
-.item-drink-layer {
+/* Der Titel-Link deckt die ganze Karte ab; Foto und Trinkreife liegen darüber. */
+.item-link {
+  color: inherit;
+}
+.item-link::after {
+  content: "";
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  padding: 13px 15px;
-  pointer-events: none;
+  border-radius: inherit;
 }
-.item-drink-spacer {
-  flex: none;
-  width: 22px;
+.item-link:focus-visible {
+  outline: none;
 }
-.item-drink-layer .item-thumb-slot {
-  align-self: center;
-}
-.item-drink {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  margin-right: 64px;
+.item:has(.item-link:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .item-drink .drink-link {
-  pointer-events: auto;
+  position: relative;
+  z-index: 1;
 }
 .drink-link {
   color: inherit;
@@ -1415,7 +1415,52 @@ input[inputmode="decimal"] {
 .controls .search {
   display: flex;
   gap: 6px;
-  flex: 1 1 280px;
+  flex: 1 1 220px;
+}
+/* Suche mit Filter-Knopf; das Filterfeld klappt darunter über die ganze Breite auf. */
+.search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 100%;
+}
+.filter-button {
+  min-height: 44px;
+  gap: 6px;
+}
+.filter-button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.filter-panel {
+  flex: 1 1 100%;
+  padding: 14px;
+}
+.filter-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.filter-group legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.filter-chips .chip {
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+}
+.filter-year {
+  flex: 0 0 110px;
 }
 .controls .segmented {
   flex: 0 1 auto;
@@ -1476,11 +1521,27 @@ input[inputmode="decimal"] {
 .item-extra {
   color: var(--text);
 }
-@media (min-width: 900px) {
-  .group .list {
-    display: grid;
+/* Listen: iPhone 1, iPad hochkant 2, iPad quer 3 Spalten (wie die Weinseite). */
+.list-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 700px) {
+  .list-cols {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+@media (min-width: 1000px) {
+  .list-cols {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* Lange Namen umbrechen statt abschneiden. */
+.list-cols .item-title,
+.list-cols .item-producer,
+.list-cols .item-meta {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .item-qty {
@@ -1663,6 +1724,63 @@ input[inputmode="decimal"] {
   align-items: center;
   gap: 6px;
   text-decoration: none;
+}
+.chip.is-empty:not(.active),
+.type-tab.is-empty:not(.active) {
+  opacity: 0.45;
+}
+
+/* Gruppierung „Weintyp“: Knöpfe im Stil der Lagerort-Wahl, gross genug zum Antippen. */
+.type-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+@media (min-width: 700px) {
+  .type-tabs {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  }
+}
+.type-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 76px;
+  padding: 8px 4px;
+  border-radius: 11px;
+  color: var(--muted);
+  text-align: center;
+  text-decoration: none;
+}
+.type-tab:hover {
+  color: var(--text);
+}
+.type-tab.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow);
+}
+.type-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.type-tab .type {
+  display: inline-flex;
+}
+.type-tab-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.15;
+}
+.type-tab-count {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Angemeldete Person dezent im Kopf */

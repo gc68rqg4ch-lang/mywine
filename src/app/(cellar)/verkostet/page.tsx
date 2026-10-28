@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { GroupedList } from "@/components/cellar/grouped-list";
-import { ListControls } from "@/components/cellar/list-controls";
+import { ListView } from "@/components/cellar/list-view";
 import { WineCard } from "@/components/cellar/wine-card";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
-import { applyTypeFilter, readListParams } from "@/lib/cellar/list-params";
+import { withDrinkWindows } from "@/lib/cellar/filters";
+import { readListState } from "@/lib/cellar/list-params";
+import { loadDrinkWindows } from "@/lib/cellar/load";
 import type { RatingRow } from "@/lib/cellar/lists";
-import { TASTED_GROUPINGS, formatVintages, groupWines, matchesQuery, originLabel } from "@/lib/cellar/overview";
+import { TASTED_GROUPINGS, currentYear, formatVintages, matchesQuery, originLabel } from "@/lib/cellar/overview";
 import { buildTastedEntries, tastedTotals, type TastedEntry, type TastedWineInfo } from "@/lib/cellar/tasted";
 import { wineHref } from "@/lib/cellar/wine-page";
-import { formatDate, formatStarNumber, todayIso } from "@/lib/format";
+import { asWineType, formatDate, formatStarNumber, todayIso } from "@/lib/format";
 import { loadGrapeNames } from "@/lib/grapes/store";
 import { loadLabelPhotos } from "@/lib/media/store";
 
@@ -30,7 +31,7 @@ function ratingsText(e: TastedEntry) {
  */
 export default async function TastedPage({ searchParams }: PageProps<"/verkostet">) {
   const params = await searchParams;
-  const { query, groupBy, type } = readListParams(params, TASTED_GROUPINGS);
+  const state = readListState(params, TASTED_GROUPINGS);
   const { supabase } = await getMemberSession();
   const year = todayIso().slice(0, 4);
 
@@ -56,7 +57,7 @@ export default async function TastedPage({ searchParams }: PageProps<"/verkostet
   if (wineRows.error) throw wineRows.error;
   if (ratingRows.error) throw ratingRows.error;
 
-  const wines = new Map<string, TastedWineInfo>((wineRows.data ?? []).map((w) => [w.id, w]));
+  const wines = new Map<string, TastedWineInfo>((wineRows.data ?? []).map((w) => [w.id, { ...w, type: asWineType(w.type) }]));
   const grapes = await loadGrapeNames(supabase, (wineRows.data ?? []).map((w) => ({ id: w.id, grapes: w.grapes })));
   const ratingsByWine = new Map<string, RatingRow[]>();
   for (const r of ratingRows.data ?? []) {
@@ -65,10 +66,13 @@ export default async function TastedPage({ searchParams }: PageProps<"/verkostet
   const stock = new Map((stats.data ?? []).flatMap((s) => (s.wine_id ? [[s.wine_id, s.bottles_in_stock ?? 0] as const] : [])));
 
   const entries = buildTastedEntries(encounters.data ?? [], wines, grapes, ratingsByWine, stock, (persons.data ?? []).map((p) => p.name));
-  const visible = query ? entries.filter((e) => matchesQuery(e, query)) : entries;
-  const { types, filtered } = applyTypeFilter(visible, type);
-  const groups = groupWines(filtered, groupBy);
-  const photo = await loadLabelPhotos(supabase, filtered.map((e) => e.wine_id));
+  const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query)) : entries;
+  const [windows, photo] = await Promise.all([
+    loadDrinkWindows(supabase, wineIds),
+    loadLabelPhotos(supabase, visible.map((e) => e.wine_id)),
+  ]);
+  // Trinkfenster je Jahrgang für den Filter „Trinkreife“.
+  const filterable = withDrinkWindows(visible, windows, (e) => e.wine_id);
   const totals = tastedTotals(entries, year);
   const href = (e: TastedEntry, vintages?: (number | null)[]) =>
     wineHref(e.wine_id, vintages?.length === 1 ? vintages[0] : e.latestVintage, { von: "verkostet" });
@@ -121,12 +125,13 @@ export default async function TastedPage({ searchParams }: PageProps<"/verkostet
         </div>
       </section>
 
-      <ListControls basePath="/verkostet" groupBy={groupBy} groupings={TASTED_GROUPINGS} query={query} type={type} types={types} />
-
-      <GroupedList
-        groups={groups}
-        groupBy={groupBy}
-        query={query}
+      <ListView
+        basePath="/verkostet"
+        state={state}
+        groupings={TASTED_GROUPINGS}
+        entries={filterable}
+        year={currentYear()}
+        countMode="wines"
         countLabel={(n) => `${n}×`}
         empty="Noch nichts verkostet – oben „Verkostet erfassen“."
         itemKey={({ wine }) => wine.wine_id}

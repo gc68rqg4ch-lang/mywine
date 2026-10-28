@@ -1,6 +1,16 @@
 import type { Enums } from "@/lib/database.types";
 
-export type WineType = Enums<"wine_type">;
+/**
+ * Weintypen der App. Der DB-Enum kennt noch „orange“ (bleibt aus technischen Gründen), ist
+ * aber per Check-Constraint gesperrt – in der App gibt es ihn nicht.
+ */
+export const WINE_TYPES = ["red", "white", "rose", "sparkling", "sweet", "fortified"] as const;
+export type WineType = (typeof WINE_TYPES)[number];
+
+/** Typ aus der DB bzw. einer Eingabe → App-Typ; Unbekanntes (auch „orange“) → null. */
+export function asWineType(value: unknown): WineType | null {
+  return typeof value === "string" && (WINE_TYPES as readonly string[]).includes(value) ? (value as WineType) : null;
+}
 export type InventoryStatus = Enums<"inventory_status">;
 
 export const WINE_TYPE_LABELS: Record<WineType, string> = {
@@ -10,7 +20,6 @@ export const WINE_TYPE_LABELS: Record<WineType, string> = {
   sparkling: "Schaumwein",
   sweet: "Süsswein",
   fortified: "Likörwein",
-  orange: "Orange",
 };
 
 export const STATUS_LABELS: Record<InventoryStatus, string> = {
@@ -19,8 +28,9 @@ export const STATUS_LABELS: Record<InventoryStatus, string> = {
   drunk: "Ausgetrunken",
 };
 
-export function wineTypeLabel(type: WineType | null | undefined) {
-  return type ? WINE_TYPE_LABELS[type] : "Unbekannt";
+export function wineTypeLabel(type: string | null | undefined) {
+  const t = asWineType(type);
+  return t ? WINE_TYPE_LABELS[t] : "Unbekannt";
 }
 
 export function formatBottleSize(ml: number | null | undefined) {

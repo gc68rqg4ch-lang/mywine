@@ -2,7 +2,7 @@
 // (Weintyp, Land, Rebsorte, Jahrgang, Preisklasse), Suche, Weintyp-Filter und URL-Parameter.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyTypeFilter, readListParams, typeOf } from "@/lib/cellar/list-params";
+import { applyTypeFilter, typeOf } from "@/lib/cellar/list-params";
 import {
   BASE_GROUPINGS, buildCellarWines, cellarTotals, countryFlag, drinkCounts, formatVintages, groupWines, isGroupBy, matchesQuery,
   originLabel, parseLocations, priceClass, type SummaryWine, type VintageRow,
@@ -67,21 +67,13 @@ test("Gruppierungen: Weintyp, Jahrgang, Preisklasse, Land, Rebsorte", () => {
   assert.equal(groupWines(inStock(), "land")[0].flag, "🇺🇸");
 });
 
-test("Weintyp-Filter: vorhandene Typen, gefilterte Liste, wirkt mit Gruppierung", () => {
-  const { types, filtered } = applyTypeFilter(inStock(), "red");
-  assert.deepEqual(types.sort(), ["red", "rose", "white"]);
+test("Weintyp-Filter: gefilterte Liste, wirkt mit Gruppierung", () => {
+  const filtered = applyTypeFilter(inStock(), "red");
   assert.deepEqual(filtered.map((w) => w.wine_id), ["a", "b"]);
   assert.deepEqual(groupWines(filtered, "jahrgang").map((g) => [g.label, g.bottles]), [["2018", 5], ["2019", 11], ["2021", 2]]);
-  assert.deepEqual(applyTypeFilter(inStock(), null).filtered.length, 4);
+  assert.deepEqual(applyTypeFilter(inStock(), null).length, 4);
   assert.equal(typeOf({ type: null }), "unknown");
-  assert.deepEqual(applyTypeFilter([{ type: null }, { type: "red" as const }], "unknown").filtered, [{ type: null }]);
-});
-
-test("URL-Parameter: Gruppierung, Suche, Typ (nicht bei Gruppierung Weintyp)", () => {
-  assert.deepEqual(readListParams({ gruppe: "trinkreife", typ: "white", q: " pintia " }, BASE_GROUPINGS), { query: "pintia", groupBy: "trinkreife", type: "white" });
-  assert.deepEqual(readListParams({ typ: "white" }, BASE_GROUPINGS), { query: "", groupBy: "typ", type: null }, "bei Weintyp kein Filter");
-  assert.deepEqual(readListParams({ gruppe: "getrunken", typ: "blau" }, BASE_GROUPINGS), { query: "", groupBy: "typ", type: null });
-  assert.equal(readListParams({ gruppe: "land", typ: "unknown" }, BASE_GROUPINGS).type, "unknown");
+  assert.deepEqual(applyTypeFilter([{ type: null }, { type: "red" as const }], "unknown"), [{ type: null }]);
 });
 
 test("Suche, Flaggen, Herkunft, Lagerorte, Preisklassen", () => {

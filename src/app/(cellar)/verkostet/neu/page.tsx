@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getMemberSession } from "@/lib/auth";
 import { parseVintageParam } from "@/lib/cellar/wine-page";
 import { loadPlaces } from "@/lib/edit/encounters";
-import { todayIso } from "@/lib/format";
+import { asWineType, todayIso } from "@/lib/format";
 import { NewEncounterForm } from "./new-encounter-form";
 
 export const metadata: Metadata = { title: "Verkostet erfassen" };
@@ -30,7 +30,7 @@ export default async function NewEncounterPage({ searchParams }: PageProps<"/ver
       </Link>
       <h1 className="page-title">Verkostet erfassen</h1>
       <NewEncounterForm
-        wines={wines.data ?? []}
+        wines={(wines.data ?? []).map((w) => ({ ...w, type: asWineType(w.type) }))}
         places={places}
         persons={persons.data ?? []}
         ownPersonId={person?.id ?? null}
