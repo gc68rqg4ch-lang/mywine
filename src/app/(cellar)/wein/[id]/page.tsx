@@ -33,12 +33,12 @@ import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { EditUnit, EditUnits } from "@/components/edit-unit";
-import { WINE_DETAIL_FIELDS, WINE_SECTIONS, type WineSection } from "@/lib/cellar/wine-units";
+import { WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, grapeLine, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
 import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { DocumentClip } from "./documents";
-import { BatchForm, VintageEditForm, WineEditForm, type EditBatch } from "./edit-sections";
-import { GrapeForm, GrapeList, ResearchBlock } from "./grape-card";
+import { BatchForm, WineCardForm, type EditBatch } from "./edit-sections";
+import { ResearchBlock } from "./grape-card";
 import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, RatingsForm, type PersonRating } from "./ratings-card";
@@ -309,87 +309,58 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     </div>
   );
 
-  const details: Record<(typeof WINE_DETAIL_FIELDS)[number], ReactNode> = {
+  const shownShares = grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }));
+  const drink = drinkRow(status, drinkWindow);
+  const details: Record<WineDetailField, ReactNode> = {
     Typ: <WineTypeIcon type={wine.type} withLabel />,
     Land: wine.country ? `${flag ? `${flag} ` : ""}${wine.country}` : null,
     Region: wine.region,
     Appellation: wine.appellation,
     Alkohol: wine.alcohol_content != null ? `${wine.alcohol_content.toLocaleString("de-CH")} %` : null,
     Flasche: sizes,
+    Rebsorten: grapeLine(shownShares),
+    Trinkreife: drink && (
+      <>
+        <Link
+          href={drinkStatusHref(status)}
+          className={`drink-badge drink-link drink-${status}`}
+          title="Alle Weine im Bestand mit dieser Trinkreife"
+        >
+          {DRINK_STATUS_LABELS[status]}
+        </Link>
+        {drink.window && <span> · {drink.window}</span>}
+      </>
+    ),
   };
   const photoAlt = `${wine.name} ${yearLabel}`;
 
-  // Spalte 2: Zum Wein – Reihenfolge laut WINE_SECTIONS (Stammdaten, Rebsorten, Trinkreife, Fotos, Recherche).
+  // Spalte 2: Zum Wein – eine Tabelle (Stammdaten, Rebsorten, Trinkreife), dann Fotos und Recherche.
   const sections: Record<WineSection, ReactNode> = {
     details: (
       <EditUnit
         id="wine"
         label="Zum Wein"
         title={<h2 className="section-title">Zum Wein</h2>}
-        form={<WineEditForm wine={{ ...wine, type: asWineType(wine.type) }} />}
-      >
-        <dl className="details">
-          {WINE_DETAIL_FIELDS.map((f) => (
-            <Detail key={f} label={f} value={details[f]} />
-          ))}
-          <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
-          <Detail label="Notiz" value={vintage?.notes} />
-        </dl>
-        {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}
-      </EditUnit>
-    ),
-    grapes: (
-      <EditUnit
-        id="grapes"
-        label="Rebsorten"
-        className="section-divider"
-        title={<h3 className="subsection-title">Rebsorten</h3>}
         form={
-          anchor ? (
-            <GrapeForm
-              itemId={anchor.inventory_item_id}
-              itemVintage={year}
-              shares={grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }))}
-            />
-          ) : undefined
-        }
-      >
-        <GrapeList
-          shares={grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }))}
-          sharesVintage={grapes?.vintageYear ?? null}
-          itemVintage={year}
-          sources={grapes?.sources ?? []}
-        />
-      </EditUnit>
-    ),
-    drink: (
-      <EditUnit
-        id="vintage"
-        label="Jahrgang & Trinkfenster"
-        className="section-divider"
-        title={<h3 className="subsection-title">Trinkreife</h3>}
-        form={
-          <VintageEditForm
-            wineId={wine.id}
+          <WineCardForm
+            wine={{ ...wine, type: asWineType(wine.type) }}
             year={year}
             otherYears={options.map((o) => o.year).filter((y) => y !== year)}
+            shares={shownShares}
             drinkFrom={vintage?.drink_from_year ?? null}
             drinkUntil={vintage?.drink_until_year ?? null}
           />
         }
       >
-        <p>
-          <Link
-            href={drinkStatusHref(status)}
-            className={`drink-badge drink-link drink-${status}`}
-            title="Alle Weine im Bestand mit dieser Trinkreife"
-          >
-            {DRINK_STATUS_LABELS[status]}
-          </Link>
-          {drinkWindow && <span className="muted"> {drinkWindow}</span>}
-        </p>
-        {!drinkWindow && <p className="muted small">Kein Trinkfenster erfasst.</p>}
-        {latestReadiness && <p className="small">Laut Verkostung: {latestReadiness}</p>}
+        <dl className="details">
+          {WINE_DETAIL_FIELDS.map((f) => (
+            <Detail key={f} label={f} value={details[f]} />
+          ))}
+          <Detail label="Laut Verkostung" value={latestReadiness} />
+          <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
+          <Detail label="Notiz" value={vintage?.notes} />
+        </dl>
+        {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}
       </EditUnit>
     ),
     photos: (

@@ -2308,3 +2308,11 @@ input[inputmode="decimal"] {
   flex: 1;
   min-width: 0;
 }
+
+/* „Zum Wein“: Rebsorten im gemeinsamen Formular */
+.grape-field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

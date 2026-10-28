@@ -11,6 +11,8 @@ import {
   closeUnit,
   discardQuestion,
   docClip,
+  drinkRow,
+  grapeLine,
   markDirty,
   openUnit,
   shortFileName,
@@ -64,9 +66,45 @@ test("Büroklammer: ohne Dokument nur 📎, eines mit (gekürztem) Namen, mehrer
   assert.equal(shortFileName("Ohne Endung und ziemlich lang geraten"), "Ohne Endung und ziemlic…");
 });
 
-test("Reihenfolge in „Zum Wein“: Stammdaten, Rebsorten, Trinkreife, Fotos, Recherche", () => {
-  assert.deepEqual(WINE_DETAIL_FIELDS, ["Typ", "Land", "Region", "Appellation", "Alkohol", "Flasche"]);
-  assert.deepEqual(WINE_SECTIONS, ["details", "grapes", "drink", "photos", "research"]);
+test("Reihenfolge in „Zum Wein“: eine Tabelle mit Rebsorten und Trinkreife, dann Fotos und Recherche", () => {
+  assert.deepEqual(WINE_DETAIL_FIELDS, ["Typ", "Land", "Region", "Appellation", "Alkohol", "Flasche", "Rebsorten", "Trinkreife"]);
+  assert.deepEqual(WINE_SECTIONS, ["details", "photos", "research"]);
+});
+
+test("Zeilen „Rebsorten“ und „Trinkreife“: mit/ohne Prozent, leere Zeilen fehlen", () => {
+  assert.equal(
+    grapeLine([{ grape: "Cabernet Sauvignon", percent: 95 }, { grape: "Malbec", percent: 5 }]),
+    "Cabernet Sauvignon 95 % · Malbec 5 %",
+  );
+  assert.equal(grapeLine([{ grape: "Tempranillo", percent: null }, { grape: "Garnacha", percent: null }]), "Tempranillo · Garnacha");
+  assert.equal(grapeLine([{ grape: "Merlot", percent: 60 }, { grape: "Cabernet Franc", percent: null }]), "Merlot 60 % · Cabernet Franc");
+  assert.equal(grapeLine([]), null, "keine Rebsorten → Zeile fehlt");
+  assert.deepEqual(drinkRow("ready", "2025–2029"), { status: "ready", window: "2025–2029" });
+  assert.deepEqual(drinkRow("wait", null), { status: "wait", window: null });
+  assert.equal(drinkRow("unknown", null), null, "unbekannt ohne Fenster → Zeile fehlt");
+});
+
+test("Formular „Zum Wein“: Stammdaten, Rebsorten und Trinkfenster mit einem Speichern", () => {
+  const W = "11111111-1111-4111-8111-111111111111";
+  const form = (extra: Record<string, string>) => {
+    const f = new FormData();
+    const base = { kind: "wineCard", wineId: W, from: "2019", name: "Pintia", producer: "Vega Sicilia", type: "red", country: "Spanien", region: "Toro", drinkFrom: "2025", drinkUntil: "2029", to: "2019" };
+    for (const [k, v] of Object.entries({ ...base, ...extra })) f.set(k, v);
+    return f;
+  };
+  const before = JSON.stringify([{ grape: "Tinta de Toro", percent: "" }]);
+  const changed = editsFromForm(form({ sharesBefore: before, shares: JSON.stringify([{ grape: "Tinta de Toro", percent: "95" }, { grape: "Garnacha", percent: "5 %" }, { grape: "", percent: "" }]) }));
+  assert.ok(Array.isArray(changed), JSON.stringify(changed));
+  assert.deepEqual(changed.map((e) => e.kind), ["wine", "grapes", "drinkWindow", "vintage"], "Jahrgang zuletzt");
+  assert.deepEqual(changed[1], { kind: "grapes", wineId: W, year: 2019, shares: [{ grape: "Tinta de Toro", percent: 95 }, { grape: "Garnacha", percent: 5 }] });
+  assert.deepEqual(changed[2], { kind: "drinkWindow", wineId: W, year: 2019, from: 2025, until: 2029 });
+  // Rebsorten unverändert: keine Bearbeitung (Angaben „alle Jahrgänge“ bleiben, wie sie sind).
+  const same = editsFromForm(form({ sharesBefore: before, shares: before }));
+  assert.ok(Array.isArray(same));
+  assert.deepEqual(same.map((e) => e.kind), ["wine", "drinkWindow", "vintage"]);
+  // Ungültiger Anteil / Anteil ohne Sorte: Fehlermeldung, nichts gespeichert
+  assert.deepEqual(editsFromForm(form({ sharesBefore: before, shares: JSON.stringify([{ grape: "Merlot", percent: "120" }]) })), { error: "Ungültiger Anteil bei Merlot (1–100 %)." });
+  assert.deepEqual(editsFromForm(form({ sharesBefore: before, shares: JSON.stringify([{ grape: "", percent: "40" }]) })), { error: "Bitte bei jedem Anteil auch die Rebsorte angeben." });
 });
 
 test("Verkostet-Eintrag kompakt: Datum · Ort · Preis · Sterne", () => {

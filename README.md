@@ -73,21 +73,26 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
      Ohne Flaschen dieses Jahrgangs ein kurzer Hinweis und „＋ Flaschen erfassen“ – öffnet den Chat mit Antoine
      (`https://t.me/antoine_winebot`; anderer Name über `TELEGRAM_BOT_USERNAME`).
   2. **Zum Wein** (eine Kachel, Reihenfolge `WINE_DETAIL_FIELDS`/`WINE_SECTIONS` in
-     `src/lib/cellar/wine-units.ts`): Typ, Land, Region, Appellation, Alkohol, Flasche; Rebsorten mit % aus
-     `wine_grape_shares` (jahrgangsspezifisch, sonst „alle Jahrgänge“); Trinkreife (Fenster aus `wine_vintages`,
-     dazu die letzte Verkostung); **Fotos** des Jahrgangs (Vorschau mit Overlay; hinzufügen als Vorderseite,
-     Rückseite, Weiteres – der Browser verkleinert auf max. 2000 px JPEG, auch HEIC; der Server legt das Original
-     unter `wine-photos/app/<wine-id>/…` ab und erzeugt das Vorschaubild; je Foto Ersetzen/Löschen mit Rückfrage,
-     Dateien über den Admin-Client nach Prüfung der Mitgliedschaft); **Recherche** („🔎 Nachrecherchieren“ ergänzt
-     alle leeren Angaben ohne Rückfrage, „Zuletzt recherchiert am …“, Link zum Sammellauf `/recherche`).
+     `src/lib/cellar/wine-units.ts`): eine Tabelle mit Typ, Land, Region, Appellation, Alkohol, Flasche,
+     **Rebsorten** („Cabernet Sauvignon 95 % · Malbec 5 %“, ohne Prozent nur die Namen; aus `wine_grape_shares`,
+     jahrgangsspezifisch, sonst „alle Jahrgänge“) und **Trinkreife** (Status antippbar · Fenster aus
+     `wine_vintages`); leere Zeilen fallen weg. Darunter **Fotos** des Jahrgangs (Vorschau mit Overlay; hinzufügen
+     als Vorderseite, Rückseite, Weiteres – der Browser verkleinert auf max. 2000 px JPEG, auch HEIC; der Server
+     legt das Original unter `wine-photos/app/<wine-id>/…` ab und erzeugt das Vorschaubild; je Foto
+     Ersetzen/Löschen mit Rückfrage, Dateien über den Admin-Client nach Prüfung der Mitgliedschaft) und
+     **Recherche** („🔎 Nachrecherchieren“ ergänzt alle leeren Angaben ohne Rückfrage, „Zuletzt recherchiert am …“,
+     Link zum Sammellauf `/recherche`). Das ✏️ von „Zum Wein“ öffnet ein Formular für Stammdaten, Rebsorten mit %
+     und Trinkfenster des Jahrgangs zusammen (`kind = wineCard` in `src/lib/edit/form.ts` → Bearbeitungen `wine`,
+     `grapes` nur wenn geändert, `drinkWindow`, zuletzt `vintage`); unter „Mehr“ Appellation, Alkohol und Jahrgang
+     umbenennen.
   3. **Bewertungen:** subjektiv je Person mit halben Sternen 0–5 in `wine_ratings` (Sterne antippen speichert
      sofort; neueste je Person aus `latest_wine_ratings`, ältere als Verlauf), objektiv die WSET-Verkostungen mit
      „Neue Verkostung“ und Liste, darunter „Verkostet“ (Einträge kompakt: Datum · Ort · Preis · Sterne).
   - Jahrgangsbezogene Aktionen hängen an einer Flasche des Jahrgangs (offen vor ungeöffnet vor getrunken).
   - **Bearbeiten direkt in der Karte** (`src/components/edit-unit.tsx`, Logik in `src/lib/cellar/wine-units.ts`):
-    kein eigener Modus mehr. Jede Einheit hat oben rechts ein kleines ✏️ – Zum Wein (Name, Produzent, Typ, Land,
-    Region; unter „Mehr“ Appellation, Alkohol), Jahrgang & Trinkfenster (über `public.change_vintage()`, bestehender
-    Ziel-Jahrgang → Rückfrage und Zusammenführen), Rebsorten, Fotos, jede Charge (Anzahl, Lagerort auch teilweise,
+    kein eigener Modus mehr. Jede Einheit hat oben rechts ein kleines ✏️ – Zum Wein (Stammdaten, Rebsorten mit %,
+    Trinkfenster; unter „Mehr“ Appellation, Alkohol, Jahrgang umbenennen über `public.change_vintage()`, bestehender
+    Ziel-Jahrgang → Rückfrage und Zusammenführen), Fotos, jede Charge (Anzahl, Lagerort auch teilweise,
     bezahlt, Händler, Kaufdatum; unter „Mehr“ Normalpreis, Flaschengrösse, Jahrgang nur dieser Charge, Geschenk),
     jede offene (dazu Füllstand, „Geöffnet am“) und getrunkene Flasche („Getrunken am“; unter „Mehr“ zurück auf
     offen), Bewertungen (auch löschen, mit Rückfrage) und jeder Verkostet-Eintrag. Antippen macht nur diese Einheit

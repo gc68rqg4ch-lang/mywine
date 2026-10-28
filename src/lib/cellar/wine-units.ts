@@ -2,6 +2,8 @@
 // Immer nur eine Einheit offen; hat sie ungespeicherte Änderungen, wird vor dem Wechsel
 // nachgefragt. Dazu die Reihenfolge in „Zum Wein“ und die Büroklammer für Dokumente.
 
+import { formatShare, type GrapeShare } from "@/lib/grapes/shares";
+
 /** Offene Einheit (ID + Bezeichnung für die Rückfrage), ob geändert, letzte Meldung. */
 export type UnitsState = {
   open: { id: string; label: string } | null;
@@ -38,10 +40,21 @@ export function markDirty(state: UnitsState, id: string): UnitsState {
   return state.open?.id === id && !state.dirty ? { ...state, dirty: true } : state;
 }
 
-/** Reihenfolge in „Zum Wein“. */
-export const WINE_DETAIL_FIELDS = ["Typ", "Land", "Region", "Appellation", "Alkohol", "Flasche"] as const;
-export const WINE_SECTIONS = ["details", "grapes", "drink", "photos", "research"] as const;
+/** Reihenfolge in „Zum Wein“: eine Tabelle (Rebsorten und Trinkreife als Zeilen), dann Fotos, Recherche. */
+export const WINE_DETAIL_FIELDS = ["Typ", "Land", "Region", "Appellation", "Alkohol", "Flasche", "Rebsorten", "Trinkreife"] as const;
+export type WineDetailField = (typeof WINE_DETAIL_FIELDS)[number];
+export const WINE_SECTIONS = ["details", "photos", "research"] as const;
 export type WineSection = (typeof WINE_SECTIONS)[number];
+
+/** Zeile „Rebsorten“: „Cabernet Sauvignon 95 % · Malbec 5 %“, ohne Prozent nur die Namen; leer → null (Zeile fehlt). */
+export function grapeLine(shares: GrapeShare[]) {
+  return shares.length ? shares.map(formatShare).join(" · ") : null;
+}
+
+/** Zeile „Trinkreife“: Status und Fenster; ohne beides (unbekannt, kein Fenster) → null (Zeile fehlt). */
+export function drinkRow(status: string, window: string | null) {
+  return status === "unknown" && !window ? null : { status, window };
+}
 
 const CLIP_NAME_MAX = 24;
 

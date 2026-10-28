@@ -2,6 +2,7 @@
 // stehen, werden übernommen; leere Felder heissen „leeren“ (null). Geprüft wird im Modul.
 
 import { parsePrice } from "@/lib/format";
+import type { GrapeShare } from "@/lib/grapes/shares";
 import {
   CURRENCIES,
   PLACE_KINDS,
@@ -110,19 +111,70 @@ function ratingFields(form: FormData) {
   return out;
 }
 
+/** Stammdaten des Weins – nur Felder, die im Formular stehen. */
+function wineSet(r: ReturnType<typeof reader>): WineChanges {
+  const set: WineChanges = {};
+  if (r.has("name")) set.name = r.text("name");
+  if (r.has("producer")) set.producer = r.text("producer") || null;
+  if (r.has("type")) set.type = (r.text("type") || null) as WineChanges["type"];
+  for (const key of ["country", "region", "appellation"] as const) if (r.has(key)) set[key] = r.text(key) || null;
+  if (r.has("alcohol")) set.alcohol = r.decimal("alcohol", "Alkohol");
+  return set;
+}
+
+/** "" → null, "85" / "85,5" / "85 %" → Zahl, sonst Fehler. */
+function percent(raw: string, grape: string) {
+  const text = raw.replace(/[%\s]/g, "").replace(",", ".");
+  if (text === "") return null;
+  const value = Number(text);
+  if (!(Number.isFinite(value) && value > 0 && value <= 100)) throw new FormError(`Ungültiger Anteil bei ${grape} (1–100 %).`);
+  return value;
+}
+
+/** Rebsorten aus dem JSON-Feld (Zeilen mit Sorte und %); leere Zeilen fallen weg. */
+function grapeRows(raw: string): GrapeShare[] {
+  let rows: unknown;
+  try {
+    rows = JSON.parse(raw || "[]");
+  } catch {
+    throw new FormError("Ungültige Eingabe.");
+  }
+  if (!Array.isArray(rows)) throw new FormError("Ungültige Eingabe.");
+  const shares: GrapeShare[] = [];
+  for (const row of rows as { grape?: unknown; percent?: unknown }[]) {
+    const grape = String(row?.grape ?? "").trim();
+    const p = String(row?.percent ?? "").trim();
+    if (!grape && !p) continue;
+    if (!grape) throw new FormError("Bitte bei jedem Anteil auch die Rebsorte angeben.");
+    shares.push({ grape, percent: percent(p, grape) });
+  }
+  return shares;
+}
+
 /** Liest die Bearbeitung(en) eines Formulars (Feld „kind“). */
 export function editsFromForm(form: FormData): Edit[] | { error: string } {
   const r = reader(form);
   try {
     switch (r.text("kind")) {
-      case "wine": {
-        const set: WineChanges = {};
-        if (r.has("name")) set.name = r.text("name");
-        if (r.has("producer")) set.producer = r.text("producer") || null;
-        if (r.has("type")) set.type = (r.text("type") || null) as WineChanges["type"];
-        for (const key of ["country", "region", "appellation"] as const) if (r.has(key)) set[key] = r.text(key) || null;
-        if (r.has("alcohol")) set.alcohol = r.decimal("alcohol", "Alkohol");
-        return [{ kind: "wine", wineId: r.id("wineId"), set }];
+      case "wine":
+        return [{ kind: "wine", wineId: r.id("wineId"), set: wineSet(r) }];
+      case "wineCard": {
+        // „Zum Wein“ als ein Formular: Stammdaten, Rebsorten des Jahrgangs (nur wenn geändert –
+        // sonst würden Angaben „alle Jahrgänge“ zu eigenen des Jahrgangs), Trinkfenster, zuletzt
+        // ein umbenannter Jahrgang (danach heisst er anders).
+        const wineId = r.id("wineId");
+        const from = r.year("from");
+        const edits: Edit[] = [{ kind: "wine", wineId, set: wineSet(r) }];
+        if (r.has("shares")) {
+          const shares = grapeRows(r.text("shares"));
+          const before = grapeRows(r.text("sharesBefore"));
+          if (JSON.stringify(shares) !== JSON.stringify(before)) edits.push({ kind: "grapes", wineId, year: from, shares });
+        }
+        if (r.has("drinkFrom") || r.has("drinkUntil")) {
+          edits.push({ kind: "drinkWindow", wineId, year: from, from: r.int("drinkFrom", "Ab"), until: r.int("drinkUntil", "Bis") });
+        }
+        if (r.has("to")) edits.push({ kind: "vintage", wineId, from, to: r.year("to") });
+        return edits;
       }
       case "vintage": {
         const wineId = r.id("wineId");

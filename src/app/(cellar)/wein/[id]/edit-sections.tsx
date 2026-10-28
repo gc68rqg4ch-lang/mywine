@@ -5,7 +5,9 @@
 import { ROOMS } from "@/lib/edit/types";
 import type { ReactNode } from "react";
 import { WINE_TYPE_LABELS, todayIso, zurichDate, type InventoryStatus, type WineType } from "@/lib/format";
+import type { GrapeShare } from "@/lib/grapes/shares";
 import { DeleteBottles } from "./delete-sections";
+import { GrapeRowsField } from "./grape-card";
 import { EditForm } from "./edit-form";
 
 const yearInput = (year: number | null) => (year == null ? "NV" : String(year));
@@ -21,8 +23,18 @@ function More({ children }: { children: ReactNode }) {
   );
 }
 
-export function WineEditForm({
+/**
+ * „Zum Wein“ als ein Formular (ein „Speichern“): Stammdaten, Rebsorten mit % und Trinkfenster
+ * des Jahrgangs; unter „Mehr“ Appellation, Alkohol und Jahrgang umbenennen (ganzer Jahrgang,
+ * bestehender → Rückfrage und zusammenführen).
+ */
+export function WineCardForm({
   wine,
+  year,
+  otherYears,
+  shares,
+  drinkFrom,
+  drinkUntil,
 }: {
   wine: {
     id: string;
@@ -34,9 +46,15 @@ export function WineEditForm({
     appellation: string | null;
     alcohol_content: number | null;
   };
+  year: number | null;
+  otherYears: (number | null)[];
+  /** Angezeigte Rebsorten (des Jahrgangs bzw. „alle Jahrgänge“). */
+  shares: GrapeShare[];
+  drinkFrom: number | null;
+  drinkUntil: number | null;
 }) {
   return (
-    <EditForm hidden={{ kind: "wine", wineId: wine.id }}>
+    <EditForm hidden={{ kind: "wineCard", wineId: wine.id, from: yearInput(year) }} mergeYears={otherYears.map(yearInput)}>
       <div className="edit-grid">
         <label className="field">
           <span>Name</span>
@@ -66,41 +84,8 @@ export function WineEditForm({
           <input type="text" name="region" defaultValue={wine.region ?? ""} autoComplete="off" />
         </label>
       </div>
-      <More>
-        <label className="field">
-          <span>Appellation</span>
-          <input type="text" name="appellation" defaultValue={wine.appellation ?? ""} autoComplete="off" />
-        </label>
-        <label className="field">
-          <span>Alkohol (% vol)</span>
-          <input type="text" name="alcohol" inputMode="decimal" defaultValue={wine.alcohol_content?.toString() ?? ""} autoComplete="off" />
-        </label>
-      </More>
-    </EditForm>
-  );
-}
-
-/** Jahrgang umbenennen (ganzer Jahrgang, ggf. zusammenführen) und Trinkfenster. */
-export function VintageEditForm({
-  wineId,
-  year,
-  otherYears,
-  drinkFrom,
-  drinkUntil,
-}: {
-  wineId: string;
-  year: number | null;
-  otherYears: (number | null)[];
-  drinkFrom: number | null;
-  drinkUntil: number | null;
-}) {
-  return (
-    <EditForm hidden={{ kind: "vintage", wineId, from: yearInput(year) }} mergeYears={otherYears.map(yearInput)}>
+      <GrapeRowsField shares={shares} year={year} />
       <div className="edit-grid">
-        <label className="field">
-          <span>Jahrgang</span>
-          <input type="text" name="to" defaultValue={yearInput(year)} inputMode="numeric" autoComplete="off" />
-        </label>
         <label className="field">
           <span>Trinkreif ab</span>
           <input type="text" name="drinkFrom" defaultValue={drinkFrom ?? ""} inputMode="numeric" placeholder="Jahr" autoComplete="off" />
@@ -110,10 +95,24 @@ export function VintageEditForm({
           <input type="text" name="drinkUntil" defaultValue={drinkUntil ?? ""} inputMode="numeric" placeholder="Jahr" autoComplete="off" />
         </label>
       </div>
-      <p className="muted small">
-        Gilt für den ganzen Jahrgang samt Bewertungen, Verkostungen und Fotos. „NV“ = ohne Jahrgang. Gibt es den neuen
-        Jahrgang schon, werden beide zusammengeführt.
-      </p>
+      <More>
+        <label className="field">
+          <span>Appellation</span>
+          <input type="text" name="appellation" defaultValue={wine.appellation ?? ""} autoComplete="off" />
+        </label>
+        <label className="field">
+          <span>Alkohol (% vol)</span>
+          <input type="text" name="alcohol" inputMode="decimal" defaultValue={wine.alcohol_content?.toString() ?? ""} autoComplete="off" />
+        </label>
+        <label className="field">
+          <span>Jahrgang umbenennen</span>
+          <input type="text" name="to" defaultValue={yearInput(year)} inputMode="numeric" autoComplete="off" />
+        </label>
+        <p className="muted small field-wide">
+          Gilt für den ganzen Jahrgang samt Bewertungen, Verkostungen und Fotos. „NV“ = ohne Jahrgang. Gibt es den neuen
+          Jahrgang schon, werden beide zusammengeführt.
+        </p>
+      </More>
     </EditForm>
   );
 }
