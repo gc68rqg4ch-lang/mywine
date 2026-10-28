@@ -11,6 +11,7 @@ import { continuePhotoPurchase, processTextJob, saveJob, textPurchasePrices } fr
 import { priceLine } from "@/lib/ingest/messages";
 import { pricesInText } from "@/lib/ingest/prices";
 import { normalizeProposal, type IngestState } from "@/lib/ingest/schema";
+import { T } from "@/lib/bot/texts";
 import { MENU_SOURCE } from "@/lib/chat/pending";
 import { MENU_VERSION } from "@/lib/chat/menu-view";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -79,6 +80,8 @@ async function confirmAndSave() {
   await saveJob(job() as never, 111);
   return texts().find((t) => /eingebucht/.test(t)) ?? "";
 }
+/** Alle Varianten der Frage 1. */
+const VARIANTS_PRICE = [0, 0.4, 0.9].map((r) => T.pricePaid("6 Flaschen", () => r));
 const summary = () => lastText().replace(/ /g, " ");
 
 test("Preise im Text: ein Preis = bezahlt, „statt“ bzw. bezahlt/normal = beide, nur Normalpreis = der", () => {
@@ -105,59 +108,81 @@ test("Zeile in Zusammenfassung und Bestätigung", () => {
   assert.equal(priceLine(null, null), null);
 });
 
-test("a) Betrag + „Gleich wie bezahlt“ → beide Felder gleich, „CHF 34.80“", async () => {
+const SAME = ["✅ Ja, gleich", "✏️ Anderer Betrag", "🤷 Weiss ich nicht", "✖️ Abbrechen"];
+
+test("Frage 1: Hinweis zum Eintippen, Knöpfe „🎁 Geschenk“ und „🤷 Weiss ich nicht“ – kein „Überspringen“", async () => {
   await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
   assert.equal(state().step, "price");
-  assert.match(lastText(), /^6 Flaschen\. .*[Ww]as habt ihr pro Flasche bezahlt\?$/);
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "Überspringen", "✖️ Abbrechen"]);
-  await say("34.80");
-  assert.equal(state().step, "regular_price");
-  assert.match(lastText(), /normalerweise( kostet)?\?$/);
-  assert.deepEqual(buttons().map((b) => b.text), ["Gleich wie bezahlt", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
-  await press("Gleich wie bezahlt");
-  assert.match(summary(), /\nCHF 34\.80 · bei Coop\n/);
-  const booked = await confirmAndSave();
-  assert.deepEqual([item().purchase_price, item().regular_price], [34.8, 34.8]);
-  assert.match(booked.replace(/ /g, " "), /\nCHF 34\.80 · bei Coop\n/);
+  assert.match(lastText(), /^6 Flaschen\. .*[Ww]as hast du pro Flasche bezahlt\? Schreib mir einfach den Betrag, z\. B\. <i>38<\/i>\.$/);
+  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
+  for (const v of VARIANTS_PRICE) assert.match(v, /Schreib mir einfach den Betrag/);
 });
 
-test("a) Betrag + b) anderer Betrag → beide richtig gespeichert", async () => {
+test("„38“ → „✅ Ja, gleich“ → 38/38, Anzeige „CHF 38.00“", async () => {
   await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
-  await say("29.80");
-  await say("34,80");
-  assert.match(summary(), /Bezahlt CHF 29\.80 · Normalpreis CHF 34\.80 · bei Coop/);
+  await say("38");
+  assert.equal(state().step, "regular_price");
+  assert.match(lastText(), /Ist das auch der Normalpreis\?$/);
+  assert.deepEqual(buttons().map((b) => b.text), SAME);
+  await press("✅ Ja, gleich");
+  assert.match(summary(), /\nCHF 38\.00 · bei Coop\n/);
   const booked = await confirmAndSave();
-  assert.deepEqual([item().purchase_price, item().regular_price], [29.8, 34.8]);
-  assert.match(booked.replace(/ /g, " "), /Bezahlt CHF 29\.80 · Normalpreis CHF 34\.80/);
+  assert.deepEqual([item().purchase_price, item().regular_price], [38, 38]);
+  assert.match(booked.replace(/\u00a0/g, " "), /\nCHF 38\.00 · bei Coop\n/);
 });
 
-test("„Überspringen“ bei a + Betrag bei b → nur regular_price, ohne „Gleich wie bezahlt“", async () => {
+test("„38“ → „✏️ Anderer Betrag“ → „45“ bzw. direkt „45“ getippt → 38/45", async () => {
   await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
-  await press("Überspringen");
+  await say("38");
+  await press("✏️ Anderer Betrag");
   assert.equal(state().step, "regular_price");
+  assert.match(lastText(), /was kostet eine Flasche normalerweise\? Schreib mir einfach den Betrag/);
   assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "✖️ Abbrechen"]);
-  await say("34.80");
-  assert.match(summary(), /\nNormalpreis CHF 34\.80 · bei Coop\n/);
+  await say("0");
+  assert.match(lastText(), /Den Betrag verstehe ich nicht ganz/);
+  await say("45");
+  assert.match(summary(), /Bezahlt CHF 38\.00 · Normalpreis CHF 45\.00 · bei Coop/);
   const booked = await confirmAndSave();
-  assert.deepEqual([item().purchase_price, item().regular_price], [null, 34.8]);
-  assert.match(booked.replace(/ /g, " "), /Normalpreis CHF 34\.80/);
+  assert.deepEqual([item().purchase_price, item().regular_price], [38, 45]);
+  assert.match(booked.replace(/\u00a0/g, " "), /Bezahlt CHF 38\.00 · Normalpreis CHF 45\.00/);
+
+  await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
+  await say("38");
+  await say("45");
+  await confirmAndSave();
+  assert.deepEqual([item().purchase_price, item().regular_price], [38, 45]);
+});
+
+test("„38“ → „🤷 Weiss ich nicht“ → 38/NULL", async () => {
+  await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
+  await say("38");
+  await press("🤷 Weiss ich nicht");
+  assert.match(summary(), /\nBezahlt CHF 38\.00 · bei Coop\n/);
+  await confirmAndSave();
+  assert.deepEqual([item().purchase_price, item().regular_price], [38, null]);
+});
+
+test("„🤷 Weiss ich nicht“ bei Frage 1 → Frage 3 → „45“ → NULL/45", async () => {
+  await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
+  await press("🤷 Weiss ich nicht");
+  assert.deepEqual([state().step, state().price], ["regular_price", null]);
+  assert.match(lastText(), /[Ww]eisst du, was eine Flasche normalerweise kostet\? Schreib mir (einfach )?den Betrag\.$/);
+  assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "✖️ Abbrechen"]);
+  await say("keine Ahnung");
+  assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "✖️ Abbrechen"], "Knöpfe bleiben");
+  await say("45");
+  assert.match(summary(), /\nNormalpreis CHF 45\.00 · bei Coop\n/);
+  const booked = await confirmAndSave();
+  assert.deepEqual([item().purchase_price, item().regular_price], [null, 45]);
   assert.doesNotMatch(booked, /Bezahlt/);
 });
 
-test("Betrag bei a + „🤷 Weiss ich nicht“ → nur bezahlt", async () => {
-  await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
-  await say("29.80");
-  await press("🤷 Weiss ich nicht");
-  assert.match(summary(), /\nBezahlt CHF 29\.80 · bei Coop\n/);
-  await confirmAndSave();
-  assert.deepEqual([item().purchase_price, item().regular_price], [29.8, null]);
-});
-
-test("Freitext „66 Franken“ → bezahlt 66, nur noch Frage b (auch wenn die Erkennung ihn als Normalpreis liest)", async () => {
+test("Freitext „66 Franken“ → bezahlt 66, nur noch Frage 2 (auch wenn die Erkennung ihn als Normalpreis liest)", async () => {
   await text("Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Coop", { regular_price: 66 });
   assert.deepEqual([state().step, state().price, state().regular_price], ["regular_price", 66, undefined]);
-  assert.ok(!texts().some((t) => /pro Flasche bezahlt/.test(t)), "Frage a entfällt");
-  await press("Gleich wie bezahlt");
+  assert.ok(!texts().some((t) => /pro Flasche bezahlt/.test(t)), "Frage 1 entfällt");
+  assert.match(lastText(), /Ist das auch der Normalpreis\?$/);
+  await press("✅ Ja, gleich");
   await confirmAndSave();
   assert.deepEqual([item().purchase_price, item().regular_price], [66, 66]);
 });

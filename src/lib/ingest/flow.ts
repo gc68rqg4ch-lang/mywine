@@ -285,7 +285,9 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
       return;
     case "regular_price":
       if (state.is_gift) await sendMessage(chatId, T.giftValueAsk(), giftValueKeyboard(job.id));
-      else await sendMessage(chatId, T.regularPrice(), regularPriceKeyboard(job.id, state.price ?? null));
+      // Nach einem Betrag: „Ist das auch der Normalpreis?“; ohne Betrag: nach dem Normalpreis fragen.
+      else if (state.price != null) await sendMessage(chatId, T.sameAsRegular(), regularPriceKeyboard(job.id, state.price));
+      else await sendMessage(chatId, T.regularPrice(), regularPriceKeyboard(job.id, null));
       return;
     case "vendor":
       await sendMessage(

@@ -92,7 +92,7 @@ test("„🎁 Geschenk“ → Name → Betrag 38: regular_price 38, purchase_pri
   parseResult = entry({});
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller");
   assert.equal(state().step, "price");
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "Überspringen", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
   await press("🎁 Geschenk");
   assert.deepEqual([state().step, state().is_gift, state().price, state().regular_price], ["gift_from", true, 0, undefined]);
   assert.match(lastText(), /Von wem/);

@@ -107,14 +107,14 @@ test("Kaufpreis: 38, 34.80, 34,80 gültig; 0 → Hinweis auf „🎁 Geschenk“
   await say("0");
   assert.equal(state().step, "price");
   assert.ok(VARIANTS.priceZero.includes(lastText() as never), lastText());
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "Überspringen", "✖️ Abbrechen"], "Knöpfe bleiben");
+  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "✖️ Abbrechen"], "Knöpfe bleiben");
   for (const bad of ["-5", "keine Ahnung"]) {
     await say(bad);
     assert.deepEqual([state().step, state().price], ["price", undefined], bad);
-    assert.match(lastText(), /Was habt ihr pro Flasche bezahlt\?/);
+    assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\? Schreib mir einfach den Betrag/);
   }
-  // Knöpfe wie bisher
-  await press("Überspringen");
+  // „🤷 Weiss ich nicht“ statt „Überspringen“
+  await press("🤷 Weiss ich nicht");
   assert.deepEqual([state().step, state().price], ["regular_price", null]);
   await toPrice();
   await say("0");
@@ -134,10 +134,10 @@ test("Normalpreis: 38, 34.80, 34,80 gültig; 0, -5, keine Ahnung → nochmals fr
   for (const bad of ["0", "-5", "keine Ahnung"]) {
     await say(bad);
     assert.deepEqual([state().step, state().regular_price], ["regular_price", undefined], bad);
-    assert.match(lastText(), /Was kostet eine Flasche normalerweise\? Bitte einen Betrag über 0/);
-    assert.deepEqual(buttons().map((b) => b.text), ["Gleich wie bezahlt", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
+    assert.match(lastText(), /was kostet eine Flasche normalerweise\? Bitte einen Betrag über 0/);
+    assert.deepEqual(buttons().map((b) => b.text), ["✅ Ja, gleich", "✏️ Anderer Betrag", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
   }
-  await press("Gleich wie bezahlt");
+  await press("✅ Ja, gleich");
   assert.equal(state().regular_price, 30);
 });
 

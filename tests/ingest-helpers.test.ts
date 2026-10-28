@@ -101,10 +101,10 @@ test("Vorschlagstext: HTML maskiert, ohne Technik (Modell/Prozent), bekannter We
   assert.ok(!fromLabel.includes("recherchiert") && !fromLabel.includes("kenne ich schon"));
 });
 
-test("Normalpreis-Knöpfe: „Gleich wie bezahlt“ nur mit bezahltem Preis", () => {
-  const withPaid = regularPriceKeyboard(id, 20).inline_keyboard[0];
-  assert.deepEqual(withPaid.map((b) => b.text), ["Gleich wie bezahlt", "🤷 Weiss ich nicht"]);
-  assert.deepEqual(withPaid.map((b) => parseCallbackData(cbd(b))?.action), ["sameprice", "skipregular"]);
+test("Normalpreis-Knöpfe: „✅ Ja, gleich“ und „✏️ Anderer Betrag“ nur mit bezahltem Preis", () => {
+  const withPaid = regularPriceKeyboard(id, 20).inline_keyboard.slice(0, 2).flat();
+  assert.deepEqual(withPaid.map((b) => b.text), ["✅ Ja, gleich", "✏️ Anderer Betrag", "🤷 Weiss ich nicht"]);
+  assert.deepEqual(withPaid.map((b) => parseCallbackData(cbd(b))?.action), ["sameprice", "regother", "skipregular"]);
   for (const b of withPaid) assert.ok(Buffer.byteLength(cbd(b)) <= 64);
   assert.deepEqual(regularPriceKeyboard(id, null).inline_keyboard[0].map((b) => b.text), ["🤷 Weiss ich nicht"]);
 });

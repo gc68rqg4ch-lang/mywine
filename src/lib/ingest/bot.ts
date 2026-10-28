@@ -483,6 +483,16 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       return;
     }
 
+    case "regother": {
+      // „✏️ Anderer Betrag“: um den Normalpreis bitten (die Antwort nimmt der Schritt „regular_price“ an).
+      await answerCallback(cb.id);
+      if (state.step !== "regular_price") return;
+      await clearKeyboard(chatId, messageId);
+      await touchFlow(db, job.id);
+      await sendMessage(chatId, T.regularOther, regularPriceKeyboard(job.id, null));
+      return;
+    }
+
     case "skipregular": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);

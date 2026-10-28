@@ -93,6 +93,9 @@ export function subjectText(s: FlowSubject) {
 }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** Hinweis bei der Frage „bezahlt“: den Betrag eintippen (nicht nur Knöpfe). */
+const PRICE_TYPE_HINT = "Schreib mir einfach den Betrag, z. B. <i>38</i>.";
+
 export const T = {
   // --- Allgemein
   unknownUser: (id: number) => `Ich kenne dich leider noch nicht – deine Telegram-ID ist <code>${id}</code>.`,
@@ -149,8 +152,8 @@ export const T = {
   quantityRetry: (random?: () => number) => say("quantityRetry", random),
   /** Frage a: bezahlter Preis pro Flasche (→ purchase_price). */
   pricePaid: (bottles: string, random?: () => number) =>
-    `${e(bottles)}. ${pick(["Was habt ihr pro Flasche bezahlt?", "Und was habt ihr pro Flasche bezahlt?", "Sag mir noch: Was habt ihr pro Flasche bezahlt?"], random)}`,
-  priceRetry: "Was habt ihr pro Flasche bezahlt? Z. B. <i>24.50</i> – oder tippe „🎁 Geschenk“ bzw. „Überspringen“.",
+    `${e(bottles)}. ${pick(["Was hast du pro Flasche bezahlt?", "Und was hast du pro Flasche bezahlt?", "Sag mir noch: Was hast du pro Flasche bezahlt?"], random)} ${PRICE_TYPE_HINT}`,
+  priceRetry: `Den Betrag verstehe ich nicht ganz – was hast du pro Flasche bezahlt? ${PRICE_TYPE_HINT} Sonst tippe „🎁 Geschenk“ bzw. „🤷 Weiss ich nicht“.`,
   /** Geschenk: „Von wem?“ (Varianten). */
   giftFromAsk: (random?: () => number) => say("giftFrom", random),
   /** Geschenk: Normalpreis (Wert) pro Flasche? (Varianten) */
@@ -160,9 +163,15 @@ export const T = {
   /** Statt Preis: „🎁 Geschenk von Marc“ bzw. „🎁 Geschenk“. */
   giftLine: (from: string | null) => (from ? `🎁 Geschenk von ${e(from)}` : "🎁 Geschenk"),
   /** Frage b: Normalpreis pro Flasche (→ regular_price). */
+  /** Nach einem bezahlten Betrag: gleich, anderer Betrag oder weiss nicht (Knöpfe). */
+  sameAsRegular: (random?: () => number) =>
+    pick(["Ist das auch der Normalpreis?", "Danke! Ist das auch der Normalpreis?", "Notiert. Ist das auch der Normalpreis?"], random),
+  /** „✏️ Anderer Betrag“: um den Normalpreis bitten. */
+  regularOther: "Gerne – was kostet eine Flasche normalerweise? Schreib mir einfach den Betrag, z. B. <i>45</i>.",
+  /** Ohne bezahlten Betrag („🤷 Weiss ich nicht“ bei der ersten Frage). */
   regularPrice: (random?: () => number) =>
-    pick(["Und was kostet eine Flasche normalerweise?", "Und was kostet eine Flasche sonst, also normalerweise?", "Weisst du auch, was eine Flasche normalerweise kostet?"], random),
-  regularPriceRetry: "Was kostet eine Flasche normalerweise? Bitte einen Betrag über 0, z. B. <i>29.90</i> – oder tippe einen Knopf.",
+    pick(["Weisst du, was eine Flasche normalerweise kostet? Schreib mir den Betrag.", "Und weisst du, was eine Flasche normalerweise kostet? Schreib mir einfach den Betrag."], random),
+  regularPriceRetry: "Den Betrag verstehe ich nicht ganz – was kostet eine Flasche normalerweise? Bitte einen Betrag über 0, z. B. <i>29.90</i> – oder tippe einen Knopf.",
   /** Kaufpreis „0“: dafür gibt es „🎁 Geschenk“ (Varianten). */
   priceZero: (random?: () => number) => say("priceZero", random),
   vendorAsk: (hasVendors: boolean) => (hasVendors ? "Wo hast du ihn gekauft?" : "Wo hast du ihn gekauft? Schreib mir den Namen – oder tippe „Überspringen“."),

@@ -19,6 +19,7 @@ export type CallbackAction =
   | "gift"
   | "skipgift"
   | "sameprice"
+  | "regother"
   | "skipregular"
   | "vendor"
   | "newvendor"
@@ -48,6 +49,7 @@ export function parseCallbackData(data: string | undefined) {
     "gift",
     "skipgift",
     "sameprice",
+    "regother",
     "skipregular",
     "vendor",
     "newvendor",
@@ -154,7 +156,7 @@ export function priceKeyboard(jobId: string): TgInlineKeyboard {
     inline_keyboard: [
       [
         { text: "🎁 Geschenk", callback_data: callbackData("gift", jobId) },
-        { text: "Überspringen", callback_data: callbackData("skipprice", jobId) },
+        { text: "🤷 Weiss ich nicht", callback_data: callbackData("skipprice", jobId) },
       ],
       cancelRow(jobId),
     ],
@@ -171,12 +173,23 @@ export function giftFromKeyboard(jobId: string): TgInlineKeyboard {
   return { inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipgift", jobId) }], cancelRow(jobId)] };
 }
 
+/**
+ * Normalpreis: mit bezahltem Betrag „✅ Ja, gleich“, „✏️ Anderer Betrag“, „🤷 Weiss ich nicht“;
+ * ohne (bzw. nach „Anderer Betrag“) nur „🤷 Weiss ich nicht“ – der Betrag wird getippt.
+ */
 export function regularPriceKeyboard(jobId: string, paid: number | null): TgInlineKeyboard {
-  const row = [{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }];
-  if (paid != null) {
-    row.unshift({ text: "Gleich wie bezahlt", callback_data: callbackData("sameprice", jobId) });
-  }
-  return { inline_keyboard: [row, cancelRow(jobId)] };
+  const unknown = [{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }];
+  if (paid == null) return { inline_keyboard: [unknown, cancelRow(jobId)] };
+  return {
+    inline_keyboard: [
+      [
+        { text: "✅ Ja, gleich", callback_data: callbackData("sameprice", jobId) },
+        { text: "✏️ Anderer Betrag", callback_data: callbackData("regother", jobId) },
+      ],
+      unknown,
+      cancelRow(jobId),
+    ],
+  };
 }
 
 /** Händler als Buttons (je zwei pro Zeile), dazu „Neuer Händler“ und „Überspringen“. */

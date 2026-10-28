@@ -86,7 +86,7 @@ test("A) Neuer Wein: Produzent, Herkunft, Trinkreife und Rebsorten per Recherche
   assert.deepEqual([st.storage_room, st.quantity, st.price, st.vendor_name, st.restock], ["Weinkeller", 6, 66, "Mövenpick", undefined]);
   const texts = net.telegram.map((t) => String(t.body.text));
   assert.ok(texts.some((t) => t.includes("Vega Sicilia – Pintia 2019") && t.includes("Trinkreife 2024–2032")), texts.join("\n---\n"));
-  assert.match(lastText(), /normalerweise( kostet)?\?$/, "nur die fehlende Angabe wird gefragt");
+  assert.match(lastText(), /Ist das auch der Normalpreis\?$/, "nur die fehlende Angabe wird gefragt");
 
   await handleUpdate(msg("72") as never);
   st = state("aaaaaaaa-0000-4000-8000-00000000000a");
@@ -168,7 +168,7 @@ test("B) Nachkauf: Wein + Jahrgang liegt schon im Bestand → Rückfrage, keine 
   st = state("bbbbbbbb-0000-4000-8000-00000000000b");
   assert.equal(st.restock, true); assert.equal(st.step, "location", "Lagerort fehlt noch, Anzahl nicht");
   await handleUpdate(cb("loc:bbbbbbbb-0000-4000-8000-00000000000b:wohnzimmer") as never);
-  assert.equal(state("bbbbbbbb-0000-4000-8000-00000000000b").step, "price"); assert.match(lastText(), /3 Flaschen\. (Sag mir noch: |Und w|W)(as habt ihr pro Flasche bezahlt\?)/);
+  assert.equal(state("bbbbbbbb-0000-4000-8000-00000000000b").step, "price"); assert.match(lastText(), /^3 Flaschen\. .*[Ww]as hast du pro Flasche bezahlt\? Schreib mir einfach den Betrag/);
 });
 
 test("C) „Neuer Wein“ in der Menüleiste: wartet auf eine Beschreibung", async () => {
