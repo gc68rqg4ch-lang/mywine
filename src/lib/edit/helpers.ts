@@ -6,12 +6,12 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { formatDate, todayIso, wineName } from "@/lib/format";
-import type { EditChange, EditPreview } from "./types";
+import type { EditChange, EditLink, EditPreview } from "./types";
 
 export type Db = SupabaseClient<Database>;
 
 export type PreparedEdit =
-  | { ok: false; error: string }
+  | { ok: false; error: string; link?: EditLink }
   | {
       ok: true;
       preview: EditPreview;
@@ -25,7 +25,7 @@ export const NOTHING = "Nichts zu ändern – die Angaben sind schon so.";
 export const DASH = "–";
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-export const fail = (error: string): PreparedEdit => ({ ok: false, error });
+export const fail = (error: string, link?: EditLink): PreparedEdit => ({ ok: false, error, ...(link ? { link } : {}) });
 export const show = (v: string | number | null | undefined) => (v == null || v === "" ? DASH : String(v));
 export const date = (v: string | null | undefined) => formatDate(v) ?? DASH;
 /** Leerer Text → null, sonst getrimmt. */

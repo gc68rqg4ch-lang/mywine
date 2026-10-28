@@ -108,10 +108,12 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
     const { data: other, error } = await (producer ? query.ilike("producer", exact(producer)) : query.is("producer", null)).limit(1);
     if (error) throw error;
     if (other?.length) {
+      // Nicht zusammenführen – nur melden, mit Verweis auf den bestehenden Wein.
       return fail(
         other[0].producer
-          ? `Es gibt schon einen Wein „${other[0].name}“ von ${other[0].producer}. Name und Produzent müssen zusammen eindeutig sein – bitte anders benennen.`
-          : `Es gibt schon einen Wein „${other[0].name}“ ohne Produzent – bitte einen Produzenten angeben oder anders benennen.`,
+          ? `Diesen Wein gibt es schon: „${other[0].name}“ von ${other[0].producer}. Name und Produzent müssen zusammen eindeutig sein – nichts geändert.`
+          : `Diesen Wein gibt es schon: „${other[0].name}“ ohne Produzent. Bitte einen Produzenten angeben oder anders benennen – nichts geändert.`,
+        { href: `/wein/${other[0].id}`, label: `Zum bestehenden Wein „${wineTitle(other[0])}“` },
       );
     }
   }
@@ -720,7 +722,7 @@ export async function applyEdits(db: Db, edits: Edit[]): Promise<EditResult> {
     const result = await applyEdit(db, edit);
     if (!result.ok && result.error === NOTHING) continue;
     if (!result.ok) {
-      return done.length ? { ok: false, error: `${capitalize(done.join(", "))} – aber: ${result.error}` } : result;
+      return done.length ? { ok: false, error: `${capitalize(done.join(", "))} – aber: ${result.error}`, ...(result.link ? { link: result.link } : {}) } : result;
     }
     done.push(result.done ?? result.message);
     last = result;

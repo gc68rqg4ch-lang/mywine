@@ -85,7 +85,9 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
      „Nachrecherchieren“ (gewählter Jahrgang, inkl. Geschmacksprofil, ohne Rückfrage) und „Zuletzt recherchiert
      am …“; während der Recherche dreht sich das 🔎, danach eine kurze Meldung („3 Angaben ergänzt“, „1 Abweichung
      zum Prüfen“, „Nichts Neues gefunden“; `src/lib/research/summary.ts`). Abweichungen erscheinen wie bisher in
-     „Zum Wein“; der Sammellauf bleibt auf `/recherche`. Das ✏️ von „Zum Wein“ öffnet ein Formular für Stammdaten, Rebsorten mit %
+     „Zum Wein“; der Sammellauf bleibt auf `/recherche`. Das ✏️ von „Zum Wein“ öffnet ein Formular – zuoberst Name (Pflicht, getrimmt) und Produzent (leer → NULL); gibt es
+     den Wein mit gleichem Namen und Produzenten schon (Gross-/Kleinschreibung egal), wird nichts gespeichert: „Diesen
+     Wein gibt es schon …“ mit Link zum bestehenden Wein, kein Zusammenführen –, dazu Stammdaten, Rebsorten mit %
      und Trinkfenster des Jahrgangs zusammen (`kind = wineCard` in `src/lib/edit/form.ts` → Bearbeitungen `wine`,
      `grapes` nur wenn geändert, `drinkWindow`, zuletzt `vintage`); unter „Mehr“ Appellation, Alkohol und Jahrgang
      umbenennen.

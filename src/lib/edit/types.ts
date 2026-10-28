@@ -167,7 +167,12 @@ export type EditPreview = {
   notes: string[];
 };
 
-export type EditResult = { ok: true; message: string; wineId: string | null; year?: number | null } | { ok: false; error: string };
+/** Verweis zu einer Meldung, z. B. „Diesen Wein gibt es schon“ → zum bestehenden Wein. */
+export type EditLink = { href: string; label: string };
+
+export type EditResult =
+  | { ok: true; message: string; wineId: string | null; year?: number | null }
+  | { ok: false; error: string; link?: EditLink };
 
 /** Vorschau als Text: Titel, je Änderung „Feld: vorher → nachher“, Hinweise. */
 export function previewLines(p: EditPreview) {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, type ReactNode } from "react";
 import { UnitButtons, useEditUnit } from "@/components/edit-unit";
 import type { ActionState } from "../../actions";
@@ -56,6 +57,14 @@ export function EditForm({
       {state?.error && (
         <p className="notice notice-error" role="alert">
           {state.error}
+          {state.link && (
+            <>
+              {" "}
+              <Link href={state.link.href} className="link">
+                {state.link.label}
+              </Link>
+            </>
+          )}
         </p>
       )}
       {state?.ok && !pending && (

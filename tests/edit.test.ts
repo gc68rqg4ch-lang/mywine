@@ -67,7 +67,7 @@ const db = createAdminClient();
 
 test("Wein: gleicher Name + Produzent wie ein anderer → klare Meldung; Änderung mit vorher → nachher", async () => {
   const conflict = await prepareEdit(db, { kind: "wine", wineId: W, set: { name: "alion" } });
-  assert.ok(!conflict.ok && /Es gibt schon einen Wein „Alion“ von Vega Sicilia/.test(conflict.error), JSON.stringify(conflict));
+  assert.ok(!conflict.ok && /Diesen Wein gibt es schon: „Alion“ von Vega Sicilia/.test(conflict.error), JSON.stringify(conflict));
   const wine = await prepareEdit(db, { kind: "wine", wineId: W, set: { region: "DO Toro ", appellation: "" } });
   assert.ok(wine.ok);
   assert.deepEqual(wine.preview.changes, [{ label: "Region", before: "Toro", after: "DO Toro" }]);

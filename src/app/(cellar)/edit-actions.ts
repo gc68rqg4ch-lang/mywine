@@ -18,7 +18,7 @@ export async function saveEdit(_prev: ActionState, formData: FormData): Promise<
   const edits = editsFromForm(formData);
   if ("error" in edits) return { error: edits.error };
   const result = await applyEdits(session.supabase, edits);
-  if (!result.ok) return { error: result.error };
+  if (!result.ok) return { error: result.error, ...(result.link ? { link: result.link } : {}) };
   revalidatePath("/", "layout");
   // Jahrgang umbenannt: die Seite zeigt danach den neuen Jahrgang (der alte gibt es nicht mehr).
   if (edits.some((e) => e.kind === "vintage") && result.wineId) {
