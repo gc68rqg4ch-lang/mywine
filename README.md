@@ -490,10 +490,10 @@ Foto zuordnen, Chat-Vorschläge mit Ja/Nein und Blättern im Menü:
   (bei nur einem Typ übersprungen), dann die Liste.
 - **Listen:** pro Wein eine Zeile mit Emoji statt Weintyp (🍷 Rot, 🥂 Weiss, 🌸 Rosé, 🍾 Schaumwein,
   🍯 Süsswein, 🥃 Likörwein), z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“; Produzent bzw. Lagerort nur, wenn nötig
-  zur Unterscheidung. Darunter je Wein ein Knopf, 10 pro Seite. Bestand und Trinkreif blättern mit „◀︎ Vorherige“
+  zur Unterscheidung. Darunter je Wein ein Knopf, 10 pro Seite. Offen, Bestand und Trinkreif blättern mit „◀︎ Vorherige“
   (nicht auf Seite 1), „Weitere ▶︎“ (nicht auf der letzten) und „↩︎ Andere Auswahl“ (Weintyp bzw. Stufe), im Text
-  „Seite 2 von 11“; „‹ Zurück“ im Wein-Menü führt auf dieselbe Seite (Seite im callback_data, `L:tr.1` u. ä.).
-  Menüs laufen wie alle Rückfragen 10 Minuten nach dem letzten Antippen ab. Offen behält „Mehr…“.
+  „Seite 2 von 11“ (Offen ohne „Andere Auswahl“); „‹ Zurück“ im Wein-Menü führt auf dieselbe Seite (Seite im
+  callback_data, `L:tr.1`, `L:o.2` u. ä.). Menüs laufen wie alle Rückfragen 10 Minuten nach dem letzten Antippen ab.
 - **ℹ️ Details** im Wein-Menü: kompakte Nachricht zum Jahrgang (Name, Produzent, Herkunft mit Flagge, Rebsorten
   mit %, Alkohol, Trinkreife, Flaschen je Lagerort, offene Flaschen mit Füllstand, Preise mit Rabatt, Bewertungen,
   letzte Verkostung, Link auf die Weinseite); leere Angaben fallen weg (`src/lib/chat/details.ts`). Darunter

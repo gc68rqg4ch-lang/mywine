@@ -52,7 +52,7 @@ import {
   formatStars,
   onPage,
   openBottleLine,
-  pageButtons,
+  clampOffset,
   pageLabel,
   pageNav,
   ratingKeyboard,
@@ -153,25 +153,23 @@ function ratingButtons(persons: { id: string; name: string }[], subject: Subject
 // ---------------------------------------------------------------------------
 // Listen
 
-async function openListScreen(db: AdminClient, offset: number, status?: string): Promise<Screen> {
+async function openListScreen(db: AdminClient, requested: number, status?: string): Promise<Screen> {
   const rows = await loadOpenBottles(db);
-  if (!rows.length) return { text: withStatus(status, "🍷 Gerade ist keine Flasche offen."), keyboard: { inline_keyboard: [] } };
+  if (!rows.length) return { text: withStatus(status, T.openEmpty), keyboard: { inline_keyboard: [] } };
   const names = shortNames(rows);
   const entries = rows.map((r, i) => ({ row: r, name: names[i] }));
+  const offset = clampOffset(requested, entries.length);
   const page = entries.slice(offset, offset + PAGE_SIZE);
-  const text = [
-    `<b>🍷 Offene Flaschen (${rows.length})</b>`,
-    ...page.map((x) => e(openBottleLine(x.row, x.name))),
-  ].join("\n");
+  const list: ListRef = { kind: "open" };
+  const header = [T.openTitle(rows.length), pageLabel(offset, entries.length)].filter(Boolean).join(" · ");
   return {
-    text: withStatus(status, text),
+    text: withStatus(status, [header, ...page.map((x) => e(openBottleLine(x.row, x.name)))].join("\n")),
     keyboard: {
-      inline_keyboard: pageButtons(
-        entries,
-        offset,
-        (x) => btn(`${typeEmoji(x.row.type)} ${x.name}`, { op: "item", itemId: x.row.itemId, back: { kind: "open" } }),
-        { op: "list", list: { kind: "open" }, offset: offset + PAGE_SIZE },
-      ),
+      inline_keyboard: [
+        // „‹ Zurück“ im Flaschen-Menü führt auf genau diese Seite.
+        ...page.map((x) => [btn(`${typeEmoji(x.row.type)} ${x.name}`, { op: "item", itemId: x.row.itemId, back: onPage(list, offset) })]),
+        ...pageNav(list, offset, entries.length, null),
+      ],
     },
   };
 }
@@ -194,12 +192,13 @@ async function stockScreen(db: AdminClient, status?: string): Promise<Screen> {
   return { text: withStatus(status, wines.length ? text : "📦 Der Bestand ist leer."), keyboard: { inline_keyboard: rows } };
 }
 
-async function typeListScreen(db: AdminClient, code: TypeCode, offset: number, status?: string): Promise<Screen> {
+async function typeListScreen(db: AdminClient, code: TypeCode, requested: number, status?: string): Promise<Screen> {
   const wines = (await loadCellar(db, null)).filter((w) => w.sealed > 0 && typeCode(w.type) === code);
   const info = typeInfo(code);
   const names = uniqueNames(wines);
   const entries = wines.map((w, i) => ({ wine: w, name: names[i] }));
   const list: ListRef = { kind: "type", code };
+  const offset = clampOffset(requested, entries.length);
   const page = entries.slice(offset, offset + PAGE_SIZE);
   const lines = page.map((x) => e(`${info.emoji} ${x.name} ${formatVintages(x.wine.vintages)} · ${x.wine.sealed} Fl.`));
   const total = wines.reduce((s, w) => s + w.sealed, 0);
@@ -304,7 +303,7 @@ async function readyListScreen(db: AdminClient, stage: DrinkStatus, code: TypeCo
     return { text: withStatus(status, T.readyNoneLeft), keyboard: { inline_keyboard: pageNav(list, 0, 0, choose) } };
   }
   const names = shortNames(entries);
-  const start = Math.min(offset, Math.max(0, Math.floor((entries.length - 1) / PAGE_SIZE) * PAGE_SIZE));
+  const start = clampOffset(offset, entries.length);
   const page = entries.slice(start, start + PAGE_SIZE);
   const typeTitle = code === "all" ? null : `${typeInfo(code).emoji} ${typeInfo(code).label}`;
   const header = [`<b>${stageLabel(stage)}</b>`, typeTitle, `${bottles(entries)} Fl.`, pageLabel(start, entries.length)].filter(Boolean).join(" · ");

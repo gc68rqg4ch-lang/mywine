@@ -1,7 +1,7 @@
 // Menüs des Telegram-Bots: Callback-Format, Emojis, Zeilen und Knöpfe (rein, ohne DB).
 //
 // callback_data (max. 64 Bytes), Felder mit ":" getrennt, `<l>` = Liste für „Zurück“:
-//   L:<l>[:<offset>]          Liste: o = offen, b = Bestand (Weintypen), t<typ> = Weine eines Typs,
+//   L:<l>[:<offset>]          Liste: o = offen (Flaschen), b = Bestand (Weintypen), t<typ> = Weine eines Typs,
 //                             r = Trinkreif (Stufen), r<stufe> = Weintypen der Stufe, r<stufe><typ|a> = Weine
 //                             (Stufen o/n/r/w/u wie DRINK_STATUS_ORDER); als Rücksprung mit „.<seite>“ (ab Seite 2)
 //   W:<wine>:<l>              Wein (Jahrgang wählen)      V:<wine>:<jahr|->:<l>   Jahrgang (ungeöffnet)
@@ -69,7 +69,7 @@ export const typeInfo = (code: TypeCode) => TYPE_INFO[code];
 
 /** Listen bzw. Auswahl-Menüs; page (ab 1 = Seite 2) nur als Rücksprung aus dem Wein-Menü. */
 export type ListRef =
-  | { kind: "open" }
+  | { kind: "open"; page?: number }
   /** ⏰ Trinkreif: Stufen wählen */
   | { kind: "ready" }
   /** Weintypen einer Stufe wählen */
@@ -138,7 +138,7 @@ const pageSuffix = (page: number | undefined) => (page ? `.${page}` : "");
 export function encodeList(list: ListRef) {
   switch (list.kind) {
     case "open":
-      return "o";
+      return `o${pageSuffix(list.page)}`;
     case "ready":
       return "r";
     case "readyStatus":
@@ -161,7 +161,7 @@ function decodeList(raw: string | undefined): ListRef | null {
   const page = pagePart == null ? undefined : Number(pagePart);
   if (page !== undefined && !(Number.isInteger(page) && page >= 1 && page <= 999)) return null;
   const paged = (ref: Extract<ListRef, { page?: number }>): ListRef => (page ? { ...ref, page } : ref);
-  if (s === "o" && !pagePart) return { kind: "open" };
+  if (s === "o") return paged({ kind: "open" });
   if (s === "r" && !pagePart) return { kind: "ready" };
   if (s === "b" && !pagePart) return { kind: "stock" };
   if (s === "k" && !pagePart) return { kind: "tasted" };
@@ -437,33 +437,26 @@ export function openBottleLine(row: OpenBottleRow, name: string) {
 export const btn = (text: string, action: MenuAction): TgInlineButton => ({ text, callback_data: encodeMenu(action) });
 
 /**
- * Blättern in Bestand und Trinkreif: „◀︎ Vorherige“ (nicht auf Seite 1), „Weitere ▶︎“ (nicht auf
- * der letzten Seite) und „↩︎ Andere Auswahl“ (zurück zu Weintyp bzw. Stufe).
+ * Blättern in Offen, Bestand und Trinkreif: „◀︎ Vorherige“ (nicht auf Seite 1), „Weitere ▶︎“ (nicht
+ * auf der letzten Seite) und – wo es eine Auswahl gibt – „↩︎ Andere Auswahl“ (Weintyp bzw. Stufe).
  */
-export function pageNav(list: ListRef, offset: number, total: number, choose: ListRef): TgInlineButton[][] {
+export function pageNav(list: ListRef, offset: number, total: number, choose: ListRef | null): TgInlineButton[][] {
   const steps = [
     offset > 0 ? btn("◀︎ Vorherige", { op: "list", list, offset: Math.max(0, offset - PAGE_SIZE) }) : null,
     offset + PAGE_SIZE < total ? btn("Weitere ▶︎", { op: "list", list, offset: offset + PAGE_SIZE }) : null,
   ].filter((b): b is TgInlineButton => b != null);
-  return [...(steps.length ? [steps] : []), [btn("↩︎ Andere Auswahl", { op: "list", list: choose, offset: 0 })]];
+  return [...(steps.length ? [steps] : []), ...(choose ? [[btn("↩︎ Andere Auswahl", { op: "list", list: choose, offset: 0 })]] : [])];
+}
+
+/** Gültige Seite: liegt der offset hinter dem Ende (Liste kürzer geworden), die letzte Seite. */
+export function clampOffset(offset: number, total: number) {
+  return Math.min(Math.max(0, offset), Math.max(0, Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE));
 }
 
 /** „Seite 2 von 11“ – nur bei mehr als einer Seite. */
 export function pageLabel(offset: number, total: number) {
   const pages = Math.ceil(total / PAGE_SIZE);
   return pages > 1 ? T.pageOf(Math.floor(offset / PAGE_SIZE) + 1, pages) : null;
-}
-
-/** Eine Seite Knöpfe (je eine Zeile) und bei Bedarf „Mehr…“. */
-export function pageButtons<T>(
-  items: T[],
-  offset: number,
-  toButton: (item: T) => TgInlineButton,
-  more: MenuAction | null,
-): TgInlineButton[][] {
-  const page = items.slice(offset, offset + PAGE_SIZE).map((item) => [toButton(item)]);
-  if (more && items.length > offset + PAGE_SIZE) page.push([btn("Mehr…", more)]);
-  return page;
 }
 
 export function backRow(back: ListRef): TgInlineButton[][] {

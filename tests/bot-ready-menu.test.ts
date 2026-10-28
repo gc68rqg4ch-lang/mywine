@@ -1,4 +1,4 @@
-// Bot-Menü „⏰ Trinkreif“ mit Auswahl (Stufe → Weintyp → Liste) und Blättern in Bestand und
+// Bot-Menü „⏰ Trinkreif“ mit Auswahl (Stufe → Weintyp → Liste) und Blättern in Offen, Bestand und
 // Trinkreif: „◀︎ Vorherige“, „Weitere ▶︎“, „↩︎ Andere Auswahl“, „Seite 2 von 3“; „‹ Zurück“ im
 // Wein-Menü führt auf dieselbe Seite. Zeitgrenze 10 Min. Supabase und Telegram per fetch-Stub.
 import "./env";
@@ -141,4 +141,43 @@ test("Zeitgrenze 10 Minuten auch beim Blättern", async () => {
   assert.equal(text(), T.menuExpired);
   await click(next, now() - 9 * 60);
   assert.match(text(), /Seite 2 von 3/);
+});
+
+test("🍷 Offen: gleiches Blättern (Vorherige/Weitere, Seite x von y, ohne „Mehr…“), Zurück aus dem Wein-Menü auf dieselbe Seite", async () => {
+  reset();
+  // 23 offene Flaschen → 3 Seiten à 10
+  net.tables.cellar_overview = Array.from({ length: 23 }, (_, i) => ({
+    inventory_item_id: id(100 + i), wine_id: id(i + 1), producer: "P", name: `Offen ${String(i + 1).padStart(2, "0")}`, vintage_year: 2020,
+    type: "red", status: "open", fill_level_percent: 50, date_opened: `2026-10-${String(i + 1).padStart(2, "0")}`, storage_room: "Weinkeller", bottle_size_ml: 750,
+  }));
+  await say("🍷 Offen");
+  assert.match(text(), /^<b>🍷 Offene Flaschen \(23\)<\/b> · Seite 1 von 3\n/);
+  assert.equal(labels().filter((l) => l.startsWith("🍷 Offen")).length, 10);
+  assert.ok(!labels().includes("Mehr…") && !labels().includes("◀︎ Vorherige") && labels().includes("Weitere ▶︎"));
+  assert.ok(!labels().includes("↩︎ Andere Auswahl"), "Offen hat keine Auswahl");
+  await press("Weitere ▶︎");
+  assert.match(text(), /Seite 2 von 3/);
+  assert.match(text(), /Offen 11 2020/);
+  assert.ok(labels().includes("◀︎ Vorherige") && labels().includes("Weitere ▶︎"));
+  // Flaschen-Menü von Seite 2 → „‹ Zurück“ landet wieder auf Seite 2
+  await press(/Offen 13/);
+  assert.match(text(), /Offen 13 2020/);
+  await press("‹ Zurück");
+  assert.match(text(), /Seite 2 von 3/);
+  await press("◀︎ Vorherige");
+  assert.match(text(), /Seite 1 von 3/);
+  await press("Weitere ▶︎");
+  await press("Weitere ▶︎");
+  assert.match(text(), /Seite 3 von 3/);
+  assert.equal(labels().filter((l) => l.startsWith("🍷 Offen")).length, 3);
+  assert.ok(!labels().includes("Weitere ▶︎"), "letzte Seite");
+  // Liste kürzer geworden (z. B. ausgetrunken): eine Seite hinter dem Ende zeigt die letzte Seite
+  net.tables.cellar_overview = net.tables.cellar_overview.slice(0, 12);
+  await press("◀︎ Vorherige");
+  assert.match(text(), /Seite 2 von 2/);
+  // Nur eine Seite: keine Seitenzahl, keine Knöpfe zum Blättern
+  net.tables.cellar_overview = net.tables.cellar_overview.slice(0, 4);
+  await say("🍷 Offen");
+  assert.doesNotMatch(text(), /Seite/);
+  assert.ok(!labels().some((l) => /Vorherige|Weitere|Mehr/.test(l)));
 });

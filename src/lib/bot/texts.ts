@@ -189,7 +189,9 @@ export const T = {
   attachReplacing: "📷 Ich ersetze die Fotos …",
   attachWhichSide: "📷 Ist das die Vorder- oder die Rückseite?",
 
-  // --- Menüs: Trinkreif und Blättern
+  // --- Menüs: Offen, Trinkreif und Blättern
+  openTitle: (bottles: number) => `<b>🍷 Offene Flaschen (${bottles})</b>`,
+  openEmpty: "🍷 Gerade ist keine Flasche offen.",
   readyIntro: (bottles: number) => `⏰ <b>Trinkreife</b> · ${bottles} Fl.\nWelche Flaschen möchtest du sehen?`,
   readyEmpty: "⏰ Im Bestand liegt gerade keine ungeöffnete Flasche.",
   readyWhichType: (stage: string, bottles: number) => `${stage} · ${bottles} Fl.\nWelchen Typ möchtest du sehen?`,
