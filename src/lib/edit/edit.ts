@@ -65,7 +65,7 @@ async function loadItem(db: Db, itemId: string) {
   const { data, error } = await db
     .from("inventory_items")
     .select(
-      "id, wine_id, vintage_year, status, quantity, bottle_size_ml, purchased_at, vendor_id, is_gift, purchase_price, regular_price, currency, storage_house, storage_room, storage_compartment, storage_location, drunk_at, wine:wines(name, producer), vendor:vendors(name), open:open_bottle_details(fill_level_percent, date_opened)",
+      "id, wine_id, vintage_year, status, quantity, bottle_size_ml, purchased_at, vendor_id, is_gift, gift_from, purchase_price, regular_price, currency, storage_house, storage_room, storage_compartment, storage_location, drunk_at, wine:wines(name, producer), vendor:vendors(name), open:open_bottle_details(fill_level_percent, date_opened)",
     )
     .eq("id", itemId)
     .maybeSingle();
@@ -275,6 +275,14 @@ async function prepareBatch(db: Db, itemId: string, set: BatchChanges): Promise<
   if (set.isGift !== undefined) {
     diff(changes, "Geschenk", item.is_gift ? "ja" : "nein", set.isGift ? "ja" : "nein");
     update.is_gift = set.isGift;
+  }
+  // „Geschenk von“: nur mit Geschenk (DB-Check); ohne Häkchen immer leer – auch wenn nur das Häkchen wegfällt.
+  const isGift = set.isGift ?? item.is_gift;
+  const giftFrom = !isGift ? null : set.giftFrom !== undefined ? clean(set.giftFrom) : item.gift_from;
+  if (giftFrom !== (item.gift_from ?? null)) {
+    if (giftFrom && giftFrom.length > 120) return fail("Geschenk von: bitte höchstens 120 Zeichen.");
+    if (isGift) diff(changes, "Geschenk von", show(item.gift_from), show(giftFrom));
+    update.gift_from = giftFrom;
   }
   for (const [key, column, label] of [
     ["purchasePrice", "purchase_price", "Bezahlt"],

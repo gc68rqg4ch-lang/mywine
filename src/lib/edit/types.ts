@@ -29,6 +29,7 @@ export const BATCH_FIELDS = [
   "purchasedAt",
   "vendor",
   "isGift",
+  "giftFrom",
   "purchasePrice",
   "regularPrice",
 ] as const;
@@ -41,6 +42,8 @@ export type BatchChanges = {
   /** Händlername (bestehender oder neuer); null = kein Händler */
   vendor?: string | null;
   isGift?: boolean;
+  /** Von wem geschenkt (nur mit Geschenk; leer → null). */
+  giftFrom?: string | null;
   purchasePrice?: number | null;
   regularPrice?: number | null;
 };

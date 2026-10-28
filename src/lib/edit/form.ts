@@ -199,7 +199,11 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
         }
         if (r.has("purchasedAt")) set.purchasedAt = r.text("purchasedAt") || null;
         if (r.has("vendor")) set.vendor = r.text("vendor") || null;
-        if (r.has("giftField")) set.isGift = r.has("isGift");
+        if (r.has("giftField")) {
+          set.isGift = r.has("isGift");
+          // „Geschenk von“: freiwillig, getrimmt; leer oder ohne Häkchen → null.
+          set.giftFrom = set.isGift ? r.text("giftFrom").replace(/\s+/g, " ") || null : null;
+        }
         if (r.has("purchasePrice")) set.purchasePrice = r.price("purchasePrice", "Bezahlt");
         if (r.has("regularPrice")) set.regularPrice = r.price("regularPrice", "Normalpreis");
         const edits: Edit[] = [{ kind: "batch", itemId, set }];

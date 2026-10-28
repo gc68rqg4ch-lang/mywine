@@ -2229,6 +2229,11 @@ input[inputmode="decimal"] {
 .unit-form .field textarea {
   width: 100%;
 }
+/* Häkchen nicht auf Feldbreite ziehen (sonst rutscht das Wort daneben aus der Karte) */
+.unit-form .field-check input[type="checkbox"] {
+  flex: none;
+  width: 20px;
+}
 .unit-buttons {
   padding-top: 4px;
 }
@@ -2545,4 +2550,42 @@ a.doc-clip-name:hover {
 .research-result {
   margin: 0;
   font-weight: 600;
+}
+
+/* Chargen-Formular: „Geschenk“ (Häkchen und Wort als eine Einheit) und „von <Name>“ – bleibt in der Karte */
+.gift-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.gift-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.gift-check input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+.gift-from {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.gift-from input {
+  flex: 1;
+  min-width: 0;
+}
+.gift-line {
+  margin: 2px 0 0;
 }

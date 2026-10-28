@@ -86,5 +86,12 @@ export function encounterRows<T extends Parameters<typeof encounterLine>[0] & { 
 
 export const BUY_MARK = "🛒\u00a0kaufen";
 
+/** Charge: „Geschenk von Anna“, ohne Name „Geschenk“, sonst nichts. */
+export function giftLabel(isGift: boolean | null | undefined, giftFrom: string | null | undefined) {
+  if (!isGift) return null;
+  const name = giftFrom?.trim();
+  return name ? `Geschenk von ${name}` : "Geschenk";
+}
+
 /** „Zum Wein“: Zeilen nach den Stammdaten; die Fotos stehen zuletzt (ohne Überschrift). */
 export const WINE_EXTRA_ROWS = ["Laut Verkostung", "Jahrgang", "Notiz", "Fotos"] as const;

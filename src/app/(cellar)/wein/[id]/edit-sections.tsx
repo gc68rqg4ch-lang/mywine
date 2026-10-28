@@ -9,6 +9,7 @@ import type { GrapeShare } from "@/lib/grapes/shares";
 import { DeleteBottles } from "./delete-sections";
 import { GrapeRowsField } from "./grape-card";
 import { EditForm } from "./edit-form";
+import { GiftField } from "./gift-field";
 
 const yearInput = (year: number | null) => (year == null ? "NV" : String(year));
 const priceInput = (v: number | null) => (v == null ? "" : v.toFixed(2));
@@ -136,6 +137,8 @@ export type EditBatch = {
   purchased_at: string | null;
   vendor_name: string | null;
   is_gift: boolean | null;
+  /** Von wem geschenkt (inventory_items.gift_from; nicht in cellar_overview). */
+  gift_from?: string | null;
   purchase_price: number | null;
   regular_price: number | null;
   fill_level_percent: number | null;
@@ -240,10 +243,7 @@ export function BatchForm({ batch: b, vendors }: { batch: EditBatch; vendors: st
             <span>Jahrgang nur dieser {b.status === "sealed" ? "Charge" : "Flasche"}</span>
             <input type="text" name="vintage" defaultValue={yearInput(b.vintage_year)} inputMode="numeric" autoComplete="off" />
           </label>
-          <label className="field field-check">
-            <input name="isGift" type="checkbox" defaultChecked={Boolean(b.is_gift)} />
-            <span>Geschenk</span>
-          </label>
+          <GiftField isGift={Boolean(b.is_gift)} giftFrom={b.gift_from ?? null} />
           {b.status === "drunk" && (
             <>
               <label className="field field-check">

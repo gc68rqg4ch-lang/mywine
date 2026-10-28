@@ -99,7 +99,7 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
     kein eigener Modus mehr. Jede Einheit hat oben rechts ein kleines ✏️ – Zum Wein (Stammdaten, Rebsorten mit %,
     Trinkfenster; unter „Mehr“ Appellation, Alkohol, Jahrgang umbenennen über `public.change_vintage()`, bestehender
     Ziel-Jahrgang → Rückfrage und Zusammenführen; am Ende die Fotos), jede Charge (Anzahl, Lagerort auch teilweise,
-    bezahlt, Händler, Kaufdatum; unter „Mehr“ Normalpreis, Flaschengrösse, Jahrgang nur dieser Charge, Geschenk),
+    bezahlt, Händler, Kaufdatum; unter „Mehr“ Normalpreis, Flaschengrösse, Jahrgang nur dieser Charge, Geschenk mit freiwilligem „von <Name>“ – `inventory_items.gift_from`, leer bzw. ohne Häkchen NULL; Anzeige „🎁 Geschenk von Anna“ unter der Preiszeile),
     jede offene (dazu Füllstand, „Geöffnet am“) und getrunkene Flasche („Getrunken am“; unter „Mehr“ zurück auf
     offen), Bewertungen (auch löschen, mit Rückfrage) und jeder Verkostet-Eintrag. Antippen macht nur diese Einheit
     zum Formular, unten genau ein „Speichern“ / „Abbrechen“ (Fotos: „Fertig“, Hochladen gilt sofort). Immer nur

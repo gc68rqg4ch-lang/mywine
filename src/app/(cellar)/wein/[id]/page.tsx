@@ -33,7 +33,7 @@ import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { EditUnit, EditUnits } from "@/components/edit-unit";
-import { WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, grapeLine, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
+import { WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, giftLabel, grapeLine, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
 import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { DocumentClip } from "./documents";
@@ -77,8 +77,11 @@ export async function generateMetadata({ params }: PageProps<"/wein/[id]">): Pro
   return { title: wine ? wine.name : "Wein" };
 }
 
-/** Alle Flaschen des Weins (ungeöffnet, offen, getrunken). */
+/** Alle Flaschen des Weins (ungeöffnet, offen, getrunken), mit „Geschenk von“ (nicht in cellar_overview). */
 async function loadItems(supabase: Supabase, wineId: string) {
+  const gifts = await supabase.from("inventory_items").select("id, gift_from").eq("wine_id", wineId);
+  if (gifts.error) throw gifts.error;
+  const giftFrom = new Map((gifts.data ?? []).filter((g) => g.gift_from != null).map((g) => [g.id, g.gift_from]));
   const { data, error } = await supabase
     .from("cellar_overview")
     .select(
@@ -88,7 +91,15 @@ async function loadItems(supabase: Supabase, wineId: string) {
   if (error) throw error;
   return (data ?? []).flatMap((r) =>
     r.inventory_item_id && r.status
-      ? [{ ...r, inventory_item_id: r.inventory_item_id, status: r.status as InventoryStatus, quantity: r.quantity ?? 0 }]
+      ? [
+          {
+            ...r,
+            inventory_item_id: r.inventory_item_id,
+            status: r.status as InventoryStatus,
+            quantity: r.quantity ?? 0,
+            gift_from: giftFrom.get(r.inventory_item_id) ?? null,
+          },
+        ]
       : [],
   );
 }
@@ -139,6 +150,12 @@ function Detail({ label, value }: { label: string; value: ReactNode }) {
       <dd>{value}</dd>
     </>
   );
+}
+
+/** „🎁 Geschenk von Anna“ bzw. „🎁 Geschenk“ unter der Preiszeile einer Charge. */
+function GiftLine({ item }: { item: { is_gift: boolean | null; gift_from: string | null } }) {
+  const label = giftLabel(item.is_gift, item.gift_from);
+  return label ? <p className="muted small gift-line">🎁 {label}</p> : null;
 }
 
 const sizeSuffix = (ml: number | null) => (ml && ml !== 750 ? ` · ${formatBottleSize(ml)}` : "");
@@ -241,6 +258,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                     o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)} (${formatDaysSince(o.date_opened)})` : "Offen",
                     place(o),
                     o.bottle_size_ml && o.bottle_size_ml !== 750 ? formatBottleSize(o.bottle_size_ml) : null,
+                    giftLabel(o.is_gift, o.gift_from),
                   ]
                     .filter(Boolean)
                     .join(" · "),
@@ -264,6 +282,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 form={batchForm(b)}
               >
                 <PriceLine {...priceOf(b)} />
+                <GiftLine item={b} />
               </EditUnit>
             ))}
           </ul>
@@ -296,6 +315,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 form={batchForm(d)}
               >
                 <PriceLine {...priceOf(d)} />
+                <GiftLine item={d} />
               </EditUnit>
             ))}
           </ul>
