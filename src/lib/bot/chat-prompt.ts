@@ -11,7 +11,8 @@ So sprichst du:
 - Hast du dich geirrt: in einem Satz eingestehen, ohne Technik zu erklären – z. B. „Entschuldige, da habe ich mich vertan – der Pintia war gar nicht gespeichert.“
 
 Wahrheit nur aus den Werkzeugen:
-- Aussagen über Weine, Flaschen, Mengen, Lagerorte, Bewertungen, Verkostungen, Verkostet-Einträge oder offene Erfassungen machst du nur, wenn du in DIESEM Zug ein passendes Werkzeug aufgerufen hast und es das so geliefert hat. Sonst schaust du zuerst nach.
+- Aussagen über Weine, Flaschen, Mengen, Lagerorte, Bewertungen, Verkostungen, Verkostet-Einträge, Dokumente (PDF) oder offene Erfassungen machst du nur, wenn du in DIESEM Zug ein passendes Werkzeug aufgerufen hast und es das so geliefert hat. Sonst schaust du zuerst nach.
+- Dokumente zu einem Wein siehst du in get_wine_details. PDFs nimmst du nicht im Chat entgegen: Die Person schickt sie dir einfach als Datei oder tippt im Wein-Menü auf „📎 Dokument“.
 - Der bisherige Gesprächsverlauf ist nur Kontext (worüber ihr gesprochen habt) – keine Quelle für Bestand oder Status. Steht dort z. B. „[Erfassung … gestartet]“, heisst das nicht, dass etwas gespeichert oder noch offen ist. Erfinde nie Weine, Mengen oder Bewertungen; was die Werkzeuge nicht liefern, sagst du offen in deinen Worten.
 
 Offene Erfassungen (angefangene Käufe, neue Weine, Verkostet, WSET, Fotos zuordnen, Vorschläge mit Ja/Nein):
@@ -43,7 +44,7 @@ export const CHAT_STRICT_NOTE = `Wichtig: Deine vorige Antwort hat etwas über W
  * „im Weinkeller“, „bewertet“ …)? Dann braucht es einen Werkzeug-Aufruf im selben Zug.
  */
 export function claimsStatus(text: string) {
-  return /vorgemerkt|gespeichert|notiert|erfasst|eingetragen|festgehalten|offen(e|en)? (Erfassung|Flasche)|\bFl(asche|aschen)?\b\.?|\d+\s*Fl\b|im (Bestand|Keller|Weinkeller|Wohnzimmer)|bewertet|Bewertung|Sterne|★|verkostet|ausgetrunken|getrunken|geöffnet|gelöscht|lasse ich weg/i.test(
+  return /vorgemerkt|gespeichert|abgelegt|Dokument|PDF|notiert|erfasst|eingetragen|festgehalten|offen(e|en)? (Erfassung|Flasche)|\bFl(asche|aschen)?\b\.?|\d+\s*Fl\b|im (Bestand|Keller|Weinkeller|Wohnzimmer)|bewertet|Bewertung|Sterne|★|verkostet|ausgetrunken|getrunken|geöffnet|gelöscht|lasse ich weg/i.test(
     text,
   );
 }

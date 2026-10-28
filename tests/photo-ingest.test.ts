@@ -117,5 +117,5 @@ test("Kaufangaben per Knopf, dann Speichern: Charge, Trinkfenster, Etikett-Fotos
   assert.deepEqual(media.map((m) => m.kind), ["label_front", "label_back"]);
   assert.ok(media.every((m) => m.thumb_path?.endsWith(".thumb.webp") && net.storage!.has(`wine-photos/${m.thumb_path}`)), "Vorschaubilder gespeichert");
   assert.ok(media.every((m) => m.vintage_year === 2019 && m.inventory_item_id === item.id));
-  assert.match(lastText(), /^✅ Ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht\./);
+  assert.match(lastText(), /^✅ (Wunderbar|Schön|Perfekt) – ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht\./);
 });

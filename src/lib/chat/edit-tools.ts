@@ -58,17 +58,18 @@ export function editTools(db: AdminClient, pending: PendingProposal[], actor: Ac
     betaZodTool({
       name: "get_wine_details",
       description:
-        "Stammdaten eines Weins (Name, Produzent, Typ, Herkunft, Alkohol) und je Jahrgang: Trinkfenster, Rebsorten mit %, Bewertungen je Person und Verkostungen (mit tasting_id). Vor jedem Bearbeiten aufrufen, um den aktuellen Stand zu kennen.",
+        "Stammdaten eines Weins (Name, Produzent, Typ, Herkunft, Alkohol), je Jahrgang: Trinkfenster, Rebsorten mit %, Bewertungen je Person und Verkostungen (mit tasting_id), dazu die abgelegten Dokumente (PDF, Jahrgang 0 = für alle). Vor jedem Bearbeiten aufrufen, um den aktuellen Stand zu kennen.",
       inputSchema: z.object({ wine_id: z.uuid() }),
       run: async ({ wine_id }) => {
-        const [wine, items, vintages, ratings, tastings] = await Promise.all([
+        const [wine, items, vintages, ratings, tastings, docs] = await Promise.all([
           db.from("wines").select("name, producer, type, country, region, appellation, alcohol_content").eq("id", wine_id).maybeSingle(),
           db.from("inventory_items").select("vintage_year").eq("wine_id", wine_id),
           db.from("wine_vintages").select("vintage_year, drink_from_year, drink_until_year").eq("wine_id", wine_id),
           db.from("latest_wine_ratings").select("vintage_year, person_name, rating, rated_at").eq("wine_id", wine_id),
           db.from("wine_tastings").select("id, vintage_year, tasted_at, quality_level, quality_points, notes, person:persons(name)").eq("wine_id", wine_id).order("tasted_at", { ascending: false }),
+          db.from("wine_media").select("vintage_year, file_name").eq("wine_id", wine_id).eq("kind", "document"),
         ]);
-        for (const r of [wine, items, vintages, ratings, tastings]) if (r.error) throw r.error;
+        for (const r of [wine, items, vintages, ratings, tastings, docs]) if (r.error) throw r.error;
         if (!wine.data) return "Fehler: Wein nicht gefunden.";
         const years = [...new Set([...(items.data ?? []), ...(vintages.data ?? [])].map((r) => r.vintage_year))];
         const perYear = await Promise.all(
@@ -91,7 +92,8 @@ export function editTools(db: AdminClient, pending: PendingProposal[], actor: Ac
             };
           }),
         );
-        return json({ wine_id, ...wine.data, type: wineTypeLabel(wine.data.type), vintages: perYear });
+        const documents = (docs.data ?? []).map((d) => ({ vintage_year: d.vintage_year ?? 0, file_name: d.file_name }));
+        return json({ wine_id, ...wine.data, type: wineTypeLabel(wine.data.type), vintages: perYear, documents });
       },
     }),
 

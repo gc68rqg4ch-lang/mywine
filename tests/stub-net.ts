@@ -10,6 +10,8 @@ export type Net = {
   fail?: (method: string, table: string, body: unknown) => { status: number; body: unknown } | null;
   /** Supabase Storage: „bucket/pfad“ → Inhalt. Optional. */
   storage?: Map<string, { bytes: Uint8Array; type: string }>;
+  /** Telegram-Dateien zum Herunterladen: file_id → Inhalt. Optional (Standard: kleines PDF). */
+  files?: Map<string, Uint8Array>;
 };
 const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(data === undefined ? null : JSON.stringify(data), { status, headers: { "content-type": "application/json", ...headers } });
@@ -72,6 +74,15 @@ export function installNet(net: Net) {
     if (url.pathname.startsWith("/storage/v1/")) return storage(net, url, method, headers, init?.body);
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     if (url.host === "api.telegram.org") {
+      // Dateien: getFile → file_path, Download unter /file/bot…/<file_path> (net.files, sonst ein kleines PDF)
+      if (url.pathname.startsWith("/file/bot")) {
+        const fileId = url.pathname.split("/").pop()!.replace(/\.\w+$/, "");
+        const bytes = net.files?.get(fileId) ?? new TextEncoder().encode("%PDF-1.4 test");
+        return new Response(new Blob([bytes as Uint8Array<ArrayBuffer>]), { status: 200 });
+      }
+      if (url.pathname.endsWith("/getFile")) {
+        return json({ ok: true, result: { file_id: body?.file_id, file_path: `documents/${body?.file_id}.pdf` } });
+      }
       net.telegram.push({ method: url.pathname.split("/").pop()!, body: body ?? {} });
       return json({ ok: true, result: { message_id: 100 + net.telegram.length } });
     }

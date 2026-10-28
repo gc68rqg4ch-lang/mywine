@@ -415,14 +415,14 @@ export async function saveJob(job: IngestJob, chatId: number) {
 }
 
 /** „Ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht. …“ (exportiert für Tests). */
-export function savedMessage(state: IngestState, prices: string[] = []) {
+export function savedMessage(state: IngestState, prices: string[] = [], random?: () => number) {
   const title = escapeHtml(wineTitle({ name: state.proposal.name, vintage_year: state.proposal.vintage_year }));
   const room = state.storage_room === "Wohnzimmer" ? "im Wohnzimmer" : `im ${state.storage_room ?? "Weinkeller"}`;
   const n = state.quantity ?? 1;
   return [
-    `✅ Ich habe ${formatBottles(n)} ${title} ${room} ${state.restock ? "nachgekauft und " : ""}eingebucht.`,
+    T.booked({ bottles: formatBottles(n), wine: title, room, restock: Boolean(state.restock) }, random),
     prices.length ? prices.join(" · ") : null,
-    n === 1 ? "Möchtest du sie gleich öffnen oder bewerten?" : "Möchtest du gleich eine öffnen oder bewerten?",
+    T.bookedFollowUp(n),
   ]
     .filter(Boolean)
     .join("\n");

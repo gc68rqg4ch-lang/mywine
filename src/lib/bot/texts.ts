@@ -43,6 +43,7 @@ export type FlowSubject =
   | { kind: "entry" }
   | { kind: "tasting"; wine: string | null }
   | { kind: "photos" }
+  | { kind: "document"; file: string | null }
   | { kind: "proposal"; text: string };
 
 export function subjectText(s: FlowSubject) {
@@ -57,6 +58,8 @@ export function subjectText(s: FlowSubject) {
       return s.wine ? `die angefangene Verkostung von ${e(s.wine)}` : "die angefangene Verkostung";
     case "photos":
       return "das Zuordnen der Fotos";
+    case "document":
+      return s.file ? `das Dokument „${e(s.file)}“` : "das Dokument";
     case "proposal":
       return `meinen Vorschlag „${e(s.text)}“`;
   }
@@ -183,6 +186,44 @@ export const T = {
   attachCancelled: (wine: string) => `📷 Gut, ich lasse ${e(wine)}, wie es ist.`,
   attachReplacing: "📷 Ich ersetze die Fotos …",
   attachWhichSide: "📷 Ist das die Vorder- oder die Rückseite?",
+
+  // --- Dokumente (PDF)
+  docWhichWine: (file: string) => `📎 Danke für „${e(file)}“. Zu welchem Wein gehört das?`,
+  docWhichWineNone: (file: string) =>
+    `📎 Danke für „${e(file)}“. Zu welchem Wein gehört das? Ich habe auf Anhieb keinen passenden gefunden – tipp auf „🔎 Anderen Wein suchen“.`,
+  docSearchAsk: "🔎 Wie heisst der Wein? Schreib mir einfach den Namen, z. B. <i>The Hype 2020</i>.",
+  docSearchResults: "Welcher ist es?",
+  docSearchNone: (query: string) => `Zu „${e(query)}“ finde ich keinen Wein. Versuch es mit einem anderen Namen – oder tippe ✖️ Abbrechen.`,
+  docWaiting: (wine: string) => `📎 Schick mir das PDF für <b>${e(wine)}</b> – ich lege es direkt dort ab.`,
+  docSaved: (wine: string) => `📎 Ich habe das Dokument beim ${e(wine)} abgelegt.`,
+  docCancelled: "Gut, dann lege ich das Dokument nirgends ab.",
+  docOnlyPdf: "Ich nehme nur PDFs an – Fotos vom Etikett natürlich auch.",
+  docTooBig: "Das PDF ist mir zu gross (über 20 MB). Am besten verkleinerst du es und lädst es in der App auf der Weinseite hoch.",
+  docSaveError: "Das Dokument konnte ich leider nicht ablegen – ich habe nichts gespeichert. Schickst du es mir nochmals?",
+  docGone: "Dieses Dokument ist nicht mehr bei mir – schick es mir einfach nochmals.",
+  openInApp: (url: string) => `<a href="${url}">In der App öffnen</a>`,
+
+  // --- Hilfe und Erfassung
+  help: [
+    "Ich bin Antoine, dein Sommelier. 🍷",
+    "Unten findest du das Menü: <b>🍷 Offen</b>, <b>📦 Bestand</b>, <b>⏰ Trinkreif</b>, <b>🍽 Verkostet</b>, <b>📷 Neuer Wein</b>.",
+    "Tipp auf einen Wein – dann kümmere ich mich um Gläser, Füllstand, Öffnen, Bewertungen, Fotos und Dokumente.",
+    "",
+    "📷 Neuer Wein: Schick mir Vorder- und Rückseite als Album – oder beschreib ihn mir. Ich frage dich, ob du ihn gekauft oder nur verkostet hast.",
+    "🍽 Nur probiert? Schreib mir z. B. <i>Heute im Kronenhalle den Pintia 2019 probiert, 4,5 Sterne</i> – oder schick ein Foto mit dem Bildtext „verkostet“.",
+    "📎 Datenblätter und andere PDFs kannst du mir einfach schicken – ich frage dich, zu welchem Wein sie gehören.",
+    "💬 Oder schreib mir einfach, z. B. <i>Welche Rioja habe ich noch?</i>, <i>Sara gibt dem Pintia 4,5 Sterne</i> oder <i>Verschieb 2 Flaschen Pintia ins Wohnzimmer</i>.",
+    "Mit /reset vergesse ich unser bisheriges Gespräch, /id zeigt dir deine Telegram-ID.",
+  ].join("\n"),
+  describe: [
+    "📷 Schick mir <b>Vorder- und Rückseite</b> der Flasche als Album – oder",
+    "✍️ beschreib mir den Wein, z. B. <i>„Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“</i>.",
+    "Was fehlt, recherchiere ich oder frage dich.",
+  ].join("\n"),
+  /** Nach dem Einbuchen: „Wunderbar – ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht.“ */
+  booked: (b: { bottles: string; wine: string; room: string; restock: boolean }, random?: () => number) =>
+    `✅ ${pick(["Wunderbar", "Schön", "Perfekt"], random)} – ich habe ${e(b.bottles)} ${b.wine} ${e(b.room)} ${b.restock ? "nachgekauft und " : ""}eingebucht.`,
+  bookedFollowUp: (n: number) => (n === 1 ? "Möchtest du sie gleich öffnen oder bewerten?" : "Möchtest du gleich eine öffnen oder bewerten?"),
 
   // --- Recherche
   researchWineGone: "Diesen Wein finde ich leider nicht mehr.",

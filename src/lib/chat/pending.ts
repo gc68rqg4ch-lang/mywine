@@ -40,6 +40,8 @@ export function flowSubject(job: Pick<Job, "source" | "extracted">): FlowSubject
       return { kind: "tasting", wine: x.title ?? null };
     case "telegram_attach":
       return { kind: "photos" };
+    case "telegram_document":
+      return { kind: "document", file: (job.extracted as { file?: { name?: string } } | null)?.file?.name ?? null };
     default:
       if (x.step === "describe") return { kind: "newWine" };
       return wine ? { kind: "wine", wine } : { kind: "entry" };

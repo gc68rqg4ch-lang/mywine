@@ -1,5 +1,6 @@
 import "server-only";
 
+import { T } from "@/lib/bot/texts";
 import { formatBottleSize, formatBottles, formatMoney, wineTypeLabel } from "@/lib/format";
 import { formatShares } from "@/lib/grapes/shares";
 import { escapeHtml } from "@/lib/telegram/api";
@@ -170,16 +171,8 @@ export function skipVendorKeyboard(jobId: string): TgInlineKeyboard {
   return { inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipvendor", jobId) }], cancelRow(jobId)] };
 }
 
-export const HELP_TEXT = [
-  "Ich bin Antoine, dein Sommelier. 🍷",
-  "Unten findest du das Menü: <b>🍷 Offen</b>, <b>📦 Bestand</b>, <b>⏰ Trinkreif</b>, <b>🍽 Verkostet</b>, <b>📷 Neuer Wein</b>.",
-  "Tipp auf einen Wein für Gläser, Füllstand, Öffnen, Ausgetrunken, Bewertungen und ✏️ Bearbeiten.",
-  "",
-  "📷 Neuer Wein: Schick mir Vorder- und Rückseite als Album – oder beschreib ihn mir. Ich frage, ob du ihn gekauft oder nur verkostet hast.",
-  "🍽 Nur probiert? Schreib z. B. <i>Heute im Kronenhalle den Pintia 2019 probiert, 4,5 Sterne</i> – oder ein Foto mit dem Bildtext „verkostet“.",
-  "💬 Oder schreib mir einfach, z. B. <i>Welche Rioja habe ich noch?</i>, <i>Sara gibt dem Pintia 4,5 Sterne</i> oder <i>Verschieb 2 Flaschen Pintia ins Wohnzimmer</i>.",
-  "Mit /reset vergesse ich unseren Gesprächsverlauf, /id zeigt dir deine Telegram-ID.",
-].join("\n");
+/** Hilfe-Text – steht im zentralen Text-Modul. */
+export const HELP_TEXT = T.help;
 
 export { parsePrice } from "@/lib/format";
 
@@ -192,11 +185,7 @@ export function parseQuantity(text: string) {
 // ---------------------------------------------------------------------------
 // Erfassung per Text
 
-export const DESCRIBE_TEXT = [
-  "📷 Schick mir <b>Vorder- und Rückseite</b> der Flasche als Album – oder",
-  "✍️ beschreib den Wein, z. B. <i>„Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“</i>.",
-  "Fehlende Angaben recherchiere ich bzw. frage ich nach.",
-].join("\n");
+export const DESCRIBE_TEXT = T.describe;
 
 export function cancelKeyboard(jobId: string): TgInlineKeyboard {
   return { inline_keyboard: [[{ text: "✖️ Abbrechen", callback_data: callbackData("drop", jobId) }]] };

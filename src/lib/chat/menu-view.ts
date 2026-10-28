@@ -11,6 +11,7 @@
 //   T:<subj>:<l>              Verkostung: Weg wählen      E:<subj>:<l>            Verkostung erzählen
 //   K:<subj>:<person>:<halbe>:<l>  Rückfrage, bevor für eine andere Person bewertet wird
 //   I:<subj>:<l>              Details zum Jahrgang        M:<subj>:<l>            Fotos nachreichen (📷 Foto)
+//   Md:<subj>:<l>             📎 Dokument (nächstes PDF gehört zu diesem Wein)
 //   B:<subj>:<l>              Bearbeiten: was ändern?     U:<subj>:<bereich>:<l>  Bereich gewählt (EDIT_AREAS)
 //   H:<subj>:<l>              Nachrecherchieren (Abweichungen danach mit [Ja] [Nein])
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
@@ -92,6 +93,8 @@ export type MenuAction =
   | { op: "tasting"; subject: Subject; back: ListRef }
   | { op: "tell"; subject: Subject; back: ListRef }
   | { op: "photo"; subject: Subject; back: ListRef }
+  /** 📎 Dokument: das nächste PDF gehört zu diesem Wein */
+  | { op: "doc"; subject: Subject; back: ListRef }
   | { op: "edit"; subject: Subject; back: ListRef }
   | { op: "research"; subject: Subject; back: ListRef }
   | { op: "editArea"; subject: Subject; area: EditArea; back: ListRef }
@@ -207,6 +210,8 @@ export function encodeMenu(a: MenuAction): string {
       return `E:${encodeSubject(a.subject)}:${l}`;
     case "photo":
       return `M:${encodeSubject(a.subject)}:${l}`;
+    case "doc":
+      return `Md:${encodeSubject(a.subject)}:${l}`;
     case "edit":
       return `B:${encodeSubject(a.subject)}:${l}`;
     case "research":
@@ -223,7 +228,7 @@ export function encodeMenu(a: MenuAction): string {
 }
 
 export function isMenuCallback(data: string | undefined) {
-  return /^[LWVOGFPDXNQRSTEKIMBUHCZJ]:/.test(data ?? "");
+  return /^([LWVOGFPDXNQRSTEKIMBUHCZJ]|Md):/.test(data ?? "");
 }
 
 export function decodeMenu(data: string | undefined): MenuAction | null {
@@ -277,12 +282,13 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
     case "E":
     case "I":
     case "M":
+    case "Md":
     case "B":
     case "H": {
       const subject = decodeSubject(f[0]);
       const b = back(1);
       if (!subject || !b) return null;
-      const kind = ({ T: "tasting", E: "tell", I: "details", M: "photo", B: "edit", H: "research" } as const)[op];
+      const kind = ({ T: "tasting", E: "tell", I: "details", M: "photo", Md: "doc", B: "edit", H: "research" } as const)[op];
       return { op: kind, subject, back: b };
     }
     case "C":

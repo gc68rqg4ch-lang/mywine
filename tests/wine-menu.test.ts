@@ -129,7 +129,7 @@ assert.ok(!s.text.includes("Wohnzimmer"), "Lagerort nicht nötig");
 
 test("offene Flasche: Knöpfe, Gläser, Füllstand, Bewerten", async () => {
 s = await show({ op: "item", itemId: I1, back: { kind: "open" } });
-assert.deepEqual(texts(s), ["🥃 1 Glas", "🥃🥃 2 Gläser", "Füllstand %", "✅ Ausgetrunken", "⭐ Bewertung Michel", "⭐ Bewertung Sara", "📝 Verkostung", "ℹ️ Details", "📷 Foto", "✏️ Bearbeiten", "📱 In der App öffnen", "‹ Zurück"]);
+assert.deepEqual(texts(s), ["🥃 1 Glas", "🥃🥃 2 Gläser", "Füllstand %", "✅ Ausgetrunken", "⭐ Bewertung Michel", "⭐ Bewertung Sara", "📝 Verkostung", "ℹ️ Details", "📷 Foto", "📎 Dokument", "✏️ Bearbeiten", "📱 In der App öffnen", "‹ Zurück"]);
 assert.match(s.text, /Sara 4½ ★/);
 
 s = await show({ op: "glasses", itemId: I1, glasses: 1, back: { kind: "open" } });

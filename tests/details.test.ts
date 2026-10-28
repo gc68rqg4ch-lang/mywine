@@ -85,8 +85,8 @@ const base: WineDetails = {
 };
 
 test("Dokumente: Anzahl mit Link, ohne Dokumente keine Zeile", () => {
-  assert.match(wineDetailsText({ ...base, documents: 2 }), /📄 2 Dokumente – <a href="https:\/\/mywine\.example\/wein\/w\?jahrgang=2019">auf der Weinseite<\/a>/);
-  assert.match(wineDetailsText({ ...base, documents: 1 }), /📄 1 Dokument –/);
-  assert.doesNotMatch(wineDetailsText({ ...base, documents: 0 }), /📄/);
+  assert.match(wineDetailsText({ ...base, documents: ["a.pdf", "b.pdf"] }), /📎 2 Dokumente: a\.pdf, b\.pdf – <a href="https:\/\/mywine\.example\/wein\/w\?jahrgang=2019">auf der Weinseite<\/a>/);
+  assert.match(wineDetailsText({ ...base, documents: ["2020-the-hype.pdf"] }), /📎 1 Dokument: 2020-the-hype\.pdf –/);
+  assert.doesNotMatch(wineDetailsText({ ...base, documents: [] }), /📎/);
   assert.doesNotMatch(wineDetailsText(base), /📄/);
 });

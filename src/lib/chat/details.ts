@@ -35,8 +35,8 @@ export type WineDetails = {
   ratings: { person: string; rating: number }[];
   lastTasting: { quality: string | null; points: number | null } | null;
   appUrl: string | null;
-  /** Anzahl PDFs (Jahrgang und ohne Jahrgang); anschauen auf der Weinseite. */
-  documents?: number;
+  /** Dateinamen der PDFs (Jahrgang und ohne Jahrgang); anschauen auf der Weinseite. */
+  documents?: string[];
   /** Offene Vorschläge aus der Recherche (Abweichungen). */
   suggestions?: number;
   /** Letzte Einträge „Verkostet“, schon als Zeile („12.10.2026 · Kronenhalle · Michel 4½ ★“). */
@@ -117,8 +117,8 @@ export function wineDetailsText(d: WineDetails) {
     d.taste && `👅 ${e(d.taste)}`,
     tasting && `📝 ${e(tasting)}`,
     ...(d.encounters ?? []).map((line, i) => `${i === 0 ? "🍽 Verkostet: " : "🍽 "}${e(line)}`),
-    d.documents
-      ? `📄 ${d.documents === 1 ? "1 Dokument" : `${d.documents} Dokumente`}${d.appUrl ? ` – <a href="${d.appUrl}">auf der Weinseite</a>` : ""}`
+    d.documents?.length
+      ? `📎 ${d.documents.length === 1 ? "1 Dokument" : `${d.documents.length} Dokumente`}: ${e(d.documents.slice(0, 3).join(", "))}${d.documents.length > 3 ? " …" : ""}${d.appUrl ? ` – <a href="${d.appUrl}">auf der Weinseite</a>` : ""}`
       : null,
     d.suggestions
       ? `🔎 ${d.suggestions === 1 ? "1 offener Vorschlag" : `${d.suggestions} offene Vorschläge`} aus der Recherche${d.appUrl ? ` – <a href="${d.appUrl}">auf der Weinseite entscheiden</a>` : ""}`

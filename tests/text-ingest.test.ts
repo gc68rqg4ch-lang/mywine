@@ -109,7 +109,7 @@ test("A) Neuer Wein: Produzent, Herkunft, Trinkreife und Rebsorten per Recherche
 });
 
 test("Bestätigung in der Ich-Form, darunter gleich das Wein-Menü dieses Weins und Jahrgangs", async () => {
-  assert.match(lastText(), /^✅ Ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht\.\n.*\nMöchtest du gleich eine öffnen oder bewerten\?$/);
+  assert.match(lastText(), /^✅ (Wunderbar|Schön|Perfekt) – ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht\.\n.*\nMöchtest du gleich eine öffnen oder bewerten\?$/);
   type Kb = { inline_keyboard: { text: string; callback_data?: string; url?: string }[][] };
   const menu = net.telegram.at(-1)!.body.reply_markup as Kb;
   const buttons = menu.inline_keyboard.flat();
@@ -175,7 +175,7 @@ test("C) „Neuer Wein“ in der Menüleiste: wartet auf eine Beschreibung", asy
   await handleUpdate(msg("📷 Neuer Wein") as never);
   const describe = net.tables.ingest_jobs.find((j) => (j.extracted as IngestState).step === "describe")!;
   assert.equal(describe.source, "text"); assert.equal(describe.status, "needs_review");
-  assert.match(lastText(), /beschreib den Wein/);
+  assert.match(lastText(), /beschreib mir den Wein/);
 });
 
 test("D) Ohne Jahrgang: Rückfrage (Zahl oder „Ohne Jahrgang (NV)“), Jahrgang steht in der Zusammenfassung", async () => {

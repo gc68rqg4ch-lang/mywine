@@ -1,5 +1,6 @@
 import "server-only";
 
+import { findDocumentAwaitingText, handleDocument, handleDocumentCallback, handleDocumentSearch, isDocumentCallback, isPdfDocument } from "./document";
 import { after } from "next/server";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import {
@@ -133,7 +134,9 @@ export async function handleUpdate(update: TgUpdate) {
   }
   await preflight(msg.chat.id);
 
-  if (msg.photo?.length || msg.document) {
+  if (isPdfDocument(msg.document)) {
+    await handleDocument(msg);
+  } else if (msg.photo?.length || msg.document) {
     await handlePhoto(msg);
   } else if (msg.text) {
     await handleText(msg, actor);
@@ -166,7 +169,9 @@ async function handlePhoto(msg: TgMessage) {
   const chatId = msg.chat.id;
   const file = pickImage(msg);
   if (!file) {
-    await sendMessage(chatId, T.photoOnly);
+    // Andere Dateien als Fotos und PDFs: freundlich ablehnen.
+    const isImage = msg.document?.mime_type?.startsWith("image/");
+    await sendMessage(chatId, msg.document && !isImage ? T.docOnlyPdf : T.photoOnly);
     return;
   }
 
@@ -315,6 +320,10 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
   }
   if (isTastedCallback(cb.data)) {
     await handleTastedCallback(cb);
+    return;
+  }
+  if (isDocumentCallback(cb.data)) {
+    await handleDocumentCallback(cb);
     return;
   }
   if (isAttachCallback(cb.data)) {
@@ -535,6 +544,13 @@ async function handleText(msg: TgMessage, actor: Actor) {
   }
   if (text.startsWith("/")) {
     await sendMessage(chatId, T.hello(actor.name, HELP_TEXT), MAIN_KEYBOARD);
+    return;
+  }
+
+  // „🔎 Anderen Wein suchen“ für ein PDF: der Text ist der Weinname.
+  const docSearch = await findDocumentAwaitingText(db, chatId);
+  if (docSearch) {
+    await handleDocumentSearch(db, docSearch, chatId, text);
     return;
   }
 

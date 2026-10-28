@@ -362,6 +362,22 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
   heisst das „⭐ Bewerten“; für die andere Person („⭐ für Sara“) fragt er vor dem Speichern nach. Der
   Gesprächsverlauf ist pro Chat getrennt. `SUPABASE_SECRET_KEY` wird nur in `src/lib/supabase/admin.ts` (server-only) gelesen.
 
+### Dokumente (PDF) über den Bot
+
+- **PDF schicken** (Telegram-Datei, bis 20 MB): Antoine fragt „Zu welchem Wein gehört das?“ und schlägt bis zu 3
+  Weine vor – abgeglichen aus Dateiname und Bildtext (`src/lib/media/doc-match.ts`, z. B.
+  „2020-the-hype-cabernet….pdf“ → The Hype 2020; Jahrgang aus dem Namen, sonst der einzige des Weins, sonst für
+  alle Jahrgänge). Dazu „🔎 Anderen Wein suchen“ (Namen schreiben, bis zu 5 Treffer) und „✖️ Abbrechen“.
+- **„📎 Dokument“ im Wein-Menü:** das nächste PDF (innert 10 Min., gleiche Zeitgrenze wie alle Rückfragen)
+  gehört ohne Rückfrage zu diesem Wein und Jahrgang.
+- **Speichern wie in der App** (`storeDocument` / `insertDocumentRow` in `src/lib/media/documents.ts`, gemeinsam
+  mit dem Upload der Weinseite): Bucket `wine-documents` unter `app/<wein>/<uuid>.pdf`, Eintrag in `wine_media`
+  (kind document, Jahrgang, Originaldateiname). Erst nach dem Eintrag: „📎 Ich habe das Dokument beim The Hype 2020
+  abgelegt.“ mit Link in die App. Andere Dateitypen: „Ich nehme nur PDFs an …“; über 20 MB: Hinweis auf die App.
+- Ablauf in `src/lib/ingest/document.ts` (`ingest_jobs`, source `telegram_document`, Knöpfe `dc:<job>:…`).
+  ℹ️ Details zeigt „📎 1 Dokument: <Dateiname>“. Im Chat gilt die Regel „nur nach Nachschauen“ auch für Dokumente
+  (`get_wine_details` liefert sie).
+
 ### Fotos zu einem Wein nachreichen (📷 Foto)
 
 Im Wein-Menü (Jahrgang bzw. offene Flasche) **📷 Foto** → Vorder- und Rückseite als Album schicken (Vorderseite

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { startDocumentWait } from "@/lib/ingest/document";
 import { staleMessage } from "./ttl";
 import { tasteLine } from "@/lib/taste/profile";
 import { loadTasteProfile } from "@/lib/taste/store";
@@ -22,7 +23,7 @@ import type { TgCallbackQuery, TgInlineButton, TgInlineKeyboard } from "@/lib/te
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatShares } from "@/lib/grapes/shares";
 import { loadGrapeShares } from "@/lib/grapes/store";
-import { countDocuments } from "@/lib/media/documents";
+import { documentNames } from "@/lib/media/documents";
 import { countPendingSuggestions } from "@/lib/research/suggestions";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
@@ -375,7 +376,8 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
         ...(sealed ? [[btn("🍾 Öffnen", { op: "open", wineId, year, back })]] : []),
         ...ratingButtons(ratings.persons, subject, back),
         [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
-        [btn("📷 Foto", { op: "photo", subject, back }), btn("✏️ Bearbeiten", { op: "edit", subject, back })],
+        [btn("📷 Foto", { op: "photo", subject, back }), btn("📎 Dokument", { op: "doc", subject, back })],
+        [btn("✏️ Bearbeiten", { op: "edit", subject, back })],
         ...appButton(`/wein/${wineId}`),
         ...backRow(back),
       ],
@@ -410,7 +412,8 @@ async function itemScreen(db: AdminClient, itemId: string, back: ListRef, status
         [btn("Füllstand %", { op: "fillPicker", itemId, back }), btn("✅ Ausgetrunken", { op: "drunkAsk", itemId, back })],
         ...ratingButtons(ratings.persons, subject, back),
         [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
-        [btn("📷 Foto", { op: "photo", subject, back }), btn("✏️ Bearbeiten", { op: "edit", subject, back })],
+        [btn("📷 Foto", { op: "photo", subject, back }), btn("📎 Dokument", { op: "doc", subject, back })],
+        [btn("✏️ Bearbeiten", { op: "edit", subject, back })],
         ...appButton(`/flasche/${itemId}`),
         ...backRow(back),
       ],
@@ -500,7 +503,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     sameYear(db.from("wine_tastings").select("quality_level, quality_points, sat, tasted_at").eq("wine_id", wineId))
       .order("tasted_at", { ascending: false })
       .limit(1),
-    countDocuments(db, wineId, year).catch(() => 0),
+    documentNames(db, wineId, year).catch(() => []),
     countPendingSuggestions(db, wineId).catch(() => 0),
   ]);
   const [encounters, taste] = await Promise.all([
@@ -807,6 +810,12 @@ async function screenForAction(
           : await loadItem(db, s.itemId).then((i) => (i?.wine_id ? { wineId: i.wine_id, vintageYear: i.vintage_year, itemId: s.itemId } : null));
       if (!target) return { screen: await subjectScreen(db, a.subject, a.back, "Wein nicht gefunden.") };
       return { screen: await startAttach(db, ctx.chatId, target) };
+    }
+    case "doc": {
+      // Das nächste PDF (innert 10 Min.) gehört ohne Rückfrage zu diesem Wein und Jahrgang.
+      const target = await subjectTarget(db, a.subject);
+      if (!target) return { screen: await subjectScreen(db, a.subject, a.back, "Wein nicht gefunden.") };
+      return { screen: await startDocumentWait(db, ctx.chatId, { wineId: target.wineId, year: target.year }) };
     }
     case "tell":
       return { screen: await startTelling(db, ctx.chatId, a.subject, a.back, ctx.actor?.personId ?? null) };

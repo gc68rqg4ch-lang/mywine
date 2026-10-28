@@ -9,7 +9,11 @@ import type { Database } from "@/lib/database.types";
 type Db = SupabaseClient<Database>;
 
 export const DOCUMENT_BUCKET = "wine-documents";
+/** App: Upload direkt aus dem Browser. */
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+/** Bot: Telegram liefert Dateien bis 20 MB (auch die Grenze des Buckets). */
+export const MAX_BOT_DOCUMENT_BYTES = 20 * 1024 * 1024;
+export const PDF_MIME = "application/pdf";
 const SIGNED_SECONDS = 60 * 60;
 
 export type WineDocument = { id: string; name: string; url: string | null; vintageYear: number | null };
@@ -41,18 +45,64 @@ export async function loadDocuments(db: Db, wineId: string, year: number | null)
   }));
 }
 
-/** Anzahl Dokumente für Jahrgang + ohne Jahrgang (Bot-Details). */
-export async function countDocuments(db: Db, wineId: string, year: number | null) {
+/** Dateinamen der Dokumente (Jahrgang + ohne Jahrgang), neueste zuerst – für ℹ️ Details im Bot. */
+export async function documentNames(db: Db, wineId: string, year: number | null) {
   let query = db
     .from("wine_media")
-    .select("id", { count: "exact", head: true })
+    .select("file_name, storage_path, created_at")
     .eq("wine_id", wineId)
     .eq("kind", "document");
   query = year == null ? query.is("vintage_year", null) : query.or(`vintage_year.eq.${year},vintage_year.is.null`);
-  const { count, error } = await query;
+  const { data, error } = await query.order("created_at", { ascending: false });
   if (error) throw error;
-  return count ?? 0;
+  return (data ?? []).map((d) => d.file_name || d.storage_path.split("/").pop() || "Dokument");
 }
 
 /** Pfad für ein neues Dokument; der Browser lädt dorthin hoch, der Server prüft das Präfix. */
 export const documentPrefix = (wineId: string) => `app/${wineId}/`;
+
+/** Originalname behalten, nur Steuerzeichen weg, höchstens 200 Zeichen. */
+export const cleanFileName = (name: string | null | undefined) =>
+  (name ?? "").trim().replace(/[\u0000-\u001f]/g, "").slice(0, 200) || "Dokument.pdf";
+
+/** Sieht nach einem PDF aus (Dateianfang „%PDF“)? */
+export const isPdfBytes = (bytes: Uint8Array) => bytes.length > 4 && String.fromCharCode(...bytes.slice(0, 4)) === "%PDF";
+
+/**
+ * Dokument eintragen (wine_media, kind document) – gemeinsam für App und Bot. Die Datei liegt
+ * schon im Bucket; klappt der Eintrag nicht, wird sie wieder gelöscht (removeOnError).
+ */
+export async function insertDocumentRow(
+  db: Db,
+  doc: { wineId: string; vintageYear: number | null; path: string; fileName: string; mime?: string },
+  removeOnError: (path: string) => Promise<unknown>,
+) {
+  const fileName = cleanFileName(doc.fileName);
+  const { data, error } = await db
+    .from("wine_media")
+    .insert({
+      wine_id: doc.wineId,
+      vintage_year: doc.vintageYear,
+      kind: "document",
+      storage_bucket: DOCUMENT_BUCKET,
+      storage_path: doc.path,
+      mime_type: doc.mime ?? PDF_MIME,
+      file_name: fileName,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    await removeOnError(doc.path);
+    throw error;
+  }
+  return { id: data.id, fileName };
+}
+
+/** PDF hochladen und eintragen (Bot) – gleicher Ort und gleicher Eintrag wie in der App. */
+export async function storeDocument(db: Db, doc: { wineId: string; vintageYear: number | null; bytes: Uint8Array; fileName: string }) {
+  if (!isPdfBytes(doc.bytes)) throw new Error("kein PDF");
+  const path = `${documentPrefix(doc.wineId)}${crypto.randomUUID()}.pdf`;
+  const { error } = await db.storage.from(DOCUMENT_BUCKET).upload(path, doc.bytes, { contentType: PDF_MIME, upsert: false });
+  if (error) throw error;
+  return insertDocumentRow(db, { ...doc, path }, (p) => db.storage.from(DOCUMENT_BUCKET).remove([p]));
+}
