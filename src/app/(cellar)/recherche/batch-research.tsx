@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { wineHref } from "@/lib/cellar/wine-page";
-import { afterWine } from "@/lib/research/batch";
+import { runBatch } from "@/lib/research/batch";
 import type { ResearchScope } from "@/lib/research/gaps";
 import type { ResearchOutcome, TasteMode } from "@/lib/research/wine";
 import { noProfileText } from "@/lib/taste/profile";
@@ -81,25 +81,13 @@ export function BatchResearch({
     stop.current = false;
     setHalt(null);
     setPhase("running");
-    let failures = 0;
-    for (const c of todo) {
-      if (stop.current) break;
-      setRows((r) => ({ ...r, [c.wineId]: { state: "running" } }));
-      let outcome: ResearchOutcome;
-      try {
-        outcome = await researchWine(c.wineId, scope, taste, c.tasteYear, skipRecent);
-      } catch {
-        outcome = { status: "error", filled: [], suggested: 0, seconds: 0 };
-      }
-      setRows((r) => ({ ...r, [c.wineId]: { state: "done", ...outcome } }));
-      // API-Limit: sofort aufhören; andere Fehler: nach 3 in Folge.
-      const step = afterWine(outcome, failures);
-      failures = step.failures;
-      if (step.halt) {
-        setHalt(step.halt);
-        break;
-      }
-    }
+    // Nacheinander; API-Limit: sofort aufhören; andere Fehler: nach 3 in Folge.
+    const result = await runBatch(todo, (c) => researchWine(c.wineId, scope, taste, c.tasteYear, skipRecent), {
+      stop: () => stop.current,
+      onStart: (c) => setRows((r) => ({ ...r, [c.wineId]: { state: "running" } })),
+      onDone: (c, outcome) => setRows((r) => ({ ...r, [c.wineId]: { state: "done", ...outcome } })),
+    });
+    if (result.halt) setHalt(result.halt);
     setPhase("done");
     router.refresh();
   }

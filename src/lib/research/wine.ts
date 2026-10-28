@@ -9,6 +9,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
+import { apiProblem } from "@/lib/ai/api-errors";
 import { formatShares, hasAnyPercent } from "@/lib/grapes/shares";
 import { replaceGrapeShares } from "@/lib/grapes/store";
 import { researchWineWeb } from "@/lib/ingest/recognize";
@@ -68,7 +69,7 @@ export type ResearchOutcome = {
   /** Jahrgang, für den das Profil gesucht wurde (null = Wein ohne Jahrgang). */
   tasteYear?: number | null;
   /** Bei status „error“: was schiefging (Nutzungslimit → Lauf sofort stoppen). */
-  error?: { kind: "usage_limit" | "api" | "other"; message: string };
+  error?: { kind: "usage_limit" | "temporary" | "api" | "other"; message: string };
   seconds: number;
 };
 
@@ -248,14 +249,30 @@ export async function researchAndFillWine(
 
   // Eigener Aufruf fürs Profil. Scheitert er, bleibt das Ergänzte gespeichert und wird gemeldet.
   let tasteResult: ResearchOutcome["taste"];
+  let tasteError: ResearchOutcome["error"];
   try {
     tasteResult = await taste();
   } catch (error) {
     if (!filled.length && !suggested) throw error;
     console.error("taste research failed", wineId, error);
+    // API-Limit beim Profil: Ergänztes bleibt, aber der Sammellauf muss sofort anhalten.
+    const problem = apiProblem(error);
+    if (problem?.kind === "usage_limit") {
+      tasteError = problem;
+      console.error("api limit reached", wineId);
+    }
   }
+  // Stammdaten wurden recherchiert (researched_at); das Profil gilt nur nach einer Suche als geprüft.
   await markResearched(db, wineId);
-  return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: tasteResult, tasteYear: profileYear, seconds: seconds() };
+  return {
+    status: filled.length || suggested ? "filled" : "nothing",
+    filled,
+    suggested,
+    taste: tasteResult,
+    tasteYear: profileYear,
+    ...(tasteError ? { error: tasteError } : {}),
+    seconds: seconds(),
+  };
 }
 
 /** PDFs für die Jahrgänge der Recherche (zusätzlich zur Websuche). */

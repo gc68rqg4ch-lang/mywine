@@ -16,18 +16,18 @@ test("Nutzungslimit: erkannt, Datum aus der Meldung", () => {
   assert.deepEqual(apiProblem(error), {
     kind: "usage_limit",
     until: DAY,
-    message: `Das monatliche API-Limit ist erreicht. Wieder verfügbar am ${DAY}.`,
+    message: `API-Limit erreicht (wieder verfügbar am ${DAY}). Limit in der Claude Console (Settings → Limits) erhöhen oder später nochmals starten.`,
   });
   assert.equal(apiProblemForBot(error), `Ich mache gerade eine kleine Pause – mein Kontingent für diesen Monat ist aufgebraucht. Ab ${DAY} bin ich wieder ganz für dich da.`);
   // auch als reiner Text (z. B. aus einem Log) und ohne Datum
   assert.ok(usageLimit(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits."}}')));
-  assert.match(apiProblem(sdkError(400, "You have reached your specified API usage limits."))!.message, /Datum stand nicht/);
+  assert.equal(apiProblem(sdkError(400, "You have reached your specified API usage limits."))!.message, "API-Limit erreicht. Limit in der Claude Console (Settings → Limits) erhöhen oder später nochmals starten.");
 });
 
 test("andere Fehler: API mit Status, sonst null", () => {
-  const other = apiProblem(sdkError(529, "Overloaded"));
+  const other = apiProblem(sdkError(500, "Internal server error"));
   assert.equal(other?.kind, "api");
-  assert.match(other!.message, /Claude API \(529\): .*Overloaded/);
+  assert.match(other!.message, /Claude API \(500\): .*Internal server error/);
   assert.equal(usageLimit(sdkError(400, "tools.1.custom: For 'integer' type, properties maximum, minimum are not supported")), null);
   assert.equal(apiProblem(new Error("permission denied for schema private")), null, "Datenbankfehler sind keine API-Fehler");
 });

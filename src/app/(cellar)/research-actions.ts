@@ -37,8 +37,10 @@ export async function researchWine(
     if (outcome.filled.length || outcome.suggested) revalidatePath("/", "layout");
     return outcome;
   } catch (error) {
-    console.error("wine research failed", wineId, error);
     const problem = apiProblem(error);
+    // Limit: ein Eintrag (der Sammellauf hält danach an), ohne den ganzen Fehler je Wein.
+    if (problem?.kind === "usage_limit") console.error("api limit reached", wineId, problem.message);
+    else console.error("wine research failed", wineId, error);
     return {
       status: "error",
       filled: [],
@@ -100,7 +102,7 @@ function pageMessage(outcome: ResearchOutcome): ActionState {
         ok: ["Ich habe nichts Neues gefunden – deine Angaben stimmen mit der Recherche überein.", tasteNote(outcome)].filter(Boolean).join(" "),
       };
     default:
-      if (outcome.error?.kind === "usage_limit") return { error: outcome.error.message };
+      if (outcome.error?.kind === "usage_limit" || outcome.error?.kind === "temporary") return { error: outcome.error.message };
       if (outcome.error?.kind === "api") return { error: `${outcome.error.message} Bitte später nochmals versuchen.` };
       return { error: "Die Recherche ist fehlgeschlagen. Bitte später nochmals versuchen." };
   }

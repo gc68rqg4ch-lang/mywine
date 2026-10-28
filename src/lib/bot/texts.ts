@@ -111,6 +111,15 @@ export const T = {
   apiPaused: (until: string | null) =>
     `Ich mache gerade eine kleine Pause – mein Kontingent für diesen Monat ist aufgebraucht. ${until ? `Ab ${until} bin ich wieder ganz für dich da.` : "Bald bin ich wieder ganz für dich da."}`,
   apiUnavailable: "Ich komme gerade nicht an meine Unterlagen – ich habe nichts gespeichert. Versuchst du es in ein paar Minuten nochmals?",
+  /** 429/529: vorübergehend (Varianten). */
+  apiBusy: (random?: () => number) =>
+    pick(["Ich bin gerade etwas überlaufen – versuchst du es in ein paar Minuten nochmals?", "Gerade ist viel los bei mir. Magst du es in ein paar Minuten nochmals versuchen?"], random),
+  /** Kontingent aufgebraucht beim Etikett: die Erfassung bleibt offen, Text geht weiter. */
+  apiLimitPhoto: (until: string | null, random?: () => number) =>
+    `${pick(["Mein Kontingent für heute ist aufgebraucht – ich kann das Etikett gerade nicht lesen.", "Oje, mein Kontingent ist aufgebraucht – das Etikett kann ich gerade nicht lesen."], random)} Beschreib mir den Wein als Text oder versuch es später${until ? ` (ab ${until} geht es wieder)` : ""}. Deine Fotos behalte ich.`,
+  /** Kontingent aufgebraucht bei der Beschreibung: die Erfassung bleibt offen. */
+  apiLimitText: (until: string | null, random?: () => number) =>
+    `${pick(["Mein Kontingent für heute ist aufgebraucht – ich kann den Wein gerade nicht nachschlagen.", "Oje, mein Kontingent ist aufgebraucht – nachschlagen kann ich gerade nicht."], random)} Versuch es später nochmals${until ? ` (ab ${until} geht es wieder)` : ""} – ich habe nichts gespeichert.`,
   thinkingResearch: "🔎 Ich recherchiere den Wein und melde mich gleich.",
   here: "Bitte schön:",
 

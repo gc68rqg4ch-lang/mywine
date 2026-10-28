@@ -19,7 +19,7 @@ export function researchSummary(outcome: Pick<ResearchOutcome, "status" | "fille
     case "complete":
       return { error: "Diesen Wein gibt es nicht mehr." };
     default:
-      if (outcome.error?.kind === "usage_limit") return { error: outcome.error.message };
+      if (outcome.error?.kind === "usage_limit" || outcome.error?.kind === "temporary") return { error: outcome.error.message };
       if (outcome.error?.kind === "api") return { error: `${outcome.error.message} Bitte später nochmals versuchen.` };
       return { error: "Die Recherche ist fehlgeschlagen. Bitte später nochmals versuchen." };
   }

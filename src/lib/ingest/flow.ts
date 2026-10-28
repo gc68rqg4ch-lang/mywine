@@ -8,7 +8,7 @@ import { cleanGiftFrom, giftInText, giftValueInText } from "./gift";
 import { REGULAR_HINT, pricesInText } from "./prices";
 import { scheduleTasteProfile } from "@/lib/research/taste-auto";
 import { later } from "@/lib/later";
-import { apiProblemForBot } from "@/lib/ai/api-errors";
+import { apiLimitForIngest, apiProblemForBot } from "@/lib/ai/api-errors";
 import { savedWineKeyboard } from "@/lib/chat/menu";
 import type { Database } from "@/lib/database.types";
 import { formatBottles, formatMoney, positiveAmount, todayIso, wineTitle } from "@/lib/format";
@@ -497,6 +497,20 @@ export async function failJob(
   error: unknown,
   fromText = false,
 ) {
+  // Kontingent aufgebraucht: die Erfassung bleibt offen und wartet auf eine Beschreibung als
+  // Text (Fotos bleiben am Eintrag) – statt „fehlgeschlagen“. Läuft wie jede Rückfrage nach 10 Min. ab.
+  const limit = apiLimitForIngest(error, fromText);
+  if (limit) {
+    console.error("api limit reached", message);
+    const { data: current } = await db.from("ingest_jobs").select("extracted").eq("id", jobId).maybeSingle();
+    const caption = (current?.extracted as { caption?: string } | null)?.caption;
+    await db
+      .from("ingest_jobs")
+      .update({ status: "needs_review", error: null, extracted: toJson({ step: "describe", source: "text", ...(caption ? { caption } : {}) } as IngestState) })
+      .eq("id", jobId);
+    await sendMessage(chatId, escapeHtml(limit), cancelKeyboard(jobId)).catch(() => undefined);
+    return;
+  }
   console.error(message, error);
   const detail = error instanceof Error ? error.message : String(error);
   await db

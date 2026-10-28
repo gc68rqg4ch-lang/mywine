@@ -241,6 +241,15 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   Suche). Sammellauf und automatische Suche überspringen einen kürzlich gesuchten Jahrgang nicht, wenn danach ein
   PDF für genau diesen Jahrgang angehängt wurde (`newDocumentSince`). Lade-/Lesefehler: ohne dieses PDF weiter,
   Log „research document failed“. Keine Schemaänderung.
+- **API-Ausgabenlimit** (`apiProblem`, `usageLimit`, `temporaryProblem`): 400 „usage limits“ = Limit erreicht
+  (in der Claude Console gesetzt, die App kann es nicht ändern); 429/529 = vorübergehend; sonst API-Fehler.
+  Sammellauf (`runBatch` in `src/lib/research/batch.ts`): Weine strikt nacheinander, beim ersten Limit sofort
+  Stopp ohne weitere Anfrage – „API-Limit erreicht – Lauf gestoppt. X von Y erledigt. Limit in der Claude Console
+  (Settings → Limits) erhöhen oder später nochmals starten.“; Log „api limit reached“ einmal pro Lauf. Limit erst
+  beim Profil (Stammdaten schon ergänzt) hält den Lauf ebenfalls an. Ein gescheiterter Versuch setzt weder
+  `wines.researched_at` noch `taste_profile_checked_at`. Bot: Etikett bzw. Beschreibung beim Limit → „Mein
+  Kontingent für heute ist aufgebraucht …“ (`T.apiLimitPhoto`/`apiLimitText`); die Erfassung bleibt offen
+  (Schritt `describe`, Fotos bleiben, die nächste Textnachricht geht weiter), ✖️ Abbrechen, 10 Min.
 - **API-Fehler** (`src/lib/ai/api-errors.ts`): Das Nutzungslimit (400 „reached your specified API usage
   limits“) wird erkannt – der Sammellauf stoppt sofort und meldet „Das monatliche API-Limit ist erreicht. Wieder
   verfügbar am …“ (Datum aus der Meldung), ebenso Nachrecherchieren auf der Weinseite und der Bot in der Ich-Form

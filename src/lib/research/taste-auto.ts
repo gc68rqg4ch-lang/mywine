@@ -47,6 +47,8 @@ export async function autoTasteProfile(
     if (!profile) return "none";
     return await saveResearchedProfile(db, wineId, profile);
   } catch (error) {
+    const { usageLimit } = await import("@/lib/ai/api-errors");
+    if (usageLimit(error)) console.error("api limit reached", "taste profile auto", wineId, year);
     console.error("taste profile auto failed", wineId, year, error instanceof Error ? error.message : error);
     return "failed";
   }
