@@ -98,6 +98,9 @@ export async function createInventoryItem(
     purchasedAt: string;
     storageRoom: StorageRoom;
     photoPaths: string[];
+    /** Geschenk: is_gift; giftFrom nur mit Geschenk (DB-Check). */
+    isGift?: boolean;
+    giftFrom?: string | null;
   },
 ) {
   const { data, error } = await db
@@ -116,6 +119,8 @@ export async function createInventoryItem(
       storage_room: input.storageRoom,
       status: "sealed",
       photo_urls: input.photoPaths,
+      is_gift: Boolean(input.isGift),
+      gift_from: input.isGift ? (input.giftFrom ?? null) : null,
     })
     .select("id")
     .single();

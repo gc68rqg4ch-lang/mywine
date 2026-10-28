@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cleanGiftFrom } from "./gift";
 import { findDocumentAwaitingText, handleDocument, handleDocumentCallback, handleDocumentSearch, isDocumentCallback, isPdfDocument } from "./document";
 import { after } from "next/server";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
@@ -89,6 +90,7 @@ import {
   advanceTo,
   confirmAndSave,
   continuePhotoPurchase,
+  giftPatch,
   failJob,
   resolveGrapes,
   setProducer,
@@ -290,7 +292,7 @@ export async function processJob(jobId: string, chatId: number) {
       await askPhotoIntent(db, jobId, chatId, recognition, before?.caption);
       return;
     }
-    await continuePhotoPurchase(db, jobId, chatId, recognition);
+    await continuePhotoPurchase(db, jobId, chatId, recognition, before?.caption);
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }
@@ -399,6 +401,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
           "location",
           "quantity",
           "price",
+          "gift_from",
           "regular_price",
           "vendor",
           "vendor_new",
@@ -438,6 +441,21 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
       await advanceTo(db, job, chatId, "price", { price: null });
+      return;
+    }
+
+    case "gift": {
+      // „🎁 Geschenk“ bei der Preisfrage: Preis 0, danach „Von wem?“ (kein Normalpreis, kein Händler).
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await advanceTo(db, job, chatId, "price", giftPatch(undefined));
+      return;
+    }
+
+    case "skipgift": {
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await advanceTo(db, job, chatId, "gift_from", { gift_from: null });
       return;
     }
 
@@ -636,6 +654,11 @@ async function handleText(msg: TgMessage, actor: Actor) {
       await advanceTo(db, job, chatId, "price", { price });
       return;
     }
+    case "gift_from": {
+      // Von wem? Freitext, getrimmt; leer → unbekannt.
+      await advanceTo(db, job, chatId, "gift_from", { gift_from: cleanGiftFrom(text) });
+      return;
+    }
     case "regular_price": {
       const regularPrice = parsePrice(text);
       if (regularPrice == null) {
@@ -671,6 +694,7 @@ export function purchaseAnswerFit(step: IngestState["step"], text: string): "ans
     case "producer":
     case "vendor":
     case "vendor_new":
+    case "gift_from":
       return strongNewConcern(text) ? "new" : "answer";
     case "vintage":
       return parseVintageAnswer(text) !== undefined ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";

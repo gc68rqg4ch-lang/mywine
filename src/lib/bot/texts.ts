@@ -25,6 +25,7 @@ export const VARIANTS = {
     "Schönes Etikett! Ich lese es kurz …",
   ],
   saved: ["Gespeichert.", "Ist notiert.", "Erledigt – ist gespeichert."],
+  giftFrom: ["🎁 Wie schön, ein Geschenk! Von wem?", "🎁 Ein Geschenk – schön! Von wem ist er?", "🎁 Wie nett! Von wem hast du ihn bekommen?"],
   done: ["Wunderbar, dann ist alles notiert.", "Schön – alles festgehalten.", "Perfekt, ich habe alles."],
   cancelled: ["Gut, dann lassen wir das – ich habe nichts gespeichert.", "Kein Problem, ich habe nichts gespeichert.", "Alles klar, ich lasse es bleiben."],
   keepAsIs: ["Gut, ich lasse alles, wie es ist.", "Alles klar, dann bleibt alles beim Alten.", "Okay, ich ändere nichts."],
@@ -119,7 +120,11 @@ export const T = {
   howMany: (room: string) => `${e(room)} – schön. Wie viele Flaschen sind es?`,
   howManyRetry: "Wie viele Flaschen sind es?",
   pricePaid: (bottles: string) => `${e(bottles)}. Was hast du pro Flasche bezahlt?`,
-  priceRetry: "Was hast du pro Flasche bezahlt? Z. B. <i>24.50</i> – oder tippe „Überspringen“.",
+  priceRetry: "Was hast du pro Flasche bezahlt? Z. B. <i>24.50</i> – oder tippe „🎁 Geschenk“ bzw. „Überspringen“.",
+  /** Geschenk: „Von wem?“ (Varianten). */
+  giftFromAsk: (random?: () => number) => say("giftFrom", random),
+  /** Statt Preis: „🎁 Geschenk von Marc“ bzw. „🎁 Geschenk“. */
+  giftLine: (from: string | null) => (from ? `🎁 Geschenk von ${e(from)}` : "🎁 Geschenk"),
   regularPrice: "Und was kostet er normalerweise?",
   regularPriceRetry: "Was kostet er normalerweise? Z. B. <i>29.90</i> – oder tippe einen Knopf.",
   vendorAsk: (hasVendors: boolean) => (hasVendors ? "Wo hast du ihn gekauft?" : "Wo hast du ihn gekauft? Schreib mir den Namen – oder tippe „Überspringen“."),

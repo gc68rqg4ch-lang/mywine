@@ -15,6 +15,8 @@ export type CallbackAction =
   | "loc"
   | "qty"
   | "skipprice"
+  | "gift"
+  | "skipgift"
   | "sameprice"
   | "skipregular"
   | "vendor"
@@ -37,6 +39,8 @@ export function parseCallbackData(data: string | undefined) {
     "loc",
     "qty",
     "skipprice",
+    "gift",
+    "skipgift",
     "sameprice",
     "skipregular",
     "vendor",
@@ -139,8 +143,19 @@ export function quantityKeyboard(jobId: string): TgInlineKeyboard {
 
 export function priceKeyboard(jobId: string): TgInlineKeyboard {
   return {
-    inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipprice", jobId) }], cancelRow(jobId)],
+    inline_keyboard: [
+      [
+        { text: "🎁 Geschenk", callback_data: callbackData("gift", jobId) },
+        { text: "Überspringen", callback_data: callbackData("skipprice", jobId) },
+      ],
+      cancelRow(jobId),
+    ],
   };
+}
+
+/** Geschenk: „Von wem?“ – Name schreiben oder „Überspringen“. */
+export function giftFromKeyboard(jobId: string): TgInlineKeyboard {
+  return { inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipgift", jobId) }], cancelRow(jobId)] };
 }
 
 export function regularPriceKeyboard(jobId: string, paid: number | null): TgInlineKeyboard {
@@ -273,18 +288,21 @@ export function textSummaryMessage(state: IngestState) {
   ]
     .filter(Boolean)
     .join(" · ");
-  const prices = [
-    state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
-    state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
-    state.vendor_name ? `bei ${state.vendor_name}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  // Geschenk: statt Preis „🎁 Geschenk von <Name>“ (giftLine ist schon HTML-sicher).
+  const prices = state.is_gift
+    ? null
+    : [
+        state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
+        state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
+        state.vendor_name ? `bei ${state.vendor_name}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
   return [
     "📝 <b>Zusammenfassung</b>",
     ...wineSummaryLines(state),
     e(purchase),
-    prices ? e(prices) : null,
+    state.is_gift ? T.giftLine(state.gift_from ?? null) : prices ? e(prices) : null,
     "",
     state.restock ? "Soll ich das als neue Charge zum bestehenden Wein speichern?" : "Soll ich das so speichern?",
   ]

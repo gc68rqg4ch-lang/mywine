@@ -336,6 +336,12 @@ Ablauf: Vorder- und Rückseite als Album schicken → Fotos landen im privaten B
 Normalpreis (**[Gleich wie bezahlt] [Überspringen]**), Händler (Buttons aus `vendors`, **[Neuer Händler]**
 per Freitext oder **[Überspringen]**) → Wein anlegen oder wiederverwenden, `inventory_items` mit
 `status = sealed`, `purchased_at = heute`, `vendor_id` und den Fotos anlegen, Job auf `confirmed`.
+**Geschenk:** Bei der Preisfrage gibt es **[🎁 Geschenk]** – danach fragt Antoine „Von wem?“ (Freitext, getrimmt,
+oder **[Überspringen]** → `gift_from = NULL`); gespeichert `is_gift = true`, `purchase_price = 0`, kein Normalpreis
+und kein Händler. Steht im Bildtext oder Freitext schon „Geschenk von Marc“, wird es direkt übernommen (Freitext:
+Schema-Felder `gift`/`gift_from`, nicht nullable; Bildtext und Rückfall: `src/lib/ingest/gift.ts`), ohne Preis- und
+ohne „Von wem?“-Frage, wenn der Name da ist. Zusammenfassung und Bestätigung zeigen „🎁 Geschenk von Marc“ bzw.
+„🎁 Geschenk“ statt Preis. „Von wem?“ läuft wie alle Rückfragen nach 10 Minuten ab. Verkostet bleibt unverändert.
 Die Bestätigung („Ich habe 6 Flaschen Pintia 2019 im Weinkeller eingebucht. Möchtest du gleich eine öffnen oder
 bewerten?“) bringt gleich das Wein-Menü dieses Jahrgangs mit (`savedWineKeyboard`): 🍾 Öffnen mit der eben
 gespeicherten Charge vorausgewählt (über `open_bottle()` wie im normalen Menü), ⭐ Bewerten, ⭐ für die andere

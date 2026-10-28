@@ -49,7 +49,7 @@ import { processTextJob, saveJob, nextPurchaseStep } from "@/lib/ingest/flow";
 const empty = (purchase: Record<string, unknown>, wine: Record<string, unknown>) => ({
   name: null, producer: null, vintage_year: null, country: null, region: null, appellation: null, type: null,
   grape_shares: [], alcohol_content: null, bottle_size_ml: null, ...wine,
-  purchase: { quantity: 0, storage_room: "", price: 0, regular_price: 0, vendor: "", ...purchase },
+  purchase: { quantity: 0, storage_room: "", price: 0, regular_price: 0, vendor: "", gift: false, gift_from: "", ...purchase },
 });
 const job = (id: string) => net.tables.ingest_jobs.find((j) => j.id === id)!;
 const state = (id: string) => job(id).extracted as IngestState;

@@ -4,6 +4,7 @@ import "server-only";
 // abfragen – nur, was noch fehlt –, bei Text vorher Nachkauf/Produzent klären und
 // am Ende eine Zusammenfassung zeigen; dann speichern.
 
+import { cleanGiftFrom, giftInText } from "./gift";
 import { scheduleTasteProfile } from "@/lib/research/taste-auto";
 import { after } from "next/server";
 import { apiProblemForBot } from "@/lib/ai/api-errors";
@@ -27,6 +28,7 @@ import {
   proposalMessage,
   reviewKeyboard,
   vintageKeyboard,
+  giftFromKeyboard,
   priceKeyboard,
   quantityKeyboard,
   regularPriceKeyboard,
@@ -108,7 +110,14 @@ export async function resolveGrapes(
  * Foto-Erfassung als Kauf (nach der Erkennung bzw. nach „🛒 Gekauft“): mit bestehenden Weinen
  * abgleichen, Fehlendes per Websuche ergänzen, Rebsorten bestimmen, Vorschlag zeigen.
  */
-export async function continuePhotoPurchase(db: AdminClient, jobId: string, chatId: number, recognition: RecognitionResult) {
+export async function continuePhotoPurchase(
+  db: AdminClient,
+  jobId: string,
+  chatId: number,
+  recognition: RecognitionResult,
+  /** Bildtext des Albums: „Geschenk von Marc“ wird direkt übernommen. */
+  caption?: string | null,
+) {
   try {
     let proposal = recognition.proposal;
     let enriched: { filled: IngestState["recognition"]["enriched_fields"]; sources: string[] } = { filled: [], sources: [] };
@@ -128,9 +137,11 @@ export async function continuePhotoPurchase(db: AdminClient, jobId: string, chat
     const grapes = await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
     proposal = { ...proposal, grape_shares: grapes.shares };
 
+    const gift = giftInText(caption);
     const state: IngestState = {
       step: "review",
       intent: "bought",
+      ...(gift ? giftPatch(gift.from) : {}),
       proposal,
       // Jahrgang nicht sicher gelesen → vor dem Speichern nachfragen.
       ...(proposal.vintage_year != null && !recognition.vintageCertain ? { vintage_uncertain: true } : {}),
@@ -167,11 +178,24 @@ export async function continuePhotoPurchase(db: AdminClient, jobId: string, chat
 // ---------------------------------------------------------------------------
 // Schritte
 
+/**
+ * Geschenk: Preis 0, kein Normalpreis, kein Händler; from = Name (undefined = noch fragen,
+ * null = unbekannt).
+ */
+export function giftPatch(from: string | null | undefined): Partial<IngestState> {
+  return { is_gift: true, price: 0, regular_price: null, ...(from !== undefined && from !== null ? { gift_from: from } : {}) };
+}
+
 /** Nächster Schritt: die erste noch fehlende Kaufangabe, sonst Zusammenfassung (Text) bzw. Speichern. */
 export function nextPurchaseStep(state: IngestState): IngestStep {
   if (needsVintage(state)) return "vintage";
   if (state.storage_room === undefined) return "location";
   if (state.quantity === undefined) return "quantity";
+  // Geschenk: nur noch „Von wem?“ (falls nicht schon bekannt) – kein Preis, Händler oder Kaufdatum.
+  if (state.is_gift) {
+    if (state.gift_from === undefined) return "gift_from";
+    return state.source === "text" ? "confirm" : "saving";
+  }
   if (state.price === undefined) return "price";
   if (state.regular_price === undefined) return "regular_price";
   if (state.vendor_id === undefined && !state.vendor_name) return "vendor";
@@ -230,6 +254,9 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
         T.pricePaid(formatBottles(state.quantity ?? 1)),
         priceKeyboard(job.id),
       );
+      return;
+    case "gift_from":
+      await sendMessage(chatId, T.giftFromAsk(), giftFromKeyboard(job.id));
       return;
     case "regular_price":
       await sendMessage(chatId, T.regularPrice, regularPriceKeyboard(job.id, state.price ?? null));
@@ -375,9 +402,11 @@ export async function saveJob(job: IngestJob, chatId: number) {
       wineId,
       proposal: state.proposal,
       quantity: state.quantity ?? 1,
-      price: state.price ?? null,
-      regularPrice: state.regular_price ?? null,
-      vendorId: vendor?.id ?? state.vendor_id ?? null,
+      price: state.is_gift ? 0 : (state.price ?? null),
+      regularPrice: state.is_gift ? null : (state.regular_price ?? null),
+      vendorId: state.is_gift ? null : (vendor?.id ?? state.vendor_id ?? null),
+      isGift: Boolean(state.is_gift),
+      giftFrom: state.is_gift ? cleanGiftFrom(state.gift_from) : null,
       // Kaufdatum = Tag der Erfassung. Das Journal (inventory_events) schreibt die DB per Trigger.
       purchasedAt: todayIso(),
       storageRoom: state.storage_room ?? "Weinkeller",
@@ -393,12 +422,14 @@ export async function saveJob(job: IngestJob, chatId: number) {
       { status: "confirmed", inventory_item_id: itemId, matched_wine_id: wineId },
     );
 
-    const prices = [
-      state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
-      state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
-    ].filter((p): p is string => p != null);
+    const prices = state.is_gift
+      ? [T.giftLine(cleanGiftFrom(state.gift_from))]
+      : [
+          state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
+          state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
+        ].filter((p): p is string => p != null);
     const vendorName = vendor?.name ?? state.vendor_name;
-    if (vendorName) prices.push(`bei ${escapeHtml(vendorName)}`);
+    if (vendorName && !state.is_gift) prices.push(`bei ${escapeHtml(vendorName)}`);
     // Gleich weiter: Wein-Menü mit dieser Charge (Öffnen, Bewerten, Verkostung, …).
     const actor = await resolveActor(db, chatId).catch(() => null);
     const keyboard = await savedWineKeyboard(
@@ -563,6 +594,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     proposal = { ...proposal, grape_shares: grapes.shares };
 
     const p = parsed.purchase;
+    const gift = giftInText(text);
     const restockCandidate = known ? await inStock(db, known.id, proposal.vintage_year) : false;
     const base: IngestState = {
       step: "researching",
@@ -577,6 +609,8 @@ export async function processTextJob(jobId: string, chatId: number, text: string
       ...(p.price > 0 ? { price: p.price } : {}),
       ...(p.regular_price > 0 ? { regular_price: p.regular_price } : {}),
       ...(p.vendor.trim() ? { vendor_name: p.vendor.trim().replace(/\s+/g, " ").slice(0, 80) } : {}),
+      // Geschenk im Text („Geschenk von Marc“): direkt übernehmen, Preisfrage entfällt.
+      ...(p.gift || gift ? giftPatch(cleanGiftFrom(p.gift_from) ?? gift?.from) : {}),
     };
     // Jahrgang zuerst: davon hängt ab, ob es ein Nachkauf ist.
     const step: IngestStep = needsVintage(base)

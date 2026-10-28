@@ -83,6 +83,8 @@ export type IngestStep =
   | "location"
   | "quantity"
   | "price"
+  /** Geschenk: „Von wem?“ – Freitext oder „Überspringen“. */
+  | "gift_from"
   | "regular_price"
   | "vendor"
   | "vendor_new"
@@ -111,6 +113,9 @@ export type IngestState = {
   source?: "photo" | "text";
   /** Text-Erfassung: der Wein (mit Jahrgang) liegt schon im Bestand → nur neue Charge. */
   restock?: boolean;
+  /** Geschenk statt Kauf: Preis 0, kein Normalpreis/Händler; gift_from = von wem (null = unbekannt). */
+  is_gift?: boolean;
+  gift_from?: string | null;
   /** Trinkfenster aus der Recherche (wird in wine_vintages übernommen, wenn dort leer). */
   drink_from_year?: number | null;
   drink_until_year?: number | null;
@@ -158,6 +163,9 @@ export const TextEntrySchema = WineProposalSchema.extend({
     price: z.number().describe("Bezahlter Preis pro Flasche in CHF; 0 = nicht genannt"),
     regular_price: z.number().describe("Normalpreis pro Flasche in CHF; 0 = nicht genannt"),
     vendor: z.string().describe("Händler; leer = nicht genannt"),
+    // Nicht nullable (Grenze von 16 Union-Feldern pro Schema): false bzw. leer = nicht genannt.
+    gift: z.boolean().describe("true, wenn der Wein ein Geschenk ist (geschenkt bekommen, Mitbringsel)"),
+    gift_from: z.string().describe("Von wem geschenkt (Name); leer = nicht genannt"),
   }),
 });
 export type TextEntry = z.infer<typeof TextEntrySchema>;

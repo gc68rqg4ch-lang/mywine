@@ -838,7 +838,7 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
     const recognition = { ...purchase.pending_recognition, imageSides: purchase.pending_recognition.imageSides ?? null };
     if (parsed.action === "buy") {
       await sendMessage(chatId, T.boughtContinue);
-      later(() => continuePhotoPurchase(createAdminClient(), job.id, chatId, recognition));
+      later(() => continuePhotoPurchase(createAdminClient(), job.id, chatId, recognition, purchase.caption));
     } else {
       await startTastedFromPhoto(db, job.id, chatId, recognition, purchase.caption);
     }

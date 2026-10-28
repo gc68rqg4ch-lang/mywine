@@ -150,6 +150,7 @@ export async function findJobAwaitingText(db: AdminClient, chatId: number) {
       "correcting",
       "quantity",
       "price",
+      "gift_from",
       "regular_price",
       "vendor",
       "vendor_new",
