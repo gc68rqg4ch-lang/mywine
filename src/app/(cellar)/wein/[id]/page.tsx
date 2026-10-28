@@ -14,6 +14,7 @@ import {
   pickVintage,
   vintageOptions,
   wineHref,
+  withTastedYears,
 } from "@/lib/cellar/wine-page";
 import {
   formatBottleSize,
@@ -37,6 +38,8 @@ import { GrapeSection } from "./grape-card";
 import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, type PersonRating } from "./ratings-card";
+import { EncounterSection } from "./encounters";
+import { loadPlaces, loadWineEncounters } from "@/lib/edit/encounters";
 
 // Server Actions dieser Seite (z. B. Nachrecherchieren mit Websuche) brauchen Zeit.
 export const maxDuration = 300;
@@ -47,6 +50,7 @@ const BACK_LINKS: Record<string, { href: string; label: string }> = {
   bestand: { href: "/", label: "Bestand" },
   offen: { href: "/offen", label: "Offen" },
   getrunken: { href: "/getrunken", label: "Getrunken" },
+  verkostet: { href: "/verkostet", label: "Verkostet" },
 };
 
 type Supabase = Awaited<ReturnType<typeof getMemberSession>>["supabase"];
@@ -91,7 +95,7 @@ async function loadRatingsAndTastings(supabase: Supabase, wineId: string, vintag
     sameVintage(
       supabase
         .from("wine_tastings")
-        .select("id, inventory_item_id, tasted_at, quality_level, quality_points, readiness, sat, person:persons(name)")
+        .select("id, inventory_item_id, encounter_id, tasted_at, quality_level, quality_points, readiness, sat, person:persons(name)")
         .eq("wine_id", wineId),
     ).order("tasted_at", { ascending: false }),
     sameVintage(
@@ -137,20 +141,22 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
 
   const { supabase, person } = await getMemberSession();
   const today = todayIso();
-  const items = await loadItems(supabase, wine.id);
-  const options = vintageOptions(items);
+  const [items, encounters] = await Promise.all([loadItems(supabase, wine.id), loadWineEncounters(supabase, wine.id)]);
+  // Jahrgänge mit Flaschen sowie solche, die nur verkostet wurden.
+  const options = withTastedYears(vintageOptions(items), encounters.map((e) => e.year));
   const year = pickVintage(options, parseVintageParam(query.jahrgang), items);
   const inVintage = items.filter((i) => i.vintage_year === year);
   const anchor = anchorItem(inVintage);
 
   // Bearbeiten-Modus (?bearbeiten=1): Formulare statt Anzeige, alle über das gemeinsame Modul.
   const editing = query.bearbeiten === "1";
-  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents] = await Promise.all([
+  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places] = await Promise.all([
     loadRatingsAndTastings(supabase, wine.id, year),
     loadGrapeShares(supabase, wine.id, year),
     loadVintagePhotos(supabase, wine.id, year, inVintage.map((i) => i.inventory_item_id)),
     editing ? loadVendorNames(supabase) : Promise.resolve([] as string[]),
     loadDocuments(supabase, wine.id, year),
+    editing ? loadPlaces(supabase) : Promise.resolve([]),
   ]);
   const suggestions = await loadPendingSuggestions(supabase, { wineId: wine.id, year }).catch((error) => {
     console.error("loading suggestions failed", error);
@@ -393,7 +399,13 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             <ul className="tasting-list">
               {tastings.map((t) => (
                 <li key={t.id}>
-                  <Link href={`/flasche/${tastingItem(t.inventory_item_id)}/verkostung?t=${t.id}`}>
+                  <Link
+                    href={
+                      t.encounter_id
+                        ? `/verkostet/${t.encounter_id}/wset?t=${t.id}`
+                        : `/flasche/${tastingItem(t.inventory_item_id)}/verkostung?t=${t.id}`
+                    }
+                  >
                     <span className="tasting-result">
                       {[t.quality_level, t.points != null ? `${t.points.toLocaleString("de-CH")} / 4 Punkte` : null]
                         .filter(Boolean)
@@ -407,6 +419,16 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
           )}
         </div>
       </section>
+      <EncounterSection
+        wineId={wine.id}
+        year={year}
+        encounters={encounters}
+        editing={editing}
+        wantToBuy={wine.want_to_buy}
+        persons={ratings.map(({ personId, name }) => ({ personId, name }))}
+        places={places}
+        today={today}
+      />
     </div>
   );
 
@@ -476,7 +498,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
               >
                 {o.year ?? "o. J."}
                 <span className="segment-count">
-                  {o.sealed + o.open > 0 ? `${o.sealed}${o.open ? `+${o.open}` : ""}` : "getr."}
+                  {o.sealed + o.open > 0 ? `${o.sealed}${o.open ? `+${o.open}` : ""}` : o.tastedOnly ? "verk." : "getr."}
                 </span>
               </Link>
             ))}

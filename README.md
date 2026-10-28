@@ -38,6 +38,23 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
     `createSignedUrls`-Aufruf (`loadLabelPhotos` in `src/lib/media/store.ts`). Antippen des Bilds öffnet das
     Overlay (Vorderseite, wischen zur Rückseite, schliessen per Tippen, X oder Escape); der Rest der Karte
     führt wie bisher zur Weinseite.
+- **Verkostet** (`/verkostet`, Reiter zwischen Getrunken und Recherche): Weine, die wir irgendwo probiert
+  haben (`wine_encounters`) – unabhängig vom Bestand; ein Wein bleibt hier, auch wenn er gekauft wird. Gleicher
+  Aufbau wie die anderen Listen (Kacheln, Suche, Weintyp-Filter, Gruppierung nach Weintyp, Land, Rebsorte,
+  Jahrgang, Preisklasse, dazu Ort, „Verkostet am“ und „Kaufen?“), ohne Lagerort-Wahl. Preisklasse nur für
+  Flaschenpreise in CHF. Karte: letzter Ort und Datum, Bewertungen je Person, 🛒 beim Merker, „im Bestand: N“.
+  - Erfassen (`/verkostet/neu`, Knopf oben): Wein suchen oder neu anlegen (gleicher Name + Produzent →
+    bestehender), Jahrgang Pflicht (NV möglich), Datum (heute), Ort (bestehend oder neu mit Art und Stadt;
+    gleichnamiger wird wiederverwendet), Preis pro Flasche/Glas in CHF, AED oder EUR, Anlass, Begleitung, Notiz,
+    Merker „Kaufen?“ und Bewertungen (eigene, optional die andere Person) – mit `encounter_id` und dem Datum des
+    Eintrags.
+  - Weinseite, Spalte 3: Abschnitt „Verkostet“ mit allen Einträgen (neuester zuerst), im ✏️-Modus bearbeiten
+    und löschen (samt den Bewertungen des Eintrags; WSET-Verkostungen bleiben). Merker „Kaufen?“ umschaltbar
+    (die DB setzt ihn zurück, sobald ungeöffnete Flaschen eingebucht werden). Nur verkostete Jahrgänge sind in
+    der Jahrgangswahl („verk.“).
+  - WSET-Verkostung aus einem Eintrag: `/verkostet/[id]/wset` (ohne Flasche, `encounter_id` gesetzt).
+  - Logik im gemeinsamen Modul (`src/lib/edit/encounters.ts`, Bearbeitungen `addEncounter`, `encounter`,
+    `deleteEncounter`, `wantToBuy`), damit der Bot sie später nutzt; Liste in `src/lib/cellar/tasted.ts`.
 - **Weinseite** (`/wein/[id]?jahrgang=2019`): eine Seite pro Wein, Ziel aller Klicks aus Bestand, Offen und
   Getrunken (`wineHref` in `src/lib/cellar/wine-page.ts`). Kopf über die volle Breite: Name, Produzent,
   Jahrgang-Umschalter (`ohne` = ohne Jahrgang), Flaschenzahl. Darunter drei feste Spalten (iPad quer); hochkant

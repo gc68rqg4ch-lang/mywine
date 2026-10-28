@@ -5,74 +5,49 @@ import "server-only";
 // Gleiche Prüfungen, gleiche Meldungen. Das Journal (inventory_events) schreibt die DB per
 // Trigger – hier entstehen nie eigene Einträge.
 
-import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import type { PostgrestError } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-import { WINE_TYPE_LABELS, formatBottleSize, formatDate, formatMoney, todayIso, zurichDate, type WineType } from "@/lib/format";
+import { WINE_TYPE_LABELS, formatBottleSize, formatMoney, zurichDate, type WineType } from "@/lib/format";
 import { formatShares, normalizeGrapeShares, percentSum } from "@/lib/grapes/shares";
 import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
 import { isValidRating, saveRating } from "@/lib/ratings";
+import {
+  DASH,
+  NOTHING,
+  clean,
+  date,
+  diff,
+  exact,
+  fail,
+  loadWine,
+  ready,
+  show,
+  validDate,
+  validPrice,
+  validYear,
+  wineTitle,
+  type Db,
+  type PreparedEdit,
+} from "./helpers";
+import { prepareAddEncounter, prepareDeleteEncounter, prepareEncounter, prepareWantToBuy } from "./encounters";
 import {
   ROOMS,
   yearText,
   type BatchChanges,
   type Edit,
   type EditChange,
-  type EditPreview,
   type EditResult,
   type Room,
   type WineChanges,
 } from "./types";
 
-type Db = SupabaseClient<Database>;
-
-export type PreparedEdit =
-  | { ok: false; error: string }
-  | {
-      ok: true;
-      preview: EditPreview;
-      wineId: string | null;
-      year?: number | null;
-      /** Führt aus und liefert, was getan wurde („2 Flaschen ins Wohnzimmer verschoben“). */
-      run: () => Promise<string>;
-    };
-
-export const NOTHING = "Nichts zu ändern – die Angaben sind schon so.";
-const DASH = "–";
 const WINE_TYPES = Object.keys(WINE_TYPE_LABELS) as WineType[];
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-const fail = (error: string): PreparedEdit => ({ ok: false, error });
-const show = (v: string | number | null | undefined) => (v == null || v === "" ? DASH : String(v));
 const money = (v: number | null | undefined) => formatMoney(v, "CHF") ?? DASH;
-const date = (v: string | null | undefined) => formatDate(v) ?? DASH;
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** „in den Weinkeller“ / „ins Wohnzimmer“ */
 export const intoRoom = (room: string) => (room === "Wohnzimmer" ? "ins Wohnzimmer" : `in den ${room}`);
 const inRoom = (room: string | null) => (room == null ? "ohne Lagerort" : room === "Wohnzimmer" ? "im Wohnzimmer" : `im ${room}`);
 const bottles = (n: number) => (n === 1 ? "1 Flasche" : `${n} Flaschen`);
-
-/** Leerer Text → null, sonst getrimmt. */
-const clean = (v: string | null | undefined) => {
-  const t = v?.trim().replace(/\s+/g, " ");
-  return t ? t : null;
-};
-/** Für ilike: exakte Suche ohne Platzhalter. */
-const exact = (v: string) => v.replace(/[\\%_]/g, (c) => `\\${c}`);
-
-function validYear(year: number | null, label = "Jahrgang") {
-  if (year == null) return null;
-  const max = Number(todayIso().slice(0, 4)) + 1;
-  return Number.isInteger(year) && year >= 1800 && year <= max ? null : `${label}: bitte eine Jahreszahl zwischen 1800 und ${max}.`;
-}
-
-function validDate(value: string, label: string) {
-  if (!DATE_RE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) return `${label}: ungültiges Datum.`;
-  if (value > todayIso()) return `${label}: darf nicht in der Zukunft liegen.`;
-  return null;
-}
-
-const validPrice = (v: number | null, label: string) =>
-  v == null || (Number.isFinite(v) && v >= 0 && v < 100_000) ? null : `${label}: ungültiger Preis.`;
 
 const sameVintage = <Q extends { eq: (c: "vintage_year", v: number) => Q; is: (c: "vintage_year", v: null) => Q }>(
   q: Q,
@@ -82,14 +57,7 @@ const sameVintage = <Q extends { eq: (c: "vintage_year", v: number) => Q; is: (c
 // ---------------------------------------------------------------------------
 // Laden
 
-async function loadWine(db: Db, wineId: string) {
-  const { data, error } = await db.from("wines").select("*").eq("id", wineId).maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
-const wineTitle = (w: { producer: string; name: string }, year?: number | null) =>
-  `${w.producer} – ${w.name}${year === undefined ? "" : ` ${year ?? "NV"}`}`;
+export { NOTHING, type PreparedEdit };
 
 async function loadItem(db: Db, itemId: string) {
   const { data, error } = await db
@@ -109,20 +77,6 @@ const itemTitle = (i: Item) =>
   [wineTitle(i.wine, i.vintage_year), i.status === "sealed" ? `${bottles(i.quantity)} ${inRoom(i.storage_room)}` : STATUS_TEXT[i.status]]
     .filter(Boolean)
     .join(" · ");
-
-function diff(changes: EditChange[], label: string, before: string, after: string) {
-  if (before !== after) changes.push({ label, before, after });
-}
-
-function ready(
-  preview: EditPreview,
-  wineId: string | null,
-  run: () => Promise<string>,
-  year?: number | null,
-): PreparedEdit {
-  if (!preview.changes.length && !preview.notes.length) return fail(NOTHING);
-  return { ok: true, preview, wineId, year, run };
-}
 
 // ---------------------------------------------------------------------------
 // Wein
@@ -727,6 +681,14 @@ export async function prepareEdit(db: Db, edit: Edit): Promise<PreparedEdit> {
       return prepareTasting(db, edit);
     case "deleteTasting":
       return prepareDeleteTasting(db, edit.tastingId);
+    case "addEncounter":
+      return prepareAddEncounter(db, edit);
+    case "encounter":
+      return prepareEncounter(db, edit);
+    case "deleteEncounter":
+      return prepareDeleteEncounter(db, edit.encounterId);
+    case "wantToBuy":
+      return prepareWantToBuy(db, edit.wineId, edit.value);
   }
 }
 

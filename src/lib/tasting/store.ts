@@ -17,7 +17,10 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * (Struktur wie im Verkostungs-Tool) als JSON in sat.
  */
 export function tastingRow(input: {
-  item: { id: string; wine_id: string; vintage_year: number | null };
+  /** Flasche bzw. – bei „Verkostet“ – nur Wein und Jahrgang (id null). */
+  item: { id: string | null; wine_id: string; vintage_year: number | null };
+  /** Eintrag „Verkostet“, aus dem die Verkostung gestartet wurde. */
+  encounterId?: string | null;
   personId: string | null;
   sat: unknown;
   today: string;
@@ -33,6 +36,7 @@ export function tastingRow(input: {
     wine_id: input.item.wine_id,
     vintage_year: input.item.vintage_year,
     inventory_item_id: input.item.id,
+    ...(input.encounterId ? { encounter_id: input.encounterId } : {}),
     person_id: input.personId,
     tasted_at: sat.meta.date && DATE_RE.test(sat.meta.date) ? sat.meta.date : input.today,
     wine_style: WINE_STYLE[sat.type],

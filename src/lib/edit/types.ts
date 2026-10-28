@@ -43,6 +43,47 @@ export type BatchChanges = {
   regularPrice?: number | null;
 };
 
+// ---------------------------------------------------------------------------
+// Verkostet (wine_encounters): ein Wein irgendwo probiert – unabhängig vom Bestand.
+
+export const PLACE_KINDS = ["restaurant", "weingut", "bar", "privat", "messe", "sonstiges"] as const;
+export type PlaceKind = (typeof PLACE_KINDS)[number];
+export const PLACE_KIND_LABELS: Record<PlaceKind, string> = {
+  restaurant: "Restaurant",
+  weingut: "Weingut",
+  bar: "Bar",
+  privat: "Privat",
+  messe: "Messe",
+  sonstiges: "Sonstiges",
+};
+
+export const CURRENCIES = ["CHF", "AED", "EUR"] as const;
+export type Currency = (typeof CURRENCIES)[number];
+
+export const PRICE_UNITS = ["bottle", "glass"] as const;
+export type PriceUnit = (typeof PRICE_UNITS)[number];
+export const PRICE_UNIT_LABELS: Record<PriceUnit, string> = { bottle: "Flasche", glass: "Glas" };
+
+/** Ort: bestehender (placeId) oder neu (Name, Art, Stadt); null = ohne Ort. */
+export type PlaceRef = { placeId: string } | { name: string; kind: PlaceKind | null; city: string | null } | null;
+
+/** Angaben eines Eintrags „Verkostet“. */
+export type EncounterChanges = {
+  year?: number | null;
+  /** YYYY-MM-DD */
+  tastedOn?: string;
+  place?: PlaceRef;
+  price?: number | null;
+  priceUnit?: PriceUnit | null;
+  currency?: Currency;
+  occasion?: string | null;
+  companions?: string | null;
+  note?: string | null;
+};
+
+/** Neuer Wein beim Erfassen (gibt es Name + Produzent schon, wird der bestehende genommen). */
+export type NewWine = { name: string; producer: string; type?: WineType | null; country?: string | null; region?: string | null };
+
 export type Edit =
   /** Stammdaten des Weins (alle Jahrgänge). */
   | { kind: "wine"; wineId: string; set: WineChanges }
@@ -69,7 +110,28 @@ export type Edit =
   | { kind: "rating"; wineId: string; year: number | null; personId: string; rating: number | null; itemId?: string | null }
   /** Verkostung: Datum, Person, Notizen. */
   | { kind: "tasting"; tastingId: string; set: { tastedOn?: string; personId?: string | null; notes?: string | null } }
-  | { kind: "deleteTasting"; tastingId: string };
+  | { kind: "deleteTasting"; tastingId: string }
+  /**
+   * Verkostet erfassen: Wein (bestehend oder neu), Jahrgang Pflicht (null = NV), Datum, Ort,
+   * Preis …; optional Merker „Kaufen?“ und Bewertungen (mit encounter_id).
+   */
+  | {
+      kind: "addEncounter";
+      wine: { wineId: string } | { new: NewWine };
+      year: number | null;
+      set: Omit<EncounterChanges, "year">;
+      /** Wer erfasst (angemeldete Person bzw. wer im Bot schreibt). */
+      personId: string | null;
+      source: "app" | "bot";
+      wantToBuy?: boolean;
+      ratings?: { personId: string; rating: number }[];
+    }
+  /** Eintrag „Verkostet“ ändern; Bewertungen dieses Eintrags setzen (null = löschen). */
+  | { kind: "encounter"; encounterId: string; set: EncounterChanges; ratings?: { personId: string; rating: number | null }[] }
+  /** Eintrag löschen – samt seinen Bewertungen; WSET-Verkostungen bleiben (ohne Eintrag). */
+  | { kind: "deleteEncounter"; encounterId: string }
+  /** Merker „Kaufen?“ */
+  | { kind: "wantToBuy"; wineId: string; value: boolean };
 
 export type EditKind = Edit["kind"];
 

@@ -76,7 +76,9 @@ export default async function TastingPage({ params, searchParams }: PageProps<"/
         </p>
       </div>
       <SatForm
-        itemId={item.id}
+        target={{ kind: "item", id: item.id }}
+        doneHref={`/flasche/${item.id}?verkostung=gespeichert`}
+        cancelHref={`/flasche/${item.id}`}
         tastingId={tasting?.id ?? null}
         initial={initial}
         initialManual={manual}

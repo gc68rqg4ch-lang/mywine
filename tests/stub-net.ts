@@ -39,6 +39,28 @@ function matches(row: Row, col: string, expr: string): boolean {
     default: throw new Error(`stub: Operator ${op}`);
   }
 }
+/** Tabellen, die PostgREST als einzelnes Objekt einbettet (1:1 über die eigene ID). */
+const ONE_TO_ONE = new Set(["open_bottle_details"]);
+
+/** Eingebettete Beziehungen im select wie „place:places(name)“: über place_id (n:1), sonst rückwärts. */
+function embed(tables: Record<string, Row[]>, rows: Row[], select: string | null) {
+  const relations = [...(select ?? "").matchAll(/(\w+):(\w+)\(/g)].map((m) => ({ alias: m[1], table: m[2] }));
+  if (!relations.length) return rows;
+  return rows.map((row) => {
+    const out = { ...row };
+    for (const { alias, table } of relations) {
+      const target = tables[table] ?? [];
+      const fk = row[`${alias}_id`];
+      if (fk !== undefined) out[alias] = target.find((t) => t.id === fk) ?? null;
+      else {
+        const linked = target.filter((t) => Object.entries(t).some(([k, v]) => k.endsWith("_id") && v === row.id));
+        out[alias] = ONE_TO_ONE.has(table) ? (linked[0] ?? null) : linked;
+      }
+    }
+    return out;
+  });
+}
+
 let seq = 0;
 export function installNet(net: Net) {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -84,6 +106,7 @@ export function installNet(net: Net) {
     const limit = url.searchParams.get("limit");
     if (limit) rows = rows.slice(0, Number(limit));
     if (!wantsRows) return new Response(null, { status: 204 });
+    rows = embed(net.tables, rows, url.searchParams.get("select"));
     if (single) return rows.length ? json(rows[0]) : json({ code: "PGRST116", message: "no rows" }, 406);
     return json(rows);
   }) as typeof fetch;

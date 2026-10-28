@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useTransition } from "react";
 import { setLocation } from "@/app/(cellar)/location-actions";
 
@@ -11,7 +12,9 @@ export function LocationSwitcher({
   selected: string | null;
 }) {
   const [pending, startTransition] = useTransition();
-  if (options.length < 2) return null;
+  // „Verkostet“ hängt nicht am Lagerort – dort keine Wahl.
+  const pathname = usePathname();
+  if (options.length < 2 || pathname.startsWith("/verkostet")) return null;
   const all = [{ key: "", label: "Alle" }, ...options];
 
   return (

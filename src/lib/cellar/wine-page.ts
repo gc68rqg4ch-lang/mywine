@@ -26,7 +26,14 @@ export type PageItem = {
   drunk_at: string | null;
 };
 
-export type VintageOption = { year: number | null; sealed: number; open: number; drunk: number };
+export type VintageOption = {
+  year: number | null;
+  sealed: number;
+  open: number;
+  drunk: number;
+  /** Nur verkostet (keine Flaschen dieses Jahrgangs). */
+  tastedOnly?: boolean;
+};
 
 /** Alle Jahrgänge des Weins (auch nur getrunkene), aufsteigend, ohne Jahrgang zuletzt. */
 export function vintageOptions(items: PageItem[]): VintageOption[] {
@@ -37,6 +44,14 @@ export function vintageOptions(items: PageItem[]): VintageOption[] {
     map.set(i.vintage_year, o);
   }
   return [...map.values()].sort((a, b) => (a.year == null ? 1 : b.year == null ? -1 : a.year - b.year));
+}
+
+/** Jahrgänge, die nur verkostet wurden, kommen als eigene Auswahl dazu (ohne Flaschen). */
+export function withTastedYears(options: VintageOption[], tastedYears: (number | null)[]): VintageOption[] {
+  const extra = [...new Set(tastedYears)]
+    .filter((y) => !options.some((o) => o.year === y))
+    .map((year) => ({ year, sealed: 0, open: 0, drunk: 0, tastedOnly: true }));
+  return [...options, ...extra].sort((a, b) => (a.year == null ? 1 : b.year == null ? -1 : a.year - b.year));
 }
 
 /**

@@ -29,7 +29,7 @@ import {
   type SatData,
   type SatType,
 } from "@/lib/tasting/sat";
-import { deleteTasting, saveTasting } from "../../../tasting-actions";
+import { deleteTasting, saveTasting, type TastingTarget } from "../../../tasting-actions";
 
 type Person = { id: string; name: string };
 
@@ -67,7 +67,9 @@ function removeDraft(key: string) {
 }
 
 export function SatForm({
-  itemId,
+  target,
+  doneHref,
+  cancelHref,
   tastingId,
   initial,
   initialManual,
@@ -76,7 +78,11 @@ export function SatForm({
   today,
   draftKey,
 }: {
-  itemId: string;
+  /** Flasche oder Eintrag „Verkostet“ */
+  target: TastingTarget;
+  /** Nach dem Speichern bzw. Löschen */
+  doneHref: string;
+  cancelHref: string;
   tastingId: string | null;
   initial: SatData;
   initialManual: string[];
@@ -161,25 +167,25 @@ export function SatForm({
   const save = () =>
     startTransition(async () => {
       setMessage(null);
-      const result = await saveTasting({ itemId, tastingId, personId: personId || null, sat: data });
+      const result = await saveTasting({ target, tastingId, personId: personId || null, sat: data });
       if (!result.ok) {
         setMessage({ kind: "error", text: result.error });
         return;
       }
       removeDraft(draftKey);
-      router.push(`/flasche/${itemId}?verkostung=gespeichert`);
+      router.push(doneHref);
     });
 
   const remove = () => {
     if (!tastingId || !confirm("Verkostung wirklich löschen?")) return;
     startTransition(async () => {
-      const result = await deleteTasting(itemId, tastingId);
+      const result = await deleteTasting(target, tastingId);
       if (!result.ok) {
         setMessage({ kind: "error", text: result.error });
         return;
       }
       removeDraft(draftKey);
-      router.push(`/flasche/${itemId}`);
+      router.push(cancelHref);
     });
   };
 
@@ -245,7 +251,7 @@ export function SatForm({
               Löschen
             </button>
           )}
-          <Link href={`/flasche/${itemId}`} className="btn btn-ghost btn-sm">
+          <Link href={cancelHref} className="btn btn-ghost btn-sm">
             Abbrechen
           </Link>
         </div>
@@ -387,7 +393,7 @@ export function SatForm({
         <button type="button" className="btn btn-primary" onClick={save} disabled={pending}>
           {pending ? "Speichert …" : "Verkostung speichern"}
         </button>
-        <Link href={`/flasche/${itemId}`} className="btn btn-ghost">
+        <Link href={cancelHref} className="btn btn-ghost">
           Abbrechen
         </Link>
       </div>

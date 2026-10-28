@@ -110,7 +110,7 @@ export function drinkBadges(wine: Groupable, vintages: (number | null)[], year: 
   return list;
 }
 
-export type GroupBy = "typ" | "land" | "rebsorte" | "jahrgang" | "preis" | "trinkreife" | "getrunken";
+export type GroupBy = "typ" | "land" | "rebsorte" | "jahrgang" | "preis" | "trinkreife" | "getrunken" | "ort" | "verkostet" | "kaufen";
 
 export const GROUP_BY_LABELS: Record<GroupBy, string> = {
   typ: "Weintyp",
@@ -120,10 +120,16 @@ export const GROUP_BY_LABELS: Record<GroupBy, string> = {
   preis: "Preisklasse",
   trinkreife: "Trinkreife",
   getrunken: "Getrunken am",
+  ort: "Ort",
+  verkostet: "Verkostet am",
+  kaufen: "Kaufen?",
 };
 
 /** Gruppierungen von Bestand und Offen; Getrunken hat zusätzlich „Getrunken am“. */
 export const BASE_GROUPINGS: GroupBy[] = ["typ", "land", "rebsorte", "jahrgang", "preis", "trinkreife"];
+
+/** Gruppierungen der Liste „Verkostet“ (ohne Trinkreife, dafür Ort, Datum und Merker). */
+export const TASTED_GROUPINGS: GroupBy[] = ["typ", "land", "rebsorte", "jahrgang", "preis", "ort", "verkostet", "kaufen"];
 
 export function isGroupBy(value: unknown, allowed: GroupBy[] = BASE_GROUPINGS): value is GroupBy {
   return typeof value === "string" && (allowed as string[]).includes(value);
@@ -223,8 +229,10 @@ export type GroupUnit = {
   vintage_year: number | null;
   price_class: string | null;
   count: number;
-  /** YYYY-MM-DD (Zürich), nur bei getrunkenen Flaschen. */
+  /** YYYY-MM-DD (Zürich): getrunken bzw. verkostet am. */
   drunk_on?: string | null;
+  /** Ort (nur Verkostet). */
+  place?: string | null;
   /** Trinkfenster des Jahrgangs (Gruppierung „Trinkreife“). */
   drink_from_year?: number | null;
   drink_until_year?: number | null;
@@ -241,6 +249,8 @@ export type Groupable = {
   /** Jahrgänge des Eintrags, aufsteigend (ohne Jahrgang = null, zuletzt). */
   vintages: (number | null)[];
   units: GroupUnit[];
+  /** Merker „Kaufen?“ (nur Verkostet). */
+  wantToBuy?: boolean;
 };
 
 export type CellarWine = SummaryWine & Groupable & {
@@ -447,7 +457,19 @@ export function groupWines<T extends Groupable>(wines: T[], by: GroupBy, thisYea
         }
         break;
       }
-      case "getrunken": {
+      case "ort": {
+        for (const [key, item] of splitBy(wine, (u) => u.place ?? "")) {
+          pushTo(groups, key, () => ({ key, label: key || "Ohne Ort" }), item);
+        }
+        break;
+      }
+      case "kaufen": {
+        const key = wine.wantToBuy ? "ja" : "nein";
+        pushTo(groups, key, () => ({ key, label: wine.wantToBuy ? "🛒 Kaufen?" : "Ohne Merker" }), whole(wine));
+        break;
+      }
+      case "getrunken":
+      case "verkostet": {
         for (const [year, item] of splitBy(wine, (u) => u.drunk_on?.slice(0, 4) ?? "")) {
           pushTo(groups, year, () => ({ key: year, label: year || "Ohne Datum" }), item);
         }
@@ -483,7 +505,11 @@ export function groupWines<T extends Groupable>(wines: T[], by: GroupBy, thisYea
     case "trinkreife":
       list.sort((a, b) => DRINK_STATUS_ORDER.indexOf(a.key as DrinkStatus) - DRINK_STATUS_ORDER.indexOf(b.key as DrinkStatus));
       break;
+    case "kaufen":
+      list.sort((a, b) => (a.key === "ja" ? 0 : 1) - (b.key === "ja" ? 0 : 1));
+      break;
     case "getrunken":
+    case "verkostet":
       // Neueste zuerst, „Ohne Datum“ zuletzt; darin Monate absteigend.
       list.sort((a, b) => lastIfEmpty(a, b) || b.key.localeCompare(a.key));
       for (const group of list) {

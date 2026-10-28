@@ -14,6 +14,7 @@ export function NavLinks({ openCount }: { openCount: number }) {
       active: pathname.startsWith("/offen"),
     },
     { href: "/getrunken", label: "Getrunken", active: pathname.startsWith("/getrunken") },
+    { href: "/verkostet", label: "Verkostet", active: pathname.startsWith("/verkostet") },
     { href: "/recherche", label: "🔎", long: "Recherche", active: pathname.startsWith("/recherche") },
   ];
 

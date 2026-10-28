@@ -12,6 +12,7 @@ export function GroupedList<T extends Groupable>({
   groupBy,
   query,
   openKey,
+  countLabel = (n) => `${n} Fl.`,
   empty,
   itemKey,
   renderItem,
@@ -20,6 +21,8 @@ export function GroupedList<T extends Groupable>({
   groupBy: GroupBy;
   query: string;
   openKey?: string | null;
+  /** Zahl im Gruppenkopf: Flaschen (Standard) bzw. z. B. Verkostungen. */
+  countLabel?: (n: number) => string;
   empty: string;
   itemKey: (item: GroupItem<T>) => string;
   renderItem: (item: GroupItem<T>) => ReactNode;
@@ -51,14 +54,14 @@ export function GroupedList<T extends Groupable>({
               </span>
             )}
             <span className="group-title">{group.label}</span>
-            <span className="group-count">{group.bottles} Fl.</span>
+            <span className="group-count">{countLabel(group.bottles)}</span>
           </summary>
           {group.sections?.length
             ? group.sections.map((section) => (
                 <section key={section.key} className="group-section">
                   <h3 className="group-section-title">
                     <span>{section.label}</span>
-                    <span className="group-count">{section.bottles} Fl.</span>
+                    <span className="group-count">{countLabel(section.bottles)}</span>
                   </h3>
                   {list(section.items)}
                 </section>

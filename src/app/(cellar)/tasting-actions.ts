@@ -13,6 +13,26 @@ async function memberSession() {
   return session.isMember ? session : null;
 }
 
+/** Woran eine WSET-Verkostung hängt: eine Flasche oder ein Eintrag „Verkostet“. */
+export type TastingTarget = { kind: "item" | "encounter"; id: string };
+
+async function loadTarget(target: TastingTarget) {
+  if (target.kind === "item") {
+    const ctx = await loadItem(target.id);
+    return ctx ? { ...ctx, encounterId: null } : null;
+  }
+  const session = await memberSession();
+  if (!session || !UUID_RE.test(target.id)) return null;
+  const { data } = await session.supabase
+    .from("wine_encounters")
+    .select("id, wine_id, vintage_year")
+    .eq("id", target.id)
+    .maybeSingle();
+  return data
+    ? { session, item: { id: null, wine_id: data.wine_id, vintage_year: data.vintage_year }, encounterId: data.id }
+    : null;
+}
+
 async function loadItem(itemId: string) {
   const session = await memberSession();
   if (!session || !UUID_RE.test(itemId)) return null;
@@ -31,17 +51,24 @@ export type SaveTastingResult = { ok: true; id: string } | { ok: false; error: s
  * Spalten, das komplette Formular (Struktur wie im Verkostungs-Tool) als JSON in sat.
  */
 export async function saveTasting(input: {
-  itemId: string;
+  target: TastingTarget;
   tastingId: string | null;
   personId: string | null;
   sat: unknown;
 }): Promise<SaveTastingResult> {
-  const ctx = await loadItem(input.itemId);
-  if (!ctx) return { ok: false, error: "Kein Zugriff oder Flasche nicht gefunden." };
+  const ctx = await loadTarget(input.target);
+  if (!ctx) return { ok: false, error: "Kein Zugriff oder Flasche bzw. Eintrag nicht gefunden." };
   if (input.tastingId && !UUID_RE.test(input.tastingId)) return { ok: false, error: "Ungültige Verkostung." };
   if (input.personId && !UUID_RE.test(input.personId)) return { ok: false, error: "Ungültige Person." };
 
-  const row = tastingRow({ item: ctx.item, personId: input.personId, sat: input.sat, today: todayIso(), source: "app" });
+  const row = tastingRow({
+    item: ctx.item,
+    encounterId: ctx.encounterId,
+    personId: input.personId,
+    sat: input.sat,
+    today: todayIso(),
+    source: "app",
+  });
 
   // Beim Bearbeiten bleibt die Herkunft (z. B. „bot“) erhalten.
   const changes: Omit<typeof row, "source"> & { source?: string } = { ...row };
@@ -58,8 +85,8 @@ export async function saveTasting(input: {
   return { ok: true, id: data.id };
 }
 
-export async function deleteTasting(itemId: string, tastingId: string) {
-  const ctx = await loadItem(itemId);
+export async function deleteTasting(target: TastingTarget, tastingId: string) {
+  const ctx = await loadTarget(target);
   if (!ctx || !UUID_RE.test(tastingId)) return { ok: false as const, error: "Kein Zugriff." };
   const result = await applyEdit(ctx.session.supabase, { kind: "deleteTasting", tastingId });
   if (!result.ok) return { ok: false as const, error: result.error };

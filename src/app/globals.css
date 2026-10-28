@@ -1905,3 +1905,95 @@ input[inputmode="decimal"] {
 .check-toggle[aria-checked="true"] .check-box {
   border-color: var(--accent);
 }
+
+/* Verkostet: Erfassen, Weinseite (Abschnitt „Verkostet“), Merker „Kaufen?“ */
+.encounter-form textarea,
+.encounter-list textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.encounter-new-place {
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+.pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pick:hover {
+  border-color: var(--accent);
+}
+.encounter-chosen {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+.rating-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.rating-field-name {
+  flex: 0 0 6.5em;
+  font-weight: 600;
+}
+.encounter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.encounter-list > li + li {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.encounter-form .field-check {
+  align-self: flex-start;
+}
+.want-to-buy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.want-to-buy .edit-form {
+  gap: 4px;
+}
+.want-badge {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.want-badge.active {
+  font-weight: 600;
+  color: var(--accent);
+}

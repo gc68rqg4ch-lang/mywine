@@ -2,7 +2,21 @@
 // stehen, werden übernommen; leere Felder heissen „leeren“ (null). Geprüft wird im Modul.
 
 import { parsePrice } from "@/lib/format";
-import { ROOMS, type BatchChanges, type Edit, type Room, type WineChanges } from "./types";
+import {
+  CURRENCIES,
+  PLACE_KINDS,
+  PRICE_UNITS,
+  ROOMS,
+  type BatchChanges,
+  type Currency,
+  type Edit,
+  type EncounterChanges,
+  type PlaceKind,
+  type PlaceRef,
+  type PriceUnit,
+  type Room,
+  type WineChanges,
+} from "./types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -41,6 +55,59 @@ function reader(form: FormData) {
     return p;
   };
   return { has, text, id, int, year, decimal, price };
+}
+
+/** Jahrgang beim Verkostet-Erfassen: Pflicht – Zahl oder Häkchen „Ohne Jahrgang (NV)“. */
+function requiredYear(r: ReturnType<typeof reader>) {
+  if (r.has("nv")) return null;
+  if (r.text("year") === "") throw new FormError("Jahrgang fehlt – Jahreszahl eintragen oder „Ohne Jahrgang (NV)“ wählen.");
+  return r.year("year");
+}
+
+/** Ort: „“ = ohne, „new“ = neu (Name, Art, Stadt), sonst die ID eines bestehenden. */
+function placeRef(r: ReturnType<typeof reader>): PlaceRef {
+  const mode = r.text("place");
+  if (mode === "") return null;
+  if (mode === "new") {
+    const kind = r.text("placeKind");
+    if (kind && !(PLACE_KINDS as readonly string[]).includes(kind)) throw new FormError("Ort: unbekannte Art.");
+    return { name: r.text("placeName"), kind: (kind || null) as PlaceKind | null, city: r.text("placeCity") || null };
+  }
+  return { placeId: r.id("place") };
+}
+
+/** Datum, Ort, Preis, Anlass, Begleitung, Notiz – nur Felder, die im Formular stehen. */
+function encounterFields(r: ReturnType<typeof reader>): Omit<EncounterChanges, "year"> {
+  const set: Omit<EncounterChanges, "year"> = {};
+  if (r.has("tastedOn")) set.tastedOn = r.text("tastedOn");
+  if (r.has("place")) set.place = placeRef(r);
+  if (r.has("price")) set.price = r.price("price", "Preis");
+  if (r.has("priceUnit")) {
+    const unit = r.text("priceUnit");
+    if (unit && !(PRICE_UNITS as readonly string[]).includes(unit)) throw new FormError("Preis: pro Flasche oder pro Glas?");
+    set.priceUnit = (unit || null) as PriceUnit | null;
+  }
+  if (r.has("currency")) {
+    const currency = r.text("currency");
+    if (!(CURRENCIES as readonly string[]).includes(currency)) throw new FormError(`Währung: ${CURRENCIES.join(", ")}.`);
+    set.currency = currency as Currency;
+  }
+  for (const key of ["occasion", "companions", "note"] as const) if (r.has(key)) set[key] = r.text(key) || null;
+  return set;
+}
+
+/** Bewertungen „rating:<personId>“ – leer = keine (beim Bearbeiten: löschen). */
+function ratingFields(form: FormData) {
+  const out: { personId: string; rating: number | null }[] = [];
+  for (const [key, value] of form.entries()) {
+    const m = key.match(/^rating:([0-9a-f-]{36})$/i);
+    if (!m) continue;
+    const v = String(value).trim().replace(",", ".");
+    const rating = v === "" ? null : Number(v);
+    if (rating != null && !Number.isFinite(rating)) throw new FormError("Bewertung: bitte 0–5 Sterne.");
+    out.push({ personId: m[1], rating });
+  }
+  return out;
 }
 
 /** Liest die Bearbeitung(en) eines Formulars (Feld „kind“). */
@@ -104,6 +171,44 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
         return [{ kind: "drunkBottle", itemId: r.id("itemId"), drunkOn: r.text("drunkOn") }];
       case "reopen":
         return [{ kind: "reopen", itemId: r.id("itemId"), fill: r.int("fill", "Füllstand") ?? 0 }];
+      case "addEncounter": {
+        const year = requiredYear(r);
+        const wine =
+          r.text("wineMode") === "new"
+            ? {
+                new: {
+                  name: r.text("newName"),
+                  producer: r.text("newProducer"),
+                  type: (r.text("newType") || null) as WineChanges["type"],
+                  country: r.text("newCountry") || null,
+                  region: r.text("newRegion") || null,
+                },
+              }
+            : { wineId: r.id("wineId") };
+        const ratings = ratingFields(form).filter((x): x is { personId: string; rating: number } => x.rating != null);
+        return [
+          {
+            kind: "addEncounter",
+            wine,
+            year,
+            set: encounterFields(r),
+            // Wer erfasst, setzt die Server Action aus der Anmeldung (nicht aus dem Formular).
+            personId: null,
+            source: "app",
+            wantToBuy: r.has("wantToBuy"),
+            ratings,
+          },
+        ];
+      }
+      case "encounter": {
+        const set: EncounterChanges = encounterFields(r);
+        if (r.has("year") || r.has("nv")) set.year = requiredYear(r);
+        return [{ kind: "encounter", encounterId: r.id("encounterId"), set, ratings: ratingFields(form) }];
+      }
+      case "deleteEncounter":
+        return [{ kind: "deleteEncounter", encounterId: r.id("encounterId") }];
+      case "wantToBuy":
+        return [{ kind: "wantToBuy", wineId: r.id("wineId"), value: r.text("value") === "1" }];
       default:
         return { error: "Unbekannte Bearbeitung." };
     }
