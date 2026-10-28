@@ -249,6 +249,7 @@ export type Database = {
           created_at: string
           currency: string | null
           drunk_at: string | null
+          gift_from: string | null
           id: string
           is_gift: boolean
           personal_vintage_rating: number | null
@@ -275,6 +276,7 @@ export type Database = {
           created_at?: string
           currency?: string | null
           drunk_at?: string | null
+          gift_from?: string | null
           id?: string
           is_gift?: boolean
           personal_vintage_rating?: number | null
@@ -301,6 +303,7 @@ export type Database = {
           created_at?: string
           currency?: string | null
           drunk_at?: string | null
+          gift_from?: string | null
           id?: string
           is_gift?: boolean
           personal_vintage_rating?: number | null

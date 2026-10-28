@@ -1,0 +1,1 @@
+alter table public.inventory_items drop constraint inventory_items_gift_from_not_blank;
