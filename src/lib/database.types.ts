@@ -1641,6 +1641,7 @@ export type Database = {
           thumb_path: string
         }[]
       }
+      expire_stale_ingest_jobs: { Args: never; Returns: number }
       move_bottles: {
         Args: {
           p_compartment?: string
