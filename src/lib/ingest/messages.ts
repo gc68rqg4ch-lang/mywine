@@ -173,10 +173,11 @@ export function skipVendorKeyboard(jobId: string): TgInlineKeyboard {
 
 export const HELP_TEXT = [
   "Ich bin Antoine, dein Sommelier. 🍷",
-  "Unten findest du das Menü: <b>🍷 Offen</b>, <b>📦 Bestand</b>, <b>⏰ Trinkreif</b>, <b>📷 Neuer Wein</b>.",
+  "Unten findest du das Menü: <b>🍷 Offen</b>, <b>📦 Bestand</b>, <b>⏰ Trinkreif</b>, <b>🍽 Verkostet</b>, <b>📷 Neuer Wein</b>.",
   "Tipp auf einen Wein für Gläser, Füllstand, Öffnen, Ausgetrunken, Bewertungen und ✏️ Bearbeiten.",
   "",
-  "📷 Neuer Wein: Schick mir Vorder- und Rückseite als Album – oder beschreib ihn mir.",
+  "📷 Neuer Wein: Schick mir Vorder- und Rückseite als Album – oder beschreib ihn mir. Ich frage, ob du ihn gekauft oder nur verkostet hast.",
+  "🍽 Nur probiert? Schreib z. B. <i>Heute im Kronenhalle den Pintia 2019 probiert, 4,5 Sterne</i> – oder ein Foto mit dem Bildtext „verkostet“.",
   "💬 Oder schreib mir einfach, z. B. <i>Welche Rioja habe ich noch?</i>, <i>Sara gibt dem Pintia 4,5 Sterne</i> oder <i>Verschieb 2 Flaschen Pintia ins Wohnzimmer</i>.",
   "Mit /reset vergesse ich unseren Gesprächsverlauf, /id zeigt dir deine Telegram-ID.",
 ].join("\n");

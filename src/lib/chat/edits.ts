@@ -12,13 +12,15 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import { escapeHtml, sendMessage } from "@/lib/telegram/api";
 import { appBaseUrl } from "@/lib/telegram/config";
 import { appendHistory } from "./history";
-import { editKeyboard } from "./proposals";
+import { editAlt, editKeyboard, editNo, editYes } from "./proposals";
+import type { EditAlternative } from "./tools";
 
 export const EDIT_SOURCE = "telegram_edit";
 
-type StoredEdit = { kind: "edit"; edit: Edit; text: string };
+type StoredEdit = { kind: "edit"; edit: Edit; text: string; alternative?: { edit: Edit; text: string } };
 
-const isDelete = (edit: Edit) => edit.kind === "deleteBottles" || edit.kind === "deleteBatch" || edit.kind === "deleteWine";
+const isDelete = (edit: Edit) =>
+  edit.kind === "deleteBottles" || edit.kind === "deleteBatch" || edit.kind === "deleteWine" || edit.kind === "deleteEncounter";
 
 /** Vorschau als Bot-Nachricht: was, vorher → nachher, Hinweise, Frage (beim Löschen deutlich). */
 export function editQuestion(preview: EditPreview, edit?: Edit) {
@@ -35,9 +37,24 @@ export function proposalKeyboard(jobId: string, edit: Edit) {
   return editKeyboard(jobId);
 }
 
+/** Drei Knöpfe: Vorschlag, zweite Möglichkeit, Abbrechen (z. B. „Nur Eintrag“ / „Eintrag und Wein“). */
+export function alternativeKeyboard(jobId: string, yes: string, alternative: string) {
+  return {
+    inline_keyboard: [
+      [{ text: yes, callback_data: editYes(jobId) }, { text: alternative, callback_data: editAlt(jobId) }],
+      [{ text: "Abbrechen", callback_data: editNo(jobId) }],
+    ],
+  };
+}
+
 /** Legt den Vorschlag bis zur Antwort in ingest_jobs ab (nichts wird geändert); liefert die Job-ID. */
-export async function storeEditProposal(db: AdminClient, chatId: number, edit: Edit, preview: EditPreview) {
-  const stored: StoredEdit = { kind: "edit", edit, text: previewLines(preview).join(" · ") };
+export async function storeEditProposal(db: AdminClient, chatId: number, edit: Edit, preview: EditPreview, alternative?: EditAlternative) {
+  const stored: StoredEdit = {
+    kind: "edit",
+    edit,
+    text: previewLines(preview).join(" · "),
+    ...(alternative ? { alternative: { edit: alternative.edit, text: alternative.note } } : {}),
+  };
   const { data, error } = await db
     .from("ingest_jobs")
     .insert({ source: EDIT_SOURCE, telegram_chat_id: chatId, status: "needs_review", extracted: stored as unknown as Json })
@@ -48,13 +65,18 @@ export async function storeEditProposal(db: AdminClient, chatId: number, edit: E
 }
 
 /** Legt den Vorschlag ab und schickt ihn mit [Ja] [Nein] (beim Löschen mit deutlichen Knöpfen). */
-export async function sendEditProposal(db: AdminClient, chatId: number, edit: Edit, preview: EditPreview) {
-  const jobId = await storeEditProposal(db, chatId, edit, preview);
+export async function sendEditProposal(db: AdminClient, chatId: number, edit: Edit, preview: EditPreview, alternative?: EditAlternative) {
+  const jobId = await storeEditProposal(db, chatId, edit, preview, alternative);
+  if (alternative) {
+    const text = `🗑 ${escapeHtml(previewLines(preview).join("\n"))}\n\n${escapeHtml(alternative.note)}\n<b>${escapeHtml(alternative.question)}</b>`;
+    await sendMessage(chatId, text, alternativeKeyboard(jobId, "Nur Eintrag", alternative.label));
+    return;
+  }
   await sendMessage(chatId, editQuestion(preview, edit), proposalKeyboard(jobId, edit));
 }
 
 /** [Ja] / [Nein] unter einem Bearbeiten-Vorschlag (die Knöpfe sind schon entfernt). */
-export async function answerEditProposal(db: AdminClient, chatId: number, jobId: string, confirm: boolean) {
+export async function answerEditProposal(db: AdminClient, chatId: number, jobId: string, confirm: boolean, alternative = false) {
   const { data: job, error } = await db
     .from("ingest_jobs")
     .update({ status: confirm ? "processing" : "discarded" })
@@ -73,7 +95,8 @@ export async function answerEditProposal(db: AdminClient, chatId: number, jobId:
     return "Okay, ich lasse alles, wie es ist.";
   }
 
-  const result = await applyEdit(db, stored.edit);
+  const chosen = alternative && stored.alternative ? stored.alternative.edit : stored.edit;
+  const result = await applyEdit(db, chosen);
   await db
     .from("ingest_jobs")
     .update(result.ok ? { status: "confirmed" } : { status: "failed", error: result.error })

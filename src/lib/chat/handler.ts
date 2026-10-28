@@ -8,6 +8,7 @@ import type { Actor } from "@/lib/telegram/actor";
 import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery } from "@/lib/telegram/types";
 import { startTextIngest } from "@/lib/ingest/flow";
+import { askTextIntent, startTastedText } from "./tasted";
 import { answerChat } from "./agent";
 import { executeProposal } from "./execute";
 import { appendHistory, clearHistory, loadHistory } from "./history";
@@ -36,13 +37,18 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
     const history = await loadHistory(db, chatId);
     const reply = await answerChat(db, history, text, actor);
 
-    // Neuer Wein per Text: Erfassung starten (wie nach „Neuer Wein“), Antwort nur kurz.
+    // Neuer Wein per Text: Kauf → Erfassung (wie nach „Neuer Wein“), verkostet → Schnellablauf
+    // „Verkostet“, unklar → erst fragen. Antwort nur kurz.
     if (reply.newEntry) {
+      const entry = reply.newEntry;
       if (reply.text) await sendMessage(chatId, escapeHtml(reply.text));
-      await startTextIngest(chatId, reply.newEntry);
+      if (entry.intent === "bought") await startTextIngest(chatId, entry.description);
+      else if (entry.intent === "tasted") await startTastedText(chatId, entry.description);
+      else await askTextIntent(db, chatId, entry.description);
+      const what = { bought: "eines gekauften Weins", tasted: "eines verkosteten Weins", unclear: "eines Weins (gekauft oder verkostet?)" }[entry.intent];
       await appendHistory(db, chatId, [
         { role: "user", content: text },
-        { role: "assistant", content: `[Erfassung eines neuen Weins gestartet: ${reply.newEntry}]` },
+        { role: "assistant", content: `[Erfassung ${what} gestartet: ${entry.description}]` },
       ]);
       return;
     }
@@ -67,7 +73,7 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
       await sendMessage(chatId, escapeHtml(reply.text || "Hier:"), buttons ?? MAIN_KEYBOARD);
     }
     for (const p of reply.proposals) {
-      if ("edit" in p) await sendEditProposal(db, chatId, p.edit, p.preview);
+      if ("edit" in p) await sendEditProposal(db, chatId, p.edit, p.preview, p.alternative);
       else await sendMessage(chatId, `❓ ${escapeHtml(p.text)}?`, confirmKeyboard(p.proposal));
     }
 
@@ -112,7 +118,7 @@ export async function handleChatCallback(cb: TgCallbackQuery) {
   const edit = decodeEditCallback(cb.data);
   if (edit) {
     try {
-      const note = await answerEditProposal(db, chatId, edit.jobId, edit.confirm);
+      const note = await answerEditProposal(db, chatId, edit.jobId, edit.confirm, edit.alternative);
       await answerCallback(cb.id, note ?? undefined);
     } catch (error) {
       console.error("edit proposal failed", error);

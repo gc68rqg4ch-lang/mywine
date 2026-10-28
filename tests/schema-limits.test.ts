@@ -8,7 +8,7 @@ import { MAX_UNION_PARAMS, countUnionParams, strictSchemaProblems } from "@/lib/
 import { NOT_MENTIONED, extractionSchema, toExtraction } from "@/lib/tasting/extract";
 import { EnrichmentSchema, toolInputSchema } from "@/lib/ingest/recognize";
 import { GrapeResearchSchema } from "@/lib/grapes/research";
-import { RecognitionSchema, TextEntrySchema, WineProposalSchema } from "@/lib/ingest/schema";
+import { RecognitionSchema, TastedTextSchema, TextEntrySchema, WineProposalSchema } from "@/lib/ingest/schema";
 import { SAT_TYPES, newTastingData } from "@/lib/tasting/sat";
 import { applyExtraction, missingCategories } from "@/lib/tasting/bot-draft";
 import { chatTools } from "@/lib/chat/tools";
@@ -22,6 +22,7 @@ const counts: [string, number][] = [
   ["Foto-Erkennung", countUnionParams(outputFormat(RecognitionSchema))],
   ["Foto-Korrektur", countUnionParams(outputFormat(WineProposalSchema))],
   ["Erfassung per Text", countUnionParams(outputFormat(TextEntrySchema))],
+  ["Verkostet per Text", countUnionParams(outputFormat(TastedTextSchema))],
   ["Websuche Stammdaten (strict)", countUnionParams(toolInputSchema(EnrichmentSchema))],
   ["Websuche Rebsorten (strict)", countUnionParams(toolInputSchema(GrapeResearchSchema))],
   ["Chat-Tools gesamt", chatTools({} as never, []).reduce((s, t) => s + countUnionParams((t as { input_schema?: unknown }).input_schema), 0)],
@@ -45,6 +46,7 @@ const strictSchemas: [string, unknown][] = [
   ["Foto-Erkennung (strukturierte Ausgabe)", outputFormat(RecognitionSchema)],
   ["Foto-Korrektur (strukturierte Ausgabe)", outputFormat(WineProposalSchema)],
   ["Erfassung per Text (strukturierte Ausgabe)", outputFormat(TextEntrySchema)],
+  ["Verkostet per Text (strukturierte Ausgabe)", outputFormat(TastedTextSchema)],
 ];
 for (const [name, schema] of strictSchemas) {
   const problems = strictSchemaProblems(schema);

@@ -1,4 +1,5 @@
-// Integrationstest: Erfassung per Foto (Bot) – Album erkennen, Recherche, Vorschlag, Jahrgang
+// Integrationstest: Erfassung per Foto (Bot) – Album erkennen, Frage „gekauft oder nur
+// verkostet?“ (ohne Bildtext), Recherche, Vorschlag, Jahrgang
 // ist Pflicht (unsicher gelesen → Rückfrage), Kaufangaben per Knopf, Speichern mit Etikett-
 // Fotos samt Vorschaubild. Claude, Telegram und Supabase (inkl. Storage) per fetch-Stub.
 import "./env";
@@ -11,6 +12,8 @@ import { saveJob } from "@/lib/ingest/flow";
 import { jobIdFor, photoFolder } from "@/lib/ingest/jobs";
 import { callbackData } from "@/lib/ingest/messages";
 import type { IngestState } from "@/lib/ingest/schema";
+import { tastedData } from "@/lib/chat/tasted";
+import { runLater } from "@/lib/later";
 
 const net: Net = {
   tables: {
@@ -59,6 +62,15 @@ test("Album erkennen: Vorschlag mit Recherche, unsicherer Jahrgang wird vermerkt
   net.storage!.set(`wine-photos/${photoFolder(JOB)}/11.jpg`, { bytes: await label("#f0e0c0"), type: "image/jpeg" });
 
   await processJob(JOB, 111);
+  // Ohne Bildtext: erst fragen, nie ungefragt einbuchen.
+  assert.equal(state().step, "intent");
+  assert.match(lastText(), /Pintia[\s\S]*2019\nHast du ihn gekauft \(Bestand\) oder nur verkostet\?/);
+  const intentButtons = (net.telegram.at(-1)!.body.reply_markup as { inline_keyboard: { text: string }[][] }).inline_keyboard.flat().map((b) => b.text);
+  assert.deepEqual(intentButtons, ["🛒 Gekauft", "🍷 Nur verkostet"]);
+  assert.equal(net.tables.inventory_items.length, 0);
+
+  await handleUpdate(cb(tastedData(JOB, "buy")) as never);
+  await runLater();
   assert.equal(job().status, "needs_review");
   assert.deepEqual(job().photo_paths, [`${photoFolder(JOB)}/10.jpg`, `${photoFolder(JOB)}/11.jpg`]);
   const s = state();

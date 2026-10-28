@@ -9,12 +9,14 @@ import { hasCompletePercents, normalizeGrapeShares, type GrapeShare } from "@/li
 import {
   GrapeShareSchema,
   RecognitionSchema,
+  TastedTextSchema,
   TextEntrySchema,
   WineProposalSchema,
   missingEnrichableFields,
   normalizeProposal,
   type EnrichableField,
   type Recognition,
+  type TastedText,
   type TextEntry,
   type WineProposal,
 } from "./schema";
@@ -388,4 +390,38 @@ export async function applyCorrection(
     throw new RecognitionError("Die Korrektur konnte nicht übernommen werden.");
   }
   return normalizeProposal(response.parsed_output);
+}
+
+const TASTED_SYSTEM = (today: string) => `Du erfasst für eine private Weinsammlung in der Schweiz einen Wein, den jemand irgendwo verkostet hat (Restaurant, Bar, bei Freunden), aus einer kurzen Nachricht – z. B. „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne, würd ich kaufen“.
+Übernimm nur, was in der Nachricht steht; erfinde nichts. Heute ist ${today}.
+- name: Weinname ohne Produzent und Jahrgang. producer nur, wenn genannt (sonst null). vintage_year nur, wenn genannt (sonst null).
+- type, country, region nur, wenn genannt bzw. eindeutig. Land auf Deutsch.
+- tasting: Datum (heute/gestern umrechnen, sonst leer), Ort, Preis mit Einheit (Flasche/Glas) und Währung, Anlass, Begleitung, Notiz, Sterne der schreibenden Person (-1 = nicht genannt), want_to_buy.`;
+
+/** Freitext „verkostet“ → Wein + Angaben zum Eintrag (Haiku, bei Fehler oder Ablehnung Sonnet). */
+export async function parseTastedText(text: string, today: string): Promise<{ proposal: WineProposal; tasting: TastedText["tasting"] }> {
+  const run = async (model: string) => {
+    const response = await anthropic().beta.messages.parse({
+      model,
+      max_tokens: 4000,
+      system: TASTED_SYSTEM(today),
+      messages: [{ role: "user", content: text }],
+      output_config: { format: betaZodOutputFormat(TastedTextSchema) },
+      ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
+    });
+    if (response.stop_reason === "refusal" || !response.parsed_output) {
+      throw new RecognitionError(`${model} hat den Text nicht erfasst.`);
+    }
+    return response.parsed_output;
+  };
+  let parsed: TastedText;
+  try {
+    parsed = await run(RECOGNITION_MODEL);
+  } catch (error) {
+    if (error instanceof Anthropic.AuthenticationError || usageLimit(error)) throw error;
+    parsed = await run(FALLBACK_MODEL);
+  }
+  const { tasting, ...wine } = parsed;
+  const proposal = normalizeProposal({ ...wine, appellation: null, grape_shares: [], alcohol_content: null, bottle_size_ml: null });
+  return { proposal, tasting };
 }

@@ -64,6 +64,10 @@ export type EnrichableField = (typeof ENRICHABLE_FIELDS)[number];
 export type StorageRoom = "Weinkeller" | "Wohnzimmer";
 
 export type IngestStep =
+  /** Foto-Album eingegangen (Bildtext/Absicht vermerkt), Erkennung folgt. */
+  | "received"
+  /** Gekauft oder nur verkostet? Wartet auf die Antwort (Foto ohne klaren Hinweis). */
+  | "intent"
   /** Text-Erfassung: wartet auf die Beschreibung (nach „Neuer Wein“). */
   | "describe"
   /** Text-Erfassung: läuft Erkennung und Recherche. */
@@ -90,6 +94,19 @@ export type IngestStep =
 /** Inhalt von ingest_jobs.extracted: Vorschlag plus Gesprächszustand. */
 export type IngestState = {
   step: IngestStep;
+  /** Bildtext des Albums (Hinweis auf „gekauft“ oder „verkostet“). */
+  caption?: string;
+  /** Absicht schon bekannt (Bildtext oder „wir verkosten einen Wein“ vorher). */
+  intent?: "bought" | "tasted";
+  /** Erkennung, solange die Absicht noch offen ist (Schritt „intent“). */
+  pending_recognition?: {
+    proposal: WineProposal;
+    vintageCertain: boolean;
+    model: string;
+    confidence: number;
+    notes: string | null;
+    imageSides: ("front" | "back" | "other")[] | null;
+  };
   /** photo (Standard) oder text: Erfassung per Freitext ohne Etikett. */
   source?: "photo" | "text";
   /** Text-Erfassung: der Wein (mit Jahrgang) liegt schon im Bestand → nur neue Charge. */
@@ -191,3 +208,31 @@ export function parseVintageAnswer(text: string): number | null | undefined {
   const year = Number(m[1]);
   return year >= 1800 && year <= new Date().getFullYear() + 1 ? year : undefined;
 }
+
+/**
+ * „Verkostet“ per Freitext („Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die
+ * Flasche, mit Sara, 4,5 Sterne, würd ich kaufen“): Wein (nur die Kernangaben) plus Angaben
+ * zum Eintrag – ohne nullable-Felder (leer / 0 / -1 = nicht genannt), wegen der API-Grenze.
+ */
+export const TastedTextSchema = WineProposalSchema.pick({
+  name: true,
+  producer: true,
+  vintage_year: true,
+  type: true,
+  country: true,
+  region: true,
+}).extend({
+  tasting: z.object({
+    tasted_on: z.string().describe("Datum YYYY-MM-DD, wenn genannt („gestern“ → Datum); leer = heute"),
+    place: z.string().describe("Ort: Restaurant, Bar, Weingut oder bei wem; leer = nicht genannt"),
+    price: z.number().describe("Preis; 0 = nicht genannt"),
+    price_unit: z.enum(["", "bottle", "glass"]).describe("bottle = pro Flasche, glass = pro Glas; leer = nicht genannt"),
+    currency: z.enum(["", "CHF", "AED", "EUR"]).describe("Franken = CHF, Dirham = AED; leer = nicht genannt"),
+    occasion: z.string().describe("Anlass, z. B. Geburtstag; leer = nicht genannt"),
+    companions: z.string().describe("Mit wem (Begleitung); leer = nicht genannt"),
+    note: z.string().describe("Eindruck/Notiz zum Wein in den Worten der Person; leer = nichts"),
+    rating: z.number().describe("Sterne der schreibenden Person, 0–5 in halben Schritten; -1 = nicht genannt"),
+    want_to_buy: z.boolean().describe("true, wenn die Person ihn kaufen möchte („würd ich kaufen“, „merken“)"),
+  }),
+});
+export type TastedText = z.infer<typeof TastedTextSchema>;

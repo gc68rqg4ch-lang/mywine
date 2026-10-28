@@ -8,7 +8,7 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import type { Actor } from "@/lib/telegram/actor";
 import type { ChatTurn } from "./history";
 import type { WineRef } from "./menu";
-import { chatTools, type PendingProposal } from "./tools";
+import { chatTools, type NewEntry, type PendingProposal } from "./tools";
 
 const MAX_ITERATIONS = 8;
 
@@ -33,14 +33,16 @@ Fakten zum Bestand holst du ausschliesslich mit den Werkzeugen – erfinde keine
 - Lagerorte sind Weinkeller und Wohnzimmer. „Keller“ meint nur den Lagerort Weinkeller; für alle Flaschen sagst du „Bestand“.
 - „Recherchier mal …“, „stimmen die Angaben?“: research_wine. Ich ergänze dann Leeres und frage bei Abweichungen einzeln nach – überschreib nie etwas über propose_*, nur weil das Web anderes sagt.
 - Steht im Verlauf „[Bearbeiten: …]“, hat die Person im Menü „✏️ Bearbeiten“ gewählt; die folgende Nachricht bezieht sich auf diesen Wein und Jahrgang.
-- Beschreibt die Person einen Kauf bzw. einen neuen Wein für den Bestand (z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“ oder „Habe 3 Flaschen Rioja gekauft“), ruf start_wine_entry mit ihren Angaben auf und antworte höchstens mit einem kurzen Satz. Fragen zu Weinen, die schon im Bestand sind, sind keine Erfassung – Nachkäufe zu einem bestehenden Wein aber schon.`;
+- Beschreibt die Person einen Kauf bzw. einen neuen Wein für den Bestand (z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“ oder „Habe 3 Flaschen Rioja gekauft“), ruf start_wine_entry mit intent bought auf und antworte höchstens mit einem kurzen Satz. Fragen zu Weinen, die schon im Bestand sind, sind keine Erfassung – Nachkäufe zu einem bestehenden Wein aber schon.
+- Erzählt die Person von einem Wein, den sie irgendwo probiert hat (Restaurant, Bar, bei Freunden – z. B. „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne“), ist das „Verkostet“ und nicht der Bestand: start_wine_entry mit intent tasted. Nennt sie nur einen Wein ohne klaren Hinweis, ob gekauft oder verkostet: intent unclear – ich frage dann mit Knöpfen nach. Nie ungefragt in den Bestand buchen.
+- Einträge „Verkostet“ (alle Weine, auch ohne Flaschen): list_encounters zum Nachschauen (mit encounter_id), propose_add_encounter für einen Eintrag zu einem bekannten Wein, propose_encounter_edit zum Ändern (Ort, Preis, Anlass, Begleitung, Notiz, Sterne), propose_delete_encounter zum Löschen, propose_want_to_buy für den Merker „Kaufen?“.`;
 
 export type ChatReply = {
   text: string;
   proposals: PendingProposal[];
   wines: WineRef[];
-  /** Beschreibung eines neuen Weins/Kaufs → Erfassung per Text. */
-  newEntry: string | null;
+  /** Beschreibung eines neuen Weins (Kauf oder verkostet) → Erfassung per Text. */
+  newEntry: NewEntry | null;
   /** Wein recherchieren (läuft nach der Antwort). */
   research: { wineId: string; year: number | null } | null;
   model: string;
@@ -61,7 +63,7 @@ function actorNote(actor: Actor) {
 async function runWith(model: string, db: AdminClient, history: ChatTurn[], text: string, actor: Actor): Promise<ChatReply> {
   const proposals: PendingProposal[] = [];
   const wines: WineRef[] = [];
-  const newEntries: string[] = [];
+  const newEntries: NewEntry[] = [];
   const research: { wineId: string; year: number | null }[] = [];
   const runner = anthropic().beta.messages.toolRunner({
     model,

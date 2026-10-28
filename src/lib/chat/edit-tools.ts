@@ -9,12 +9,13 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { WINE_TYPES, formatBottleSize, wineTypeLabel, zurichDate } from "@/lib/format";
 import { prepareEdit } from "@/lib/edit/edit";
-import { ROOMS, previewLines, type BatchChanges, type Edit, type WineChanges } from "@/lib/edit/types";
+import { CURRENCIES, PRICE_UNITS, ROOMS, previewLines, type BatchChanges, type Edit, type EncounterChanges, type WineChanges } from "@/lib/edit/types";
+import { EMPTY_WINE_QUESTION, wouldLeaveEmptyWine } from "@/lib/edit/encounters";
 import { formatShares } from "@/lib/grapes/shares";
 import { loadGrapeShares } from "@/lib/grapes/store";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { fillAfterGlasses, type Proposal } from "./proposals";
-import type { PendingProposal } from "./tools";
+import type { EditAlternative, PendingProposal } from "./tools";
 
 const json = (value: unknown) => JSON.stringify(value);
 const MAX_PENDING = 3;
@@ -365,5 +366,172 @@ export function editTools(db: AdminClient, pending: PendingProposal[], actor: Ac
       inputSchema: z.object({ tasting_id: z.uuid() }),
       run: async ({ tasting_id }) => proposeEdit({ kind: "deleteTasting", tastingId: tasting_id }),
     }),
+
+    // --- Verkostet (wine_encounters) ---------------------------------------------------
+
+    betaZodTool({
+      name: "list_encounters",
+      description:
+        "Einträge „Verkostet“ (Wein irgendwo probiert, nicht im Bestand) mit encounter_id, Datum, Ort, Preis, Anlass, Begleitung, Notiz, Sterne. Ohne wine_id die letzten über alle Weine.",
+      inputSchema: z.object({
+        wine_id: z.uuid().optional(),
+        limit: z.number().int().min(1).max(30).optional().describe("Standard 10"),
+      }),
+      run: async ({ wine_id, limit }) => {
+        let q = db
+          .from("wine_encounters")
+          .select("id, wine_id, vintage_year, tasted_on, price, price_unit, currency, occasion, companions, note, place:places(name), wine:wines(name, producer, want_to_buy)")
+          .order("tasted_on", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(limit ?? 10);
+        if (wine_id) q = q.eq("wine_id", wine_id);
+        const { data, error } = await q;
+        if (error) throw error;
+        const ids = (data ?? []).map((e) => e.id);
+        const { data: ratings } = ids.length
+          ? await db.from("wine_ratings").select("encounter_id, rating, person:persons(name)").in("encounter_id", ids)
+          : { data: [] };
+        return json(
+          (data ?? []).map((e) => ({
+            encounter_id: e.id,
+            wine_id: e.wine_id,
+            wine: [e.wine?.producer, e.wine?.name].filter(Boolean).join(" "),
+            vintage_year: e.vintage_year ?? "ohne Jahrgang",
+            tasted_on: e.tasted_on,
+            place: e.place?.name ?? null,
+            price: e.price != null ? `${e.price} ${e.currency}${e.price_unit === "glass" ? " pro Glas" : " pro Flasche"}` : null,
+            occasion: e.occasion,
+            companions: e.companions,
+            note: e.note,
+            ratings: (ratings ?? []).filter((r) => r.encounter_id === e.id).map((r) => `${r.person?.name ?? "?"} ${r.rating}`),
+            want_to_buy: e.wine?.want_to_buy ?? false,
+          })),
+        );
+      },
+    }),
+
+    betaZodTool({
+      name: "propose_add_encounter",
+      description:
+        "Schlägt einen Eintrag „Verkostet“ zu einem bekannten Wein vor (wine_id aus search_cellar oder list_encounters). Für einen Bericht über einen neu probierten Wein lieber start_wine_entry mit intent tasted.",
+      inputSchema: z.object({
+        wine_id: z.uuid(),
+        vintage_year: vintageSchema,
+        tasted_on: dateSchema.optional().describe("Standard heute"),
+        place: z.string().min(1).max(120).optional().describe("Restaurant, Bar, Weingut oder bei wem"),
+        price: z.number().min(0).max(100000).optional(),
+        price_unit: z.enum(PRICE_UNITS).optional().describe("bottle = Flasche (Standard), glass = Glas"),
+        currency: z.enum(CURRENCIES).optional().describe("Standard CHF"),
+        occasion: z.string().max(500).optional(),
+        companions: z.string().max(500).optional(),
+        note: z.string().max(500).optional(),
+        rating: z.number().min(0).max(5).optional().describe("Sterne der Person, die schreibt (halbe Schritte)"),
+        want_to_buy: z.boolean().optional().describe("Merker „Kaufen?“ setzen"),
+      }),
+      run: async (input) =>
+        proposeEdit({
+          kind: "addEncounter",
+          wine: { wineId: input.wine_id },
+          year: yearParam(input.vintage_year),
+          set: {
+            ...(input.tasted_on ? { tastedOn: input.tasted_on } : {}),
+            ...(input.place ? { place: { name: input.place, kind: null, city: null } } : {}),
+            ...(input.price != null ? { price: input.price, priceUnit: input.price_unit ?? "bottle", currency: input.currency ?? "CHF" } : {}),
+            ...(input.occasion ? { occasion: input.occasion } : {}),
+            ...(input.companions ? { companions: input.companions } : {}),
+            ...(input.note ? { note: input.note } : {}),
+          },
+          personId: actor?.personId ?? null,
+          source: "bot",
+          wantToBuy: input.want_to_buy ?? false,
+          ratings: input.rating != null && actor?.personId ? [{ personId: actor.personId, rating: input.rating }] : [],
+        }),
+    }),
+
+    betaZodTool({
+      name: "propose_encounter_edit",
+      description:
+        "Schlägt Änderungen an einem Eintrag „Verkostet“ vor (encounter_id aus list_encounters). Nur angegebene Felder ändern sich; clear leert Felder. rating gilt für die Person, die schreibt (oder person).",
+      inputSchema: z.object({
+        encounter_id: z.uuid(),
+        vintage_year: vintageSchema.optional(),
+        tasted_on: dateSchema.optional(),
+        place: z.string().min(1).max(120).optional(),
+        price: z.number().min(0).max(100000).optional(),
+        price_unit: z.enum(PRICE_UNITS).optional(),
+        currency: z.enum(CURRENCIES).optional(),
+        occasion: z.string().max(500).optional(),
+        companions: z.string().max(500).optional(),
+        note: z.string().max(500).optional(),
+        rating: z.number().min(0).max(5).optional(),
+        person: z.string().optional().describe("Nur wenn ausdrücklich eine andere Person bewertet"),
+        clear: z.array(z.enum(["place", "price", "occasion", "companions", "note", "rating"])).optional(),
+      }),
+      run: async (input) => {
+        const clear = input.clear ?? [];
+        const set: EncounterChanges = {};
+        if (input.vintage_year !== undefined) set.year = yearParam(input.vintage_year);
+        if (input.tasted_on) set.tastedOn = input.tasted_on;
+        if (input.place) set.place = { name: input.place, kind: null, city: null };
+        if (clear.includes("place")) set.place = null;
+        if (input.price != null) set.price = input.price;
+        if (clear.includes("price")) set.price = null;
+        if (input.price_unit) set.priceUnit = input.price_unit;
+        if (input.currency) set.currency = input.currency;
+        for (const key of ["occasion", "companions", "note"] as const) {
+          if (input[key]) set[key] = input[key];
+          if (clear.includes(key)) set[key] = null;
+        }
+        let ratings: { personId: string; rating: number | null }[] | undefined;
+        if (input.rating != null || clear.includes("rating")) {
+          const { match, names } = await resolvePerson(db, actor, input.person);
+          if (!match) return `Fehler: Unbekannte Person. Möglich: ${names.join(", ")}.`;
+          ratings = [{ personId: match.id, rating: clear.includes("rating") ? null : (input.rating ?? null) }];
+        }
+        return proposeEdit({ kind: "encounter", encounterId: input.encounter_id, set, ...(ratings ? { ratings } : {}) });
+      },
+    }),
+
+    betaZodTool({
+      name: "propose_delete_encounter",
+      description:
+        "Schlägt vor, einen Eintrag „Verkostet“ zu löschen (samt seinen Bewertungen). Bliebe der Wein danach leer zurück, frage ich zusätzlich, ob auch der Wein weg soll.",
+      inputSchema: z.object({ encounter_id: z.uuid() }),
+      run: async ({ encounter_id }) => {
+        const result = await proposeEdit({ kind: "deleteEncounter", encounterId: encounter_id });
+        const last = pending.at(-1);
+        if (last && "edit" in last && last.edit.kind === "deleteEncounter" && last.edit.encounterId === encounter_id) {
+          const alternative = await emptyWineAlternative(db, encounter_id);
+          if (alternative) last.alternative = alternative;
+        }
+        return result;
+      },
+    }),
+
+    betaZodTool({
+      name: "propose_want_to_buy",
+      description: "Schlägt vor, den Merker „Kaufen?“ eines Weins zu setzen (value true) oder zu entfernen (false).",
+      inputSchema: z.object({ wine_id: z.uuid(), value: z.boolean() }),
+      run: async ({ wine_id, value }) => proposeEdit({ kind: "wantToBuy", wineId: wine_id, value }),
+    }),
   ];
+}
+
+/**
+ * Bliebe der Wein nach dem Löschen des Eintrags leer zurück (keine Flaschen, keine weiteren
+ * Bewertungen/Verkostungen)? Dann als zweite Möglichkeit „Eintrag und Wein“ anbieten.
+ */
+export async function emptyWineAlternative(db: AdminClient, encounterId: string): Promise<EditAlternative | null> {
+  if (!(await wouldLeaveEmptyWine(db, encounterId))) return null;
+  const { data: e } = await db.from("wine_encounters").select("wine_id").eq("id", encounterId).maybeSingle();
+  if (!e) return null;
+  const edit: Edit = { kind: "deleteWine", wineId: e.wine_id };
+  const prepared = await prepareEdit(db, edit);
+  if (!prepared.ok) return null;
+  return {
+    edit,
+    label: "Eintrag und Wein",
+    question: EMPTY_WINE_QUESTION,
+    note: `Mit „Eintrag und Wein“ verschwindet auch ${prepared.preview.title} (${prepared.preview.notes.join(" ")})`,
+  };
 }

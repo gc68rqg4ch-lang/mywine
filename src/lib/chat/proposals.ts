@@ -41,11 +41,13 @@ export const REJECT_DATA = "cx";
  */
 export const editYes = (jobId: string) => `ce:${jobId}`;
 export const editNo = (jobId: string) => `cn:${jobId}`;
+/** Die zweite Möglichkeit eines Vorschlags (z. B. „Eintrag und Wein“). */
+export const editAlt = (jobId: string) => `cw:${jobId}`;
 
 export function decodeEditCallback(data: string | undefined) {
   const [tag, id] = (data ?? "").split(":");
-  if ((tag !== "ce" && tag !== "cn") || !UUID_RE.test(id ?? "")) return null;
-  return { confirm: tag === "ce", jobId: id };
+  if ((tag !== "ce" && tag !== "cn" && tag !== "cw") || !UUID_RE.test(id ?? "")) return null;
+  return { confirm: tag !== "cn", alternative: tag === "cw", jobId: id };
 }
 
 export function editKeyboard(jobId: string, labels: { yes: string; no: string } = { yes: "Ja", no: "Nein" }): TgInlineKeyboard {
@@ -53,7 +55,7 @@ export function editKeyboard(jobId: string, labels: { yes: string; no: string } 
 }
 
 export function isChatCallback(data: string | undefined) {
-  return data === REJECT_DATA || /^c[fodrne]:/.test(data ?? "");
+  return data === REJECT_DATA || /^c[fodrnew]:/.test(data ?? "");
 }
 
 export function decodeProposal(data: string | undefined): Proposal | null {

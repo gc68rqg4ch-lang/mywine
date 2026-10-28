@@ -12,6 +12,7 @@ import {
 import { resolveActor, type Actor } from "@/lib/telegram/actor";
 import type { GrapeShare } from "@/lib/grapes/shares";
 import type { TgCallbackQuery, TgMessage, TgUpdate } from "@/lib/telegram/types";
+import type { Json } from "@/lib/database.types";
 import {
   ALBUM_QUIET_MS,
   PHOTO_BUCKET,
@@ -25,7 +26,6 @@ import {
   listJobPhotos,
   loadJob,
   photoFolder,
-  toJson,
   touchReceivedJob,
   type IngestJob,
 } from "./jobs";
@@ -44,6 +44,19 @@ import {
   recognizeLabel,
   type LabelImage,
 } from "./recognize";
+import { tastedIntent } from "@/lib/chat/tasted-text";
+import {
+  armedForTasting,
+  askPhotoIntent,
+  askTextIntent,
+  startTastedText,
+  findTastedAwaitingText,
+  handleTastedCallback,
+  handleTastedText,
+  isTastedCallback,
+  maybeArmTasting,
+  startTastedFromPhoto,
+} from "@/lib/chat/tasted";
 import { parseVintageAnswer, type IngestState, type StorageRoom, type WineProposal } from "./schema";
 import { handleChatCallback, handleChatMessage, resetChat } from "@/lib/chat/handler";
 import { isChatCallback } from "@/lib/chat/proposals";
@@ -62,6 +75,7 @@ import {
   acceptRestock,
   advanceTo,
   confirmAndSave,
+  continuePhotoPurchase,
   discardDescribe,
   failJob,
   resolveGrapes,
@@ -145,6 +159,7 @@ async function handlePhoto(msg: TgMessage) {
   await discardDescribe(db, chatId);
   const jobId = jobIdFor(chatId, msg.media_group_id ?? `m${msg.message_id}`);
   await ensureJob(db, jobId, chatId);
+  await noteIntent(db, jobId, chatId, msg.caption);
 
   // Foto sofort sichern; die Erkennung startet erst, wenn das Album vollständig ist.
   const { bytes, filePath } = await downloadFile(file.fileId);
@@ -169,6 +184,24 @@ async function handlePhoto(msg: TgMessage) {
     await sleep(ALBUM_QUIET_MS + 1000);
     await processJob(jobId, chatId);
   });
+}
+
+/**
+ * Bildtext („im Restaurant probiert“) bzw. eine Ankündigung („wir verkosten einen Wein“)
+ * am Album vermerken – entscheidet nach der Erkennung über gekauft oder verkostet.
+ */
+async function noteIntent(db: AdminClient, jobId: string, chatId: number, caption: string | undefined) {
+  const armed = await armedForTasting(db, chatId);
+  if (!caption?.trim() && !armed) return;
+  const { data } = await db.from("ingest_jobs").select("extracted").eq("id", jobId).maybeSingle();
+  const before = (data?.extracted ?? {}) as Partial<IngestState>;
+  const note = {
+    ...before,
+    step: "received",
+    ...(caption?.trim() ? { caption: caption.trim().slice(0, 500) } : {}),
+    ...(armed ? { intent: "tasted" } : {}),
+  };
+  await db.from("ingest_jobs").update({ extracted: note as Json }).eq("id", jobId).eq("status", "received");
 }
 
 function pickImage(msg: TgMessage) {
@@ -213,60 +246,19 @@ export async function processJob(jobId: string, chatId: number) {
     const images = await loadImages(db, photos.map((p) => p.path));
     const recognition = await recognizeLabel(images);
 
-    let proposal = recognition.proposal;
-    let enriched: { filled: IngestState["recognition"]["enriched_fields"]; sources: string[] } = {
-      filled: [],
-      sources: [],
-    };
-
-    // Zuerst gegen bestehende Weine abgleichen; nur unbekannte Weine per Websuche ergänzen.
-    // Rebsorten mit Prozent für den Jahrgang laufen parallel dazu.
-    const known = await findWine(db, proposal.name, proposal.producer);
-    if (known) proposal = mergeWithKnownWine(proposal, known);
-
-    // Ein Durchgang für alles, was fehlt (Stammdaten, Trinkfenster, Rebsorten mit %) –
-    // auch bei bekannten Weinen; Vorhandenes bleibt.
-    const web = await enrichFromWeb(proposal).catch((error) => {
-      console.error("web enrichment failed", error);
-      return null;
-    });
-    if (web) {
-      proposal = web.proposal;
-      enriched = { filled: web.filled, sources: web.sources };
+    // Gekauft oder nur verkostet? Bildtext bzw. „wir verkosten einen Wein“ vorher entscheidet;
+    // sonst zuerst fragen – nie ungefragt einbuchen.
+    const before = jobState(job);
+    const intent = before?.intent ?? tastedIntent(before?.caption);
+    if (intent === "tasted") {
+      await startTastedFromPhoto(db, jobId, chatId, recognition);
+      return;
     }
-    const grapes = await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
-    proposal = { ...proposal, grape_shares: grapes.shares };
-
-    const state: IngestState = {
-      step: "review",
-      proposal,
-      // Jahrgang nicht sicher gelesen → vor dem Speichern nachfragen.
-      ...(proposal.vintage_year != null && !recognition.vintageCertain ? { vintage_uncertain: true } : {}),
-      grape_source: grapes.source,
-      drink_from_year: web?.drink.from ?? null,
-      drink_until_year: web?.drink.until ?? null,
-      recognition: {
-        model: recognition.model,
-        confidence: recognition.confidence,
-        notes: recognition.notes,
-        enriched_fields: enriched.filled,
-        sources: [...enriched.sources, ...grapes.sources].slice(0, 8),
-        ...(recognition.imageSides ? { image_sides: recognition.imageSides } : {}),
-      },
-    };
-
-    const { error } = await db
-      .from("ingest_jobs")
-      .update({
-        status: "needs_review",
-        extracted: toJson(state),
-        confidence: Math.round(recognition.confidence * 100) / 100,
-        matched_wine_id: known?.id ?? null,
-      })
-      .eq("id", jobId);
-    if (error) throw error;
-
-    await sendMessage(chatId, proposalMessage(state, Boolean(known)), reviewKeyboard(jobId));
+    if (intent == null) {
+      await askPhotoIntent(db, jobId, chatId, recognition);
+      return;
+    }
+    await continuePhotoPurchase(db, jobId, chatId, recognition);
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }
@@ -292,6 +284,10 @@ async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[
 async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
   if (isResearchCallback(cb.data)) {
     await handleResearchCallback(cb, actor);
+    return;
+  }
+  if (isTastedCallback(cb.data)) {
+    await handleTastedCallback(cb);
     return;
   }
   if (isAttachCallback(cb.data)) {
@@ -509,16 +505,31 @@ async function handleText(msg: TgMessage, actor: Actor) {
     await handleTastingText(tasting.id, tasting.draft, chatId, text);
     return;
   }
+  // Verkostet: wartet eine Antwort (Jahrgang, Sterne, Ort …) oder eine Ankündigung?
+  const tasted = await findTastedAwaitingText(db, chatId);
+  if (tasted) {
+    await handleTastedText(db, tasted, chatId, text);
+    return;
+  }
   const job = await findJobAwaitingText(db, chatId);
   const state = job ? jobState(job) : null;
   if (!job || !state) {
+    if (await maybeArmTasting(db, chatId, text)) return;
     await handleChatMessage(chatId, text, actor);
     return;
   }
 
   switch (state.step) {
     case "describe": {
-      await startTextIngest(chatId, text, job.id);
+      // Gekauft oder nur verkostet? Ohne klaren Hinweis zuerst fragen.
+      const intent = tastedIntent(text);
+      if (intent === "bought") {
+        await startTextIngest(chatId, text, job.id);
+        return;
+      }
+      await db.from("ingest_jobs").update({ status: "discarded" }).eq("id", job.id);
+      if (intent === "tasted") await startTastedText(chatId, text);
+      else await askTextIntent(db, chatId, text);
       return;
     }
     case "vintage": {

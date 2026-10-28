@@ -21,10 +21,16 @@ import type { WineRef } from "./menu";
 import { daysLabel, openBottleLine, typeEmoji } from "./menu-view";
 import { personKey, type Proposal } from "./proposals";
 
+/** Neuer Wein per Text: Kauf (Bestand), nur verkostet oder unklar (dann fragt der Bot nach). */
+export type NewEntry = { description: string; intent: "bought" | "tasted" | "unclear" };
+
 export type PendingProposal =
   | { proposal: Proposal; text: string }
   /** Bearbeitung über das gemeinsame Modul (liegt bis zur Antwort in ingest_jobs). */
-  | { edit: Edit; preview: EditPreview; text: string };
+  | { edit: Edit; preview: EditPreview; text: string; alternative?: EditAlternative };
+
+/** Zweite Möglichkeit unter einem Vorschlag, z. B. „Eintrag und Wein“ löschen. */
+export type EditAlternative = { edit: Edit; label: string; question: string; note: string };
 
 const DRINK_STATUSES = ["overdue", "now", "ready", "wait", "unknown"] as const;
 
@@ -114,7 +120,7 @@ export function chatTools(
   pending: PendingProposal[],
   wineRefs: WineRef[] = [],
   actor: { personId: string | null; name: string } | null = null,
-  newEntries: string[] = [],
+  newEntries: NewEntry[] = [],
   /** Weine, die nach der Antwort recherchiert werden sollen (research_wine). */
   researchRequests: { wineId: string; year: number | null }[] = [],
 ) {
@@ -348,14 +354,17 @@ export function chatTools(
     betaZodTool({
       name: "start_wine_entry",
       description:
-        "Startet die Erfassung eines neuen Weins bzw. Kaufs aus Text (ohne Foto), z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“. Danach recherchierst du wie bei Fotos und fragst Fehlendes nach (läuft automatisch).",
+        "Startet die Erfassung eines Weins aus Text (ohne Foto): einen Kauf für den Bestand („Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“) oder einen Wein, den die Person irgendwo nur verkostet hat („Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, 4,5 Sterne“). Fehlendes frage ich danach automatisch nach.",
       inputSchema: z.object({
-        description: z.string().min(2).max(2000).describe("Die Angaben der Person zum Kauf, möglichst wörtlich"),
+        description: z.string().min(2).max(2000).describe("Die Angaben der Person, möglichst wörtlich"),
+        intent: z
+          .enum(["bought", "tasted", "unclear"])
+          .describe("bought = gekauft (Bestand), tasted = nur verkostet (Restaurant, Bar, bei Freunden, probiert), unclear = kein klarer Hinweis – dann frage ich mit Knöpfen nach"),
       }),
-      run: async ({ description }) => {
+      run: async ({ description, intent }) => {
         if (newEntries.length) return "Es läuft schon eine Erfassung.";
-        newEntries.push(description);
-        return "Erfassung gestartet – ich melde mich gleich mit Rückfragen. Antworte höchstens mit einem kurzen Satz, z. B. „Ich recherchiere den Wein und melde mich gleich.“";
+        newEntries.push({ description, intent });
+        return "Erfassung gestartet – ich melde mich gleich mit Rückfragen. Antworte höchstens mit einem kurzen Satz.";
       },
     }),
 

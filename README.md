@@ -231,6 +231,7 @@ Datenbank noch API-Schlüssel und legen nichts in der Produktions-DB an:
 
 Abgedeckt: Bot-Zugang und `/id` (`access`), Bewerten (`rating`), Wein-Menü (`wine-menu`), Details (`details`),
 Erfassung per Foto, Text, Nachkauf und Jahrgang-Pflicht (`photo-ingest`, `text-ingest`, `ingest-helpers`),
+Verkostet im Bot – Absicht, Schnellablauf, Freitext, Abgleich ohne Produzent, alles oder nichts, leerer Wein (`tasted-bot`),
 Fotos nachreichen (`photo-attach`, `media-*`), Bearbeiten-Modul inkl. `move_bottles` und `change_vintage`
 (`edit`), Weinseite mit Bearbeiten in der Karte, Büroklammer und Reihenfolge (`wine-units`), unwiderruflich löschen – Flaschen und ganzer Wein samt Dateien (`delete`), Weinseite (`wine-page`), Übersicht, Typ-Filter und Gruppierungen inkl. Trinkreife (`overview`,
 `lists`, `drink-status`), Verkostung (`tasting`), Recherche mit Lücken, Vorschlägen und Limit-Stopp
@@ -351,10 +352,39 @@ Ablauf in `src/lib/ingest/flow.ts`, `ingest_jobs.source = 'text'`:
   eine Zusammenfassung mit [Ja] [Nein]. Der Händler aus dem Text wird erst beim Speichern angelegt.
 - Das Trinkfenster wird in `wine_vintages` übernommen, wenn dort noch keines steht (auch bei der Foto-Erfassung).
 
+### Verkostet im Bot (nur probiert, nicht im Bestand)
+
+Ablauf in `src/lib/chat/tasted.ts` (Zustand in `ingest_jobs`, `source = 'telegram_tasted'`), gespeichert über das
+gemeinsame Modul `src/lib/edit/encounters.ts` – alles oder nichts wie in der App (Wein falls neu, Ort falls neu,
+Eintrag, Bewertungen; bei einem Fehler wird Angelegtes zurückgenommen und ich melde „Ich habe nichts gespeichert“).
+- **Absicht zuerst** (`src/lib/chat/tasted-text.ts`): Bildtext wie „verkostet“, „probiert“, „im Restaurant“,
+  „trinken gerade“ → Verkostet; „gekauft“, „6 Flaschen“, „Weinkeller“ → Kauf. Ohne klaren Hinweis (Foto, Text nach
+  „📷 Neuer Wein“, Chat mit `start_wine_entry` intent `unclear`) frage ich mit „🛒 Gekauft“ / „🍷 Nur verkostet“ –
+  nie ungefragt einbuchen. „Wir verkosten (gerade) einen Wein“ gilt 30 Minuten für das nächste Foto bzw. die
+  nächste Nachricht.
+- **Schnellablauf:** Etikett lesen (Name, Jahrgang, Produzent falls erkennbar) → Wein abgleichen (wie in der App:
+  mit Produzent über Name + Produzent, ohne nur über den Namen; mehrere Treffer → Auswahl oder „➕ Neuer Wein“) →
+  Jahrgang bestätigen (✅ stimmt / Zahl / NV) → ⭐ der Person, die schreibt → gespeichert. Danach freiwillig per
+  Knopf: 📍 Ort, 💰 Preis (z. B. „14 Glas“, „90 EUR“, „65 AED“), 🎉 Anlass, 👥 Begleitung, 🛒 Kaufen?, ⭐ für die
+  andere Person, 📝 Notiz, ✅ Fertig. Keine Fragen zu Lagerort, Anzahl oder Händler.
+- **Websuche danach:** erst speichern und bewerten, dann ergänzt die Recherche leere Angaben des Weins (Stammdaten,
+  Rebsorten mit %, Trinkfenster; nie überschreiben). Etikett-Fotos eines neuen Weins kommen als `wine_media` dazu.
+- **Freitext in einem Schritt** (`parseTastedText`, Schema `TastedTextSchema`, ohne nullable-Felder für die
+  Kaufangaben): „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne, würd
+  ich kaufen“ → nur Fehlendes fragen (Jahrgang, Sterne), dann Zusammenfassung mit Ja/Nein.
+- **Menüleiste „🍽 Verkostet“:** die letzten 10 Einträge (🛒 = Merker „Kaufen?“), je ein Knopf zum Wein-Menü.
+  **ℹ️ Details** nennt die letzten Verkostet-Einträge.
+- **Chat-Tools** (immer als Vorschlag vorher → nachher mit Ja/Nein): `list_encounters`, `propose_add_encounter`,
+  `propose_encounter_edit`, `propose_delete_encounter`, `propose_want_to_buy`.
+- **Letzten Eintrag löschen:** Hat der Wein danach keine Flaschen und keine weiteren Bewertungen, Einträge oder
+  WSET-Verkostungen (`wouldLeaveEmptyWine`), frage ich zusätzlich „Der Wein bleibt sonst leer zurück. Auch den Wein
+  löschen?“ → „Nur Eintrag“ / „Eintrag und Wein“ / „Abbrechen“. Die App fragt beim Löschen eines Verkostet-Eintrags
+  genauso.
+
 ### Menüs (Knöpfe)
 
 - **Menüleiste unten** (Reply-Keyboard, kommt mit `/start` bzw. `/help`): 🍷 Offen · 📦 Bestand · ⏰ Trinkreif ·
-  📷 Neuer Wein. Bestand zeigt zuerst die Weintypen, dann die Weine des Typs. ⏰ Trinkreif nutzt dieselbe
+  🍽 Verkostet · 📷 Neuer Wein. Bestand zeigt zuerst die Weintypen, dann die Weine des Typs. ⏰ Trinkreif nutzt dieselbe
   Einteilung wie die App (⚠️ über dem Höhepunkt, ⏰ jetzt trinken, ✅ trinkreif, ⏳ noch lagern, ❔ unbekannt).
 - **Listen:** pro Wein eine Zeile mit Emoji statt Weintyp (🍷 Rot, 🥂 Weiss, 🌸 Rosé, 🍾 Schaumwein,
   🍯 Süsswein, 🥃 Likörwein), z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“; Produzent bzw. Lagerort nur, wenn nötig

@@ -21,6 +21,8 @@ import { PHOTO_BUCKET, advanceJob, jobState, toJson, type IngestJob } from "./jo
 import {
   confirmKeyboard,
   locationKeyboard,
+  proposalMessage,
+  reviewKeyboard,
   vintageKeyboard,
   priceKeyboard,
   quantityKeyboard,
@@ -30,7 +32,7 @@ import {
   vendorKeyboard,
   wineSummaryLines,
 } from "./messages";
-import { enrichFromWeb, parseTextEntry } from "./recognize";
+import { enrichFromWeb, parseTextEntry, type RecognitionResult } from "./recognize";
 import { needsVintage, type IngestState, type IngestStep, type WineProposal } from "./schema";
 import {
   createInventoryItem,
@@ -94,6 +96,69 @@ export async function resolveGrapes(
   if (label.length) return { shares: label, source: "label", sources: [] };
   if (stored) return { shares: stored.shares, source: "existing", sources: [] };
   return { shares: [], source: null, sources: [] };
+}
+
+// ---------------------------------------------------------------------------
+// Foto: Kauf
+
+/**
+ * Foto-Erfassung als Kauf (nach der Erkennung bzw. nach „🛒 Gekauft“): mit bestehenden Weinen
+ * abgleichen, Fehlendes per Websuche ergänzen, Rebsorten bestimmen, Vorschlag zeigen.
+ */
+export async function continuePhotoPurchase(db: AdminClient, jobId: string, chatId: number, recognition: RecognitionResult) {
+  try {
+    let proposal = recognition.proposal;
+    let enriched: { filled: IngestState["recognition"]["enriched_fields"]; sources: string[] } = { filled: [], sources: [] };
+
+    // Zuerst gegen bestehende Weine abgleichen; ein Durchgang Websuche für alles, was fehlt
+    // (Stammdaten, Trinkfenster, Rebsorten mit %) – auch bei bekannten Weinen; Vorhandenes bleibt.
+    const known = await findWine(db, proposal.name, proposal.producer);
+    if (known) proposal = mergeWithKnownWine(proposal, known);
+    const web = await enrichFromWeb(proposal).catch((error) => {
+      console.error("web enrichment failed", error);
+      return null;
+    });
+    if (web) {
+      proposal = web.proposal;
+      enriched = { filled: web.filled, sources: web.sources };
+    }
+    const grapes = await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
+    proposal = { ...proposal, grape_shares: grapes.shares };
+
+    const state: IngestState = {
+      step: "review",
+      intent: "bought",
+      proposal,
+      // Jahrgang nicht sicher gelesen → vor dem Speichern nachfragen.
+      ...(proposal.vintage_year != null && !recognition.vintageCertain ? { vintage_uncertain: true } : {}),
+      grape_source: grapes.source,
+      drink_from_year: web?.drink.from ?? null,
+      drink_until_year: web?.drink.until ?? null,
+      recognition: {
+        model: recognition.model,
+        confidence: recognition.confidence,
+        notes: recognition.notes,
+        enriched_fields: enriched.filled,
+        sources: [...enriched.sources, ...grapes.sources].slice(0, 8),
+        ...(recognition.imageSides ? { image_sides: recognition.imageSides } : {}),
+      },
+    };
+
+    const { error } = await db
+      .from("ingest_jobs")
+      .update({
+        status: "needs_review",
+        extracted: toJson(state),
+        confidence: Math.round(recognition.confidence * 100) / 100,
+        matched_wine_id: known?.id ?? null,
+      })
+      .eq("id", jobId);
+    if (error) throw error;
+
+    await sendMessage(chatId, proposalMessage(state, Boolean(known)), reviewKeyboard(jobId));
+  } catch (error) {
+    await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +260,7 @@ export async function confirmAndSave(db: AdminClient, job: IngestJob, chatId: nu
 // Speichern
 
 /** Trinkfenster in wine_vintages übernehmen, ohne vorhandene Angaben zu überschreiben. */
-async function storeDrinkWindow(db: AdminClient, wineId: string, state: IngestState) {
+export async function storeDrinkWindow(db: AdminClient, wineId: string, state: IngestState) {
   const from = state.drink_from_year ?? null;
   const until = state.drink_until_year ?? null;
   const year = state.proposal.vintage_year;
@@ -219,7 +284,7 @@ async function storeDrinkWindow(db: AdminClient, wineId: string, state: IngestSt
 }
 
 /** Leere Stammdaten eines bestehenden Weins aus der Recherche ergänzen – nie überschreiben. */
-async function fillWineGaps(db: AdminClient, wineId: string, p: WineProposal) {
+export async function fillWineGaps(db: AdminClient, wineId: string, p: WineProposal) {
   try {
     const { data: wine } = await db
       .from("wines")
@@ -240,7 +305,7 @@ async function fillWineGaps(db: AdminClient, wineId: string, p: WineProposal) {
 }
 
 /** Rebsorten des Vorschlags in wine_grape_shares speichern (Jahrgang des Eintrags). */
-async function storeGrapes(db: AdminClient, wineId: string, state: IngestState) {
+export async function storeGrapes(db: AdminClient, wineId: string, state: IngestState) {
   const source = state.grape_source;
   const shares = state.proposal.grape_shares;
   if (!shares.length || !source || source === "existing") return;
@@ -265,11 +330,11 @@ const MIME_BY_EXT: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jp
  * Fotos der Erfassung als wine_media (Vorder-/Rückseite) mit Vorschaubild. Fehler
  * hier verhindern das Speichern der Flasche nicht – die Fotos bleiben in photo_urls.
  */
-async function storeJobMedia(
+export async function storeJobMedia(
   db: AdminClient,
   paths: string[],
-  state: IngestState,
-  target: { wineId: string; itemId: string },
+  state: Pick<IngestState, "proposal" | "recognition">,
+  target: { wineId: string; itemId: string | null },
 ) {
   if (!paths.length) return;
   try {

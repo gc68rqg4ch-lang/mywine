@@ -24,6 +24,7 @@ import { countPendingSuggestions } from "@/lib/research/suggestions";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { wineDetailsText, type WineDetails } from "./details";
+import { encounterSummary, loadWineEncounters } from "@/lib/edit/encounters";
 import { discardAttach, startAttach } from "@/lib/ingest/attach";
 import { startDescribe } from "@/lib/ingest/flow";
 import { DESCRIBE_TEXT, cancelKeyboard } from "@/lib/ingest/messages";
@@ -266,6 +267,42 @@ async function readyScreen(db: AdminClient, offset: number, status?: string): Pr
   };
 }
 
+const TASTED_LIMIT = 10;
+
+/** „🍽 Verkostet“: die letzten 10 Einträge (🛒 = Merker „Kaufen?“), je ein Knopf zum Wein. */
+export async function tastedListScreen(db: AdminClient, status?: string): Promise<Screen> {
+  const { data, error } = await db
+    .from("wine_encounters")
+    .select("id, wine_id, vintage_year, tasted_on, place:places(name), wine:wines(name, producer, type, want_to_buy)")
+    .order("tasted_on", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(TASTED_LIMIT);
+  if (error) throw error;
+  const rows = data ?? [];
+  if (!rows.length) {
+    return { text: withStatus(status, "🍽 <b>Verkostet</b>\nNoch keine Einträge. Schick mir ein Foto mit „verkostet“ oder schreib mir, was du probiert hast."), keyboard: { inline_keyboard: [] } };
+  }
+  const { data: ratings } = await db.from("wine_ratings").select("encounter_id, rating").in("encounter_id", rows.map((r) => r.id));
+  const names = shortNames(rows.map((r) => ({ producer: r.wine?.producer ?? null, name: r.wine?.name ?? "", year: r.vintage_year })));
+  const label = (r: (typeof rows)[number], i: number) => {
+    const stars = (ratings ?? []).filter((x) => x.encounter_id === r.id).map((x) => formatStars(x.rating));
+    return [
+      `${r.wine?.want_to_buy ? "🛒 " : ""}${typeEmoji(r.wine?.type)} ${names[i]}`,
+      formatDate(r.tasted_on),
+      r.place?.name,
+      stars.length ? `⭐ ${stars.join("/")}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  };
+  return {
+    text: withStatus(status, `🍽 <b>Verkostet</b> – die letzten ${rows.length === 1 ? "Eintrag" : `${rows.length} Einträge`}`),
+    keyboard: {
+      inline_keyboard: rows.map((r, i) => [btn(label(r, i), { op: "vintage", wineId: r.wine_id, year: r.vintage_year, back: { kind: "tasted" } })]),
+    },
+  };
+}
+
 function listScreen(db: AdminClient, list: ListRef, offset: number, status?: string): Promise<Screen> | Screen {
   switch (list.kind) {
     case "open":
@@ -276,6 +313,8 @@ function listScreen(db: AdminClient, list: ListRef, offset: number, status?: str
       return stockScreen(db, status);
     case "type":
       return typeListScreen(db, list.code, offset, status);
+    case "tasted":
+      return tastedListScreen(db, status);
     case "none":
       return { text: e(status ?? "Erledigt."), keyboard: { inline_keyboard: [] } };
   }
@@ -460,6 +499,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     countDocuments(db, wineId, year).catch(() => 0),
     countPendingSuggestions(db, wineId).catch(() => 0),
   ]);
+  const encounters = await loadWineEncounters(db, wineId).catch(() => []);
   if (error) throw error;
   if (!wine) return null;
   const last = tasting.data?.[0];
@@ -487,6 +527,10 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     appUrl: base ? `${base}${wineHref(wineId, year)}` : null,
     documents,
     suggestions,
+    // Letzte Einträge „Verkostet“ (alle Jahrgänge; andere Jahrgänge mit Jahr).
+    encounters: encounters
+      .slice(0, 3)
+      .map((x) => (x.year !== year ? `${x.year ?? "NV"} · ${encounterSummary(x)}` : encounterSummary(x))),
   };
 }
 
@@ -859,7 +903,7 @@ export async function handleMenuCallback(cb: TgCallbackQuery, actor: MenuActor) 
 }
 
 /** Tippen auf die feste Menüleiste: neues Menü als Nachricht. */
-export async function sendMainMenu(chatId: number, key: "open" | "stock" | "ready" | "newWine") {
+export async function sendMainMenu(chatId: number, key: "open" | "stock" | "ready" | "tasted" | "newWine") {
   if (key === "newWine") {
     // Fotos oder eine Beschreibung – die nächste Textnachricht wird als neuer Eintrag erfasst.
     // Eine wartende „📷 Foto“-Zuordnung verfällt, damit die Fotos ein neuer Wein werden.
@@ -870,7 +914,14 @@ export async function sendMainMenu(chatId: number, key: "open" | "stock" | "read
     return;
   }
   const db = createAdminClient();
-  const screen = key === "open" ? await openListScreen(db, 0) : key === "stock" ? await stockScreen(db) : await readyScreen(db, 0);
+  const screen =
+    key === "open"
+      ? await openListScreen(db, 0)
+      : key === "stock"
+        ? await stockScreen(db)
+        : key === "tasted"
+          ? await tastedListScreen(db)
+          : await readyScreen(db, 0);
   await sendMessage(chatId, screen.text, screen.keyboard.inline_keyboard.length ? screen.keyboard : MAIN_KEYBOARD);
 }
 

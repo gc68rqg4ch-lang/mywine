@@ -269,16 +269,21 @@ export async function wineCandidates(db: Db, name: string): Promise<WineCandidat
 export const AMBIGUOUS_WINE = "Es gibt mehrere Weine mit diesem Namen – bitte den richtigen wählen oder „Neuen Wein anlegen“.";
 
 /**
- * Neuer Wein beim Erfassen: mit Produzent über Name + Produzent abgleichen; ohne Produzent
- * nur über den Namen – ein Treffer wird genommen, bei mehreren muss man wählen.
+ * Neuer Wein beim Erfassen (App und Bot): mit Produzent über Name + Produzent abgleichen; ohne
+ * Produzent nur über den Namen – ein Treffer wird genommen, bei mehreren muss man wählen.
  */
-async function matchNewWine(db: Db, name: string, producer: string | null, forceNew: boolean) {
+export async function matchWine(
+  db: Db,
+  name: string,
+  producer: string | null,
+  forceNew = false,
+): Promise<{ known: WineCandidate | null } | { ambiguous: true; candidates: WineCandidate[] }> {
   if (forceNew) return { known: null };
   const candidates = await wineCandidates(db, name);
   if (producer) {
     return { known: candidates.find((c) => c.producer?.toLowerCase() === producer.toLowerCase()) ?? null };
   }
-  if (candidates.length > 1) return { ambiguous: true as const };
+  if (candidates.length > 1) return { ambiguous: true, candidates };
   return { known: candidates[0] ?? null };
 }
 
@@ -305,7 +310,7 @@ export async function prepareAddEncounter(db: Db, edit: Extract<Edit, { kind: "a
     if (name.length > 200 || (producer?.length ?? 0) > 200) return fail("Name bzw. Produzent ist zu lang.");
     const type = edit.wine.new.type ?? null;
     if (type != null && !WINE_TYPES.includes(type)) return fail("Unbekannter Weintyp.");
-    const match = await matchNewWine(db, name, producer, edit.wine.new.forceNew ?? false);
+    const match = await matchWine(db, name, producer, edit.wine.new.forceNew ?? false);
     if ("ambiguous" in match) return fail(AMBIGUOUS_WINE);
     if (match.known) {
       const known = await loadWine(db, match.known.id);
@@ -582,6 +587,34 @@ export async function prepareDeleteEncounter(db: Db, encounterId: string): Promi
     e.vintage_year,
   );
 }
+
+/**
+ * Bleibt der Wein nach dem Löschen dieses Eintrags leer zurück? Ja, wenn es keine Flaschen,
+ * keine weiteren Verkostet-Einträge, keine Bewertungen ausser denen dieses Eintrags und keine
+ * WSET-Verkostungen gibt. Dann fragen App und Bot, ob auch der Wein weg soll.
+ */
+export async function wouldLeaveEmptyWine(db: Db, encounterId: string) {
+  const { data: e, error } = await db.from("wine_encounters").select("id, wine_id").eq("id", encounterId).maybeSingle();
+  if (error) throw error;
+  if (!e) return false;
+  const count = async (q: PromiseLike<{ count: number | null; error: unknown }>) => {
+    const { count: n, error: err } = await q;
+    if (err) throw err;
+    return n ?? 0;
+  };
+  const head = { count: "exact", head: true } as const;
+  const [items, encounters, ratings, ownRatings, tastings] = await Promise.all([
+    count(db.from("inventory_items").select("id", head).eq("wine_id", e.wine_id)),
+    count(db.from("wine_encounters").select("id", head).eq("wine_id", e.wine_id)),
+    count(db.from("wine_ratings").select("id", head).eq("wine_id", e.wine_id)),
+    count(db.from("wine_ratings").select("id", head).eq("encounter_id", e.id)),
+    count(db.from("wine_tastings").select("id", head).eq("wine_id", e.wine_id)),
+  ]);
+  return items === 0 && encounters === 1 && ratings === ownRatings && tastings === 0;
+}
+
+/** Rückfrage, wenn der Wein nach dem Löschen leer zurückbliebe (App und Bot). */
+export const EMPTY_WINE_QUESTION = "Der Wein bleibt sonst leer zurück. Auch den Wein löschen?";
 
 export async function prepareWantToBuy(db: Db, wineId: string, value: boolean): Promise<PreparedEdit> {
   const wine = await loadWine(db, wineId);

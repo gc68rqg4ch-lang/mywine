@@ -47,7 +47,7 @@ import { DeleteWine } from "./delete-sections";
 import { loadWineDeleteSummary } from "@/lib/edit/delete";
 import { wineDeleteSummaryText } from "@/lib/edit/delete-text";
 import { BackLink } from "@/components/back-link";
-import { loadPlaces, loadWineEncounters } from "@/lib/edit/encounters";
+import { EMPTY_WINE_QUESTION, loadPlaces, loadWineEncounters, wouldLeaveEmptyWine } from "@/lib/edit/encounters";
 
 // Server Actions dieser Seite (z. B. Nachrecherchieren mit Websuche) brauchen Zeit.
 export const maxDuration = 300;
@@ -165,6 +165,11 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     loadPlaces(supabase),
     loadWineDeleteSummary(supabase, wine.id),
   ]);
+  // Einziger Eintrag „Verkostet“ ohne Flaschen: Löschen fragt, ob auch der Wein weg soll.
+  const emptyWine =
+    items.length === 0 && encounters.length === 1 && (await wouldLeaveEmptyWine(supabase, encounters[0].id))
+      ? { encounterId: encounters[0].id, wineId: wine.id, name: wine.name, question: EMPTY_WINE_QUESTION }
+      : null;
   const suggestions = await loadPendingSuggestions(supabase, { wineId: wine.id, year }).catch((error) => {
     console.error("loading suggestions failed", error);
     return [];
@@ -490,6 +495,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         persons={ratings.map(({ personId, name }) => ({ personId, name }))}
         places={places}
         today={today}
+        emptyWine={emptyWine}
       />
     </div>
   );

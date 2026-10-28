@@ -31,6 +31,7 @@ export function EncounterSection({
   persons,
   places,
   today,
+  emptyWine = null,
 }: {
   wineId: string;
   year: number | null;
@@ -39,6 +40,8 @@ export function EncounterSection({
   persons: { personId: string; name: string }[];
   places: PlaceOption[];
   today: string;
+  /** Wein bliebe nach dem Löschen des (einzigen) Eintrags leer zurück. */
+  emptyWine?: { encounterId: string; wineId: string; name: string; question: string } | null;
 }) {
   const newHref = `/verkostet/neu?wein=${wineId}&jahrgang=${year ?? "ohne"}`;
   return (
@@ -98,7 +101,11 @@ export function EncounterSection({
                       />
                     ))}
                   </EditForm>
-                  <DeleteEncounter encounterId={e.id} label={`Eintrag vom ${formatDate(e.tastedOn)}`} />
+                  <DeleteEncounter
+                    encounterId={e.id}
+                    label={`Eintrag vom ${formatDate(e.tastedOn)}`}
+                    emptyWine={emptyWine?.encounterId === e.id ? emptyWine : null}
+                  />
                 </>
               }
             >

@@ -67,6 +67,8 @@ export type ListRef =
   | { kind: "ready" }
   | { kind: "stock" }
   | { kind: "type"; code: TypeCode }
+  /** „Verkostet“: letzte Einträge */
+  | { kind: "tasted" }
   | { kind: "none" };
 
 export type Subject = { kind: "item"; itemId: string } | { kind: "vintage"; wineId: string; year: number | null };
@@ -122,6 +124,8 @@ export function encodeList(list: ListRef) {
       return "r";
     case "stock":
       return "b";
+    case "tasted":
+      return "k";
     case "type":
       return `t${list.code}`;
     case "none":
@@ -133,6 +137,7 @@ function decodeList(s: string | undefined): ListRef | null {
   if (s === "o") return { kind: "open" };
   if (s === "r") return { kind: "ready" };
   if (s === "b") return { kind: "stock" };
+  if (s === "k") return { kind: "tasted" };
   if (s === "-") return { kind: "none" };
   if (s?.length === 2 && s[0] === "t" && TYPE_CODES.includes(s[1] as TypeCode)) {
     return { kind: "type", code: s[1] as TypeCode };
@@ -422,13 +427,14 @@ export const MENU_TEXT = {
   open: "🍷 Offen",
   stock: "📦 Bestand",
   ready: "⏰ Trinkreif",
+  tasted: "🍽 Verkostet",
   newWine: "📷 Neuer Wein",
 } as const;
 
 export const MAIN_KEYBOARD: TgReplyKeyboard = {
   keyboard: [
-    [{ text: MENU_TEXT.open }, { text: MENU_TEXT.stock }],
-    [{ text: MENU_TEXT.ready }, { text: MENU_TEXT.newWine }],
+    [{ text: MENU_TEXT.open }, { text: MENU_TEXT.stock }, { text: MENU_TEXT.ready }],
+    [{ text: MENU_TEXT.tasted }, { text: MENU_TEXT.newWine }],
   ],
   resize_keyboard: true,
   is_persistent: true,
