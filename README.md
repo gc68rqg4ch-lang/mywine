@@ -107,7 +107,7 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
   - **Dokumente** (PDF, `wine_media.kind = document`, privater Bucket `wine-documents`) des Jahrgangs und ohne
     Jahrgang als **Büroklammer** im Kopf, rechtsbündig: je Dokument eine Zeile mit dem vollen Namen (notfalls
     umgebrochen) und 📎 ganz rechts; Antippen des Namens öffnet das PDF (signierte URL, neuer Tab). Ohne Dokument nur
-    „📎“. Das 📎 öffnet ein kleines Feld: 🗑 löscht mit Rückfrage, „＋ Dokument hinzufügen“ lädt hoch (max. 10 MB; der
+    „📎“. Das 📎 öffnet ein kleines Feld: 🗑 löscht mit Rückfrage, „＋ Dokument hinzufügen“ lädt hoch (max. 20 MB; der
     Browser lädt direkt in den Bucket, weil Vercel nur 4.5 MB pro Request annimmt – der Server prüft danach Ort, Typ
     und Grösse und trägt das Dokument ein).
   - **🗑 Wein löschen**: dezenter roter Link ganz unten (siehe „Unwiderruflich löschen“).
