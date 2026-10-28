@@ -428,6 +428,21 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Korrigieren:** Freitext-Antwort, die per `claude-haiku-5-5` in den Vorschlag übernommen wird.
 - **Album:** Telegram schickt jedes Foto einzeln. Alle Fotos eines Albums landen über eine aus
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.
+- **Trinkfenster bei jedem Einbuchen** (`src/lib/research/drink-window.ts`, `drink-window-auto.ts`,
+  `src/lib/cellar/drink-window.ts`): Nach dem Speichern sucht Antoine im Hintergrund das Trinkfenster des Jahrgangs,
+  wenn „ab“ und „bis“ leer sind – ein strict-Tool mit Websuche (`report_drink_window`, ohne nullable/min/max):
+  Quelle von Weingut, Kritik oder Händler zu genau diesem Jahrgang (NV: zum Wein) mit Zitat → `research` (Quelle als
+  Notiz); sonst Schätzung anhand von Typ, Herkunft, Rebsorten, Qualitätsstufe und Jahrgang → `estimate` mit einem Satz
+  Begründung. Herkunft in `wine_vintages.drink_window_source` (label / research / estimate / manual) und
+  `drink_window_note` (Migration `wine_vintages_drink_window_source`; bestehende: „Haltbar bis …“ → label, sonst
+  manual). Rangfolge (`decideDrinkWindow`): manual und label nie automatisch überschreiben, research ersetzt
+  estimate, estimate ersetzt nichts, research ≠ manual → Vorschlag. Ablaufdatum → label; von Hand in der App bzw.
+  per Chat → manual; übernommener Vorschlag → research. Anzeige: Weinseite „≈ 2024–2030 · geschätzt“ (Begründung
+  als Tooltip), Listen „Trinkreif · ≈ … (geschätzt)“ (Gruppierung „Trinkreife“ zählt Schätzungen mit), Bot
+  Zusammenfassung und ℹ️ Details mit „≈“ sowie „bald trinken“ (bis = dieses Jahr) bzw. „über dem Höhepunkt“.
+  /recherche: Option „Trinkfenster fehlt“ (`?fenster=1`) für Jahrgänge mit ungeöffneten/offenen Flaschen ohne
+  Trinkfenster, ohne 12-Monats-Regel; API-Limit → sofort Stopp. Fehler setzen nichts. Ohne eingespielte Migration
+  wird ohne Herkunft gespeichert (`saveVintageWindow`).
 - **Ablaufdatum** (Mindesthaltbarkeit, v. a. alkoholfreie Weine und Schaumweine; `src/lib/ingest/best-before.ts`):
   Foto- und Text-Erkennung lesen `best_before` (Text: `YYYY-MM-DD` bzw. `YYYY-MM`, leer = keins oder unsicher – kein
   nullable-Feld wegen der Grenze von 16 Unions), dazu Bild- und Freitext („haltbar bis 09/2028“, „best before SEP

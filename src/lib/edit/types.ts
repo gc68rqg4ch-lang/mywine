@@ -105,7 +105,15 @@ export type Edit =
   /** Ganzen Jahrgang umbenennen (change_vintage), ggf. zusammenführen. null = ohne Jahrgang. */
   | { kind: "vintage"; wineId: string; from: number | null; to: number | null }
   /** Trinkfenster eines Jahrgangs. */
-  | { kind: "drinkWindow"; wineId: string; year: number | null; from: number | null; until: number | null }
+  | {
+      kind: "drinkWindow";
+      wineId: string;
+      year: number | null;
+      from: number | null;
+      until: number | null;
+      /** Herkunft: von Hand (Standard) bzw. übernommener Recherche-Vorschlag. */
+      source?: "manual" | "research";
+    }
   /** Angaben einer Charge (ungeöffnet, offen oder getrunken – Anzahl nur ungeöffnet). */
   | { kind: "batch"; itemId: string; set: BatchChanges }
   /** Charge an einen anderen Lagerort; mit count nur so viele Flaschen (Rest bleibt). */

@@ -8,7 +8,7 @@ import { runBatch } from "@/lib/research/batch";
 import type { ResearchScope } from "@/lib/research/gaps";
 import type { ResearchOutcome, TasteMode } from "@/lib/research/wine";
 import { noProfileText } from "@/lib/taste/profile";
-import { researchWine } from "../research-actions";
+import { researchDrinkWindows, researchWine } from "../research-actions";
 
 export type BatchCandidate = {
   wineId: string;
@@ -20,6 +20,8 @@ export type BatchCandidate = {
   complete: boolean;
   /** „Geschmacksprofil fehlt“: dieser Jahrgang (neuester ohne Profil). */
   tasteYear?: number | null;
+  /** „Trinkfenster fehlt“: diese Jahrgänge (ohne „ab“ und „bis“). */
+  windowYears?: (number | null)[];
 };
 
 /** Schätzung pro Wein, bis eigene Messwerte da sind (Websuche mit mehreren Abfragen). */
@@ -48,6 +50,7 @@ export function BatchResearch({
   taste = "missing",
   skipRecent = true,
   skipped = 0,
+  mode = "research",
 }: {
   candidates: BatchCandidate[];
   scope: ResearchScope;
@@ -57,6 +60,8 @@ export function BatchResearch({
   skipRecent?: boolean;
   /** In den letzten 12 Monaten recherchiert – nicht in candidates. */
   skipped?: number;
+  /** „window“: nur das Trinkfenster der fehlenden Jahrgänge (Option „Trinkfenster fehlt“). */
+  mode?: "research" | "window";
 }) {
   const router = useRouter();
   // Liste beim Laden festhalten: nach dem Lauf lädt die Seite neu, frisch geprüfte Weine
@@ -82,7 +87,9 @@ export function BatchResearch({
     setHalt(null);
     setPhase("running");
     // Nacheinander; API-Limit: sofort aufhören; andere Fehler: nach 3 in Folge.
-    const result = await runBatch(todo, (c) => researchWine(c.wineId, scope, taste, c.tasteYear, skipRecent), {
+    const research = (c: BatchCandidate) =>
+      mode === "window" ? researchDrinkWindows(c.wineId, c.windowYears ?? []) : researchWine(c.wineId, scope, taste, c.tasteYear, skipRecent);
+    const result = await runBatch(todo, research, {
       stop: () => stop.current,
       onStart: (c) => setRows((r) => ({ ...r, [c.wineId]: { state: "running" } })),
       onDone: (c, outcome) => setRows((r) => ({ ...r, [c.wineId]: { state: "done", ...outcome } })),
@@ -97,7 +104,9 @@ export function BatchResearch({
       <p className="empty">
         {skipped
           ? `Nichts zu tun – ${skipped === 1 ? "1 Wein wurde" : `${skipped} Weine wurden`} in den letzten 12 Monaten schon recherchiert.`
-          : taste === "only"
+          : mode === "window"
+            ? "Alle Jahrgänge im Bestand haben ein Trinkfenster. 🎉"
+            : taste === "only"
             ? "Alle Weine haben ein Geschmacksprofil. 🎉"
             : "Keine Lücken – hier gibt es nichts zu recherchieren. 🎉"}
       </p>
@@ -235,7 +244,9 @@ export function BatchResearch({
                           .filter(Boolean)
                           .join(" · ")
                       : row.status === "nothing"
-                        ? taste === "only" || row.taste === "none"
+                        ? mode === "window"
+                          ? "Kein Trinkfenster gefunden"
+                          : taste === "only" || row.taste === "none"
                           ? noProfileText(row.tasteYear ?? null)
                           : "Nichts Neues gefunden"
                         : row.status === "complete"

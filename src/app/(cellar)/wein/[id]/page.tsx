@@ -1,3 +1,4 @@
+import { DRINK_SOURCE_LABELS, asDrinkSource, drinkWindowText } from "@/lib/cellar/drink-window";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,7 +8,7 @@ import { PhotoGallery } from "@/components/photo-viewer";
 import { ResearchSuggestions } from "@/components/research-suggestions";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
-import { countryFlag, drinkWindowLabel } from "@/lib/cellar/overview";
+import { countryFlag } from "@/lib/cellar/overview";
 import {
   anchorItem,
   parseVintageParam,
@@ -125,7 +126,8 @@ async function loadRatingsAndTastings(supabase: Supabase, wineId: string, vintag
         .eq("wine_id", wineId),
     ).order("tasted_at", { ascending: false }),
     sameVintage(
-      supabase.from("wine_vintages").select("drink_from_year, drink_until_year, vintage_rating, notes").eq("wine_id", wineId),
+      // „*“: drink_window_source/_note gibt es erst nach der Migration – so geht nichts kaputt.
+      supabase.from("wine_vintages").select("*").eq("wine_id", wineId),
     ).maybeSingle(),
   ]);
 
@@ -222,7 +224,8 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     price: priceOf(i),
   }));
 
-  const drinkWindow = drinkWindowLabel(vintage?.drink_from_year ?? null, vintage?.drink_until_year ?? null);
+  const drinkSource = asDrinkSource(vintage?.drink_window_source);
+  const drinkWindow = drinkWindowText(vintage?.drink_from_year ?? null, vintage?.drink_until_year ?? null, drinkSource);
   const latestReadiness = tastings.find((t) => t.readiness)?.readiness ?? null;
   const flag = countryFlag(wine.country);
   const sizes = [...new Set(inVintage.map((i) => i.bottle_size_ml ?? 750))].map((ml) => formatBottleSize(ml)).join(", ");
@@ -340,7 +343,13 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   );
 
   const shownShares = grapes?.shares ?? wine.grapes.map((grape) => ({ grape, percent: null }));
-  const drink = drinkRow(drinkWindow);
+  // Herkunft dazu: „≈ 2024–2030 · geschätzt“ (mit Begründung als Tooltip); Etikett/Quelle kurz.
+  const drink = drinkWindow ? (
+    <span title={vintage?.drink_window_note ?? undefined}>
+      {drinkRow(drinkWindow)}
+      {drinkSource && drinkSource !== "manual" && <span className="muted small"> · {DRINK_SOURCE_LABELS[drinkSource]}</span>}
+    </span>
+  ) : null;
   const details: Record<WineDetailField, ReactNode> = {
     Typ: <WineTypeIcon type={wine.type} withLabel />,
     Land: wine.country ? `${flag ? `${flag} ` : ""}${wine.country}` : null,

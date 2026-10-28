@@ -9,6 +9,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
+import { asDrinkSource, saveVintageWindow } from "@/lib/cellar/drink-window";
 import { apiProblem } from "@/lib/ai/api-errors";
 import { formatShares, hasAnyPercent } from "@/lib/grapes/shares";
 import { replaceGrapeShares } from "@/lib/grapes/store";
@@ -211,23 +212,29 @@ export async function researchAndFillWine(
     if (v.year != null && (v.drink.from != null || v.drink.until != null)) {
       const { data: row, error } = await db
         .from("wine_vintages")
-        .select("id, drink_from_year, drink_until_year")
+        .select("*")
         .eq("wine_id", wineId)
         .eq("vintage_year", v.year)
         .maybeSingle();
       if (error) throw error;
+      const source = asDrinkSource(row?.drink_window_source) ?? (row?.drink_from_year != null || row?.drink_until_year != null ? "manual" : null);
       let from = row?.drink_from_year ?? null;
       let until = row?.drink_until_year ?? null;
-      if (from == null && v.drink.from != null) from = v.drink.from;
-      else if (from != null && v.drink.from != null && from !== v.drink.from) await suggest("drink_from_year", v.year, from, v.drink.from);
-      if (until == null && v.drink.until != null) until = v.drink.until;
-      else if (until != null && v.drink.until != null && until !== v.drink.until) await suggest("drink_until_year", v.year, until, v.drink.until);
+      if (source === "estimate") {
+        // Schätzung: eine Quelle ersetzt sie (Rangfolge in cellar/drink-window.ts).
+        from = v.drink.from ?? from;
+        until = v.drink.until ?? until;
+      } else if (source !== "label") {
+        if (from == null && v.drink.from != null) from = v.drink.from;
+        else if (from != null && v.drink.from != null && from !== v.drink.from) await suggest("drink_from_year", v.year, from, v.drink.from);
+        if (until == null && v.drink.until != null) until = v.drink.until;
+        else if (until != null && v.drink.until != null && until !== v.drink.until) await suggest("drink_until_year", v.year, until, v.drink.until);
+      }
       const changed = from !== (row?.drink_from_year ?? null) || until !== (row?.drink_until_year ?? null);
       if (changed && (from == null || until == null || from <= until)) {
-        const { error: saveError } = row
-          ? await db.from("wine_vintages").update({ drink_from_year: from, drink_until_year: until }).eq("id", row.id)
-          : await db.from("wine_vintages").insert({ wine_id: wineId, vintage_year: v.year, drink_from_year: from, drink_until_year: until });
-        if (saveError) throw saveError;
+        // Vorher leer bzw. geschätzt → „research“; teils von Hand → bleibt „manual“.
+        const nextSource = source == null || source === "estimate" ? "research" : source;
+        await saveVintageWindow(db, { rowId: row?.id ?? null, wineId, year: v.year }, { drink_from_year: from, drink_until_year: until }, nextSource, nextSource === "research" ? note : (row?.drink_window_note ?? null));
         filled.push(`Trinkfenster ${yearLabel(v.year)} (${from ?? "?"}–${until ?? "?"})`);
       }
     }

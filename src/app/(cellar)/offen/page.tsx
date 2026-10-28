@@ -1,3 +1,5 @@
+import { loadDrinkWindows } from "@/lib/cellar/load";
+import { withDrinkWindows } from "@/lib/cellar/filters";
 import { loadWineNotes } from "@/lib/cellar/notes";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -51,11 +53,13 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
   const notes = state.query ? await loadWineNotes(supabase, entries.map((e) => e.wine_id)) : null;
   const visible = state.query ? entries.filter((e) => matchesQuery(e, state.query, notes?.get(e.wine_id))) : entries;
   const thisYear = currentYear();
-  const [ratings, photo] = await Promise.all([
+  const [ratings, photo, windows] = await Promise.all([
     loadRatingsByWine(supabase, visible.map((e) => e.wine_id)),
     loadLabelPhotos(supabase, visible.map((e) => e.wine_id)),
+    loadDrinkWindows(supabase, visible.map((e) => e.wine_id)),
   ]);
-  const withRatings = visible.map((e) => ({ ...e, ratings: ratings.get(e.wine_id) ?? [] }));
+  // Herkunft der Trinkfenster (Schätzungen mit „≈“).
+  const withRatings = withDrinkWindows(visible, windows, (e) => e.wine_id).map((e) => ({ ...e, ratings: ratings.get(e.wine_id) ?? [] }));
   const totals = openTotals(entries);
   const hidden = withoutRoom.count ?? 0;
 

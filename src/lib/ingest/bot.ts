@@ -96,7 +96,7 @@ import {
   acceptRestock,
   chooseSimilar,
   advanceTo,
-  bestBeforeConflict,
+  summaryExtras,
   bestBeforeState,
   confirmAndSave,
   continuePhotoPurchase,
@@ -850,7 +850,7 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
       { matched_wine_id: known?.id ?? null },
     );
     if (!next) return;
-    const extra = await bestBeforeConflict(db, known?.id ?? null, jobState(next)!);
+    const extra = await summaryExtras(db, known?.id ?? null, jobState(next)!);
     await sendMessage(chatId, proposalMessage(jobState(next)!, Boolean(known), extra), reviewKeyboard(job.id));
   } catch (error) {
     console.error("correction failed", error);

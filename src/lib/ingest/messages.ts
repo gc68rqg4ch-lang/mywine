@@ -3,6 +3,7 @@ import "server-only";
 import { T } from "@/lib/bot/texts";
 import { formatBottleSize, formatBottles, formatMoney, todayIso, wineTypeLabel } from "@/lib/format";
 import { formatBestBefore, isExpired, parseBestBefore } from "./best-before";
+import { drinkWindowHint, drinkWindowText } from "@/lib/cellar/drink-window";
 import { formatShares } from "@/lib/grapes/shares";
 import { escapeHtml } from "@/lib/telegram/api";
 import type { TgInlineKeyboard } from "@/lib/telegram/types";
@@ -76,6 +77,18 @@ const FIELD_LABELS: Record<EnrichableField, string> = {
 
 const e = (value: string) => escapeHtml(value);
 
+/** „ – bald trinken“ bzw. „ – über dem Höhepunkt“ (bis im laufenden Jahr bzw. davor). */
+const drinkHintText = (until: number | null) => {
+  const hint = drinkWindowHint(until);
+  return hint ? ` – ${hint}` : "";
+};
+
+/** Foto-Vorschlag: „Trinkreife: 2024–2030“ (aus der Recherche bzw. dem Etikett), sonst nichts. */
+function drinkLine(state: Pick<IngestState, "drink_from_year" | "drink_until_year">) {
+  const text = drinkWindowText(state.drink_from_year ?? null, state.drink_until_year ?? null);
+  return text ? `Trinkreife: ${e(text)}${drinkHintText(state.drink_until_year ?? null)}` : null;
+}
+
 /** „📆 Haltbar bis September 2028“ (mit „schon abgelaufen“), wenn ein Ablaufdatum da ist. */
 export function bestBeforeLine(state: Pick<IngestState, "best_before">, today = todayIso()) {
   const bb = parseBestBefore(state.best_before);
@@ -98,7 +111,7 @@ export function proposalMessage(state: IngestState, matched: boolean, extra: str
     `Trauben: ${e(formatShares(p.grape_shares) || "–")}`,
     `Alkohol: ${p.alcohol_content != null ? `${p.alcohol_content.toLocaleString("de-CH")} %` : "–"}`,
     `Flasche: ${e(formatBottleSize(p.bottle_size_ml) ?? "–")}`,
-    ...[bestBeforeLine(state)].filter((l): l is string => l != null),
+    ...[drinkLine(state), bestBeforeLine(state)].filter((l): l is string => l != null),
     ...extra,
   ];
   // Keine Technik (Modell, Prozent) – nur, wo ich unsicher bin.
@@ -319,7 +332,7 @@ export function wineSummaryLines(state: IngestState) {
   const p = state.proposal;
   const window =
     state.drink_from_year || state.drink_until_year
-      ? `Trinkreife ${state.drink_from_year ?? "?"}–${state.drink_until_year ?? "?"}`
+      ? `Trinkreife ${state.drink_from_year ?? "?"}–${state.drink_until_year ?? "?"}${drinkHintText(state.drink_until_year ?? null)}`
       : null;
   return [
     `🍷 <b>${e([p.producer, [p.name, p.vintage_year].filter(Boolean).join(" ")].filter(Boolean).join(" – "))}</b>${state.restock ? " <i>(Nachkauf)</i>" : ""}`,

@@ -9,6 +9,7 @@ import {
   needsResearch,
   researchedRecently,
   tasteTargets,
+  windowTargets,
   wineGaps,
   type ResearchScope,
 } from "@/lib/research/gaps";
@@ -37,13 +38,16 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   // Stammdaten: wines.researched_at; Geschmacksprofil: wine_vintages.taste_profile_checked_at je Jahrgang.
   const skipRecent = params.kuerzlich !== "1";
   // „Geschmacksprofil fehlt“: nur Weine ohne Profil, nur das Profil recherchieren.
-  const profile = params.profil === "1";
-  const href = (next: { alle?: boolean; vollstaendig?: boolean; skipRecent?: boolean; profil?: boolean }) => {
+  // „Trinkfenster fehlt“: Jahrgänge mit Flaschen (ungeöffnet/offen) ohne Trinkfenster – nur dieses suchen.
+  const windowMode = params.fenster === "1";
+  const profile = !windowMode && params.profil === "1";
+  const href = (next: { alle?: boolean; vollstaendig?: boolean; skipRecent?: boolean; profil?: boolean; fenster?: boolean }) => {
     const q = new URLSearchParams();
     if (next.alle ?? scope === "all") q.set("alle", "1");
     if (next.vollstaendig ?? complete) q.set("vollstaendig", "1");
     if (!(next.skipRecent ?? skipRecent)) q.set("kuerzlich", "1");
     if (next.profil ?? profile) q.set("profil", "1");
+    if (next.fenster ?? windowMode) q.set("fenster", "1");
     const query = q.toString();
     return `/recherche${query ? `?${query}` : ""}`;
   };
@@ -60,11 +64,14 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const missingProfile = (g: (typeof cellar)[number], skip: boolean) => tasteTargets(g, data, { skipRecent: skip });
   const noProfile = (s: ResearchScope) => inScope(s).filter((g) => missingProfile(g, false).length > 0);
   const profileCounts = { cellar: noProfile("cellar").length, all: noProfile("all").length };
-  const chosen = profile ? noProfile(scope) : complete ? inScope(scope) : scope === "all" ? all : cellar;
+  // Trinkfenster fehlt: immer nur Jahrgänge mit ungeöffneten oder offenen Flaschen; ohne 12-Monats-Regel.
+  const noWindow = inScope("cellar").filter((g) => windowTargets(g, data).length > 0);
+  const windowYearCount = noWindow.reduce((s, g) => s + windowTargets(g, data).length, 0);
+  const chosen = windowMode ? noWindow : profile ? noProfile(scope) : complete ? inScope(scope) : scope === "all" ? all : cellar;
   // In den letzten 12 Monaten recherchiert: beim Profil je Jahrgang (alle fehlenden kürzlich gesucht), sonst der Wein.
   const isRecent = (g: (typeof chosen)[number]) => (profile ? missingProfile(g, true).length === 0 : researchedRecently(g.wine));
   const recent = chosen.filter(isRecent);
-  const selected = skipRecent ? chosen.filter((g) => !isRecent(g)) : chosen;
+  const selected = skipRecent && !windowMode ? chosen.filter((g) => !isRecent(g)) : chosen;
   const completeCount = selected.filter((g) => !needsResearch(g)).length;
   const list = selected.sort(
     (a, b) => compareWineNames(a.wine, b.wine),
@@ -74,10 +81,15 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
     producer: g.wine.producer,
     name: g.wine.name,
     years: g.vintages.map((v) => v.year),
-    gaps: profile ? ["Geschmacksprofil"] : [...g.gaps.map((k) => GAP_LABELS[k]), ...(g.basics ? ["Land/Typ"] : [])],
+    gaps: windowMode
+      ? [`Trinkfenster ${windowTargets(g, data).map((y) => y ?? "NV").join(", ")}`]
+      : profile
+        ? ["Geschmacksprofil"]
+        : [...g.gaps.map((k) => GAP_LABELS[k]), ...(g.basics ? ["Land/Typ"] : [])],
+    ...(windowMode ? { windowYears: windowTargets(g, data) } : {}),
     // Profil: der neueste Jahrgang ohne Profil (bei eingeschalteter Option: nicht in den letzten 12 Monaten gesucht).
     ...(profile ? { tasteYear: missingProfile(g, skipRecent)[0] ?? null } : {}),
-    complete: profile ? false : !needsResearch(g),
+    complete: profile || windowMode ? false : !needsResearch(g),
   }));
 
   return (
@@ -131,6 +143,11 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
               </tr>
             ))}
             <tr>
+              <th scope="row">Trinkfenster fehlt (Jahrgänge)</th>
+              <td>{windowYearCount}</td>
+              <td>–</td>
+            </tr>
+            <tr>
               <th scope="row">Geschmacksprofil fehlt</th>
               <td>{profileCounts.cellar}</td>
               <td>{profileCounts.all}</td>
@@ -154,6 +171,22 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
         </Link>
       </nav>
 
+      <Link href={href({ fenster: !windowMode, profil: false })} className="check-toggle" role="switch" aria-checked={windowMode}>
+        <span className="check-box" aria-hidden>
+          {windowMode ? "✓" : ""}
+        </span>
+        <span>
+          Trinkfenster fehlt
+          <span className="muted small">
+            {" "}
+            – {windowMode
+              ? `ich suche nur das Trinkfenster (Quelle, sonst Schätzung) für ${windowYearCount} ${windowYearCount === 1 ? "Jahrgang" : "Jahrgänge"} im Bestand`
+              : "nur Jahrgänge im Bestand ohne Trinkfenster, nur das Trinkfenster suchen"}
+          </span>
+        </span>
+      </Link>
+
+      {!windowMode && (
       <Link href={href({ profil: !profile })} className="check-toggle" role="switch" aria-checked={profile}>
         <span className="check-box" aria-hidden>
           {profile ? "✓" : ""}
@@ -166,8 +199,9 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
           </span>
         </span>
       </Link>
+      )}
 
-      {!profile && (
+      {!profile && !windowMode && (
       <Link
         href={href({ vollstaendig: !complete })}
         className="check-toggle"
@@ -187,6 +221,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
       </Link>
       )}
 
+      {!windowMode && (
       <Link href={href({ skipRecent: !skipRecent })} className="check-toggle" role="switch" aria-checked={skipRecent}>
         <span className="check-box" aria-hidden>
           {skipRecent ? "✓" : ""}
@@ -201,15 +236,17 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
           </span>
         </span>
       </Link>
+      )}
 
       {/* key: bei Wechsel von Umfang oder Optionen frisch beginnen */}
       <BatchResearch
-        key={`${scope}:${complete}:${skipRecent}:${profile}`}
+        key={`${scope}:${complete}:${skipRecent}:${profile}:${windowMode}`}
         candidates={candidates}
         scope={scope}
         taste={profile ? "only" : "missing"}
         skipRecent={skipRecent}
-        skipped={skipRecent ? recent.length : 0}
+        skipped={skipRecent && !windowMode ? recent.length : 0}
+        mode={windowMode ? "window" : "research"}
       />
     </div>
   );

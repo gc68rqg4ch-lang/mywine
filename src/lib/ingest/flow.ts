@@ -8,6 +8,9 @@ import "server-only";
 import { cleanGiftFrom, giftInText, giftValueInText } from "./gift";
 import { REGULAR_HINT, pricesInText } from "./prices";
 import { scheduleTasteProfile } from "@/lib/research/taste-auto";
+import { scheduleDrinkWindow } from "@/lib/research/drink-window-auto";
+import { asDrinkSource, drinkWindowHint, drinkWindowText, saveVintageWindow } from "@/lib/cellar/drink-window";
+import { sourceNote } from "@/lib/research/compare";
 import { later } from "@/lib/later";
 import { apiLimitForIngest, apiProblemForBot } from "@/lib/ai/api-errors";
 import { savedWineKeyboard } from "@/lib/chat/menu";
@@ -193,7 +196,7 @@ export async function continuePhotoPurchase(
     if (error) throw error;
 
     if (similar.length) await askSimilar(chatId, jobId, similar);
-    else await sendMessage(chatId, proposalMessage(state, Boolean(known), await bestBeforeConflict(db, known?.id ?? null, state)), reviewKeyboard(jobId));
+    else await sendMessage(chatId, proposalMessage(state, Boolean(known), await summaryExtras(db, known?.id ?? null, state)), reviewKeyboard(jobId));
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }
@@ -303,7 +306,7 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
       );
       return;
     case "confirm":
-      await sendMessage(chatId, textSummaryMessage(state, await bestBeforeConflict(createAdminClient(), job.matched_wine_id, state)), confirmKeyboard(job.id));
+      await sendMessage(chatId, textSummaryMessage(state, await summaryExtras(createAdminClient(), job.matched_wine_id, state)), confirmKeyboard(job.id));
       return;
     case "saving":
       later(() => saveJob(job, chatId));
@@ -326,7 +329,8 @@ export async function storeDrinkWindow(db: AdminClient, wineId: string, state: I
   const from = state.drink_from_year ?? null;
   const until = state.drink_until_year ?? null;
   const year = state.proposal.vintage_year;
-  if ((from == null && until == null) || year == null) return;
+  // Mit Ablaufdatum übernimmt storeBestBefore (Herkunft „label“); NV nur dort.
+  if ((from == null && until == null) || year == null || parseBestBefore(state.best_before)) return;
   try {
     const { data: existing } = await db
       .from("wine_vintages")
@@ -334,10 +338,10 @@ export async function storeDrinkWindow(db: AdminClient, wineId: string, state: I
       .eq("wine_id", wineId)
       .eq("vintage_year", year)
       .maybeSingle();
-    if (!existing) {
-      await db.from("wine_vintages").insert({ wine_id: wineId, vintage_year: year, drink_from_year: from, drink_until_year: until });
-    } else if (existing.drink_from_year == null && existing.drink_until_year == null) {
-      await db.from("wine_vintages").update({ drink_from_year: from, drink_until_year: until }).eq("id", existing.id);
+    // Aus der Recherche beim Erfassen: Herkunft „research“, Quelle aus den Recherche-Quellen.
+    const note = sourceNote(state.recognition.sources ?? []);
+    if (!existing || (existing.drink_from_year == null && existing.drink_until_year == null)) {
+      await saveVintageWindow(db, { rowId: existing?.id ?? null, wineId, year }, { drink_from_year: from, drink_until_year: until }, "research", note);
     }
   } catch (error) {
     // Die Flasche trotzdem speichern; das Trinkfenster lässt sich nachtragen.
@@ -475,8 +479,10 @@ export async function saveJob(job: IngestJob, chatId: number) {
       return undefined;
     });
     await sendMessage(chatId, savedMessage(state, prices), keyboard);
-    // Geschmacksprofil für genau diesen Jahrgang im Hintergrund (auch beim Nachkauf, falls noch keins da ist).
+    // Geschmacksprofil und Trinkfenster für genau diesen Jahrgang im Hintergrund (auch beim Nachkauf,
+    // falls noch keins da ist). Das Trinkfenster läuft danach, damit Etikett/Recherche Vorrang haben.
     scheduleTasteProfile(wineId, state.proposal.vintage_year ?? null);
+    scheduleDrinkWindow(wineId, state.proposal.vintage_year ?? null);
   } catch (error) {
     await failJob(db, job.id, chatId, "Das Speichern ist mir nicht gelungen", error, state.source === "text");
   }
@@ -822,7 +828,7 @@ export async function chooseSimilar(db: AdminClient, job: IngestJob, chatId: num
 
   if (state.source !== "text") {
     const next = await advanceJob(db, job, "similar", { ...patch, step: "review" }, columns);
-    if (next) await sendMessage(chatId, proposalMessage(jobState(next)!, Boolean(wine), await bestBeforeConflict(db, wine?.id ?? null, jobState(next)!)), reviewKeyboard(job.id));
+    if (next) await sendMessage(chatId, proposalMessage(jobState(next)!, Boolean(wine), await summaryExtras(db, wine?.id ?? null, jobState(next)!)), reviewKeyboard(job.id));
     return next;
   }
   if (wine && !needsVintage({ ...state, ...patch })) patch.restock = await inStock(db, wine.id, proposal.vintage_year);
@@ -854,20 +860,27 @@ export function bestBeforeState(value: string | null | undefined, before?: Pick<
 /** Bestehendes Trinkfenster „bis“ dieses Weins und Jahrgangs (null = keins bzw. neuer Wein). */
 async function existingDrinkUntil(db: AdminClient, wineId: string | null, year: number | null) {
   if (!wineId) return null;
-  let q = db.from("wine_vintages").select("drink_from_year, drink_until_year").eq("wine_id", wineId);
+  let q = db.from("wine_vintages").select("*").eq("wine_id", wineId);
   q = year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
   const { data } = await q.maybeSingle();
   return data ?? null;
 }
 
 /**
- * Hinweis für die Zusammenfassung, wenn das Trinkfenster schon anders gefüllt ist – es wird
- * nicht überschrieben („Trinkreife bleibt bis 2030 (Etikett: September 2028)“).
+ * Hinweise für die Zusammenfassung aus der DB: das gespeicherte Trinkfenster eines bekannten
+ * Weins (falls der Vorschlag keins hat; Schätzung mit „≈“, „bald trinken“ / „über dem Höhepunkt“)
+ * und – mit Ablaufdatum – ein schon anders gefülltes Trinkfenster, das bleibt.
  */
-export async function bestBeforeConflict(db: AdminClient, wineId: string | null, state: IngestState): Promise<string[]> {
+export async function summaryExtras(db: AdminClient, wineId: string | null, state: IngestState): Promise<string[]> {
   const bb = parseBestBefore(state.best_before);
-  if (!bb) return [];
   const existing = await existingDrinkUntil(db, wineId, state.proposal.vintage_year).catch(() => null);
+  if (!bb) {
+    const own = state.drink_from_year != null || state.drink_until_year != null;
+    const text = own ? null : drinkWindowText(existing?.drink_from_year ?? null, existing?.drink_until_year ?? null, existing?.drink_window_source);
+    if (!text) return [];
+    const hint = drinkWindowHint(existing?.drink_until_year ?? null);
+    return [`⏳ Trinkreife ${escapeHtml(text)}${existing?.drink_window_source === "estimate" ? " (geschätzt)" : ""}${hint ? ` – ${hint}` : ""}`];
+  }
   const until = existing?.drink_until_year ?? null;
   const from = existing?.drink_from_year ?? null;
   if (until != null && until !== bb.year) return [T.bestBeforeKeepsUntil(until, formatBestBefore(bb))];
@@ -884,17 +897,23 @@ export async function storeBestBefore(db: AdminClient, wineId: string, state: In
   if (!bb) return;
   const year = state.proposal.vintage_year;
   try {
-    let q = db.from("wine_vintages").select("id, drink_from_year, drink_until_year, notes").eq("wine_id", wineId);
+    let q = db.from("wine_vintages").select("*").eq("wine_id", wineId);
     q = year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
     const { data: row, error } = await q.maybeSingle();
     if (error) throw error;
     const notes = appendNote(row?.notes, bestBeforeSentence(bb));
     const fits = row?.drink_from_year == null || row.drink_from_year <= bb.year;
-    const until = row?.drink_until_year == null && fits ? bb.year : (row?.drink_until_year ?? null);
-    const { error: saveError } = row
-      ? await db.from("wine_vintages").update({ drink_until_year: until, notes }).eq("id", row.id)
-      : await db.from("wine_vintages").insert({ wine_id: wineId, vintage_year: year, drink_until_year: bb.year, notes });
-    if (saveError) throw saveError;
+    const fill = row?.drink_until_year == null && fits;
+    const until = fill ? bb.year : (row?.drink_until_year ?? null);
+    // Herkunft „label“ nur, wenn das Etikett das Trinkfenster bestimmt; sonst bleibt die bisherige.
+    const keep = row ? asDrinkSource((row as { drink_window_source?: unknown }).drink_window_source) : null;
+    await saveVintageWindow(
+      db,
+      { rowId: row?.id ?? null, wineId, year },
+      { drink_from_year: row?.drink_from_year ?? null, drink_until_year: until, notes },
+      fill ? "label" : keep,
+      fill ? bestBeforeSentence(bb) : ((row as { drink_window_note?: string | null } | null)?.drink_window_note ?? null),
+    );
   } catch (error) {
     // Die Flasche ist gespeichert; Ablaufdatum lässt sich in der App nachtragen.
     console.error("storing best before failed", error);

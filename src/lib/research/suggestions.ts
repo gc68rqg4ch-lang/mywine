@@ -142,6 +142,8 @@ async function editFor(db: Db, row: { wine_id: string; vintage_year: number | nu
     year: row.vintage_year,
     from: field === "drink_from_year" ? value : (window?.drink_from_year ?? null),
     until: field === "drink_until_year" ? value : (window?.drink_until_year ?? null),
+    // Übernommener Vorschlag: der Wert stammt aus einer Quelle.
+    source: "research",
   };
 }
 

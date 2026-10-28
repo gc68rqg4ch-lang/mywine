@@ -1172,6 +1172,8 @@ export type Database = {
         Row: {
           created_at: string
           drink_from_year: number | null
+          drink_window_note: string | null
+          drink_window_source: string | null
           drink_until_year: number | null
           id: string
           notes: string | null
@@ -1185,6 +1187,8 @@ export type Database = {
         Insert: {
           created_at?: string
           drink_from_year?: number | null
+          drink_window_note?: string | null
+          drink_window_source?: string | null
           drink_until_year?: number | null
           id?: string
           notes?: string | null
@@ -1198,6 +1202,8 @@ export type Database = {
         Update: {
           created_at?: string
           drink_from_year?: number | null
+          drink_window_note?: string | null
+          drink_window_source?: string | null
           drink_until_year?: number | null
           id?: string
           notes?: string | null

@@ -90,7 +90,7 @@ export function filterOptions(entries: Filterable[], f: ListFilters, year: numbe
 /** Trinkfenster je Wein + Jahrgang an die Einheiten hängen (Getrunken, Verkostet). */
 export function withDrinkWindows<T extends Groupable>(
   entries: T[],
-  windows: { wine_id: string; vintage_year: number | null; drink_from_year: number | null; drink_until_year: number | null }[],
+  windows: { wine_id: string; vintage_year: number | null; drink_from_year: number | null; drink_until_year: number | null; drink_window_source?: string | null }[],
   wineId: (e: T) => string,
 ): T[] {
   const byKey = new Map(windows.map((w) => [`${w.wine_id}|${w.vintage_year}`, w]));
@@ -98,7 +98,7 @@ export function withDrinkWindows<T extends Groupable>(
     ...e,
     units: e.units.map((u) => {
       const w = byKey.get(`${wineId(e)}|${u.vintage_year}`);
-      return w ? { ...u, drink_from_year: w.drink_from_year, drink_until_year: w.drink_until_year } : u;
+      return w ? { ...u, drink_from_year: w.drink_from_year, drink_until_year: w.drink_until_year, drink_source: w.drink_window_source ?? null } : u;
     }),
   }));
 }

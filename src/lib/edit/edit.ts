@@ -1,3 +1,4 @@
+import { saveVintageWindow } from "@/lib/cellar/drink-window";
 import "server-only";
 
 // Bearbeiten – ein Modul für App und Bot: prepareEdit prüft eine Bearbeitung gegen den
@@ -220,6 +221,7 @@ async function prepareDrinkWindow(
   year: number | null,
   from: number | null,
   until: number | null,
+  source: "manual" | "research" = "manual",
 ): Promise<PreparedEdit> {
   const wine = await loadWine(db, wineId);
   if (!wine) return fail("Diesen Wein gibt es nicht mehr.");
@@ -240,11 +242,9 @@ async function prepareDrinkWindow(
     { title: wineTitle(wine, year), action: "Trinkfenster ändern", changes, notes: [] },
     wineId,
     async () => {
-      const values = { drink_from_year: from, drink_until_year: until };
-      const { error: saveError } = row
-        ? await db.from("wine_vintages").update(values).eq("id", row.id)
-        : await db.from("wine_vintages").insert({ wine_id: wineId, vintage_year: year, ...values });
-      if (saveError) throw saveError;
+      // Von Hand geändert → „manual“ (wird nie automatisch überschrieben); leer → keine Herkunft.
+      const empty = from == null && until == null;
+      await saveVintageWindow(db, { rowId: row?.id ?? null, wineId, year }, { drink_from_year: from, drink_until_year: until }, empty ? null : source, null);
       return `das Trinkfenster auf ${from ?? "?"}–${until ?? "?"} gesetzt`;
     },
     year,
@@ -672,7 +672,7 @@ export async function prepareEdit(db: Db, edit: Edit): Promise<PreparedEdit> {
     case "vintage":
       return prepareVintage(db, edit.wineId, edit.from, edit.to);
     case "drinkWindow":
-      return prepareDrinkWindow(db, edit.wineId, edit.year, edit.from, edit.until);
+      return prepareDrinkWindow(db, edit.wineId, edit.year, edit.from, edit.until, edit.source ?? "manual");
     case "batch":
       return prepareBatch(db, edit.itemId, edit.set);
     case "move":

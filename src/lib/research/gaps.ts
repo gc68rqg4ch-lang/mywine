@@ -156,3 +156,15 @@ export function newDocumentSince(docs: DocumentRow[] | undefined, wineId: string
   const since = Date.parse(checkedAt);
   return (docs ?? []).some((d) => d.wine_id === wineId && d.vintage_year === year && Date.parse(d.created_at) > since);
 }
+
+/**
+ * „Trinkfenster fehlt“: Jahrgänge (mit ungeöffneten oder offenen Flaschen, je nach Umfang von g)
+ * ohne „ab“ und ohne „bis“ – neueste zuerst, NV zuletzt. Die 12-Monats-Regel gilt hier nicht:
+ * solange das Trinkfenster leer ist, wird wieder gesucht.
+ */
+export function windowTargets(g: WineGaps, data: { vintages: GapVintage[] }): (number | null)[] {
+  const row = (y: number | null) => data.vintages.find((v) => v.wine_id === g.wine.id && v.vintage_year === y);
+  return [...new Set(g.vintages.map((v) => v.year))]
+    .filter((y) => row(y)?.drink_from_year == null && row(y)?.drink_until_year == null)
+    .sort((a, b) => (b ?? -1) - (a ?? -1));
+}

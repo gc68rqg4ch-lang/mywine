@@ -1,3 +1,5 @@
+import { loadDrinkWindows } from "@/lib/cellar/load";
+import { withDrinkWindows } from "@/lib/cellar/filters";
 import { loadWineNotes } from "@/lib/cellar/notes";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -57,7 +59,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
   if (filter) purchasesQuery = purchasesQuery.ilike("storage_to", storagePattern(filter));
 
   // Alles in einem Schritt: Bewertungen und Etiketten aller Weine gleich mit (statt danach).
-  const [summary, vintageRows, items, purchases, ratings, photo] = await Promise.all([
+  const [summary, vintageRows, items, purchases, ratings, photo, windows] = await Promise.all([
     supabase.from("cellar_wine_summary").select("wine_id, name, producer, country, region, type, grapes"),
     supabase.from("cellar_wines").select("*"),
     withLocation(
@@ -70,6 +72,8 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
     purchasesQuery,
     loadRatingsByWine(supabase, null),
     loadLabelPhotos(supabase, null),
+    // Herkunft der Trinkfenster (Schätzungen mit „≈“).
+    loadDrinkWindows(supabase, null),
   ]);
   for (const r of [summary, vintageRows, items, purchases]) if (r.error) throw r.error;
 
@@ -80,11 +84,15 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
     const key = unitKey(i.wine_id, i.vintage_year, i.bottle_size_ml);
     vendors.set(key, [...new Set([...(vendors.get(key) ?? []), i.vendor_name])]);
   }
-  const wines = buildCellarWines(
-    (summary.data ?? []).map(toSummaryWine).filter(nonNull),
-    (vintageRows.data ?? []).map((r) => toVintageRow(r, thisYear)).filter(nonNull),
-    filter,
-    vendors,
+  const wines = withDrinkWindows(
+    buildCellarWines(
+      (summary.data ?? []).map(toSummaryWine).filter(nonNull),
+      (vintageRows.data ?? []).map((r) => toVintageRow(r, thisYear)).filter(nonNull),
+      filter,
+      vendors,
+    ),
+    windows,
+    (w) => w.wine_id,
   );
   const inStock = wines.filter((w) => w.sealed > 0);
   const notes = state.query ? await loadWineNotes(supabase, inStock.map((w) => w.wine_id)) : null;

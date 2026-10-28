@@ -8,6 +8,7 @@ import { researchAndFillWine, type ResearchOutcome, type TasteMode } from "@/lib
 import { noProfileText } from "@/lib/taste/profile";
 import { researchSummary } from "@/lib/research/summary";
 import { apiProblem } from "@/lib/ai/api-errors";
+import { drinkWindowFilled, findAndStoreDrinkWindow } from "@/lib/research/drink-window";
 import type { ActionState } from "./actions";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,6 +50,35 @@ export async function researchWine(
       error: problem ?? { kind: "other", message: "Die Recherche ist fehlgeschlagen." },
     };
   }
+}
+
+/**
+ * Sammellauf „Trinkfenster fehlt“: für die angegebenen Jahrgänge eines Weins (nacheinander) das
+ * Trinkfenster suchen – Quelle, sonst Schätzung; nur wenn „ab“ und „bis“ noch leer sind.
+ * API-Limit: sofort abbrechen (der Lauf hält an), nichts gesetzt.
+ */
+export async function researchDrinkWindows(wineId: string, years: (number | null)[]): Promise<ResearchOutcome> {
+  const session = await getSession();
+  const started = Date.now();
+  const seconds = () => Math.round((Date.now() - started) / 1000);
+  if (!session.isMember || !UUID_RE.test(wineId)) return { status: "error", filled: [], suggested: 0, seconds: 0 };
+  const filled: string[] = [];
+  let suggested = 0;
+  try {
+    for (const year of years.filter((y) => y === null || Number.isInteger(y)).slice(0, 20)) {
+      const { result, window } = await findAndStoreDrinkWindow(session.supabase, wineId, year);
+      if (result === "set" && window) filled.push(drinkWindowFilled(year, window));
+      if (result === "suggested") suggested++;
+    }
+  } catch (error) {
+    const problem = apiProblem(error);
+    if (problem?.kind === "usage_limit") console.error("api limit reached", wineId, problem.message);
+    else console.error("drink window research failed", wineId, error);
+    if (filled.length || suggested) revalidatePath("/", "layout");
+    return { status: "error", filled, suggested, seconds: seconds(), error: problem ?? { kind: "other", message: "Die Suche ist fehlgeschlagen." } };
+  }
+  if (filled.length || suggested) revalidatePath("/", "layout");
+  return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, seconds: seconds() };
 }
 
 /** Jahrgang aus dem Formular: leer → undefined (Recherche wählt), „nv“ → null. */

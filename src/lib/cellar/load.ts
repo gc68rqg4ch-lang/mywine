@@ -26,12 +26,17 @@ export async function loadRatingsByWine(db: Db, wineIds: string[] | null): Promi
 }
 
 /** Trinkfenster aller Jahrgänge dieser Weine (für Filter und Trinkreife). */
-export async function loadDrinkWindows(db: Db, wineIds: string[]) {
-  if (!wineIds.length) return [];
-  const { data, error } = await db
-    .from("wine_vintages")
-    .select("wine_id, vintage_year, drink_from_year, drink_until_year")
-    .in("wine_id", wineIds);
+export async function loadDrinkWindows(db: Db, wineIds: string[] | null) {
+  if (wineIds && !wineIds.length) return [];
+  // „*“: drink_window_source gibt es erst nach der Migration – so geht nichts kaputt. null = alle.
+  const query = db.from("wine_vintages").select("*");
+  const { data, error } = await (wineIds ? query.in("wine_id", wineIds) : query);
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map((v) => ({
+    wine_id: v.wine_id,
+    vintage_year: v.vintage_year,
+    drink_from_year: v.drink_from_year,
+    drink_until_year: v.drink_until_year,
+    drink_window_source: v.drink_window_source ?? null,
+  }));
 }

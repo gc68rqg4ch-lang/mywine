@@ -2,6 +2,7 @@
 // Reine Funktionen auf den Zeilen der Views cellar_wine_summary (Wein) und
 // cellar_wines (Wein + Jahrgang + Flaschengrösse mit Aufteilung nach Lagerort).
 
+import { drinkWindowText } from "./drink-window";
 import type { Json, Tables } from "@/lib/database.types";
 import { WINE_TYPE_LABELS, asWineType, compareWineNames, todayIso, type WineType } from "@/lib/format";
 
@@ -74,9 +75,10 @@ export function drinkWindowLabel(from: number | null, until: number | null) {
   return null;
 }
 
-/** „Trinkreif · 2024–2032“ bzw. „Unbekannt · kein Trinkfenster“. */
-export function drinkStatusText(from: number | null, until: number | null, year: number) {
-  return `${DRINK_STATUS_LABELS[drinkStatus(from, until, year)]} · ${drinkWindowLabel(from, until) ?? "kein Trinkfenster"}`;
+/** „Trinkreif · 2024–2032“ bzw. „Unbekannt · kein Trinkfenster“; Schätzung: „Trinkreif · ≈ 2024–2032 (geschätzt)“. */
+export function drinkStatusText(from: number | null, until: number | null, year: number, source?: string | null) {
+  const window = drinkWindowText(from, until, source);
+  return `${DRINK_STATUS_LABELS[drinkStatus(from, until, year)]} · ${window ? `${window}${source === "estimate" ? " (geschätzt)" : ""}` : "kein Trinkfenster"}`;
 }
 
 /** Bestand nach Trinkreife gruppiert, diese Gruppe aufgeklappt und angesprungen. */
@@ -103,7 +105,7 @@ export function drinkBadges(wine: Groupable, vintages: (number | null)[], year: 
     if (!vintages.includes(u.vintage_year) || byYear.has(u.vintage_year)) continue;
     const from = u.drink_from_year ?? null;
     const until = u.drink_until_year ?? null;
-    byYear.set(u.vintage_year, { status: drinkStatus(from, until, year), text: drinkStatusText(from, until, year), year: u.vintage_year });
+    byYear.set(u.vintage_year, { status: drinkStatus(from, until, year), text: drinkStatusText(from, until, year, u.drink_source), year: u.vintage_year });
   }
   const list = sortVintages([...byYear.keys()]).map((y) => byYear.get(y)!);
   if (new Set(list.map((b) => b.text)).size <= 1) return list.slice(0, 1).map((b) => ({ status: b.status, text: b.text }));
@@ -238,6 +240,8 @@ export type GroupUnit = {
   /** Trinkfenster des Jahrgangs (Gruppierung „Trinkreife“). */
   drink_from_year?: number | null;
   drink_until_year?: number | null;
+  /** Herkunft des Trinkfensters (estimate → „≈“ in der Anzeige). */
+  drink_source?: string | null;
 };
 
 /** Was Liste, Suche und Gruppierung von einem Eintrag brauchen. */

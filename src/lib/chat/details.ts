@@ -2,7 +2,7 @@
 // Rein, ohne DB – leere Angaben fallen weg statt „–“ zu zeigen.
 
 import { countryFlag } from "@/lib/cellar/overview";
-import { drinkWindowLabel } from "@/lib/cellar/overview";
+import { drinkWindowHint, drinkWindowText } from "@/lib/cellar/drink-window";
 import { daysSince, formatBottleSize, formatMoney, formatStarNumber, priceDiscount, type WineType } from "@/lib/format";
 import { typeEmoji } from "./menu-view";
 
@@ -31,6 +31,8 @@ export type WineDetails = {
   grapes: string | null;
   drinkFrom: number | null;
   drinkUntil: number | null;
+  /** Herkunft des Trinkfensters (estimate → „≈ … (geschätzt)“). */
+  drinkSource?: string | null;
   bottles: DetailBottle[];
   ratings: { person: string; rating: number }[];
   lastTasting: { quality: string | null; points: number | null } | null;
@@ -101,7 +103,9 @@ export function wineDetailsText(d: WineDetails) {
     prices.size > 1 ? [...prices].map(([text, where]) => `${where.join(", ")}: ${text}`) : [...prices.keys()];
 
   const flag = countryFlag(d.country);
-  const drinkWindow = drinkWindowLabel(d.drinkFrom, d.drinkUntil);
+  // Schätzung mit „≈“; „bis“ im laufenden Jahr oder davor → kurzer Hinweis.
+  const drinkWindow = drinkWindowText(d.drinkFrom, d.drinkUntil, d.drinkSource);
+  const drinkHint = drinkWindow ? drinkWindowHint(d.drinkUntil) : null;
   const tasting = d.lastTasting
     ? join([d.lastTasting.quality, d.lastTasting.points != null ? `${d.lastTasting.points.toLocaleString("de-CH")} / 4 Punkte` : null])
     : "";
@@ -111,7 +115,7 @@ export function wineDetailsText(d: WineDetails) {
     d.producer && e(d.producer),
     e(join([d.country && `${flag ? `${flag} ` : ""}${d.country}`, d.region, d.appellation])),
     e(join([d.grapes && `🍇 ${d.grapes}`, d.alcohol != null && `${d.alcohol.toLocaleString("de-CH")} % vol`])),
-    drinkWindow && `⏳ Trinkreife ${drinkWindow}`,
+    drinkWindow && `⏳ Trinkreife ${drinkWindow}${d.drinkSource === "estimate" ? " (geschätzt)" : ""}${drinkHint ? ` – ${drinkHint}` : ""}`,
     stock.size && `📦 ${e(join([...stock].map(([where, n]) => `${where} ${n}`)))}`,
     ...open.map((b) =>
       e(

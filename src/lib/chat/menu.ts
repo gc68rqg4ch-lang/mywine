@@ -546,7 +546,8 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
   const [{ data: wine, error }, grapes, vintage, bottles, ratings, persons, tasting, documents, suggestions] = await Promise.all([
     db.from("wines").select("name, producer, type, country, region, appellation, alcohol_content, grapes, notes").eq("id", wineId).maybeSingle(),
     loadGrapeShares(db, wineId, year),
-    sameYear(db.from("wine_vintages").select("drink_from_year, drink_until_year").eq("wine_id", wineId)).maybeSingle(),
+    // „*“: drink_window_source gibt es erst nach der Migration.
+    sameYear(db.from("wine_vintages").select("*").eq("wine_id", wineId)).maybeSingle(),
     sameYear(
       db
         .from("cellar_overview")
@@ -581,6 +582,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     grapes: grapes?.shares.length ? formatShares(grapes.shares) : wine.grapes.join(", ") || null,
     drinkFrom: vintage.data?.drink_from_year ?? null,
     drinkUntil: vintage.data?.drink_until_year ?? null,
+    drinkSource: vintage.data?.drink_window_source ?? null,
     bottles: (bottles.data ?? []).flatMap((b) => (b.status ? [{ ...b, status: b.status, quantity: b.quantity ?? 0 }] : [])),
     ratings: (persons.data ?? []).flatMap((p) => {
       const r = ratings.data?.find((x) => x.person_id === p.id)?.rating;
