@@ -6,6 +6,7 @@ import type { ResearchScope } from "@/lib/research/gaps";
 import { decideSuggestion } from "@/lib/research/suggestions";
 import { researchAndFillWine, type ResearchOutcome, type TasteMode } from "@/lib/research/wine";
 import { noProfileText } from "@/lib/taste/profile";
+import { researchSummary } from "@/lib/research/summary";
 import { apiProblem } from "@/lib/ai/api-errors";
 import type { ActionState } from "./actions";
 
@@ -57,10 +58,16 @@ function formYear(formData: FormData) {
 /** Hinweis zum Profil, wenn nichts Verlässliches kam. */
 const tasteNote = (outcome: ResearchOutcome) => (outcome.taste === "none" ? `Geschmacksprofil: ${noProfileText(outcome.tasteYear ?? null)}` : null);
 
-/** „🔎 Nachrecherchieren“ auf der Weinseite – ohne Rückfrage, alle Jahrgänge mit Flaschen bzw. verkostet. */
-export async function researchWineFromPage(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const outcome = await researchWine(String(formData.get("wineId") ?? ""), "all", "always", formYear(formData));
-  return pageMessage(outcome);
+/**
+ * 🔎 im Kopf der Weinseite: „Nachrecherchieren“ für den gewählten Jahrgang (inkl. Geschmacksprofil),
+ * ohne Rückfrage. Kurze Meldung („3 Angaben ergänzt“, „1 Abweichung zum Prüfen“, „Nichts Neues gefunden“).
+ */
+export async function researchWineFromHeader(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const wineId = String(formData.get("wineId") ?? "");
+  const outcome = await researchWine(wineId, "all", "always", formYear(formData));
+  // „Zuletzt recherchiert am …“ auch ohne Fund aktualisieren.
+  if (outcome.status !== "error" && UUID_RE.test(wineId)) revalidatePath(`/wein/${wineId}`);
+  return researchSummary(outcome);
 }
 
 /** „🔎 Geschmacksprofil recherchieren“ in der Karte – nur das Profil. */

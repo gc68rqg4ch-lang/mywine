@@ -1,11 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import { useEditUnit } from "@/components/edit-unit";
 import { percentSum, type GrapeShare } from "@/lib/grapes/shares";
-import type { ActionState } from "../../actions";
-import { researchWineFromPage } from "../../research-actions";
 
 type EditRow = { key: number; grape: string; percent: string };
 
@@ -16,22 +13,6 @@ function toRows(shares: GrapeShare[]): EditRow[] {
     percent: s.percent == null ? "" : String(s.percent),
   }));
   return rows.length ? rows : [{ key: 0, grape: "", percent: "" }];
-}
-
-function Notice({ state }: { state: ActionState }) {
-  if (state?.error)
-    return (
-      <p className="notice notice-error" role="alert">
-        {state.error}
-      </p>
-    );
-  if (state?.ok)
-    return (
-      <p className="notice notice-ok" role="status">
-        {state.ok}
-      </p>
-    );
-  return null;
 }
 
 /**
@@ -90,32 +71,5 @@ export function GrapeRowsField({ shares, year }: { shares: GrapeShare[]; year: n
         <span className={editSum > 100 ? "sum sum-over" : "sum muted"}>Summe {editSum.toLocaleString("de-CH")} %</span>
       </div>
     </fieldset>
-  );
-}
-
-/** Recherche in „Zum Wein“: „🔎 Nachrecherchieren“ und „Zuletzt recherchiert am …“. */
-export function ResearchBlock({ wineId, year, researchedOn = null }: { wineId: string; year?: number | null; researchedOn?: string | null }) {
-  const [researchState, researchAction, researching] = useActionState(researchWineFromPage, undefined);
-  return (
-    <form action={researchAction} className="stack-sm">
-      <input type="hidden" name="wineId" value={wineId} />
-      {year !== undefined && <input type="hidden" name="year" value={year == null ? "nv" : String(year)} />}
-      <div className="row row-between">
-        <button type="submit" className="btn btn-sm" disabled={researching}>
-          {researching ? "Recherchiere …" : "🔎 Nachrecherchieren"}
-        </button>
-        <Link href="/recherche" className="small link">
-          Sammellauf für alle Weine
-        </Link>
-      </div>
-      {researching && (
-        <p className="muted small" role="status">
-          Ich ergänze alle leeren Angaben dieses Weins (Herkunft, Alkohol, Trinkfenster, Rebsorten mit %) und suche das
-          Geschmacksprofil – das kann ein bis zwei Minuten dauern.
-        </p>
-      )}
-      {!researching && <Notice state={researchState} />}
-      {!researching && <p className="muted small">{researchedOn ? `Zuletzt recherchiert am ${researchedOn}` : "Noch nie recherchiert"}</p>}
-    </form>
   );
 }

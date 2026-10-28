@@ -1638,6 +1638,7 @@ input[inputmode="decimal"] {
 .wine-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* iPhone: Bestand/Öffnen, Zum Wein mit Geschmacksprofil, Bewertungen (mit Verkostet) */
   grid-template-areas: "open" "wine" "ratings";
   gap: 16px;
   align-items: start;
@@ -1658,10 +1659,11 @@ input[inputmode="decimal"] {
   grid-area: ratings;
 }
 @media (min-width: 700px) {
+  /* iPad hochkant: links Bestand/Öffnen, darunter Bewertungen; rechts Zum Wein, darunter Geschmacksprofil. */
   .wine-columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas: "open wine" "ratings wine";
-    /* Zusätzliche Höhe von „Zum Wein“ geht in die untere Zeile – Öffnen und Bewertungen bleiben bündig. */
+    /* Zusätzliche Höhe der rechten Spalte geht in die untere Zeile – Öffnen und Bewertungen bleiben bündig. */
     grid-template-rows: auto 1fr;
   }
   .wine-col-wine {
@@ -1669,13 +1671,23 @@ input[inputmode="decimal"] {
   }
 }
 @media (min-width: 1000px) {
+  /* iPad quer: Spalte 2 nur Zum Wein; Spalte 3 Geschmacksprofil zuoberst, darunter Bewertungen. */
   .wine-columns {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-areas: "open wine ratings";
-    grid-template-rows: auto;
+    grid-template-areas: "open wine taste" "open wine ratings";
+    grid-template-rows: auto 1fr;
+  }
+  .wine-col-open {
+    grid-row: 1 / span 2;
   }
   .wine-col-wine {
-    grid-row: auto;
+    display: contents;
+  }
+  .wine-col-wine > .card {
+    grid-area: wine;
+  }
+  .wine-col-taste {
+    grid-area: taste;
   }
 }
 .wine-head .detail-header {
@@ -2459,4 +2471,78 @@ a.doc-clip-name:hover {
 }
 .taste-summary {
   margin: 0;
+}
+
+/* Kopf: 🔎 neben dem Weinnamen (dezent, gleiche Höhe wie der Titel) mit kleinem Feld */
+.title-row {
+  position: relative; /* das Feld öffnet unter dem Titel, nicht am Knopf – bleibt so auf dem iPhone im Bild */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.title-row .page-title {
+  min-width: 0;
+}
+.research-head {
+  flex: none;
+}
+.research-head-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.research-head-btn:hover,
+.research-head-btn[aria-expanded="true"] {
+  opacity: 1;
+  background: var(--surface-2);
+}
+.research-head-btn.is-spinning {
+  opacity: 1;
+}
+.research-head-btn.is-spinning > span {
+  display: inline-block;
+  animation: research-spin 1s linear infinite;
+}
+@keyframes research-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .research-head-btn.is-spinning > span {
+    animation-duration: 3s;
+  }
+}
+.research-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: min(280px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+}
+.research-pop[hidden] {
+  display: none;
+}
+.research-pop .btn {
+  align-self: flex-start;
+}
+.research-result {
+  margin: 0;
+  font-weight: 600;
 }

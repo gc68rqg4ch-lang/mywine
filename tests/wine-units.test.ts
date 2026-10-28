@@ -64,10 +64,10 @@ test("Büroklammer: je Dokument eine Zeile mit vollem Namen und 📎 rechts; ohn
   assert.deepEqual(docClipLines(["a.pdf", long, "c.pdf"]), { lines: ["a.pdf", long, "c.pdf"], label: "3 Dokumente verwalten" });
 });
 
-test("Reihenfolge in „Zum Wein“: eine Tabelle mit Rebsorten und Trinkreife, die Fotos als letzte Zeile, dann Recherche", () => {
+test("Reihenfolge in „Zum Wein“: eine Tabelle mit Rebsorten und Trinkreife, die Fotos als letzte Zeile (Recherche im Kopf)", () => {
   assert.deepEqual(WINE_DETAIL_FIELDS, ["Typ", "Land", "Region", "Appellation", "Alkohol", "Flasche", "Rebsorten", "Trinkreife"]);
   assert.deepEqual(WINE_EXTRA_ROWS, ["Laut Verkostung", "Jahrgang", "Notiz", "Fotos"], "Fotos zuletzt, ohne eigenen Abschnitt");
-  assert.deepEqual(WINE_SECTIONS, ["details", "research"], "kein Abschnitt „Fotos“ mehr");
+  assert.deepEqual(WINE_SECTIONS, ["details"], "kein Abschnitt „Fotos“, keine Recherche mehr in „Zum Wein“");
 });
 
 test("Karte „Verkostet“: leer, Zeilen „2022 · 28.10.2026 · Kronenhalle · ★ 4“, mit/ohne Merker", () => {

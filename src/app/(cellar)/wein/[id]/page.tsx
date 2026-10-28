@@ -38,7 +38,7 @@ import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { DocumentClip } from "./documents";
 import { BatchForm, WineCardForm, type EditBatch } from "./edit-sections";
-import { ResearchBlock } from "./grape-card";
+import { ResearchHead } from "./research-head";
 import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, RatingsForm, type PersonRating } from "./ratings-card";
@@ -330,7 +330,8 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   };
   const photoAlt = `${wine.name} ${yearLabel}`;
 
-  // Spalte 2: Zum Wein – eine Tabelle (Stammdaten, Rebsorten, Trinkreife, zuletzt die Fotos), dann Recherche.
+  // Spalte 2: nur „Zum Wein“ – eine Tabelle (Stammdaten, Rebsorten, Trinkreife, zuletzt die Fotos).
+  // Die Recherche sitzt als 🔎 im Kopf neben dem Weinnamen.
   const sections: Record<WineSection, ReactNode> = {
     details: (
       <EditUnit
@@ -375,12 +376,6 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}
       </EditUnit>
     ),
-    research: (
-      <div className="stack-sm section-divider">
-        <h3 className="subsection-title">Recherche</h3>
-        <ResearchBlock wineId={wine.id} year={year} researchedOn={formatDate(zurichDate(wine.researched_at))} />
-      </div>
-    ),
   };
   const wineColumn = (
     <div className="wine-col wine-col-wine">
@@ -389,7 +384,11 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
           <Fragment key={key}>{sections[key]}</Fragment>
         ))}
       </section>
-      <TasteCard wineId={wine.id} wineType={wine.type} year={year} profile={tasteProfile} tastings={tastings} />
+      {/* Geschmacksprofil direkt nach „Zum Wein“ (iPhone, iPad hochkant); iPad quer zuoberst in Spalte 3
+          über „Bewertungen“ – dann löst das CSS die Spalte auf (display: contents, Bereich „taste“). */}
+      <div className="wine-col wine-col-taste">
+        <TasteCard wineId={wine.id} wineType={wine.type} year={year} profile={tasteProfile} tastings={tastings} />
+      </div>
     </div>
   );
 
@@ -490,9 +489,12 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         <header className="wine-head stack">
           <div className="detail-header">
             <div className="stack-sm">
-              <h1 className="page-title">
-                {wine.name} {yearLabel}
-              </h1>
+              <div className="title-row">
+                <h1 className="page-title">
+                  {wine.name} {yearLabel}
+                </h1>
+                <ResearchHead wineId={wine.id} year={year} researchedOn={formatDate(zurichDate(wine.researched_at))} />
+              </div>
               {wine.producer && <span className="item-producer">{wine.producer}</span>}
             </div>
             <div className="detail-total">

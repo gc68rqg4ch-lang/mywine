@@ -41,10 +41,10 @@ export function markDirty(state: UnitsState, id: string): UnitsState {
   return state.open?.id === id && !state.dirty ? { ...state, dirty: true } : state;
 }
 
-/** Reihenfolge in „Zum Wein“: eine Tabelle (Rebsorten und Trinkreife als Zeilen), dann Fotos, Recherche. */
+/** Reihenfolge in „Zum Wein“: eine Tabelle (Rebsorten und Trinkreife als Zeilen), dann Fotos. Die Recherche ist das 🔎 im Kopf. */
 export const WINE_DETAIL_FIELDS = ["Typ", "Land", "Region", "Appellation", "Alkohol", "Flasche", "Rebsorten", "Trinkreife"] as const;
 export type WineDetailField = (typeof WINE_DETAIL_FIELDS)[number];
-export const WINE_SECTIONS = ["details", "research"] as const;
+export const WINE_SECTIONS = ["details"] as const;
 export type WineSection = (typeof WINE_SECTIONS)[number];
 
 /** Zeile „Rebsorten“: „Cabernet Sauvignon 95 % · Malbec 5 %“, ohne Prozent nur die Namen; leer → null (Zeile fehlt). */

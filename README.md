@@ -80,9 +80,12 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
      (Vorschaubilder, Antippen öffnet gross). Hochladen (Vorderseite, Rückseite, Weiteres – der Browser verkleinert
      auf max. 2000 px JPEG, auch HEIC; der Server legt das Original unter `wine-photos/app/<wine-id>/…` ab und
      erzeugt das Vorschaubild), Ersetzen und Löschen (Rückfrage; Dateien über den Admin-Client nach Prüfung der
-     Mitgliedschaft) als eigener Block am Ende des ✏️-Formulars „Zum Wein“ – das gilt sofort. Darunter
-     **Recherche** („🔎 Nachrecherchieren“ ergänzt alle leeren Angaben ohne Rückfrage, „Zuletzt recherchiert am …“,
-     Link zum Sammellauf `/recherche`). Das ✏️ von „Zum Wein“ öffnet ein Formular für Stammdaten, Rebsorten mit %
+     Mitgliedschaft) als eigener Block am Ende des ✏️-Formulars „Zum Wein“ – das gilt sofort.
+     **Recherche im Kopf:** dezentes 🔎 neben dem Weinnamen (`research-head.tsx`) öffnet ein kleines Feld mit
+     „Nachrecherchieren“ (gewählter Jahrgang, inkl. Geschmacksprofil, ohne Rückfrage) und „Zuletzt recherchiert
+     am …“; während der Recherche dreht sich das 🔎, danach eine kurze Meldung („3 Angaben ergänzt“, „1 Abweichung
+     zum Prüfen“, „Nichts Neues gefunden“; `src/lib/research/summary.ts`). Abweichungen erscheinen wie bisher in
+     „Zum Wein“; der Sammellauf bleibt auf `/recherche`. Das ✏️ von „Zum Wein“ öffnet ein Formular für Stammdaten, Rebsorten mit %
      und Trinkfenster des Jahrgangs zusammen (`kind = wineCard` in `src/lib/edit/form.ts` → Bearbeitungen `wine`,
      `grapes` nur wenn geändert, `drinkWindow`, zuletzt `vintage`); unter „Mehr“ Appellation, Alkohol und Jahrgang
      umbenennen.
@@ -204,7 +207,8 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   nach dem Einbuchen (Foto, Text, auch Nachkauf) und nach einem Verkostet-Eintrag (Bot, App, Chat) wird im
   Hintergrund (`after()`) das Profil für genau diesen Jahrgang gesucht – erst speichern und antworten, dann
   recherchieren. Gibt es schon ein Profil für den Jahrgang, wird nicht gesucht; ohne Fund oder bei Fehlern
-  (auch API-Limit) keine Meldung, nur Log „taste profile auto failed“. Weinseite: Karte „Geschmacksprofil“ unter „Zum Wein“, nur für den
+  (auch API-Limit) keine Meldung, nur Log „taste profile auto failed“. Weinseite: Karte „Geschmacksprofil“ – iPhone und iPad hochkant direkt nach „Zum Wein“, iPad quer zuoberst in
+  Spalte 3 über „Bewertungen“ (CSS `display: contents` löst die Spalte „Zum Wein“ dann auf) –, nur für den
   gewählten Jahrgang, kurz und knapp (`taste-view.tsx`): einspaltig nur bekannte Merkmale (Name · 5-Punkte-Skala ·
   Wert), eine Reihe Aromen ohne Gruppentitel (Frucht → Floral → Gewürz → Eiche → Reife, höchstens 10), ein bis
   zwei Sätze zum Stil, „Passt zu: …“. Eigene WSET-Verkostungen erscheinen als Ring auf derselben Skala (Michel/
