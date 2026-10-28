@@ -18,7 +18,8 @@ import { formatShares } from "@/lib/grapes/shares";
 import { asDrinkSource, decideDrinkWindow, drinkWindowText, saveVintageWindow, type FoundWindow } from "@/lib/cellar/drink-window";
 import { recordSuggestion } from "./suggestions";
 import { sourceNote } from "./compare";
-import { loadShopPages, shopDocuments, shopPagesNote, type ShopPage } from "./shops";
+import { loadShopPages, shopDocuments, shopFetchAllowed, shopFetchNote, shopPagesNote, type ShopPage } from "./shops";
+import { shopSourceAllowed } from "./shops/match";
 
 type Db = SupabaseClient<Database>;
 
@@ -78,7 +79,8 @@ export function evaluateDrinkWindow(raw: DrinkWindowRaw, year: number | null, no
     if (from != null && until != null && from > until) return null;
     return { from, until };
   };
-  const sources = raw.sources.filter((s) => /^https?:\/\//.test(s.url) && host(s.url) && (year == null || s.vintage === year));
+  // Shop-Adressen: Jahrgang muss passen (Datenblatt: im Dateinamen).
+  const sources = raw.sources.filter((s) => /^https?:\/\//.test(s.url) && host(s.url) && (year == null || s.vintage === year) && shopSourceAllowed(s.url, year));
   const found = pair(raw.drink_from, raw.drink_until);
   if (raw.matches_wine && (year == null || raw.same_vintage) && sources.length && raw.quote.trim() && found) {
     return { ...found, source: "research", note: sourceNote(sources.map((s) => s.url)) };
@@ -101,6 +103,7 @@ export async function researchDrinkWindow(
   const now = new Date().getFullYear();
   const fromShop = shopDrinkWindow(pages, year, now);
   if (fromShop) return fromShop;
+  const fetchShops = shopFetchAllowed(pages, year);
   const raw = await webResearch({
     prompt: `Gesucht ist das Trinkfenster (trinkreif ab/bis) dieses Weins: ${JSON.stringify({
       name: wine.name,
@@ -115,9 +118,10 @@ export async function researchDrinkWindow(
     })}
 - Suche Angaben von Weingut, Kritikern oder Händlern zu ${year != null ? `genau Jahrgang ${year}` : "genau diesem Wein (ohne Jahrgang)"}. ${year != null ? "Angaben zu anderen Jahrgängen zählen nicht." : ""} Gefunden: drink_from/drink_until, sources, ein wörtliches Zitat; die Schätzungsfelder 0 bzw. leer.
 - Keine passende Quelle: drink_from/drink_until 0, sources leer, quote leer – und schätze das Trinkfenster als Weinkenner anhand von Weintyp, Land/Region/Appellation, Rebsorten, Qualitätsstufe (z. B. Reserva, Gran Reserva, Grand Cru, Riserva) und Jahrgang (heute ist ${now}): estimate_from/estimate_until und estimate_reason (ein kurzer Satz auf Deutsch).
-- Jahre als vierstellige Zahl.${shopPagesNote(pages)}`,
+- Jahre als vierstellige Zahl.${shopPagesNote(pages)}${fetchShops ? shopFetchNote(wine, year!) : ""}`,
     toolName: "report_drink_window",
     pages: shopDocuments(pages),
+    fetchShops,
     toolDescription: "Meldet das Trinkfenster des Weins mit Quelle bzw. eine begründete Schätzung.",
     schema: DrinkWindowSchema,
     maxSearches: 4,

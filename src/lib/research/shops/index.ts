@@ -7,7 +7,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { SHOPS, type Fetched, type Get, type ShopAdapter, type ShopPage } from "./adapters";
-import { pageMatches, pickCandidate, type ShopWine } from "./match";
+import { pageMatches, pickCandidate, shopUrlYearConflict, type ShopWine } from "./match";
 
 export type { ShopPage } from "./adapters";
 export type { ShopWine } from "./match";
@@ -36,15 +36,18 @@ export function createGetter(options: { maxRequests?: number; timeoutMs?: number
       const host = new URL(url).hostname;
       try {
         const res = await fetch(url, {
-          headers: { "user-agent": "Mozilla/5.0 (compatible; MyWine/1.0)", accept: "text/html,application/json" },
+          headers: { "user-agent": "Mozilla/5.0 (compatible; MyWine/1.0)", accept: "text/html,application/json,application/pdf" },
           signal: AbortSignal.timeout(options.timeoutMs ?? SHOP_TIMEOUT_MS),
           redirect: "follow",
           cache: "no-store",
         });
-        const text = res.ok ? await res.text() : "";
+        // Datenblätter (PDF) als Bytes, sonst Text.
+        const pdf = res.ok && /application\/pdf/i.test(res.headers.get("content-type") ?? "");
+        const bytes = pdf ? new Uint8Array(await res.arrayBuffer()) : undefined;
+        const text = res.ok && !pdf ? await res.text() : "";
         // 404: Seite gibt es nicht (z. B. anderer Jahrgang) – kein Fehler.
         if (!res.ok && res.status !== 404) log(host, `HTTP ${res.status} ${url}`);
-        const result = { url: res.url || url, status: res.status, text };
+        const result: Fetched = { url: res.url || url, status: res.status, text, ...(bytes ? { bytes } : {}) };
         // Weiterleitung (Mövenpick: einziger Treffer → Produktseite): auch unter der Zieladresse merken.
         if (result.url !== url && !cache.has(result.url)) cache.set(result.url, Promise.resolve(result));
         return result;
@@ -65,8 +68,8 @@ export function orderShops(vendors: string[], shops: ShopAdapter[] = SHOPS) {
   return [...first, ...shops.filter((s) => !first.includes(s))];
 }
 
-/** Eine passende Seite in einem Shop (oder null). */
-async function findInShop(shop: ShopAdapter, wine: ShopWine, get: Get): Promise<ShopPage | null> {
+/** Passende Seite in einem Shop (dazu ggf. ihr Datenblatt) – sonst leer. */
+async function findInShop(shop: ShopAdapter, wine: ShopWine, get: Get): Promise<ShopPage[]> {
   const candidates = await shop.search(wine, get);
   const picked = pickCandidate(candidates, wine, shop.labelHasProducer);
   // Gesuchter Jahrgang zuerst; Mövenpick: anderer Jahrgang → dieselbe Adresse mit dem gesuchten Jahr.
@@ -81,9 +84,14 @@ async function findInShop(shop: ShopAdapter, wine: ShopWine, get: Get): Promise<
   for (const url of [...new Set(urls)].slice(0, READS_PER_SHOP)) {
     const page = await shop.read(url, get);
     // Falscher Jahrgang, anderer Wein oder Produzent nicht erkennbar → verwerfen.
-    if (page && pageMatches(page, wine)) return { ...page, year: wine.year };
+    if (page && pageMatches(page, wine)) {
+      // Datenblatt der Seite (Mövenpick) gilt für denselben Jahrgang – sofern dessen Adresse nicht widerspricht.
+      const { datasheet, ...main } = page;
+      const sheet = datasheet && !shopUrlYearConflict(datasheet.url, wine.year) ? [{ ...datasheet, year: wine.year }] : [];
+      return [{ ...main, year: wine.year }, ...sheet];
+    }
   }
-  return null;
+  return [];
 }
 
 /**
@@ -104,8 +112,9 @@ export async function findShopPages(
     for (const shop of shops) {
       if (pages.length >= max) return pages;
       try {
-        const page = await findInShop(shop, { ...wine, year }, get);
-        if (page && !pages.some((p) => p.url === page.url)) pages.push(page);
+        for (const page of await findInShop(shop, { ...wine, year }, get)) {
+          if (pages.length < max && !pages.some((p) => p.url === page.url)) pages.push(page);
+        }
       } catch (error) {
         log(shop.id, error instanceof Error ? error.message : String(error));
       }
@@ -154,4 +163,13 @@ export function shopPagesNote(pages: ShopPage[]) {
   return `\nBeigelegte Händlerseiten (Schweizer Shops, zusätzlich zur Websuche; gelten nur für den genannten Jahrgang):\n${pages
     .map((p) => `- „${p.title}“ – Jahrgang ${p.year ?? "ohne (NV)"}; als Quelle mit url "${p.url}" und kind "merchant" angeben`)
     .join("\n")}\nZitate aus einer Händlerseite wörtlich aus deren Text; es gelten dieselben Regeln wie für andere Quellen.`;
+}
+
+/** Ohne Händlerseite: Datenblatt gezielt suchen und per web_fetch öffnen lassen (nur mit Jahrgang). */
+export const shopFetchAllowed = (pages: ShopPage[], year: number | null) => year != null && pages.length === 0;
+
+/** Hinweis im Prompt, wenn web_fetch mitläuft. */
+export function shopFetchNote(wine: { name: string; producer: string | null }, year: number) {
+  const name = [wine.producer, wine.name].filter(Boolean).join(" ");
+  return `\nIn den Schweizer Händler-Shops fand ich keine Seite zu Jahrgang ${year}. Suche gezielt nach dem Mövenpick-Datenblatt (PDF) dieses Jahrgangs, z. B. „moevenpick-wein.com ${year} ${name} pdf“, und öffne ein gefundenes Datenblatt mit web_fetch (nur Händler-Shops). Ein Datenblatt zählt nur, wenn seine Adresse bzw. sein Dateiname den Jahrgang ${year} nennt – dann als Quelle mit dieser URL und kind "merchant". „Trinkreife: Jetzt bis JJJJ“ heisst: trinkreif bis JJJJ.`;
 }

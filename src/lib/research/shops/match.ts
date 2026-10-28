@@ -115,3 +115,51 @@ export function pickCandidate<C extends { label: string; base: string }>(candida
   if (wines.size > 1 && !(best === 0 && bases.size === 1)) return [];
   return top.map((x) => x.c);
 }
+
+/** Händler-Shops (auch für web_fetch freigegeben). */
+export const SHOP_DOMAINS = ["moevenpick-wein.com", "napawine.ch", "finespirits.ch", "bauraulacvins.ch"] as const;
+
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+};
+
+export const isShopUrl = (url: string) => {
+  const host = hostOf(url);
+  return host != null && SHOP_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
+};
+
+/** Mövenpick-Datenblatt: …/customization_catalog/product/pdf/product_id/<ID>/file/<name>.pdf */
+export const isShopDatasheet = (url: string) => /\/customization_catalog\/product\/pdf\/product_id\/\d+\//i.test(url);
+
+/** Jahrgänge im letzten Teil der Adresse („2020-aperture-red-….pdf“, „/de/2023-condrieu-….html“). */
+export function yearsInUrl(url: string) {
+  let last = url;
+  try {
+    last = decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() ?? "");
+  } catch {
+    // keine gültige Adresse – ganzer Text
+  }
+  return yearsIn(last);
+}
+
+/** Nennt die Adresse einen anderen Jahrgang (bzw. bei NV überhaupt einen)? */
+export function shopUrlYearConflict(url: string, year: number | null) {
+  const found = yearsInUrl(url);
+  return year == null ? found.length > 0 : found.some((y) => y !== year);
+}
+
+/**
+ * Quelle zulassen? Andere Seiten immer (die Regeln der Recherche gelten). Shop-Seiten: kein
+ * anderer Jahrgang in der Adresse. Datenblätter: der gesuchte Jahrgang muss im Dateinamen stehen
+ * (der Text nennt ihn meist nicht) – sonst unklar → verwerfen.
+ */
+export function shopSourceAllowed(url: string, year: number | null) {
+  if (!isShopUrl(url)) return true;
+  if (shopUrlYearConflict(url, year)) return false;
+  if (isShopDatasheet(url)) return year != null && yearsInUrl(url).includes(year);
+  return true;
+}

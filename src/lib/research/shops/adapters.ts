@@ -4,12 +4,14 @@
 // bauraulacvins.ch (Suche /de/search.html, Seiten /de/p/…-<jahr>-<nummer>.html). Ohne Login lesbar.
 // mondovino.ch (Coop) sperrt Abrufe (403) – nicht dabei.
 
+import { pdfText } from "@/lib/research/pdf-text";
 import { clip, decodeEntities, htmlToText, linksWithClass, metaContent } from "./html";
 import { searchTerms, words, yearsIn, type ShopWine } from "./match";
 
 export type ShopId = "napawine" | "moevenpick" | "finespirits" | "bauraulac";
 
-export type Fetched = { url: string; status: number; text: string };
+/** text: HTML bzw. JSON; bytes: PDF (Datenblatt). */
+export type Fetched = { url: string; status: number; text: string; bytes?: Uint8Array };
 /** Abruf mit Zeitlimit; null = Fehler, Zeitlimit oder Abrufbudget aufgebraucht. */
 export type Get = (url: string) => Promise<Fetched | null>;
 
@@ -32,6 +34,8 @@ export type ShopPage = {
   text: string;
   /** Trinkfenster laut Shop („Genussreif Jetzt bis 2035“): from null = ab sofort. */
   drink?: { from: number | null; until: number | null };
+  /** Datenblatt (PDF) zur Seite – Mövenpick; wird als eigene Quelle übergeben. */
+  datasheet?: ShopPage;
 };
 
 export type ShopAdapter = {
@@ -128,6 +132,26 @@ export function parseDrink(text: string): { from: number | null; until: number |
   return now ? { from: null, until: Number(now[1]) } : null;
 }
 
+/** Link zum Datenblatt auf der Jahrgangsseite (…/customization_catalog/product/pdf/product_id/<ID>/file/<name>.pdf). */
+export function datasheetLink(html: string) {
+  const m = html.match(/https:\/\/www\.moevenpick-wein\.com\/de\/customization_catalog\/product\/pdf\/product_id\/\d+\/file\/[^"'\s<>]+?\.pdf/i);
+  return m ? decodeEntities(m[0]) : null;
+}
+
+/**
+ * Datenblatt (PDF) von Mövenpick: Text (Beschreibung, Aromenprofil, Passt zu, Alkoholgehalt,
+ * Rebsorte(n), „Trinkreife: Jetzt bis 2035“) ohne Firmenadresse; Trinkfenster aus „Trinkreife“.
+ */
+export function moevenpickDatasheet(bytes: Uint8Array, url: string, title: string): ShopPage | null {
+  const text = pdfText(bytes)
+    .replace(/\s*Mövenpick Wein Schweiz AG[\s\S]*$/i, "")
+    .trim();
+  if (text.length < 40) return null;
+  const ripe = text.match(/Trinkreife:\s*([^:]{0,40}?(?:19|20)\d\d)/i)?.[1];
+  const drink = ripe ? parseDrink(ripe) : null;
+  return { shop: "moevenpick", url, title: `${title} – Datenblatt`, year: firstYear(title), text: clip(text, MAX_PAGE_CHARS), ...(drink ? { drink } : {}) };
+}
+
 const moevenpick: ShopAdapter = {
   id: "moevenpick",
   label: "Mövenpick",
@@ -148,7 +172,13 @@ const moevenpick: ShopAdapter = {
   async read(url, get) {
     const res = await get(url);
     if (!res || res.status !== 200 || !MP_PRODUCT.test(res.url)) return null;
-    return moevenpickPage(res.text, res.url);
+    const page = moevenpickPage(res.text, res.url);
+    if (!page) return null;
+    // Datenblatt der Jahrgangsseite dazu (eigene Quelle); fehlt es, bleibt die Seite.
+    const link = datasheetLink(res.text);
+    const sheet = link ? await get(link) : null;
+    const datasheet = sheet?.bytes ? moevenpickDatasheet(sheet.bytes, link!, page.title) : null;
+    return datasheet ? { ...page, datasheet } : page;
   },
   withYear(url, year) {
     const m = url.match(MP_PRODUCT);

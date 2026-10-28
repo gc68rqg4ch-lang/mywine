@@ -16,7 +16,7 @@ export type Net = {
    * Andere Websites (Händler-Shops): Adresse → Antwort; url = Adresse nach einer Weiterleitung.
    * Ohne Eintrag bzw. null: 404 (kein echter Netzverkehr).
    */
-  web?: (url: string) => { status?: number; body: string; type?: string; url?: string } | null;
+  web?: (url: string) => { status?: number; body: string | Uint8Array; type?: string; url?: string } | null;
 };
 const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(data === undefined ? null : JSON.stringify(data), { status, headers: { "content-type": "application/json", ...headers } });
@@ -99,7 +99,8 @@ export function installNet(net: Net) {
     }
     if (!url.pathname.startsWith("/rest/v1/")) {
       const page = net.web?.(url.toString());
-      const res = new Response(page?.body ?? "", { status: page ? (page.status ?? 200) : 404, headers: { "content-type": page?.type ?? "text/html" } });
+      const body = page?.body ?? "";
+      const res = new Response(typeof body === "string" ? body : new Blob([body as Uint8Array<ArrayBuffer>]), { status: page ? (page.status ?? 200) : 404, headers: { "content-type": page?.type ?? "text/html" } });
       Object.defineProperty(res, "url", { value: page?.url ?? url.toString() });
       return res;
     }

@@ -20,7 +20,7 @@ import { markTasteChecked } from "@/lib/taste/store";
 import type { EnrichableField } from "@/lib/ingest/schema";
 import { grapesOnlyAddPercent, sameGrapes, sameValue, sourceNote, type SuggestionField } from "./compare";
 import { loadResearchDocuments, documentsNote, type ResearchDocument } from "./documents";
-import { loadShopPages, shopDocuments, shopPagesNote, type ShopPage } from "./shops";
+import { loadShopPages, shopDocuments, shopFetchNote, shopPagesNote, type ShopPage } from "./shops";
 import { TASTED, profileKey, type DocumentRow, tasteTargets, wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
 
 type Db = SupabaseClient<Database>;
@@ -183,7 +183,7 @@ export async function researchAndFillWine(
     },
     vintages: gaps.vintages.map((v) => ({ year: v.year, knownGrapes: v.knownGrapes })),
     ...researchDocs(documents, gaps.vintages.map((v) => v.year)),
-    ...researchPages(pages, gaps.vintages.map((v) => v.year)),
+    ...researchPages(pages, gaps.vintages.map((v) => v.year), wine),
   });
   if (!found) {
     const result = await taste();
@@ -301,9 +301,12 @@ function researchDocs(documents: ResearchDocument[], years: (number | null)[]) {
 }
 
 /** Händlerseiten für die Jahrgänge der Recherche (zusätzlich zur Websuche). */
-function researchPages(pages: ShopPage[], years: (number | null)[]) {
+function researchPages(pages: ShopPage[], years: (number | null)[], wine: { name: string; producer: string | null }) {
   const list = pages.filter((p) => years.includes(p.year));
-  return list.length ? { pages: shopDocuments(list), pagesNote: shopPagesNote(list) } : {};
+  if (list.length) return { pages: shopDocuments(list), pagesNote: shopPagesNote(list) };
+  // Shops ohne Treffer: Datenblatt per web_fetch – nur bei genau einem Jahrgang (eindeutige Prüfung).
+  const year = years.length === 1 ? years[0] : null;
+  return year != null ? { fetchShops: true, fetchNote: shopFetchNote(wine, year) } : {};
 }
 
 /** Nach jeder erfolgreichen Recherche – auch ohne Fund – für „kürzlich geprüfte überspringen“. */

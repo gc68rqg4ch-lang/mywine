@@ -6,6 +6,7 @@ import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { usageLimit } from "@/lib/ai/api-errors";
 import { strictSchemaProblems } from "@/lib/ai/schema-limits";
+import { SHOP_DOMAINS, shopSourceAllowed } from "@/lib/research/shops/match";
 import { hasCompletePercents, normalizeGrapeShares, type GrapeShare } from "@/lib/grapes/shares";
 import {
   GrapeShareSchema,
@@ -152,6 +153,34 @@ export function toolInputSchema(schema: z.ZodType) {
  * Web-Recherche mit Sonnet 5.5 + web_search. Claude meldet das Ergebnis über ein
  * striktes Tool, damit es schemakonform ist. null, wenn kein Ergebnis kam.
  */
+/** Höchstens so viele Abrufe von Händler-Datenblättern (web_fetch) pro Recherche-Aufruf. */
+export const MAX_SHOP_FETCHES = 3;
+
+/**
+ * Werkzeuge der Recherche: Websuche, das strict-Tool für die Antwort und – nur wenn die
+ * Händler-Shops nichts geliefert haben (fetchShops) – web_fetch, beschränkt auf die Shops.
+ */
+export function researchTools(options: {
+  toolName: string;
+  toolDescription: string;
+  inputSchema: Anthropic.Beta.BetaTool.InputSchema;
+  maxSearches: number;
+  fetchShops?: boolean;
+}): Anthropic.Beta.BetaToolUnion[] {
+  return [
+    { type: "web_search_20260209", name: "web_search", max_uses: options.maxSearches },
+    ...(options.fetchShops
+      ? [{ type: "web_fetch_20260209" as const, name: "web_fetch" as const, max_uses: MAX_SHOP_FETCHES, allowed_domains: [...SHOP_DOMAINS] }]
+      : []),
+    {
+      name: options.toolName,
+      description: options.toolDescription,
+      strict: true,
+      input_schema: options.inputSchema,
+    },
+  ];
+}
+
 export async function webResearch<T>(options: {
   prompt: string;
   toolName: string;
@@ -162,6 +191,8 @@ export async function webResearch<T>(options: {
   documents?: { name: string; base64: string }[];
   /** Seiten aus Händler-Shops (Text) als zusätzliche Quelle – zitiert mit ihrer URL. */
   pages?: { url: string; title: string; text: string }[];
+  /** Shops ohne Treffer: Datenblatt per web_fetch (nur Shop-Domains) suchen lassen. */
+  fetchShops?: boolean;
 }): Promise<T | null> {
   const text = `${options.prompt}\nRufe am Ende genau einmal ${options.toolName} auf.`;
   const blocks: Anthropic.Beta.BetaRequestDocumentBlock[] = [
@@ -187,15 +218,7 @@ export async function webResearch<T>(options: {
   const inputSchema = toolInputSchema(options.schema);
   const problems = strictSchemaProblems(inputSchema);
   if (problems.length) throw new Error(`Schema für ${options.toolName} nicht strict-tauglich: ${problems.join(", ")}`);
-  const tools: Anthropic.Beta.BetaToolUnion[] = [
-    { type: "web_search_20260209", name: "web_search", max_uses: options.maxSearches },
-    {
-      name: options.toolName,
-      description: options.toolDescription,
-      strict: true,
-      input_schema: inputSchema,
-    },
-  ];
+  const tools = researchTools({ ...options, inputSchema });
 
   for (let round = 0; round < 4; round++) {
     const response = await anthropic().beta.messages.create({
@@ -307,6 +330,9 @@ export async function researchWineWeb(input: {
   /** Seiten aus Händler-Shops (Text) und der Hinweis dazu im Prompt. */
   pages?: { url: string; title: string; text: string }[];
   pagesNote?: string;
+  /** Shops ohne Treffer: Datenblatt per web_fetch suchen lassen (Hinweis im Prompt: fetchNote). */
+  fetchShops?: boolean;
+  fetchNote?: string;
 }): Promise<WineResearch | null> {
   if (!input.wine.name) return null;
   const label = (year: number | null) => (year == null ? "ohne Jahrgang (NV) – als 0 melden" : String(year));
@@ -319,10 +345,11 @@ Melde den Wert aus den Quellen, auch wenn er von unseren Angaben abweicht – wi
 Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech Sheet) des Produzenten, sonst seriöse Händler oder Fachpresse. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null bzw. leere Liste.
 - Für jeden genannten Jahrgang genau einen Eintrag in vintages.
 - Rebsorten: percent nur, wenn eine Quelle den Anteil für genau diesen Jahrgang belegt (Cuvées ändern sich); reinsortig = 100; sonst Rebsorten mit percent null. Internationale Schreibweise (Cabernet Sauvignon, Tempranillo …).
-- Land auf Deutsch.${input.documentsNote ?? ""}${input.pagesNote ?? ""}`,
+- Land auf Deutsch.${input.documentsNote ?? ""}${input.pagesNote ?? ""}${input.fetchShops ? (input.fetchNote ?? "") : ""}`,
     toolName: "report_wine_details",
     documents: input.documents,
     pages: input.pages,
+    fetchShops: input.fetchShops,
     toolDescription: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
     schema: EnrichmentSchema,
     maxSearches: Math.min(8, 3 + input.vintages.length),
@@ -349,7 +376,10 @@ Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech
       grapes,
     });
   }
-  return { fields, vintages: result, sources: cleanSources(found.sources) };
+  // Ein Jahrgang: Shop-Adressen mit anderem Jahrgang (bzw. Datenblatt ohne Jahrgang) nicht als Quelle.
+  const single = input.vintages.length === 1 ? input.vintages[0].year : undefined;
+  const sources = single === undefined ? found.sources : found.sources.filter((s) => shopSourceAllowed(s, single));
+  return { fields, vintages: result, sources: cleanSources(sources) };
 }
 
 /**

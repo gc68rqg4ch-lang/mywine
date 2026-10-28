@@ -36,13 +36,32 @@ const unescape = (s: string) =>
     /^[0-7]/.test(e) ? String.fromCharCode(parseInt(e, 8)) : ({ n: "\n", r: "\r", t: "\t", b: "", f: "", "(": "(", ")": ")", "\\": "\\" } as Record<string, string>)[e],
   );
 
+/**
+ * Zeichenkette aus dem PDF lesbar machen: UTF-16BE (mit BOM oder jedes zweite Byte 0, z. B. die
+ * Datenblätter von Mövenpick) bzw. latin1. Binärdaten (Bilder, die zufällig wie Text aussehen)
+ * → leer.
+ */
+function decodeString(s: string) {
+  let text = s;
+  const zeros = [...s].filter((c, i) => i % 2 === 0 && c === "\u0000").length;
+  if (s.startsWith("\u00fe\u00ff") || (s.length >= 2 && s.length % 2 === 0 && zeros >= s.length / 4)) {
+    const bytes = Buffer.from(s.startsWith("\u00fe\u00ff") ? s.slice(2) : s, "latin1");
+    const even = bytes.length - (bytes.length % 2);
+    text = Buffer.from(bytes.subarray(0, even)).swap16().toString("utf16le");
+  }
+  // Steuerzeichen (ausser Leerraum) sprechen für Binärdaten.
+  const control = text.match(/[\u0000-\u0008\u000e-\u001f\u007f-\u009f\ufffd]/g)?.length ?? 0;
+  return control > text.length * 0.05 ? "" : text.replace(/[\u0000-\u001f]/g, " ");
+}
+
 /** Text aus den Textoperatoren (Tj, TJ, ', ") – ohne Metadaten wie das Erstelldatum. */
 export function pdfText(bytes: Uint8Array) {
   const out: string[] = [];
   for (const chunk of pdfChunks(bytes)) {
     for (const m of chunk.matchAll(/\[((?:\((?:\\.|[^\\)])*\)|[^\]])*)\]\s*TJ|\(((?:\\.|[^\\)])*)\)\s*(?:Tj|'|")/g)) {
-      if (m[1] != null) out.push([...m[1].matchAll(/\(((?:\\.|[^\\)])*)\)/g)].map((x) => unescape(x[1])).join(""));
-      else out.push(unescape(m[2]));
+      // TJ: Zeichenketten mit Abständen dazwischen; ein grosser Abstand (Blocksatz) ist ein Leerzeichen.
+      if (m[1] != null) out.push([...m[1].matchAll(/\(((?:\\.|[^\\)])*)\)|(-?\d+(?:\.\d+)?)/g)].map((x) => (x[2] != null ? (Number(x[2]) <= -150 ? " " : "") : decodeString(unescape(x[1])))).join(""));
+      else out.push(decodeString(unescape(m[2])));
     }
   }
   return out.join(" ").replace(/\s+/g, " ").trim();

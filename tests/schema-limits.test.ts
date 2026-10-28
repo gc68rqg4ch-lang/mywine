@@ -6,7 +6,7 @@ import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { MAX_UNION_PARAMS, countUnionParams, strictSchemaProblems } from "@/lib/ai/schema-limits";
 import { NOT_MENTIONED, extractionSchema, toExtraction } from "@/lib/tasting/extract";
-import { EnrichmentSchema, toolInputSchema } from "@/lib/ingest/recognize";
+import { EnrichmentSchema, researchTools, toolInputSchema } from "@/lib/ingest/recognize";
 import { GrapeResearchSchema } from "@/lib/grapes/research";
 import { RecognitionSchema, TastedTextSchema, TextEntrySchema, WineProposalSchema } from "@/lib/ingest/schema";
 import { SAT_TYPES, newTastingData } from "@/lib/tasting/sat";
@@ -94,4 +94,14 @@ for (const { type } of SAT_TYPES) {
   const schema = toolInputSchema(tasteResearchSchema(type)) as { properties: { fields: { properties: Record<string, { enum: string[] }> } } };
   assert.equal(countUnionParams(schema), 0, `Geschmacksprofil ${type}: keine nullable Felder`);
   for (const [key, field] of Object.entries(schema.properties.fields.properties)) assert.equal(field.enum[0], "unbekannt", key);
+}
+// Recherche mit web_fetch (Händler-Datenblätter): Server-Tool ohne eigenes Schema; das strict-Tool
+// bleibt innerhalb der Grenzen, web_fetch nur für die Shop-Domains, höchstens 3 Abrufe.
+for (const [name, schema] of [["Trinkfenster", DrinkWindowSchema], ["Stammdaten", EnrichmentSchema], ["Profil rot", tasteResearchSchema("rot")]] as const) {
+  const tools = researchTools({ toolName: "report", toolDescription: "x", inputSchema: toolInputSchema(schema as z.ZodType), maxSearches: 4, fetchShops: true });
+  const fetch = tools.find((t) => "type" in t && t.type === "web_fetch_20260209") as { max_uses?: number; allowed_domains?: string[]; input_schema?: unknown } | undefined;
+  assert.ok(fetch && fetch.max_uses === 3 && fetch.allowed_domains?.length === 4 && fetch.input_schema === undefined, name);
+  const own = tools.find((t) => "name" in t && t.name === "report") as { input_schema: unknown };
+  assert.deepEqual(strictSchemaProblems(own.input_schema), [], name);
+  assert.ok(countUnionParams(own.input_schema) <= MAX_UNION_PARAMS, name);
 }

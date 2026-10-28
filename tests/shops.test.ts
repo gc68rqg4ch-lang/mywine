@@ -154,7 +154,8 @@ test("Mövenpick: einziger Treffer leitet direkt auf die Produktseite weiter", a
     url.includes("/catalogsearch/") ? { body: fixture("moevenpick-2023-condrieu.html"), url: MP_2023 } : null;
   const pages = await findShopPages(condrieu, [2023], { shops: SHOPS.filter((s) => s.id === "moevenpick") });
   assert.deepEqual(pages.map((p) => [p.url, p.year]), [[MP_2023, 2023]]);
-  assert.equal(requested.length, 1, "Seite aus dem Zwischenspeicher, kein zweiter Abruf");
+  // Seite aus dem Zwischenspeicher, kein zweiter Abruf (danach nur das Datenblatt der Seite).
+  assert.equal(requested.filter((u) => !u.includes("/customization_catalog/")).length, 1);
 });
 
 test("Baur au Lac Vins: Titel mit Produzent aus dem Untertitel, Beschreibung, Genussreife", () => {
