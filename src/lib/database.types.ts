@@ -1497,10 +1497,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      ensure_wine_vintage: {
-        Args: { p_vintage_year?: number; p_wine_id: string }
-        Returns: string
-      }
       delete_bottles: {
         Args: { p_item_id: string; p_quantity?: number }
         Returns: number
@@ -1512,6 +1508,10 @@ export type Database = {
           storage_path: string
           thumb_path: string
         }[]
+      }
+      ensure_wine_vintage: {
+        Args: { p_vintage_year?: number; p_wine_id: string }
+        Returns: string
       }
       expire_stale_ingest_jobs: { Args: never; Returns: number }
       move_bottles: {
