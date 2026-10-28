@@ -13,7 +13,7 @@ import { wineName } from "@/lib/format";
 import type { SuggestionField } from "@/lib/research/compare";
 import { decideSuggestion, loadPendingSuggestions, type Suggestion } from "@/lib/research/suggestions";
 import { researchAndFillWine } from "@/lib/research/wine";
-import { NO_RELIABLE_PROFILE } from "@/lib/taste/profile";
+import { noProfileText } from "@/lib/taste/profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { answerCallback, editMessage, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
 import type { Actor } from "@/lib/telegram/actor";
@@ -83,7 +83,7 @@ export async function runBotResearch(chatId: number, wineId: string, year: numbe
         : outcome.status === "nothing"
           ? "Deine Angaben stimmen mit der Recherche überein."
           : null,
-      outcome.taste === "none" ? `Geschmacksprofil: ${NO_RELIABLE_PROFILE}` : null,
+      outcome.taste === "none" ? `Geschmacksprofil: ${noProfileText(outcome.tasteYear ?? null)}` : null,
     ].filter(Boolean);
     await sendMessage(chatId, `${lines.join("\n")}${link}`);
     for (const s of suggestions) await sendMessage(chatId, suggestionQuestion(s), keyboard(s.id));

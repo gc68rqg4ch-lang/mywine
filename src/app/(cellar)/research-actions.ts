@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth";
 import type { ResearchScope } from "@/lib/research/gaps";
 import { decideSuggestion } from "@/lib/research/suggestions";
 import { researchAndFillWine, type ResearchOutcome, type TasteMode } from "@/lib/research/wine";
-import { NO_RELIABLE_PROFILE } from "@/lib/taste/profile";
+import { noProfileText } from "@/lib/taste/profile";
 import { apiProblem } from "@/lib/ai/api-errors";
 import type { ActionState } from "./actions";
 
@@ -55,7 +55,7 @@ function formYear(formData: FormData) {
 }
 
 /** Hinweis zum Profil, wenn nichts Verlässliches kam. */
-const tasteNote = (outcome: ResearchOutcome) => (outcome.taste === "none" ? `Geschmacksprofil: ${NO_RELIABLE_PROFILE}` : null);
+const tasteNote = (outcome: ResearchOutcome) => (outcome.taste === "none" ? `Geschmacksprofil: ${noProfileText(outcome.tasteYear ?? null)}` : null);
 
 /** „🔎 Nachrecherchieren“ auf der Weinseite – ohne Rückfrage, alle Jahrgänge mit Flaschen bzw. verkostet. */
 export async function researchWineFromPage(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -66,7 +66,7 @@ export async function researchWineFromPage(_prev: ActionState, formData: FormDat
 /** „🔎 Geschmacksprofil recherchieren“ in der Karte – nur das Profil. */
 export async function researchTasteFromPage(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const outcome = await researchWine(String(formData.get("wineId") ?? ""), "all", "only", formYear(formData));
-  if (outcome.status === "nothing") return { ok: NO_RELIABLE_PROFILE };
+  if (outcome.status === "nothing") return { ok: noProfileText(outcome.tasteYear ?? null) };
   return pageMessage(outcome);
 }
 

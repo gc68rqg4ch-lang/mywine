@@ -59,6 +59,8 @@ export type ResearchOutcome = {
    * bzw. abgelehnt, skipped = nicht gesucht (schon vorhanden).
    */
   taste?: "saved" | "suggested" | "none" | "unchanged" | "skipped";
+  /** Jahrgang, für den das Profil gesucht wurde (null = Wein ohne Jahrgang). */
+  tasteYear?: number | null;
   /** Bei status „error“: was schiefging (Nutzungslimit → Lauf sofort stoppen). */
   error?: { kind: "usage_limit" | "api" | "other"; message: string };
   seconds: number;
@@ -82,11 +84,14 @@ const yearLabel = (year: number | null) => (year == null ? "NV" : String(year));
  */
 export type TasteMode = "always" | "missing" | "only";
 
-/** Jahrgang fürs Profil: angegeben, sonst der einzige bekannte Jahrgang, sonst allgemein (null). */
+/**
+ * Jahrgang fürs Profil (nur jahrgangsgenaue Profile): angegeben, sonst der neueste bekannte
+ * Jahrgang; null nur für Weine ohne Jahrgang (NV) bzw. ganz ohne Jahrgänge.
+ */
 function tasteYear(gaps: WineGaps, year: number | null | undefined) {
   if (year !== undefined) return year;
-  const years = [...new Set(gaps.vintages.map((v) => v.year))];
-  return years.length === 1 ? years[0] : null;
+  const years = gaps.vintages.map((v) => v.year).filter((y): y is number => y != null);
+  return years.length ? Math.max(...years) : null;
 }
 
 /**
@@ -112,9 +117,10 @@ export async function researchAndFillWine(
 
   const filled: string[] = [];
   let suggested = 0;
+  const profileYear = tasteYear(gaps, options.year);
   const taste = async (): Promise<ResearchOutcome["taste"]> => {
     if (tasteMode === "missing" && data.withProfile.has(wineId)) return "skipped";
-    const profile = await researchTasteProfile(wine, tasteYear(gaps, options.year));
+    const profile = await researchTasteProfile(wine, profileYear);
     if (!profile) return "none";
     const saved = await saveResearchedProfile(db, wineId, profile);
     if (saved === "saved") filled.push("Geschmacksprofil");
@@ -125,7 +131,7 @@ export async function researchAndFillWine(
   if (tasteMode === "only") {
     const result = await taste();
     await markResearched(db, wineId);
-    return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, seconds: seconds() };
+    return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, tasteYear: profileYear, seconds: seconds() };
   }
 
   const found = await researchWineWeb({
@@ -143,7 +149,7 @@ export async function researchAndFillWine(
   if (!found) {
     const result = await taste();
     await markResearched(db, wineId);
-    return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, seconds: seconds() };
+    return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, tasteYear: profileYear, seconds: seconds() };
   }
 
   const note = sourceNote(found.sources);
@@ -224,7 +230,7 @@ export async function researchAndFillWine(
     console.error("taste research failed", wineId, error);
   }
   await markResearched(db, wineId);
-  return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: tasteResult, seconds: seconds() };
+  return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: tasteResult, tasteYear: profileYear, seconds: seconds() };
 }
 
 /** Nach jeder erfolgreichen Recherche – auch ohne Fund – für „kürzlich geprüfte überspringen“. */

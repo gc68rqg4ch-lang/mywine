@@ -8,6 +8,7 @@ import { z } from "zod";
 import { webResearch } from "@/lib/ingest/recognize";
 import { satTypeForWine, type SatType } from "@/lib/tasting/sat";
 import {
+  CLEAR_TERMS,
   SOURCE_KINDS,
   TASTE_FIELDS,
   TASTE_KEYS,
@@ -34,7 +35,7 @@ export function tasteResearchSchema(type: SatType) {
   ) as Record<TasteKey, z.ZodEnum>;
   return z.object({
     matches_wine: z.boolean().describe("true nur, wenn die Quellen genau diesen Wein (Name + Produzent) beschreiben"),
-    same_vintage: z.boolean().describe("true, wenn die Belege für genau den angefragten Jahrgang gelten"),
+    same_vintage: z.boolean().describe("true, wenn die Belege für genau den angefragten Jahrgang gelten (Wein ohne Jahrgang: true)"),
     sources: z
       .array(
         z.object({
@@ -83,13 +84,13 @@ export async function researchTasteProfile(wine: TasteWine, year: number | null)
   const raw = await webResearch({
     prompt: `Suche Verkostungsnotizen zu genau diesem Wein: ${JSON.stringify({ name: wine.name, producer: wine.producer, jahrgang: year ?? "ohne Jahrgang", region: wine.region ?? null, land: wine.country ?? null })}.
 Oberstes Ziel: kein falsches Profil. Lieber „${UNKNOWN}“ als geraten.
-- Nur Quellen zu genau diesem Wein (Name + Produzent, wenn möglich dieser Jahrgang): Produzent (Tech Sheet), Kritiker, Händler. Keine allgemeinen Beschreibungen der Rebsorte, Region oder anderer Weine des Produzenten. Findest du nichts Passendes: matches_wine false, sources leer.
-- same_vintage true nur, wenn die Notizen für Jahrgang ${year ?? "–"} gelten; trage bei jeder Quelle den beschriebenen Jahrgang ein.
+- Nur Quellen zu genau diesem Wein (Name + Produzent): Produzent (Tech Sheet), Kritiker, Händler. Keine allgemeinen Beschreibungen der Rebsorte, Region oder anderer Weine des Produzenten.
+- ${year != null ? `Nur Notizen zu genau Jahrgang ${year}. Notizen zu anderen Jahrgängen zählen nicht – gibt es keine zu ${year}: same_vintage false, sources leer.` : "Der Wein hat keinen Jahrgang (NV): Notizen zum Wein selbst; same_vintage true."} Trage bei jeder Quelle den beschriebenen Jahrgang ein (0 = ohne Jahrgang). Findest du nichts Passendes: matches_wine false, sources leer.
 - Jedes Merkmal und jedes Aroma braucht ein wörtliches Zitat (≤ 25 Wörter) mit source_url aus sources. Ohne Beleg: „${UNKNOWN}“ bzw. weglassen.
-- Übersetze in die WSET-Begriffe nur bei klarer Entsprechung (z. B. „full-bodied“ → Körper voll, „bone dry“ → trocken). Unklar → „${UNKNOWN}“. Nie das nächstbeste Aroma wählen.
+- Übersetze klare Beschreibungen in die WSET-Begriffe, wenn das Zitat eindeutig ist: ${CLEAR_TERMS.map((t) => `„${t.example}“ → ${TASTE_FIELDS.find((f) => f.key === t.key)!.label} ${t.value}`).join(", ")}. Unklar → „${UNKNOWN}“. Nie das nächstbeste Aroma wählen.
 - Aromen nur aus diesem Lexikon (Gruppe → Aromen): ${JSON.stringify(Object.fromEntries(lexicon))}
 - Widersprechen sich Quellen klar bei einem Merkmal: Merkmal „${UNKNOWN}“ und Eintrag in contradictions.
-- style_summary und food_pairing nur aus den Quellen, je mit Beleg (field style_summary bzw. food_pairing).`,
+- style_summary: ein, höchstens zwei kurze Sätze auf Deutsch; food_pairing: kurze Begriffe. Beide nur aus den Quellen, je mit Beleg (field style_summary bzw. food_pairing).`,
     toolName: "report_taste_profile",
     toolDescription: "Meldet das belegte Geschmacksprofil des Weins mit Quellen und Zitaten.",
     schema: tasteResearchSchema(type),

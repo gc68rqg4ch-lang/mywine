@@ -7,7 +7,7 @@ import { wineHref } from "@/lib/cellar/wine-page";
 import { afterWine } from "@/lib/research/batch";
 import type { ResearchScope } from "@/lib/research/gaps";
 import type { ResearchOutcome, TasteMode } from "@/lib/research/wine";
-import { NO_RELIABLE_PROFILE } from "@/lib/taste/profile";
+import { noProfileText } from "@/lib/taste/profile";
 import { researchWine } from "../research-actions";
 
 export type BatchCandidate = {
@@ -243,7 +243,7 @@ export function BatchResearch({
                           .join(" · ")
                       : row.status === "nothing"
                         ? taste === "only" || row.taste === "none"
-                          ? NO_RELIABLE_PROFILE
+                          ? noProfileText(row.tasteYear ?? null)
                           : "Nichts Neues gefunden"
                         : row.status === "complete"
                           ? "Schon vollständig"

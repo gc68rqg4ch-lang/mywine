@@ -190,17 +190,22 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   `validateTasteProfile` prüft vor dem Speichern: nur Quellen zu genau diesem Wein; jedes Merkmal, Aroma,
   Beschreibung und Speiseempfehlung braucht ein Zitat (≤ 25 Wörter) mit `source_url` aus den Quellen, sonst
   „unbekannt“ bzw. weg; WSET-Begriffe nur bei klarer Entsprechung; Widersprüche → „unbekannt“ plus Hinweis in
-  `source_note`; nichts Belegtes → kein Profil, Bestehendes bleibt. Gleicher Jahrgang belegt → `vintage_year`,
-  sonst allgemeines Profil (Jahrgang der Quelle in `sources`). Sicherheit: hoch = ≥ 2 unabhängige Quellen (Website),
+  `source_note`; nichts Belegtes → kein Profil, Bestehendes bleibt. **Nur jahrgangsgenau:** gespeichert wird nur,
+  wenn die Quellen genau den Jahrgang betreffen (`vintage_year` gesetzt); Notizen zu anderen Jahrgängen zählen
+  nicht („Keine Angaben zu diesem Jahrgang gefunden.“). Ausnahme: Wein ohne Jahrgang (NV) → Profil für den Wein.
+  Klare Beschreibungen werden übersetzt, wenn das Zitat eindeutig ist (`CLEAR_TERMS`: „sturdy/firm/grippy
+  tannins“ → Tannin hoch, „full-bodied“ → Körper voll, „crisp/fresh acidity“ → Säure hoch). Sicherheit: hoch = ≥ 2 unabhängige Quellen (Website),
   davon Weingut oder Kritik, ohne Widerspruch; mittel = eine gute Quelle; niedrig = nur Händler. Neue Recherche
   überschreibt nur Profile mit `source = research`; ein Profil von Hand (✏️ in der Karte, `source = manual`) bleibt,
   der Fund wird Vorschlag (`research_suggestions.field = 'taste_profile'`; braucht die Migration
   `research_suggestions_taste_profile`, ohne sie passiert nichts). Nachrecherchieren und Bot suchen das Profil
   immer, der Sammellauf nur bei Weinen ohne Profil; Option „Geschmacksprofil fehlt“ (`?profil=1`) sucht nur das
-  Profil. Kein automatischer Lauf beim Deploy. Weinseite: Karte „Geschmacksprofil“ unter „Zum Wein“ (Balken,
-  Aromen nach Gruppe, Beschreibung, Speisen, „Laut Recherche · Sicherheit hoch · 3 Quellen“ → Quellen und Belege,
-  „nicht jahrgangsspezifisch“, Vergleich mit den eigenen WSET-Verkostungen, ohne Profil „🔎 Geschmacksprofil
-  recherchieren“). Bot ℹ️ Details: eine Zeile („👅 Vollmundig, trocken, viel Tannin – Brombeere, Kaffee“). Ohne
+  Profil. Kein automatischer Lauf beim Deploy. Weinseite: Karte „Geschmacksprofil“ unter „Zum Wein“, nur für den
+  gewählten Jahrgang, kurz und knapp (`taste-view.tsx`): einspaltig nur bekannte Merkmale (Name · 5-Punkte-Skala ·
+  Wert), eine Reihe Aromen ohne Gruppentitel (Frucht → Floral → Gewürz → Eiche → Reife, höchstens 10), ein bis
+  zwei Sätze zum Stil, „Passt zu: …“. Eigene WSET-Verkostungen erscheinen als Ring auf derselben Skala (Michel/
+  Sara). Quellen, Belege und Sicherheit bleiben in der DB, die App zeigt sie nicht. Ohne Profil „🔎
+  Geschmacksprofil recherchieren“. Bot ℹ️ Details: eine Zeile („👅 Vollmundig, trocken, viel Tannin – Brombeere, Kaffee“). Ohne
   Fund melden App und Bot „Keine verlässlichen Angaben gefunden.“
 - **API-Fehler** (`src/lib/ai/api-errors.ts`): Das Nutzungslimit (400 „reached your specified API usage
   limits“) wird erkannt – der Sammellauf stoppt sofort und meldet „Das monatliche API-Limit ist erreicht. Wieder

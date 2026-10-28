@@ -11,8 +11,13 @@ import {
   NO_RELIABLE_PROFILE,
   UNKNOWN,
   confidenceFor,
+  MAX_AROMA_CHIPS,
+  NO_VINTAGE_PROFILE,
+  aromaChips,
+  noProfileText,
+  shortSummary,
   tasteLine,
-  tasteSourceLine,
+  tasteRows,
   validateTasteProfile,
   type TasteResearchRaw,
 } from "@/lib/taste/profile";
@@ -22,6 +27,7 @@ import { applyEdit } from "@/lib/edit/edit";
 import { editsFromForm } from "@/lib/edit/form";
 import { loadTasteProfile } from "@/lib/taste/store";
 import { wineDetailsText } from "@/lib/chat/details";
+import { readFileSync } from "node:fs";
 
 const W = "11111111-1111-4111-8111-111111111111";
 const PRODUCER = "https://pintia.example/ficha";
@@ -72,7 +78,7 @@ test("Werte ohne Beleg werden verworfen (auch Belege mit fremder URL oder leerem
   assert.equal(p.styleSummary, null, "Beschreibung ohne Beleg fällt weg");
   assert.deepEqual(p.foodPairing, [], "Speisen ohne Beleg fallen weg");
   // Ungültige Option (nicht im WSET-Vokabular) → unbekannt
-  const odd = validateTasteProfile(raw({ fields: { ...unknownFields, body: "mächtig", sweetness: "trocken", tannin: "hoch" } }), ctx)!;
+  const odd = validateTasteProfile(raw({ fields: { ...unknownFields, body: "mächtig", sweetness: "trocken", tannin: "hoch" }, evidence: [...raw().evidence.slice(1), { field: "body", source_url: PRODUCER, quote: "powerful" }] }), ctx)!;
   assert.equal(odd.values.body, UNKNOWN);
   // Zitate höchstens 25 Wörter
   const long = validateTasteProfile(raw({ evidence: [{ field: "body", source_url: PRODUCER, quote: Array.from({ length: 40 }, (_, i) => `w${i}`).join(" ") }] }), ctx)!;
@@ -111,22 +117,83 @@ test("Keine Quelle → kein Profil; anderer Wein → kein Profil; nichts belegt 
   assert.equal(validateTasteProfile(raw({ evidence: [], aromas: [] }), ctx), null);
 });
 
-test("Sicherheit und Jahrgang", () => {
+test("Sicherheit; nur jahrgangsgenau – anderer Jahrgang → kein Profil, NV → Profil für den Wein", () => {
   const src = (url: string, kind: "producer" | "critic" | "merchant" | "other") => ({ url, title: "", kind, vintage: null });
   assert.equal(confidenceFor([src(PRODUCER, "producer"), src(CRITIC, "critic")], 0), "hoch");
   assert.equal(confidenceFor([src(PRODUCER, "producer"), src("https://pintia.example/andere-seite", "producer")], 0), "mittel", "gleiche Website zählt einmal");
   assert.equal(confidenceFor([src(PRODUCER, "producer"), src(SHOP, "merchant")], 1), "mittel");
   assert.equal(confidenceFor([src(CRITIC, "critic")], 0), "mittel");
   assert.equal(confidenceFor([src(SHOP, "merchant"), src("https://shop2.example", "merchant")], 0), "niedrig", "nur Händler");
-  // Gleicher Jahrgang belegt → vintage_year; sonst allgemeines Profil, Jahrgang der Quelle bleibt in sources
+  // Gleicher Jahrgang belegt → vintage_year
   assert.equal(validateTasteProfile(raw(), ctx)!.vintageYear, 2019);
-  const general = validateTasteProfile(raw({ same_vintage: false, sources: [{ url: PRODUCER, title: "Ficha", kind: "producer", vintage: 2017 }, { url: CRITIC, title: "K", kind: "critic", vintage: 0 }] }), ctx)!;
-  assert.equal(general.vintageYear, null);
-  assert.deepEqual(general.sources.map((s) => s.vintage), [2017, null]);
+  // Nur andere Jahrgänge (oder ohne Jahrgangsangabe) → kein Profil
+  const other = raw({ same_vintage: false, sources: [{ url: PRODUCER, title: "Ficha", kind: "producer", vintage: 2017 }, { url: CRITIC, title: "K", kind: "critic", vintage: 0 }] });
+  assert.equal(validateTasteProfile(other, ctx), null);
+  assert.equal(validateTasteProfile({ ...other, same_vintage: true }, ctx), null, "Quellen zu 2017/ohne Jahrgang zählen nicht für 2019");
+  // Gemischt: nur die Quelle zum Jahrgang zählt, Belege aus anderen Jahrgängen fallen weg
+  const mixed = validateTasteProfile(raw({ sources: [{ url: PRODUCER, title: "Ficha", kind: "producer", vintage: 2019 }, { url: CRITIC, title: "K", kind: "critic", vintage: 2016 }] }), ctx)!;
+  assert.deepEqual(mixed.sources.map((s) => s.vintage), [2019]);
+  assert.equal(mixed.values.tannin, UNKNOWN, "Tannin war nur mit der 2016er Quelle belegt");
+  assert.deepEqual(mixed.aromas, { "Schwarze Früchte": ["Brombeere"] });
+  // Wein ohne Jahrgang (NV): Profil für den Wein
+  const nv = validateTasteProfile(raw({ sources: [{ url: PRODUCER, title: "Ficha", kind: "producer", vintage: 0 }, { url: CRITIC, title: "K", kind: "critic", vintage: 0 }] }), { type: "rot", year: null })!;
+  assert.equal(nv.vintageYear, null);
+  assert.equal(nv.values.body, "voll");
+  assert.equal(noProfileText(2019), NO_VINTAGE_PROFILE);
+  assert.equal(NO_VINTAGE_PROFILE, "Keine Angaben zu diesem Jahrgang gefunden.");
+  assert.equal(noProfileText(null), NO_RELIABLE_PROFILE);
   // Nur genutzte Quellen bleiben
   const used = validateTasteProfile(raw({ sources: [...raw().sources, { url: SHOP, title: "Shop", kind: "merchant", vintage: 2019 }] }), ctx)!;
   assert.deepEqual(used.sources.map((s) => s.url), [PRODUCER, CRITIC]);
-  assert.equal(tasteSourceLine({ ...used, source: "research" }), "Laut Recherche · Sicherheit hoch · 2 Quellen");
+});
+
+test("Klare Beschreibungen werden übersetzt: „sturdy tannins“ → Tannin hoch, „full-bodied“ → voll, „crisp acidity“ → hoch", () => {
+  const p = validateTasteProfile(
+    raw({
+      fields: { ...unknownFields, tannin: "mittel (+)", body: UNKNOWN, acidity: UNKNOWN },
+      evidence: [
+        { field: "tannin", source_url: CRITIC, quote: "sturdy tannins frame the dark fruit" },
+        { field: "body", source_url: PRODUCER, quote: "a full-bodied Toro" },
+        { field: "acidity", source_url: CRITIC, quote: "crisp acidity keeps it lively" },
+      ],
+    }),
+    ctx,
+  )!;
+  assert.deepEqual([p.values.tannin, p.values.body, p.values.acidity], ["hoch", "voll", "hoch"]);
+  // Widersprüchliche klare Begriffe → unbekannt; ohne Beleg weiterhin nichts
+  const clash = validateTasteProfile(
+    raw({ evidence: [{ field: "body", source_url: PRODUCER, quote: "full-bodied" }, { field: "body", source_url: CRITIC, quote: "light-bodied and airy" }, { field: "tannin", source_url: CRITIC, quote: "firm tannins" }] }),
+    ctx,
+  )!;
+  assert.equal(clash.values.body, UNKNOWN);
+  assert.equal(clash.values.tannin, "hoch");
+  assert.equal(validateTasteProfile(raw({ fields: { ...unknownFields, tannin: "hoch" }, evidence: [], aromas: [] }), ctx), null);
+});
+
+test("Karte: nur bekannte Merkmale, Aromen ohne Gruppentitel (max. 10, Frucht → … → Reife), kurzer Stil, keine Fusszeile", () => {
+  const p = validateTasteProfile(raw(), ctx)!;
+  const rows = tasteRows(p);
+  assert.deepEqual(rows.map((r) => [r.label, r.value, r.step]), [["Süsse", "trocken", 0], ["Tannin", "hoch", 4], ["Körper", "voll", 4]], "unbekannte fehlen, Reihenfolge fest");
+  assert.ok(!rows.some((r) => r.value === UNKNOWN));
+  const chips = aromaChips({
+    "Flaschenreife – Rotwein": ["Leder", "Pilze"],
+    Eiche: ["Vanille", "Kaffee"],
+    "Scharfe Gewürze": ["schwarzer Pfeffer"],
+    Floral: ["Veilchen"],
+    "Schwarze Früchte": ["Brombeere", "schwarze Kirsche", "Heidelbeere"],
+    "Rote Früchte": ["Himbeere", "Erdbeere"],
+  });
+  assert.equal(MAX_AROMA_CHIPS, 10);
+  assert.deepEqual(chips, ["Brombeere", "schwarze Kirsche", "Heidelbeere", "Himbeere", "Erdbeere", "Veilchen", "schwarzer Pfeffer", "Vanille", "Kaffee", "Leder"]);
+  assert.equal(shortSummary("Kraftvoll und dicht. Dunkle Frucht mit Eiche. Langer Abgang mit Würze."), "Kraftvoll und dicht. Dunkle Frucht mit Eiche.");
+  // Anzeige (ohne das ✏️-Formular mit der Aromen-Auswahl)
+  const card =
+    readFileSync("src/app/(cellar)/wein/[id]/taste-card.tsx", "utf8").split("function TasteForm")[0] +
+    readFileSync("src/app/(cellar)/wein/[id]/taste-view.tsx", "utf8");
+  for (const gone of ["Laut Recherche", "Sicherheit", "Quellen", "nicht jahrgangsspezifisch", "<details", "group}</span>"]) {
+    assert.ok(!card.includes(gone), `Karte ohne „${gone}“`);
+  }
+  assert.ok(card.includes("aromaChips(") && card.includes("tasteRows("));
 });
 
 // ---------------------------------------------------------------------------
@@ -189,7 +256,7 @@ test("Belegtes gilt sofort; keine Quelle → kein Profil und Bestehendes bleibt;
   assert.equal(NO_RELIABLE_PROFILE, "Keine verlässlichen Angaben gefunden.");
 
   // Neue Recherche überschreibt ein Profil aus der Recherche.
-  reply = raw({ fields: { ...unknownFields, body: "mittel (+)", sweetness: "trocken", tannin: "hoch" } });
+  reply = raw({ fields: { ...unknownFields, body: "mittel (+)", sweetness: "trocken", tannin: "hoch" }, evidence: [...raw().evidence.slice(1), { field: "body", source_url: PRODUCER, quote: "rich and broad" }] });
   assert.equal((await researchAndFillWine(db, W, "all")).taste, "saved");
   assert.equal(profiles().length, 1);
   assert.equal(profiles()[0].body, "mittel (+)");
@@ -246,12 +313,20 @@ test("Profil von Hand wird nicht überschrieben – es entsteht ein Vorschlag (o
   assert.ok(Object.keys(profiles()[0].evidence as object).includes("body"));
 });
 
-test("Anzeige: Profil des Jahrgangs, sonst das allgemeine; Zeile im Bot", async () => {
+test("Anzeige nur für den gewählten Jahrgang; anderer Jahrgang → kein Profil; NV → Profil für den Wein; Zeile im Bot", async () => {
   reset();
-  reply = raw({ same_vintage: false });
-  await researchAndFillWine(db, W, "all");
-  assert.equal(profiles()[0].vintage_year, null, "nicht jahrgangsspezifisch");
-  const p = (await loadTasteProfile(db, W, 2019))!;
+  reply = raw({ same_vintage: false, sources: [{ url: PRODUCER, title: "Ficha", kind: "producer", vintage: 2017 }] });
+  const none = await researchAndFillWine(db, W, "all", { taste: "only" });
+  assert.equal(none.taste, "none");
+  assert.equal(none.tasteYear, 2019);
+  assert.equal(profiles().length, 0, "Notizen zu 2017 ergeben kein Profil für 2019");
+  // NV-Wein: Profil für den Wein
+  net.tables.inventory_items = [{ wine_id: W, vintage_year: null, status: "sealed" }];
+  reply = raw({ sources: [{ url: PRODUCER, title: "Ficha", kind: "producer", vintage: 0 }, { url: CRITIC, title: "K", kind: "critic", vintage: 0 }] });
+  assert.equal((await researchAndFillWine(db, W, "all", { taste: "only" })).taste, "saved");
+  assert.equal(profiles()[0].vintage_year, null);
+  assert.equal(await loadTasteProfile(db, W, 2019), null, "Jahrgang 2019 zeigt das NV-Profil nicht");
+  const p = (await loadTasteProfile(db, W, null))!;
   assert.equal(p.vintageYear, null);
   assert.equal(tasteLine(p), "Vollmundig, trocken, viel Tannin – Brombeere, Kaffee");
   const text = wineDetailsText({

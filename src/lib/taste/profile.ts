@@ -1,7 +1,9 @@
 // Geschmacksprofil eines Weins (wine_taste_profiles) – rein, auch im Browser nutzbar.
 // Oberstes Ziel: kein falsches Profil. Jedes Merkmal und jedes Aroma braucht einen Beleg
 // (kurzes Zitat mit Quelle); ohne Beleg „unbekannt“ bzw. weggelassen. Begriffe wie im
-// WSET-Tool (SAT): dieselben Optionen und dasselbe Aroma-Lexikon.
+// WSET-Tool (SAT): dieselben Optionen und dasselbe Aroma-Lexikon. Nur jahrgangsgenau: ein
+// Profil gilt für genau einen Jahrgang (Quellen zu diesem Jahrgang); nur Weine ohne Jahrgang
+// (NV) haben ein Profil für den Wein.
 
 import { PALATE_FIELDS, aromaBlocksForType, type SatType } from "@/lib/tasting/sat";
 
@@ -74,6 +76,31 @@ export type TasteResearchRaw = {
 
 const MAX_QUOTE_WORDS = 25;
 
+/**
+ * Eindeutige Beschreibungen → WSET-Begriff (Übersetzen erlaubt, wenn das Zitat klar ist):
+ * „sturdy/firm/grippy tannins“ → Tannin hoch, „full-bodied“ → Körper voll, „crisp/fresh
+ * acidity“ → Säure hoch. Findet sich ein solcher Begriff im Beleg eines Merkmals, gilt er.
+ */
+export const CLEAR_TERMS: { key: TasteKey; value: string; re: RegExp; example: string }[] = [
+  { key: "tannin", value: "hoch", re: /\b(sturdy|firm|grippy|muscular|robust|high|massive)\b[^.;]{0,20}\btannins?\b/i, example: "sturdy/firm/grippy tannins" },
+  { key: "tannin", value: "niedrig", re: /\blow\b[^.;]{0,10}\btannins?\b/i, example: "low tannins" },
+  { key: "body", value: "voll", re: /\bfull[- ]bodied\b|\bfull body\b|\bvollmundig\b/i, example: "full-bodied" },
+  { key: "body", value: "mittel", re: /\bmedium[- ]bodied\b/i, example: "medium-bodied" },
+  { key: "body", value: "schlank", re: /\blight[- ]bodied\b/i, example: "light-bodied" },
+  { key: "acidity", value: "hoch", re: /\b(crisp|fresh|bright|vibrant|lively|racy|zesty|high)\b[^.;]{0,15}\bacidity\b/i, example: "crisp/fresh acidity" },
+  { key: "acidity", value: "niedrig", re: /\blow\b[^.;]{0,10}\bacidity\b/i, example: "low acidity" },
+  { key: "sweetness", value: "trocken", re: /\bbone[- ]dry\b|\btrocken\b/i, example: "bone dry" },
+  { key: "finish", value: "lang", re: /\b(long|lingering|persistent)\b[^.;]{0,15}\bfinish\b|\blanger? Abgang\b/i, example: "long/lingering finish" },
+  { key: "finish", value: "kurz", re: /\bshort\b[^.;]{0,10}\bfinish\b/i, example: "short finish" },
+];
+
+/** WSET-Begriff aus eindeutigen Zitaten; null = keiner; „conflict“ = widersprüchliche Begriffe. */
+export function clearTermValue(key: TasteKey, quotes: string[]): string | "conflict" | null {
+  const found = new Set(CLEAR_TERMS.filter((t) => t.key === key && quotes.some((q) => t.re.test(q))).map((t) => t.value));
+  if (found.size > 1) return "conflict";
+  return found.size ? [...found][0] : null;
+}
+
 /** Zitat auf höchstens 25 Wörter kürzen. */
 export function shortQuote(quote: string) {
   const words = quote.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
@@ -107,20 +134,26 @@ export function confidenceFor(used: TasteSource[], contradictions: number): Conf
 
 /**
  * Antwort der Recherche prüfen – vor dem Speichern:
- * - nur Quellen zu genau diesem Wein; ohne Quelle → kein Profil (null);
+ * - nur Quellen zu genau diesem Wein und genau diesem Jahrgang (NV: Quellen zum Wein);
+ *   ohne passende Quelle → kein Profil (null);
  * - Merkmal nur mit gültiger Option und Beleg (Zitat mit Quelle); sonst „unbekannt“;
+ *   eindeutige Begriffe im Zitat („sturdy tannins“) gelten (CLEAR_TERMS);
  * - widersprechen sich Quellen → „unbekannt“ und Hinweis;
  * - Aroma nur aus dem Lexikon des Weintyps (passende Gruppe) und mit Beleg; sonst weg;
  * - nichts Belegtes übrig → kein Profil.
  */
 export function validateTasteProfile(raw: TasteResearchRaw, ctx: { type: SatType; year: number | null }): TasteProfileData | null {
   if (!raw.matches_wine) return null;
+  // Jahrgangswein: nur Notizen zu genau diesem Jahrgang; andere Jahrgänge zählen nicht.
+  if (ctx.year != null && !raw.same_vintage) return null;
   const sources = new Map<string, TasteSource>();
   for (const s of raw.sources) {
     const url = normUrl(s.url);
     if (!/^https?:\/\//.test(url) || !host(url)) continue;
     const kind = (SOURCE_KINDS as readonly string[]).includes(s.kind) ? s.kind : "other";
-    sources.set(url, { url, title: s.title.trim().slice(0, 200) || host(url)!, kind, vintage: Number.isInteger(s.vintage) && s.vintage > 1800 ? s.vintage : null });
+    const vintage = Number.isInteger(s.vintage) && s.vintage > 1800 ? s.vintage : null;
+    if (ctx.year != null && vintage !== ctx.year) continue;
+    sources.set(url, { url, title: s.title.trim().slice(0, 200) || host(url)!, kind, vintage });
   }
   if (!sources.size) return null;
 
@@ -143,9 +176,14 @@ export function validateTasteProfile(raw: TasteResearchRaw, ctx: { type: SatType
 
   const values = Object.fromEntries(TASTE_KEYS.map((k) => [k, UNKNOWN])) as Record<TasteKey, string>;
   for (const key of TASTE_KEYS) {
-    const value = raw.fields[key];
-    if (!value || value === UNKNOWN || !tasteOptions(key).includes(value) || contradicted.has(key)) continue;
-    if (proof(key, raw.evidence.filter((e) => e.field === key))) values[key] = value;
+    if (contradicted.has(key)) continue;
+    const list = raw.evidence.filter((e) => e.field === key && sources.has(normUrl(e.source_url)) && e.quote.trim());
+    // Eindeutiger Begriff im Zitat gilt; widersprechen sich die Zitate → unbekannt.
+    const term = clearTermValue(key, list.map((e) => e.quote));
+    if (term === "conflict") continue;
+    const value = term ?? raw.fields[key];
+    if (!value || value === UNKNOWN || !tasteOptions(key).includes(value)) continue;
+    if (proof(key, list)) values[key] = value;
   }
 
   const lexicon = aromaGroups(ctx.type);
@@ -162,12 +200,12 @@ export function validateTasteProfile(raw: TasteResearchRaw, ctx: { type: SatType
   if (!known) return null;
 
   const summary = raw.style_summary.trim();
-  const styleSummary = summary && proof("style_summary", raw.evidence.filter((e) => e.field === "style_summary")) ? summary.slice(0, 400) : null;
+  const styleSummary = summary && proof("style_summary", raw.evidence.filter((e) => e.field === "style_summary")) ? shortSummary(summary) : null;
   const pairing = raw.food_pairing.map((f) => f.trim()).filter(Boolean).slice(0, 6);
   const foodPairing = pairing.length && proof("food_pairing", raw.evidence.filter((e) => e.field === "food_pairing")) ? pairing : [];
 
   const usedSources = [...sources.values()].filter((s) => used.has(s.url));
-  const vintageYear = ctx.year != null && raw.same_vintage && usedSources.some((s) => s.vintage === ctx.year) ? ctx.year : null;
+  const vintageYear = ctx.year;
   return {
     values,
     aromas,
@@ -222,19 +260,60 @@ export function tasteLine(p: Pick<TasteProfileData, "values" | "aromas">) {
   return [words.join(", "), aromas.join(", ")].filter(Boolean).join(" – ") || null;
 }
 
-/** „Laut Recherche · Sicherheit hoch · 3 Quellen“ bzw. „Von dir erfasst“. */
-export function tasteSourceLine(p: Pick<StoredTasteProfile, "source" | "confidence" | "sources">) {
-  if (p.source === "manual") return p.sources.length ? `Von dir angepasst · ${p.sources.length === 1 ? "1 Quelle" : `${p.sources.length} Quellen`}` : "Von dir erfasst";
-  return [
-    "Laut Recherche",
-    p.confidence ? `Sicherheit ${p.confidence}` : null,
-    p.sources.length === 1 ? "1 Quelle" : `${p.sources.length} Quellen`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+/** Stil in höchstens zwei kurzen Sätzen (ca. 220 Zeichen). */
+export function shortSummary(text: string) {
+  const sentences = text.replace(/\s+/g, " ").trim().match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) ?? [];
+  let out = "";
+  for (const s of sentences.slice(0, 2)) {
+    if (out && (out + s).length > 220) break;
+    out += s;
+  }
+  out = out.trim();
+  return out.length > 220 ? `${out.slice(0, 217).replace(/\s+\S*$/, "")} …` : out;
+}
+
+/** Reihenfolge der Aromen: Frucht → Floral → Gewürz (auch Kräuter, mineralisch) → Eiche (auch Hefe, BSA) → Reife. */
+export function aromaRank(group: string) {
+  if (/entwicklung|reife|oxidation|tertiär/i.test(group)) return 4;
+  if (/frucht|früchte|obst/i.test(group)) return 0;
+  if (/floral/i.test(group)) return 1;
+  if (/eiche|hefe|säureabbau|autolyse/i.test(group)) return 3;
+  return 2;
+}
+
+export const MAX_AROMA_CHIPS = 10;
+
+/** Aromen als eine Reihe Chips ohne Gruppentitel, sortiert nach Gruppe, höchstens 10. */
+export function aromaChips(aromas: Record<string, string[]>) {
+  return Object.entries(aromas)
+    .map(([group, list], i) => ({ rank: aromaRank(group), i, list }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .flatMap((g) => g.list)
+    .filter((a, i, all) => all.indexOf(a) === i)
+    .slice(0, MAX_AROMA_CHIPS);
+}
+
+/** Punkte auf der 5-Stufen-Skala (0–4); null = unbekannt. */
+export function tasteStep(key: TasteKey, value: string | null | undefined) {
+  const level = value ? tasteLevel(key, value) : null;
+  return level == null ? null : Math.round(level * 4);
+}
+
+/** Zeilen der Karte: nur bekannte Merkmale, in fester Reihenfolge. */
+export function tasteRows(p: Pick<TasteProfileData, "values">, keys: readonly TasteKey[] = TASTE_KEYS) {
+  return TASTE_FIELDS.filter((f) => keys.includes(f.key) && p.values[f.key] && p.values[f.key] !== UNKNOWN).map((f) => ({
+    key: f.key,
+    sat: f.sat,
+    label: f.label,
+    value: p.values[f.key],
+    step: tasteStep(f.key, p.values[f.key])!,
+  }));
 }
 
 export const NO_RELIABLE_PROFILE = "Keine verlässlichen Angaben gefunden.";
+export const NO_VINTAGE_PROFILE = "Keine Angaben zu diesem Jahrgang gefunden.";
+/** Meldung ohne Fund: Jahrgang → „Keine Angaben zu diesem Jahrgang gefunden.“, NV → allgemein. */
+export const noProfileText = (year: number | null) => (year == null ? NO_RELIABLE_PROFILE : NO_VINTAGE_PROFILE);
 
 /** Zeile aus wine_taste_profiles → Profil. */
 export function fromRow(row: {

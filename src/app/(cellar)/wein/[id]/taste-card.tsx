@@ -1,55 +1,15 @@
 import { EditUnit } from "@/components/edit-unit";
-import { satTypeForWine, tanninVisible, normalizeData } from "@/lib/tasting/sat";
-import {
-  SOURCE_KIND_LABELS,
-  TASTE_FIELDS,
-  UNKNOWN,
-  aromaGroups,
-  tasteLevel,
-  tasteOptions,
-  tasteSourceLine,
-  type StoredTasteProfile,
-  type TasteKey,
-} from "@/lib/taste/profile";
+import { satTypeForWine, tanninVisible } from "@/lib/tasting/sat";
+import { TASTE_FIELDS, TASTE_KEYS, UNKNOWN, aromaGroups, tasteOptions, type StoredTasteProfile } from "@/lib/taste/profile";
 import { EditForm } from "./edit-form";
 import { TasteResearchButton } from "./taste-research";
-
-type Tasting = { person: string | null; sat: unknown; tasted_at: string };
-
-const host = (url: string) => {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-};
-
-/** Neueste WSET-Verkostung je Person (Liste ist neueste zuerst). */
-function latestPerPerson(tastings: Tasting[]) {
-  const seen = new Map<string, Record<string, unknown>>();
-  for (const t of tastings) {
-    if (!t.person || seen.has(t.person)) continue;
-    seen.set(t.person, normalizeData(t.sat, t.tasted_at).fields as Record<string, unknown>);
-  }
-  return [...seen];
-}
-
-function Bar({ k, value }: { k: TasteKey; value: string }) {
-  const level = tasteLevel(k, value);
-  return (
-    <span className="taste-bar-wrap">
-      <span className="taste-bar" aria-hidden>
-        {level != null && <span style={{ width: `${Math.max(8, Math.round(level * 100))}%` }} />}
-      </span>
-      <span className={level == null ? "muted small" : "small"}>{value}</span>
-    </span>
-  );
-}
+import { TasteView, type Tasting } from "./taste-view";
 
 /**
- * Karte „Geschmacksprofil“ (Spalte 2, direkt unter „Zum Wein“): Balken je Merkmal, Aromen als
- * Chips nach Gruppe, kurze Beschreibung, Speisen; darunter klein die Herkunft (antippen →
- * Quellen und Belege). Mit eigenen WSET-Verkostungen ein Vergleich „Recherche vs. Person“.
+ * Karte „Geschmacksprofil“ (Spalte 2, unter „Zum Wein“) – kurz und knapp: einspaltig nur
+ * bekannte Merkmale mit 5-Stufen-Skala, eine Reihe Aromen, ein Satz zum Stil, „Passt zu“.
+ * Eigene WSET-Verkostungen erscheinen als zweite Markierung auf derselben Skala. Nur das
+ * Profil des gewählten Jahrgangs; Belege und Herkunft bleiben in der DB (nicht angezeigt).
  */
 export function TasteCard({
   wineId,
@@ -65,9 +25,8 @@ export function TasteCard({
   tastings: Tasting[];
 }) {
   const type = satTypeForWine(wineType);
-  const fields = TASTE_FIELDS.filter((f) => f.key !== "tannin" || tanninVisible(type));
-  const people = latestPerPerson(tastings);
-  const aromaEntries = Object.entries(profile?.aromas ?? {}).filter(([, list]) => list.length);
+  const keys = TASTE_KEYS.filter((k) => k !== "tannin" || tanninVisible(type));
+  const fields = TASTE_FIELDS.filter((f) => keys.includes(f.key));
 
   return (
     <section className="card stack">
@@ -75,127 +34,19 @@ export function TasteCard({
         id="taste"
         label="Geschmacksprofil"
         title={<h2 className="section-title">Geschmacksprofil</h2>}
-        form={<TasteForm wineId={wineId} type={type} year={profile ? profile.vintageYear : null} profile={profile} fields={fields} />}
+        form={<TasteForm wineId={wineId} type={type} year={year} profile={profile} fields={fields} />}
       >
         {!profile ? (
           <div className="stack-sm">
-            <p className="muted">Noch kein Geschmacksprofil.</p>
+            <p className="muted">Noch kein Geschmacksprofil{year != null ? ` für ${year}` : ""}.</p>
             <TasteResearchButton wineId={wineId} year={year} />
           </div>
         ) : (
-          <div className="stack">
-            <dl className="details taste-values">
-              {fields.map((f) => (
-                <div key={f.key} className="taste-row">
-                  <dt>{f.label}</dt>
-                  <dd>
-                    <Bar k={f.key} value={profile.values[f.key]} />
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {aromaEntries.length > 0 && (
-              <div className="stack-sm">
-                {aromaEntries.map(([group, list]) => (
-                  <div key={group} className="taste-aromas">
-                    <span className="muted small">{group}</span>
-                    <span className="chips">
-                      {list.map((a) => (
-                        <span key={a} className="chip chip-static">
-                          {a}
-                        </span>
-                      ))}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {profile.styleSummary && <p>{profile.styleSummary}</p>}
-            {profile.foodPairing.length > 0 && (
-              <p>
-                <span className="muted">Passt zu:</span> {profile.foodPairing.join(", ")}
-              </p>
-            )}
-
-            {people.length > 0 && (
-              <div className="stack-sm">
-                <h3 className="subsection-title">Recherche vs. {people.map(([name]) => name).join("/")}</h3>
-                <table className="gap-table taste-compare">
-                  <thead>
-                    <tr>
-                      <th scope="col">Merkmal</th>
-                      <th scope="col">{profile.source === "manual" ? "Profil" : "Recherche"}</th>
-                      {people.map(([name]) => (
-                        <th key={name} scope="col">
-                          {name}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fields.map((f) => (
-                      <tr key={f.key}>
-                        <th scope="row">{f.label}</th>
-                        <td className={profile.values[f.key] === UNKNOWN ? "muted" : undefined}>{profile.values[f.key]}</td>
-                        {people.map(([name, sat]) => (
-                          <td key={name}>{typeof sat[f.sat] === "string" && sat[f.sat] ? String(sat[f.sat]) : "–"}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <details className="taste-sources">
-              <summary className="muted small">
-                {tasteSourceLine(profile)}
-                {profile.vintageYear == null ? " · nicht jahrgangsspezifisch" : ` · Jahrgang ${profile.vintageYear}`}
-              </summary>
-              <div className="stack-sm small">
-                {profile.sourceNote && <p className="muted">{profile.sourceNote}</p>}
-                {profile.sources.length > 0 && (
-                  <ul className="taste-source-list">
-                    {profile.sources.map((s) => (
-                      <li key={s.url}>
-                        <a href={s.url} target="_blank" rel="noopener noreferrer" className="link">
-                          {s.title || host(s.url)}
-                        </a>{" "}
-                        <span className="muted">
-                          · {SOURCE_KIND_LABELS[s.kind] ?? s.kind}
-                          {s.vintage ? ` · Jahrgang ${s.vintage}` : ""}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {Object.keys(profile.evidence).length > 0 && (
-                  <ul className="taste-evidence">
-                    {Object.entries(profile.evidence).map(([key, list]) => (
-                      <li key={key}>
-                        <strong>{evidenceLabel(key)}:</strong>{" "}
-                        {list.map((e, i) => (
-                          <span key={i}>
-                            {i > 0 && " · "}„{e.quote}“ <span className="muted">({host(e.source_url)})</span>
-                          </span>
-                        ))}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </details>
-          </div>
+          <TasteView profile={profile} keys={keys} tastings={tastings} />
         )}
       </EditUnit>
     </section>
   );
-}
-
-function evidenceLabel(key: string) {
-  if (key === "style_summary") return "Beschreibung";
-  if (key === "food_pairing") return "Passt zu";
-  return TASTE_FIELDS.find((f) => f.key === key)?.label ?? key;
 }
 
 /** ✏️ Profil von Hand: danach gilt es als eigenes (manual) und wird von der Recherche nicht überschrieben. */
@@ -256,7 +107,7 @@ function TasteForm({
         <input type="text" name="foodPairing" defaultValue={profile?.foodPairing.join(", ") ?? ""} autoComplete="off" />
       </label>
       <p className="muted small">
-        {year == null ? "Gilt für alle Jahrgänge ohne eigenes Profil. " : `Gilt für Jahrgang ${year}. `}Von Hand Geändertes
+        {year == null ? "Gilt für den Wein ohne Jahrgang. " : `Gilt für Jahrgang ${year}. `}Von Hand Geändertes
         überschreibt die Recherche nicht mehr – neue Funde kommen dann als Vorschlag.
       </p>
     </EditForm>

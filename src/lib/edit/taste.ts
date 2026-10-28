@@ -58,7 +58,7 @@ export async function prepareTasteProfile(db: Db, edit: Extract<Edit, { kind: "t
       title: wineTitle(wine, p.vintageYear),
       action: "Geschmacksprofil ändern",
       changes,
-      notes: p.vintageYear == null ? ["Gilt für alle Jahrgänge ohne eigenes Profil."] : [],
+      notes: [],
     },
     edit.wineId,
     async () => {

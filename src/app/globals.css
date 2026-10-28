@@ -8,6 +8,7 @@
   --accent: #7b1e3a;
   --accent-contrast: #ffffff;
   --accent-soft: #f5e6eb;
+  --compare-2: #b07a1e;
   --danger: #a32020;
   --ok-bg: #e8f3ea;
   --ok-text: #1f5a2e;
@@ -32,6 +33,7 @@
     --accent: #d9577d;
     --accent-contrast: #1a0d11;
     --accent-soft: #3a1f28;
+    --compare-2: #e0b25a;
     --danger: #ef6b6b;
     --ok-bg: #1d3323;
     --ok-text: #9fd8ad;
@@ -2359,46 +2361,90 @@ a.doc-clip-name:hover {
   font-weight: 600;
 }
 
-/* Karte „Geschmacksprofil“ */
-.taste-values {
+/* Karte „Geschmacksprofil“: einspaltig, feste Spalten (Name · Skala · Wert), nichts läuft hinaus */
+.taste-card {
+  min-width: 0;
+}
+.taste-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
   gap: 6px;
 }
 .taste-row {
   display: grid;
-  grid-template-columns: 6.5rem 1fr;
+  grid-template-columns: 5.5rem 4.25rem minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
+  font-size: 0.95rem;
 }
-.taste-row dd {
+.taste-label {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.taste-value {
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.taste-scale {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.taste-dot {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+.taste-dot.is-below {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+}
+.taste-dot.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* Eigene WSET-Verkostung: Ring auf derselben Skala */
+.taste-dot.mark-1 {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--text);
+}
+.taste-dot.mark-2 {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--compare-2);
+}
+.taste-dot.mark-1.mark-2 {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--text), 0 0 0 5px var(--compare-2);
+}
+.taste-legend {
   margin: 0;
 }
-.taste-bar-wrap {
-  display: grid;
-  grid-template-columns: minmax(60px, 1fr) auto;
-  align-items: center;
-  gap: 8px;
+.taste-legend .taste-dot {
+  margin: 0 2px 0 6px;
 }
-.taste-bar {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  overflow: hidden;
+.taste-legend > .taste-dot:first-child {
+  margin-left: 0;
 }
-.taste-bar > span {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-}
-.taste-aromas {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.taste-chips {
+  gap: 5px;
 }
 .chip-static {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 0.85rem;
   cursor: default;
 }
 .chip-check {
@@ -2411,17 +2457,6 @@ a.doc-clip-name:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
-.taste-sources > summary {
-  cursor: pointer;
-}
-.taste-source-list,
-.taste-evidence {
+.taste-summary {
   margin: 0;
-  padding-left: 1.1rem;
-  display: grid;
-  gap: 4px;
-}
-.taste-compare td,
-.taste-compare th {
-  font-size: 0.9rem;
 }

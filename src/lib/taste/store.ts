@@ -20,14 +20,8 @@ export async function loadExactTasteProfile(db: Db, wineId: string, year: number
   return data ? fromRow(data) : null;
 }
 
-/** Profil für die Anzeige: jahrgangsspezifisch, sonst das allgemeine. */
-export async function loadTasteProfile(db: Db, wineId: string, year: number | null): Promise<StoredTasteProfile | null> {
-  const { data, error } = await db.from("wine_taste_profiles").select(COLUMNS).eq("wine_id", wineId);
-  if (error) throw error;
-  const rows = data ?? [];
-  const row = (year != null ? rows.find((r) => r.vintage_year === year) : undefined) ?? rows.find((r) => r.vintage_year == null);
-  return row ? fromRow(row) : null;
-}
+/** Profil für die Anzeige: nur das des gewählten Jahrgangs (NV: das des Weins ohne Jahrgang). */
+export const loadTasteProfile = loadExactTasteProfile;
 
 /** IDs der Weine mit mindestens einem Profil (für „Geschmacksprofil fehlt“). */
 export async function winesWithTasteProfile(db: Db): Promise<Set<string>> {
