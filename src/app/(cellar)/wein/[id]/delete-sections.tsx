@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { lastListUrl, markRestore } from "@/components/cellar/list-memory";
 import { useEditUnit } from "@/components/edit-unit";
-import { IRREVERSIBLE, deleteBottlesQuestion, nameConfirmed, type DeletableBottle } from "@/lib/edit/delete-text";
+import { DELETE_FOREVER, deleteBottlesQuestion, type DeletableBottle } from "@/lib/edit/delete-text";
 import type { ActionState } from "../../actions";
 import { deleteWineAction, saveEdit } from "../../edit-actions";
 
@@ -69,15 +69,13 @@ export function DeleteBottles({ itemId, bottle }: { itemId: string; bottle: Dele
 
 /**
  * „🗑 Wein löschen“ als dezenter roter Link ganz unten. Öffnet die Bestätigung: was alles
- * verschwindet, Name eintippen, erst dann „Endgültig löschen“. Danach zurück zur Liste
- * (gleicher Zustand wie vorher).
+ * verschwindet, darunter in Rot die Warnung; „Abbrechen“ / „Endgültig löschen“. Danach zurück
+ * zur Liste (gleicher Zustand wie vorher).
  */
 export function DeleteWine({ wineId, name, summary, back }: { wineId: string; name: string; summary: string; back: string }) {
   const [asking, setAsking] = useState(false);
-  const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const ok = nameConfirmed(typed, name);
 
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -112,21 +110,17 @@ export function DeleteWine({ wineId, name, summary, back }: { wineId: string; na
         <p>
           <strong>„{name}“ mit allem löschen?</strong> Es verschwindet: {summary}.
         </p>
-        <p className="danger-text">{IRREVERSIBLE}</p>
-        <label className="field">
-          <span>Zur Bestätigung den Namen „{name}“ eintippen</span>
-          <input type="text" name="confirmName" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" autoFocus />
-        </label>
+        <p className="danger-text">{DELETE_FOREVER}</p>
         {error && (
           <p className="notice notice-error" role="alert">
             {error}
           </p>
         )}
         <div className="row">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAsking(false); setTyped(""); }} disabled={pending}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAsking(false)} disabled={pending}>
             Abbrechen
           </button>
-          <button type="submit" className="btn btn-danger btn-sm" disabled={!ok || pending}>
+          <button type="submit" className="btn btn-danger btn-sm" disabled={pending}>
             {pending ? "Wird gelöscht …" : "Endgültig löschen"}
           </button>
         </div>

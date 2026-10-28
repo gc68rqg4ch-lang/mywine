@@ -13,6 +13,7 @@ import { escapeHtml, sendMessage } from "@/lib/telegram/api";
 import { appBaseUrl } from "@/lib/telegram/config";
 import { appendHistory } from "./history";
 import { editAlt, editKeyboard, editNo, editYes } from "./proposals";
+import { T, say } from "@/lib/bot/texts";
 import type { EditAlternative } from "./tools";
 
 export const EDIT_SOURCE = "telegram_edit";
@@ -25,9 +26,9 @@ const isDelete = (edit: Edit) =>
 /** Vorschau als Bot-Nachricht: was, vorher → nachher, Hinweise, Frage (beim Löschen deutlich). */
 export function editQuestion(preview: EditPreview, edit?: Edit) {
   if (edit && isDelete(edit)) {
-    return `🗑 ${escapeHtml(previewLines(preview).join("\n"))}\n\n<b>Wirklich löschen?</b>`;
+    return `🗑 ${escapeHtml(previewLines(preview).join("\n"))}\n\n<b>${T.deleteQuestion}</b>`;
   }
-  return `✏️ ${escapeHtml(previewLines(preview).join("\n"))}\n\nSoll ich das so ändern?`;
+  return `✏️ ${escapeHtml(previewLines(preview).join("\n"))}\n\n${T.editQuestion}`;
 }
 
 /** Knöpfe unter einem Vorschlag; beim Löschen „Löschen“ bzw. „Ja, endgültig löschen“ / „Abbrechen“. */
@@ -88,11 +89,11 @@ export async function answerEditProposal(db: AdminClient, chatId: number, jobId:
     .maybeSingle();
   if (error) throw error;
   const stored = job?.extracted as unknown as StoredEdit | undefined;
-  if (!stored) return "Diesen Vorschlag habe ich schon erledigt.";
+  if (!stored) return T.proposalDone;
 
   if (!confirm) {
     await appendHistory(db, chatId, [{ role: "assistant", content: `[Abgelehnt, nichts geändert: ${stored.text}]` }]);
-    return "Okay, ich lasse alles, wie es ist.";
+    return say("keepAsIs");
   }
 
   const chosen = alternative && stored.alternative ? stored.alternative.edit : stored.edit;

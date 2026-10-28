@@ -227,7 +227,8 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
         return [{ kind: "deleteBottles", itemId: r.id("itemId"), ...(count != null ? { count } : {}) }];
       }
       case "deleteWine":
-        return [{ kind: "deleteWine", wineId: r.id("wineId"), confirmName: r.text("confirmName") }];
+        // Bestätigt wird in der App mit „Endgültig löschen“ (ohne Namen); ein Name wird nur geprüft, wenn mitgeschickt.
+        return [{ kind: "deleteWine", wineId: r.id("wineId"), ...(r.has("confirmName") ? { confirmName: r.text("confirmName") } : {}) }];
       case "openBottle": {
         const fill = r.int("fill", "Füllstand");
         const openedOn = r.text("openedOn");

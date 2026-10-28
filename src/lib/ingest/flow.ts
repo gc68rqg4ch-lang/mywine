@@ -14,6 +14,7 @@ import { hasAnyPercent, hasCompletePercents, type GrapeShare, type GrapeSource }
 import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
+import { T } from "@/lib/bot/texts";
 import { resolveActor } from "@/lib/telegram/actor";
 import { labelKinds } from "@/lib/media/pick";
 import { saveWineMedia } from "@/lib/media/store";
@@ -207,37 +208,35 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
       const guess = state.proposal.vintage_year;
       await sendMessage(
         chatId,
-        guess != null
-          ? `📅 Ich habe den Jahrgang <b>${guess}</b> gelesen, bin mir aber nicht sicher. Stimmt das? Sonst schreib mir die richtige Jahreszahl.`
-          : "📅 Welcher Jahrgang ist es? Schreib mir die Jahreszahl – oder tippe „Ohne Jahrgang (NV)“.",
+        guess != null ? T.vintageGuess(guess) : T.vintageAsk,
         vintageKeyboard(job.id, guess),
       );
       return;
     }
     case "location":
-      await sendMessage(chatId, "Wo lagerst du die Flaschen?", locationKeyboard(job.id));
+      await sendMessage(chatId, T.whereStored, locationKeyboard(job.id));
       return;
     case "quantity":
       await sendMessage(
         chatId,
-        `📍 ${state.storage_room}. Wie viele Flaschen? (Button oder Zahl schreiben)`,
+        T.howMany(state.storage_room ?? "Weinkeller"),
         quantityKeyboard(job.id),
       );
       return;
     case "price":
       await sendMessage(
         chatId,
-        `${formatBottles(state.quantity ?? 1)}. Was hast du bezahlt? (CHF pro Flasche)`,
+        T.pricePaid(formatBottles(state.quantity ?? 1)),
         priceKeyboard(job.id),
       );
       return;
     case "regular_price":
-      await sendMessage(chatId, "Normalpreis? (oder überspringen)", regularPriceKeyboard(job.id, state.price ?? null));
+      await sendMessage(chatId, T.regularPrice, regularPriceKeyboard(job.id, state.price ?? null));
       return;
     case "vendor":
       await sendMessage(
         chatId,
-        vendors.length ? "Händler? (Button oder Namen schreiben)" : "Händler? (Namen schreiben oder überspringen)",
+        T.vendorAsk(vendors.length > 0),
         vendorKeyboard(job.id, vendors),
       );
       return;
@@ -443,14 +442,14 @@ export async function failJob(
     .from("ingest_jobs")
     .update({ status: "failed", error: detail.slice(0, 1000) })
     .eq("id", jobId);
-  const retry = fromText ? "Schreib mir den Eintrag bitte nochmals." : "Schick mir die Fotos bitte nochmals.";
   // API-Limit oder anderer API-Fehler: klar sagen, statt „nochmals schicken“ zu empfehlen.
   const api = apiProblemForBot(error);
   if (api) {
     await sendMessage(chatId, escapeHtml(api)).catch(() => undefined);
     return;
   }
-  await sendMessage(chatId, `❌ ${escapeHtml(message)}. ${retry}`).catch(() => undefined);
+  // Keine technische Meldung – nur: nichts gespeichert, bitte nochmals.
+  await sendMessage(chatId, fromText ? T.textError : T.photoError).catch(() => undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -514,7 +513,7 @@ export async function startTextIngest(chatId: number, text: string, jobId?: stri
     if (error) throw error;
     id = data.id;
   }
-  await sendMessage(chatId, "✍️ Ich erfasse den Wein und recherchiere die fehlenden Angaben …");
+  await sendMessage(chatId, T.readingText);
   await tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => undefined);
   const jobIdFinal = id;
   after(() => processTextJob(jobIdFinal, chatId, text.slice(0, 2000)));
@@ -530,7 +529,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
       await db.from("ingest_jobs").update({ status: "discarded", error: "kein Wein erkannt" }).eq("id", jobId);
       await sendMessage(
         chatId,
-        "Ich konnte darin keinen Wein erkennen. Schreib z. B. <i>„Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“</i>.",
+        T.noWineInText,
       );
       return;
     }
@@ -599,11 +598,11 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     if (step === "restock") {
       await sendMessage(
         chatId,
-        "Diesen Wein mit diesem Jahrgang hast du schon im Bestand. Ist es ein Nachkauf? (Sonst schreib ihn mir mit genauerem Namen neu.)",
+        T.restockAskOrRename,
         restockKeyboard(jobId),
       );
     } else if (step === "producer") {
-      await sendMessage(chatId, "Von welchem Produzenten ist der Wein?", cancelKeyboard(jobId));
+      await sendMessage(chatId, T.producerAsk, cancelKeyboard(jobId));
     } else {
       await askFor(job, chatId, vendors);
     }
@@ -627,13 +626,13 @@ export async function setVintage(db: AdminClient, job: IngestJob, chatId: number
     if (job.matched_wine_id && (await inStock(db, job.matched_wine_id, year))) {
       const next = await advanceJob(db, job, "vintage", { ...patch, step: "restock" });
       if (next) {
-        await sendMessage(chatId, "Diesen Wein mit diesem Jahrgang hast du schon im Bestand. Ist es ein Nachkauf?", restockKeyboard(job.id));
+        await sendMessage(chatId, T.restockAsk, restockKeyboard(job.id));
       }
       return;
     }
     if (!state.proposal.producer) {
       const next = await advanceJob(db, job, "vintage", { ...patch, step: "producer" });
-      if (next) await sendMessage(chatId, "Von welchem Produzenten ist der Wein?", cancelKeyboard(job.id));
+      if (next) await sendMessage(chatId, T.producerAsk, cancelKeyboard(job.id));
       return;
     }
   }
@@ -656,7 +655,7 @@ export async function setProducer(db: AdminClient, job: IngestJob, chatId: numbe
     if (next) {
       await sendMessage(
         chatId,
-        "Diesen Wein mit diesem Jahrgang hast du schon im Bestand. Ist es ein Nachkauf?",
+        T.restockAsk,
         restockKeyboard(job.id),
       );
     }

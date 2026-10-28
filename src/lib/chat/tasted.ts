@@ -35,6 +35,9 @@ import {
 import { RATING_STEPS } from "./menu-view";
 import { TASTED_WINDOW_MS, announcesTasting, parseEncounterPrice } from "./tasted-text";
 import { looksLikeNewConcern, strongNewConcern, supersede } from "./pending";
+import { T } from "@/lib/bot/texts";
+import { placeFromText } from "@/lib/edit/places";
+import { PLACE_KIND_LABELS, type PlaceKind } from "@/lib/edit/types";
 
 export const TASTED_SOURCE = "telegram_tasted";
 
@@ -95,6 +98,8 @@ export type TastedState = {
   encounterId?: string;
   savedWineId?: string;
   awaiting?: ExtraField;
+  /** Nur die Art des Orts („im Restaurant“ ohne Namen) – beim 📍 Ort nachfragen, kein Ort angelegt. */
+  placeKind?: PlaceKind;
   /** Letzte Orte als Knöpfe beim 📍 Ort. */
   placeOptions?: string[];
   otherPersonId?: string;
@@ -127,7 +132,7 @@ export function tastedEdit(s: TastedState): Extract<Edit, { kind: "addEncounter"
     year: p.vintage_year,
     set: {
       ...(s.set.tastedOn ? { tastedOn: s.set.tastedOn } : {}),
-      ...(s.set.place ? { place: { name: s.set.place, kind: null, city: null } } : {}),
+      ...(s.set.place ? { place: { name: s.set.place, kind: s.placeKind ?? null, city: null } } : {}),
       ...(s.set.price != null ? { price: s.set.price, priceUnit: s.set.priceUnit ?? "bottle", currency: s.set.currency ?? "CHF" } : {}),
       ...(s.set.occasion ? { occasion: s.set.occasion } : {}),
       ...(s.set.companions ? { companions: s.set.companions } : {}),
@@ -145,10 +150,10 @@ const wineLabel = (s: Pick<TastedState, "proposal">) =>
 const yearLabel = (year: number | null) => (year == null ? "ohne Jahrgang (NV)" : String(year));
 
 /** Zeile mit den Angaben des Eintrags: „📍 Kronenhalle · 💰 CHF 120.00 / Flasche · 👥 Sara“. */
-export function tastedDetailLine(s: Pick<TastedState, "set" | "wantToBuy">) {
+export function tastedDetailLine(s: Pick<TastedState, "set" | "wantToBuy" | "placeKind">) {
   const price = s.set.price != null ? encounterPrice({ price: s.set.price, price_unit: s.set.priceUnit ?? "bottle", currency: s.set.currency ?? "CHF" }) : null;
   return [
-    s.set.place && `📍 ${s.set.place}`,
+    s.set.place ? `📍 ${s.set.place}` : s.placeKind && `📍 ${PLACE_KIND_LABELS[s.placeKind]}`,
     price && `💰 ${price}`,
     s.set.occasion && `🎉 ${s.set.occasion}`,
     s.set.companions && `👥 ${s.set.companions}`,
@@ -169,7 +174,7 @@ export function tastedSummary(s: TastedState, wineNote: string | null) {
     `⭐ ${e(s.personName)}: ${s.rating != null ? `${formatStarNumber(s.rating)} ★` : "ohne Bewertung"}`,
     e(tastedDetailLine(s)) || null,
     "",
-    "Soll ich das so speichern?",
+    T.summaryQuestion,
   ]
     .filter((l) => l !== null)
     .join("\n");
@@ -228,11 +233,11 @@ export function extrasKeyboard(jobId: string, s: TastedState, others: { id: stri
 }
 
 const EXTRA_QUESTIONS: Record<ExtraField, string> = {
-  place: "📍 Wo war das? (Restaurant, Bar, Weingut oder bei wem)",
-  price: "💰 Was hat er gekostet? Z. B. <i>120</i>, <i>14 Glas</i>, <i>90 EUR</i> oder <i>65 AED Glas</i>.",
-  occasion: "🎉 Welcher Anlass?",
-  companions: "👥 Mit wem?",
-  note: "📝 Deine Notiz zum Wein?",
+  place: T.extra.place,
+  price: T.extra.price,
+  occasion: T.extra.occasion,
+  companions: T.extra.companions,
+  note: T.extra.note,
 };
 
 // ---------------------------------------------------------------------------
@@ -298,7 +303,7 @@ async function ask(db: AdminClient, job: IngestJob, chatId: number) {
       const rows = (s.candidates ?? []).slice(0, 8).map((c, i) => [
         button(`${wineName(c)}${c.country ? ` · ${c.country}` : ""}`, job.id, "pick", i),
       ]);
-      await sendMessage(chatId, `🍷 Es gibt mehrere Weine „${e(s.proposal.name ?? "")}“. Welcher ist es?`, {
+      await sendMessage(chatId, T.whichWine(s.proposal.name ?? ""), {
         inline_keyboard: [...rows, [button(`➕ Neuer Wein „${s.proposal.name ?? ""}“`, job.id, "new")], [button("✖️ Abbrechen", job.id, "drop")]],
       });
       return;
@@ -307,9 +312,7 @@ async function ask(db: AdminClient, job: IngestJob, chatId: number) {
       const year = s.proposal.vintage_year;
       await sendMessage(
         chatId,
-        year != null
-          ? `🍷 <b>${wineLabel(s)}</b>\n📅 Jahrgang <b>${year}</b> – stimmt das? Sonst schreib mir die Jahreszahl.`
-          : `🍷 <b>${wineLabel(s)}</b>\n📅 Welcher Jahrgang? Schreib mir die Jahreszahl – oder tippe „Ohne Jahrgang (NV)“.`,
+        T.tastedVintage(wineLabel(s), year),
         {
           inline_keyboard: [
             [...(year != null ? [button(`✅ ${year} stimmt`, job.id, "vint", year)] : []), button("Ohne Jahrgang (NV)", job.id, "vint", "nv")],
@@ -320,12 +323,12 @@ async function ask(db: AdminClient, job: IngestJob, chatId: number) {
       return;
     }
     case "t_rate":
-      await sendMessage(chatId, `⭐ Wie viele Sterne gibst du dem ${wineLabel(s)} ${yearLabel(s.proposal.vintage_year)}, ${e(s.personName)}?`, {
+      await sendMessage(chatId, T.howManyStars(`${wineLabel(s)} ${yearLabel(s.proposal.vintage_year)}`, s.personName), {
         inline_keyboard: [...ratingButtons(job.id, "rate"), [button("Ohne Bewertung", job.id, "rate", "n"), button("✖️ Abbrechen", job.id, "drop")]],
       });
       return;
     case "t_confirm":
-      await sendMessage(chatId, tastedSummary(s, s.wineId ? "Diesen Wein kenne ich schon – ich hänge den Eintrag dort an." : "Neuer Wein – ich lege ihn an."), {
+      await sendMessage(chatId, tastedSummary(s, s.wineId ? T.knownWine : T.newWine), {
         inline_keyboard: [[button("✅ Ja, speichern", job.id, "ok"), button("✖️ Nein", job.id, "drop")]],
       });
       return;
@@ -347,11 +350,14 @@ async function step(db: AdminClient, job: IngestJob, chatId: number, from: Taste
 // Start
 
 /** Angaben aus Text bzw. Bildtext: Was dort steht, wird nicht nochmals gefragt (z. B. die Sterne). */
-export function fromTasting(t: TastedText["tasting"]): Pick<TastedState, "set" | "wantToBuy"> & { rating?: number } {
+export function fromTasting(t: TastedText["tasting"]): Pick<TastedState, "set" | "wantToBuy" | "placeKind"> & { rating?: number } {
+  const place = placeFromText(t.place);
   return {
+    ...(place.kind ? { placeKind: place.kind } : {}),
     set: {
       ...(/^\d{4}-\d{2}-\d{2}$/.test(t.tasted_on) && t.tasted_on <= todayIso() ? { tastedOn: t.tasted_on } : {}),
-      ...(t.place.trim() ? { place: t.place.trim().slice(0, 120) } : {}),
+      // Ort-Regel: „Restaurant“ allein ist kein Ort – nur die Art merken.
+      ...(place.name ? { place: place.name.slice(0, 120) } : {}),
       ...(t.price > 0 ? { price: Math.round(t.price * 100) / 100, priceUnit: t.price_unit || "bottle", currency: t.currency || "CHF" } : {}),
       ...(t.occasion.trim() ? { occasion: t.occasion.trim() } : {}),
       ...(t.companions.trim() ? { companions: t.companions.trim() } : {}),
@@ -387,7 +393,7 @@ export async function startTastedFromPhoto(
     vintage_year: fromCaption?.proposal.vintage_year ?? recognition.proposal.vintage_year,
   };
   if (!proposal.name) {
-    await sendMessage(chatId, "Ich konnte den Namen auf dem Etikett nicht lesen. Schreib mir den Wein bitte, z. B. <i>Pintia 2019 probiert, 4 Sterne</i>.");
+    await sendMessage(chatId, T.labelUnreadable);
     return;
   }
   const person = await personFor(db, chatId);
@@ -422,7 +428,7 @@ export async function askPhotoIntent(db: AdminClient, jobId: string, chatId: num
   const name = [p.producer, p.name].filter(Boolean).join(" – ") || "diesen Wein";
   await sendMessage(
     chatId,
-    `🍷 <b>${e(name)}</b>${p.vintage_year != null ? ` ${p.vintage_year}` : ""}\nHast du ihn gekauft (Bestand) oder nur verkostet?`,
+    `🍷 <b>${e(name)}</b>${p.vintage_year != null ? ` ${p.vintage_year}` : ""}\n${T.boughtOrTasted}`,
     intentKeyboard(jobId),
   );
 }
@@ -439,7 +445,7 @@ export async function askTextIntent(db: AdminClient, chatId: number, text: strin
     set: {},
     pendingText: text.slice(0, 2000),
   });
-  await sendMessage(chatId, "Hast du den Wein gekauft (Bestand) oder nur verkostet?", intentKeyboard(job.id));
+  await sendMessage(chatId, T.boughtOrTastedText, intentKeyboard(job.id));
 }
 
 const emptyProposal = (): WineProposal => ({
@@ -472,7 +478,7 @@ export async function startTastedText(chatId: number, text: string, jobId?: stri
   } else {
     id = (await createTastedJob(db, chatId, state, [], "processing")).id;
   }
-  await sendMessage(chatId, "🍷 Ich erfasse den Wein als verkostet …");
+  await sendMessage(chatId, T.readingTasted);
   await tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => undefined);
   const final = id;
   later(() => processTastedText(final, chatId, text.slice(0, 2000)));
@@ -485,7 +491,7 @@ export async function processTastedText(jobId: string, chatId: number, text: str
     const { proposal, tasting: t } = await parseTastedText(text, todayIso());
     if (!proposal.name) {
       await db.from("ingest_jobs").update({ status: "discarded", error: "kein Wein erkannt" }).eq("id", jobId);
-      await sendMessage(chatId, "Ich konnte darin keinen Wein erkennen. Schreib z. B. <i>„Heute im Kronenhalle den Pintia 2019 probiert, 4,5 Sterne“</i>.");
+      await sendMessage(chatId, T.noWineInTasted);
       return;
     }
     const { data: job } = await db.from("ingest_jobs").select("*").eq("id", jobId).single();
@@ -510,7 +516,7 @@ export async function processTastedText(jobId: string, chatId: number, text: str
   } catch (error) {
     console.error("tasted text failed", error);
     await db.from("ingest_jobs").update({ status: "failed", error: String(error).slice(0, 500) }).eq("id", jobId);
-    await sendMessage(chatId, "❌ Das konnte ich nicht erfassen – ich habe nichts gespeichert. Schreib es mir bitte nochmals.").catch(() => undefined);
+    await sendMessage(chatId, T.textError).catch(() => undefined);
   }
 }
 
@@ -525,7 +531,7 @@ export async function maybeArmTasting(db: AdminClient, chatId: number, text: str
   await disarm(db, chatId);
   const person = await personFor(db, chatId);
   await createTastedJob(db, chatId, { flow: "tasted", step: "t_armed", origin: "text", proposal: emptyProposal(), ...person, set: {} });
-  await sendMessage(chatId, "🍷 Gerne! Schick mir ein Foto vom Etikett oder schreib mir den Wein – ich erfasse ihn als verkostet (nicht im Bestand).");
+  await sendMessage(chatId, T.armed);
   return true;
 }
 
@@ -614,7 +620,7 @@ export async function handleTastedText(db: AdminClient, job: IngestJob, chatId: 
     case "t_vintage": {
       const year = parseVintageAnswer(text);
       if (year === undefined) {
-        await sendMessage(chatId, "Schreib mir bitte nur die Jahreszahl (z. B. <i>2019</i>) – oder tippe „Ohne Jahrgang (NV)“.", cancelKeyboard(job.id, "drop"));
+        await sendMessage(chatId, T.vintageRetry, cancelKeyboard(job.id, "drop"));
         return;
       }
       await step(db, job, chatId, "t_vintage", { proposal: { ...s.proposal, vintage_year: year }, vintageConfirmed: true });
@@ -623,7 +629,7 @@ export async function handleTastedText(db: AdminClient, job: IngestJob, chatId: 
     case "t_rate": {
       const rating = parseRatingAnswer(text);
       if (rating == null) {
-        await sendMessage(chatId, "Tippe bitte die Sterne an oder schreib eine Zahl von 0 bis 5 (halbe Schritte, z. B. <i>4,5</i>).", cancelKeyboard(job.id, "drop"));
+        await sendMessage(chatId, T.starsRetry, cancelKeyboard(job.id, "drop"));
         return;
       }
       await step(db, job, chatId, "t_rate", { rating });
@@ -643,6 +649,19 @@ export async function handleTastedText(db: AdminClient, job: IngestJob, chatId: 
       } else {
         if (!value || value.length > (field === "place" ? 120 : 500)) {
           await sendMessage(chatId, EXTRA_QUESTIONS[field], cancelKeyboard(job.id, "back"));
+          return;
+        }
+        if (field === "place") {
+          // „Restaurant“ ohne Namen: nur die Art merken und nach dem Namen fragen.
+          const place = placeFromText(value);
+          if (!place.name) {
+            await advance(db, job, "t_input", { placeKind: place.kind ?? s.placeKind });
+            await sendMessage(chatId, T.extra.placeKind[place.kind ?? "restaurant"], cancelKeyboard(job.id, "back"));
+            return;
+          }
+          if (place.kind) await advance(db, job, "t_input", { placeKind: place.kind });
+          const fresh = (await db.from("ingest_jobs").select("*").eq("id", job.id).single()).data ?? job;
+          await saveExtra(db, fresh, chatId, "t_input", { place: place.name });
           return;
         }
         set = { [field]: value };
@@ -670,7 +689,7 @@ async function saveTasted(db: AdminClient, job: IngestJob, chatId: number) {
       }
     }
     await advance(db, job, "t_saving", { step: "t_done" }, "failed");
-    await sendMessage(chatId, `⚠️ ${e(result.error)} Ich habe nichts gespeichert.`);
+    await sendMessage(chatId, T.savedNothing(result.error));
     return;
   }
   const wineId = result.wineId!;
@@ -694,14 +713,14 @@ async function saveTasted(db: AdminClient, job: IngestJob, chatId: number) {
 }
 
 function savedText(s: TastedState, first: boolean) {
-  const stars = s.rating != null ? ` mit ⭐ ${formatStarNumber(s.rating)}` : "";
+  const stars = s.rating != null ? `⭐ ${formatStarNumber(s.rating)}` : null;
   const detail = tastedDetailLine(s);
   return [
     first
-      ? `✅ Ich habe <b>${wineLabel(s)}</b> ${yearLabel(s.proposal.vintage_year)} als verkostet gespeichert${stars}.`
-      : `🍷 <b>${wineLabel(s)}</b> ${yearLabel(s.proposal.vintage_year)}${stars}`,
+      ? T.tastedSaved(`<b>${wineLabel(s)}</b> ${yearLabel(s.proposal.vintage_year)}`, stars)
+      : `🍷 <b>${wineLabel(s)}</b> ${yearLabel(s.proposal.vintage_year)}${stars ? ` · ${stars}` : ""}`,
     detail && e(detail),
-    first ? "Möchtest du noch etwas ergänzen?" : null,
+    first ? T.addMore : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -751,7 +770,7 @@ async function saveExtra(db: AdminClient, job: IngestJob, chatId: number, from: 
     kind: "encounter",
     encounterId: s.encounterId,
     set: {
-      ...(set.place !== undefined ? { place: set.place ? { name: set.place, kind: null, city: null } : null } : {}),
+      ...(set.place !== undefined ? { place: set.place ? { name: set.place, kind: s.placeKind ?? null, city: null } : null } : {}),
       ...(set.price !== undefined ? { price: set.price, priceUnit: set.priceUnit ?? "bottle", currency: set.currency ?? "CHF" } : {}),
       ...(set.occasion !== undefined ? { occasion: set.occasion } : {}),
       ...(set.companions !== undefined ? { companions: set.companions } : {}),
@@ -783,7 +802,7 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
   const db = createAdminClient();
   const { data: job } = await db.from("ingest_jobs").select("*").eq("id", parsed.jobId).eq("telegram_chat_id", chatId).maybeSingle();
   if (!job || job.status !== "needs_review") {
-    await answerCallback(cb.id, "Diesen Eintrag habe ich schon abgeschlossen.");
+    await answerCallback(cb.id, T.alreadyDone);
     await clearKeyboard(chatId, messageId).catch(() => undefined);
     return;
   }
@@ -802,9 +821,9 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
         .eq("id", job.id)
         .eq("extracted->>step", "intent")
         .select("id");
-      await answerCallback(cb.id, dropped?.length ? "Abgebrochen" : undefined);
+      await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId).catch(() => undefined);
-      if (dropped?.length) await sendMessage(chatId, "✖️ Abgebrochen – ich habe nichts gespeichert.");
+      if (dropped?.length) await sendMessage(chatId, T.dropped());
       return;
     }
     const { data: claimed } = await db
@@ -818,7 +837,7 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
     await clearKeyboard(chatId, messageId).catch(() => undefined);
     const recognition = { ...purchase.pending_recognition, imageSides: purchase.pending_recognition.imageSides ?? null };
     if (parsed.action === "buy") {
-      await sendMessage(chatId, "🛒 Gekauft – ich ergänze die Angaben …");
+      await sendMessage(chatId, T.boughtContinue);
       later(() => continuePhotoPurchase(createAdminClient(), job.id, chatId, recognition));
     } else {
       await startTastedFromPhoto(db, job.id, chatId, recognition, purchase.caption);
@@ -846,8 +865,8 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
     }
     case "drop": {
       const next = await advance(db, job, ["t_match", "t_vintage", "t_rate", "t_confirm", "t_intent"], { step: "t_done" }, "discarded");
-      await done(next ? "Abgebrochen" : undefined);
-      if (next) await sendMessage(chatId, "✖️ Abgebrochen – ich habe nichts gespeichert.");
+      await done();
+      if (next) await sendMessage(chatId, T.dropped());
       return;
     }
     case "pick": {
@@ -881,7 +900,7 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
     }
     case "ok": {
       const next = await advance(db, job, "t_confirm", { step: "t_saving" });
-      await done(next ? "Ich speichere …" : undefined);
+      await done(next ? T.savingToast : undefined);
       if (next) await saveTasted(db, next, chatId);
       return;
     }
@@ -893,7 +912,9 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
       const next = await advance(db, job, ["t_extras", "t_input", "t_other"], { step: "t_input", awaiting: field, placeOptions: places });
       await done();
       if (next) {
-        await sendMessage(chatId, places.length ? `${EXTRA_QUESTIONS.place} Tippe einen der letzten Orte an oder schreib den Namen.` : EXTRA_QUESTIONS[field], {
+        // Art schon bekannt („im Restaurant“): gezielt nach dem Namen fragen.
+        const question = field === "place" && s.placeKind ? T.extra.placeKind[s.placeKind] : EXTRA_QUESTIONS[field];
+        await sendMessage(chatId, places.length ? `${question} ${T.extra.placeRecent}` : question, {
           inline_keyboard: [
             ...places.map((name, i) => [button(`📍 ${name}`, job.id, "plc", i)]),
             [button("✖️ Abbrechen", job.id, "back")],
@@ -918,7 +939,7 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
         return;
       }
       const next = await advance(db, job, ["t_extras", "t_input", "t_other"], { step: "t_extras", awaiting: undefined, wantToBuy: value });
-      await answerCallback(cb.id, value ? "🛒 Vorgemerkt" : "Merker entfernt");
+      await answerCallback(cb.id, value ? T.wantToBuyOn : T.wantToBuyOff);
       if (next) {
         const state = stateOf(next)!;
         await editMessage(chatId, messageId, savedText(state, false), extrasKeyboard(job.id, state, await otherPersons(db, s.personId))).catch(() => undefined);
@@ -932,7 +953,7 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
       const next = await advance(db, job, ["t_extras", "t_input", "t_other"], { step: "t_other", otherPersonId: person.id });
       await done();
       if (next) {
-        await sendMessage(chatId, `⭐ Wie viele Sterne gibt ${e(person.name)}?`, {
+        await sendMessage(chatId, T.otherStars(person.name), {
           inline_keyboard: [...ratingButtons(job.id, "orate"), [button("‹ Zurück", job.id, "back")]],
         });
       }
@@ -952,7 +973,7 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
       const next = await advance(db, job, "t_other", { step: "t_extras", otherPersonId: undefined });
       if (next) {
         const state = stateOf(next)!;
-        await sendMessage(chatId, `⭐ ${e(name)}: ${formatStarNumber(rating)} ★ gespeichert.\n${savedText(state, false)}`, extrasKeyboard(job.id, state, persons));
+        await sendMessage(chatId, `${T.otherStarsSaved(name, `${formatStarNumber(rating)} ★`)}\n${savedText(state, false)}`, extrasKeyboard(job.id, state, persons));
       }
       return;
     }
@@ -967,12 +988,12 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
     }
     case "done": {
       const next = await advance(db, job, ["t_extras", "t_input", "t_other"], { step: "t_done", awaiting: undefined }, "confirmed");
-      await done(next ? "Fertig" : undefined);
+      await done();
       if (next) {
         const base = appBaseUrl();
         const wineId = s.savedWineId;
         const link = base && wineId ? `\n<a href="${base}${wineHref(wineId, s.proposal.vintage_year, { von: "verkostet" })}">In MyWine öffnen</a>` : "";
-        await sendMessage(chatId, `👍 Fertig – ${wineLabel(s)} ist unter „Verkostet“ gespeichert.${link}`);
+        await sendMessage(chatId, `${T.tastedDone(wineLabel(s))}${link}`);
       }
       return;
     }

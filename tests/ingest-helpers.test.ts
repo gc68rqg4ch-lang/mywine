@@ -85,13 +85,13 @@ test("Rebsorten mit %: Summe > 100 verwirft %, ungültige % → null, Duplikate 
   assert.equal(formatShares([{ grape: "Syrah", percent: 92.5 }, { grape: "Viognier", percent: null }]), "Syrah 92.5 %, Viognier");
 });
 
-test("Vorschlagstext: HTML maskiert, Modell, bekannter Wein, Recherche in der Ich-Form", () => {
+test("Vorschlagstext: HTML maskiert, ohne Technik (Modell/Prozent), bekannter Wein, Recherche in der Ich-Form", () => {
   const proposal = { name: "Reserva", producer: "Bodega <A&B>", vintage_year: 2019, country: "Spanien", region: null, appellation: null, type: "red" as const,
     grape_shares: [{ grape: "Tempranillo", percent: 85 }], alcohol_content: 14, bottle_size_ml: 750 };
   const recognition = { model: "claude-haiku-5-5", confidence: 0.86, notes: null, enriched_fields: ["region" as const], sources: [] };
   const msg = proposalMessage({ step: "review", proposal, recognition, grape_source: "research" }, true);
   assert.ok(msg.includes("Bodega &lt;A&amp;B&gt;"));
-  assert.ok(msg.includes("86 % (Haiku)"));
+  assert.ok(!msg.includes("Haiku") && !msg.includes("86 %") && !msg.includes("Erkennung"), "keine technischen Angaben");
   assert.ok(msg.includes("Trauben: Tempranillo 85 %"));
   assert.ok(msg.includes("📅 Jahrgang: 2019"));
   assert.ok(msg.includes("Die Rebsorten habe ich für diesen Jahrgang recherchiert"));

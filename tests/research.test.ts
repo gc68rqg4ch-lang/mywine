@@ -204,7 +204,7 @@ test("API-Limit: Recherche bricht ab, Bot meldet es in der Ich-Form mit Datum", 
     const sent = net.telegram.length;
     await runBotResearch(111, W, 2019, "Vega Sicilia – Pintia");
     const messages = net.telegram.slice(sent).filter((t) => t.method === "sendMessage").map((t) => String(t.body.text));
-    assert.deepEqual(messages, [`⛔ Ich komme gerade nicht an Claude: Das monatliche API-Limit ist erreicht. Wieder verfügbar am ${formatDate("2026-11-01")}.`]);
+    assert.deepEqual(messages, [`Ich mache gerade eine kleine Pause – mein Kontingent für diesen Monat ist aufgebraucht. Ab ${formatDate("2026-11-01")} bin ich wieder ganz für dich da.`]);
   } finally {
     failWith = null;
   }

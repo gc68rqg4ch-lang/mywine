@@ -1,5 +1,6 @@
 import "server-only";
 
+import { T } from "@/lib/bot/texts";
 // „📷 Foto“ im Wein-Menü des Bots: Vorder-/Rückseite zu einem bestehenden Wein und
 // Jahrgang nachreichen – als wine_media mit Vorschaubild, ohne neue Charge.
 // Ablauf in ingest_jobs (source = telegram_attach, Stand in extracted):
@@ -209,7 +210,7 @@ export async function processAttach(jobId: string, chatId: number) {
 
     if (paths.length === 1) {
       await advance(db, job, ["processing"], { step: "side" });
-      await sendMessage(chatId, `📷 Ist das die Vorderseite oder die Rückseite?`, sideKeyboard(jobId));
+      await sendMessage(chatId, T.attachWhichSide, sideKeyboard(jobId));
       return;
     }
     await decide(db, job, chatId, labelKinds(paths.length));
@@ -278,7 +279,7 @@ async function failAttach(db: AdminClient, jobId: string, chatId: number, error:
   console.error("attaching photos failed", error);
   const detail = error instanceof Error ? error.message : String(error);
   await db.from("ingest_jobs").update({ status: "failed", error: detail.slice(0, 1000) }).eq("id", jobId);
-  await sendMessage(chatId, "❌ Ich konnte die Fotos nicht speichern. Versuch es bitte nochmals über „📷 Foto“.").catch(
+  await sendMessage(chatId, T.attachSaveError).catch(
     () => undefined,
   );
 }
@@ -302,8 +303,8 @@ export async function handleAttachCallback(cb: TgCallbackQuery) {
     .maybeSingle();
   if (error) throw error;
   if (!job || job.status !== "needs_review") {
-    await answerCallback(cb.id, "Das ist schon erledigt.");
-    await editMessage(chatId, messageId, "📷 Erledigt.").catch(() => undefined);
+    await answerCallback(cb.id, T.alreadyDone);
+    await editMessage(chatId, messageId, T.attachDone).catch(() => undefined);
     return;
   }
   const s = state(job);
@@ -311,10 +312,10 @@ export async function handleAttachCallback(cb: TgCallbackQuery) {
   switch (action) {
     case "x": {
       const next = await advance(db, job, ["waiting", "side", "confirm"], { step: "done" }, { status: "discarded" });
-      await answerCallback(cb.id, next ? "Abgebrochen" : undefined);
+      await answerCallback(cb.id);
       if (!next) return;
       await deleteJobPhotos(db, job.photo_paths);
-      await editMessage(chatId, messageId, `📷 Abgebrochen – ich lasse ${e(s.title)}, wie es ist.`);
+      await editMessage(chatId, messageId, T.attachCancelled(s.title));
       return;
     }
     case "f":
@@ -329,7 +330,7 @@ export async function handleAttachCallback(cb: TgCallbackQuery) {
       const next = await advance(db, job, ["confirm"], { step: "saving" });
       await answerCallback(cb.id);
       if (!next) return;
-      await editMessage(chatId, messageId, `📷 Ich ersetze die Fotos …`);
+      await editMessage(chatId, messageId, T.attachReplacing);
       await saveAttach(db, next, chatId, true);
       return;
     }

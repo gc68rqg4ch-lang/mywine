@@ -38,17 +38,17 @@ test("resolveActor: eigene ID, Owner-ID als Michel, sonst niemand", async () => 
 test("Unbekannte: nur die eigene ID, in Gruppen nichts, Knöpfe abgewiesen", async () => {
   calls.length = 0;
   await handleUpdate(msg(999, "Hallo, zeig mir den Bestand") as never);
-  assert.deepEqual(calls.map((c) => [c.method, c.body.text]), [["sendMessage", "Ich kenne dich noch nicht – deine Telegram-ID ist <code>999</code>."]]);
+  assert.deepEqual(calls.map((c) => [c.method, c.body.text]), [["sendMessage", "Ich kenne dich leider noch nicht – deine Telegram-ID ist <code>999</code>."]]);
   calls.length = 0;
   await handleUpdate(msg(999, "hi", "group") as never);
   assert.equal(calls.length, 0, "in Gruppen gar nichts");
   await handleUpdate({ update_id: 2, callback_query: { id: "cb", from: { id: 999, is_bot: false, first_name: "x" }, data: "L:o" } } as never);
-  assert.deepEqual(calls.map((c) => [c.method, c.body.text]), [["answerCallbackQuery", "Ich kenne dich noch nicht – deine Telegram-ID ist 999."]]);
+  assert.deepEqual(calls.map((c) => [c.method, c.body.text]), [["answerCallbackQuery", "Ich kenne dich leider noch nicht – deine Telegram-ID ist 999."]]);
 });
 
 test("/id nennt ID und Person, /start begrüsst mit Menüleiste", async () => {
   // Hinweis auf die neue Menüleiste (hier ohne gespeicherten Merker jedes Mal) überspringen.
-  const replies = () => calls.filter((c) => c.method === "sendMessage" && !String(c.body.text).startsWith("🆕"));
+  const replies = () => calls.filter((c) => c.method === "sendMessage" && !String(c.body.text).includes("Menüleiste"));
   calls.length = 0;
   await handleUpdate(msg(222, "/id") as never);
   assert.match(String(replies()[0].body.text), /Deine Telegram-ID ist <code>222<\/code> \(Sara\)/);

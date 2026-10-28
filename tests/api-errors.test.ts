@@ -18,7 +18,7 @@ test("Nutzungslimit: erkannt, Datum aus der Meldung", () => {
     until: DAY,
     message: `Das monatliche API-Limit ist erreicht. Wieder verfügbar am ${DAY}.`,
   });
-  assert.equal(apiProblemForBot(error), `⛔ Ich komme gerade nicht an Claude: Das monatliche API-Limit ist erreicht. Wieder verfügbar am ${DAY}.`);
+  assert.equal(apiProblemForBot(error), `Ich mache gerade eine kleine Pause – mein Kontingent für diesen Monat ist aufgebraucht. Ab ${DAY} bin ich wieder ganz für dich da.`);
   // auch als reiner Text (z. B. aus einem Log) und ohne Datum
   assert.ok(usageLimit(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits."}}')));
   assert.match(apiProblem(sdkError(400, "You have reached your specified API usage limits."))!.message, /Datum stand nicht/);

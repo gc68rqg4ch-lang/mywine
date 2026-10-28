@@ -70,6 +70,9 @@ export function wineDeleteSummaryText(s: WineDeleteSummary) {
 
 export const IRREVERSIBLE = "Das lässt sich nicht rückgängig machen.";
 
+/** App, „Wein löschen“: Warnung in Rot unter der Übersicht. */
+export const DELETE_FOREVER = "Alles wird endgültig gelöscht und lässt sich nicht wiederherstellen.";
+
 /** Bestätigung im App-Dialog: Weinname eintippen (ohne Gross-/Kleinschreibung, Leerzeichen egal). */
 export function nameConfirmed(typed: string, name: string) {
   const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLocaleLowerCase("de-CH");

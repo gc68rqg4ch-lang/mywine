@@ -8,6 +8,7 @@ import type { Actor } from "@/lib/telegram/actor";
 import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery } from "@/lib/telegram/types";
 import { startTextIngest } from "@/lib/ingest/flow";
+import { T, say } from "@/lib/bot/texts";
 import { askTextIntent, startTastedText } from "./tasted";
 import { PENDING_TTL_MS, supersede } from "./pending";
 import { answerChat } from "./agent";
@@ -28,7 +29,7 @@ export async function handleChatMessage(chatId: number, text: string, actor: Act
 
 export async function resetChat(chatId: number) {
   await clearHistory(createAdminClient(), chatId);
-  await sendMessage(chatId, "Okay, ich habe unseren Gesprächsverlauf vergessen.", MAIN_KEYBOARD);
+  await sendMessage(chatId, T.chatForgotten, MAIN_KEYBOARD);
 }
 
 async function replyToChat(chatId: number, text: string, actor: Actor) {
@@ -58,7 +59,7 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
 
     // Recherche: kurze Antwort, das Ergebnis kommt in ~1 Minute als eigene Nachrichten.
     if (reply.research) {
-      await sendMessage(chatId, escapeHtml(reply.text || "🔎 Ich recherchiere den Wein und melde mich gleich."));
+      await sendMessage(chatId, reply.text ? escapeHtml(reply.text) : T.thinkingResearch);
       await startBotResearch(chatId, reply.research.wineId, reply.research.year, false);
       await appendHistory(db, chatId, [
         { role: "user", content: text },
@@ -73,7 +74,7 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
       return null;
     });
     if (reply.text || buttons) {
-      await sendMessage(chatId, escapeHtml(reply.text || "Hier:"), buttons ?? MAIN_KEYBOARD);
+      await sendMessage(chatId, reply.text ? escapeHtml(reply.text) : T.here, buttons ?? MAIN_KEYBOARD);
     }
     for (const p of reply.proposals) {
       if ("edit" in p) await sendEditProposal(db, chatId, p.edit, p.preview, p.alternative);
@@ -89,8 +90,8 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
     ]);
   } catch (error) {
     console.error("chat reply failed", error);
-    const text = apiProblemForBot(error) ?? "❌ Da ist mir etwas schiefgelaufen. Versuch es bitte nochmals.";
-    await sendMessage(chatId, escapeHtml(text)).catch(() => undefined);
+    const api = apiProblemForBot(error);
+    await sendMessage(chatId, api ? escapeHtml(api) : T.errorNothingChanged).catch(() => undefined);
   }
 }
 
@@ -113,7 +114,7 @@ export async function handleChatCallback(cb: TgCallbackQuery) {
     () => false,
   );
   if (!claimed) {
-    await answerCallback(cb.id, "Schon erledigt.");
+    await answerCallback(cb.id, T.alreadyDone);
     return;
   }
   const db = createAdminClient();
@@ -126,7 +127,7 @@ export async function handleChatCallback(cb: TgCallbackQuery) {
     } catch (error) {
       console.error("edit proposal failed", error);
       await answerCallback(cb.id);
-      await sendMessage(chatId, "❌ Das hat nicht geklappt – ich habe nichts geändert. Versuch es bitte nochmals.");
+      await sendMessage(chatId, T.errorNothingChanged);
     }
     return;
   }
@@ -135,20 +136,20 @@ export async function handleChatCallback(cb: TgCallbackQuery) {
 
   // Schnelle Vorschläge (Öffnen, Füllstand, Sterne) stecken im Knopf: nach 30 Minuten abgelaufen.
   if (cb.message?.date && cb.message.date * 1000 < Date.now() - PENDING_TTL_MS) {
-    await answerCallback(cb.id, "Dieser Vorschlag ist abgelaufen.");
-    await sendMessage(chatId, `⏱ Der Vorschlag „${escapeHtml(question)}“ ist abgelaufen – frag mich bitte nochmals.`);
+    await answerCallback(cb.id, T.proposalExpiredToast);
+    await sendMessage(chatId, T.proposalExpired(question));
     return;
   }
 
   if (cb.data === REJECT_DATA) {
-    await answerCallback(cb.id, "Okay, ich lasse alles, wie es ist.");
+    await answerCallback(cb.id, say("keepAsIs"));
     await appendHistory(db, chatId, [{ role: "assistant", content: `[Abgelehnt, nichts geändert: ${question}]` }]);
     return;
   }
 
   const proposal = decodeProposal(cb.data);
   if (!proposal) {
-    await answerCallback(cb.id, "Dieser Vorschlag ist ungültig.");
+    await answerCallback(cb.id, T.proposalInvalid);
     return;
   }
   await answerCallback(cb.id);
@@ -162,6 +163,6 @@ export async function handleChatCallback(cb: TgCallbackQuery) {
     ]);
   } catch (error) {
     console.error("chat proposal failed", error);
-    await sendMessage(chatId, "❌ Das hat nicht geklappt – ich habe nichts geändert. Versuch es bitte nochmals.");
+    await sendMessage(chatId, T.errorNothingChanged);
   }
 }

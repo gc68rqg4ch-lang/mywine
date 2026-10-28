@@ -7,9 +7,9 @@ import "server-only";
 // Ablauf. Der DB-Job expire-stale-ingest-jobs ist nur das Sicherheitsnetz.
 
 import type { Json, Tables } from "@/lib/database.types";
-import { formatDate, zurichDate } from "@/lib/format";
+import { T, type FlowSubject } from "@/lib/bot/texts";
 import type { AdminClient } from "@/lib/supabase/admin";
-import { escapeHtml, sendMessage } from "@/lib/telegram/api";
+import { sendMessage } from "@/lib/telegram/api";
 import { announcesTasting, tastedIntent } from "./tasted-text";
 
 export const PENDING_TTL_MS = 30 * 60 * 1000;
@@ -25,39 +25,26 @@ type Extracted = {
   wineName?: string;
 };
 
-const time = (iso: string) => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", hour: "2-digit", minute: "2-digit" }).format(d);
-};
-
 /** Verkostet-Eintrag schon gespeichert (nur noch freiwillige Ergänzungen offen)? */
 export const isSavedTasted = (job: Pick<Job, "source" | "extracted">) =>
   job.source === "telegram_tasted" && Boolean((job.extracted as Extracted | null)?.encounterId);
 
-/** „die angefangene Erfassung von Pintia 2019 (11:27)“ bzw. „der Vorschlag „…“ (11:27)“. */
-export function flowLabel(job: Pick<Job, "source" | "extracted" | "created_at">) {
+/** Worum es im Ablauf ging – für „Den angefangenen Pintia 2019 lasse ich mal beiseite.“ */
+export function flowSubject(job: Pick<Job, "source" | "extracted">): FlowSubject {
   const x = (job.extracted ?? {}) as Extracted;
   const wine = x.proposal?.name ? `${x.proposal.name}${x.proposal.vintage_year != null ? ` ${x.proposal.vintage_year}` : ""}` : null;
-  const at = time(job.created_at);
-  const today = formatDate(zurichDate(new Date().toISOString()));
-  const day = at ? formatDate(zurichDate(job.created_at)) : null;
-  const when = !at ? "" : day === today ? ` (${at})` : ` (${day} ${at})`;
   switch (job.source) {
     case "telegram_edit":
-      return `der Vorschlag „${(x.text ?? "").slice(0, 60)}${(x.text?.length ?? 0) > 60 ? "…" : ""}“${when}`;
+      return { kind: "proposal", text: `${(x.text ?? "").slice(0, 60)}${(x.text?.length ?? 0) > 60 ? "…" : ""}` };
     case "telegram_tasting":
-      return `die angefangene WSET-Verkostung${x.title ? ` von ${x.title}` : ""}${when}`;
+      return { kind: "tasting", wine: x.title ?? null };
     case "telegram_attach":
-      return `das angefangene Foto-Zuordnen${when}`;
-    case "telegram_tasted":
-      return `die angefangene Verkostet-Erfassung${wine ? ` von ${wine}` : ""}${when}`;
+      return { kind: "photos" };
     default:
-      if (x.step === "describe") return `der angefangene „Neue Wein“${when}`;
-      return `die angefangene Erfassung${wine ? ` von ${wine}` : ""}${when}`;
+      if (x.step === "describe") return { kind: "newWine" };
+      return wine ? { kind: "wine", wine } : { kind: "entry" };
   }
 }
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Offene Abläufe dieses Chats (neueste zuerst). */
 export async function openFlows(db: AdminClient, chatId: number): Promise<Job[]> {
@@ -96,7 +83,7 @@ export async function expireStale(db: AdminClient, chatId: number, now = Date.no
     if (done && job.status === "needs_review") closed.push(done);
   }
   if (closed.length) {
-    await sendMessage(chatId, closed.map((j) => `⏱ ${escapeHtml(capitalize(flowLabel(j)))} ist abgelaufen.`).join("\n"));
+    await sendMessage(chatId, closed.map((j) => T.laidAside(flowSubject(j))).join("\n"));
   }
   return closed;
 }
@@ -123,7 +110,7 @@ export async function supersede(db: AdminClient, chatId: number, reason: Superse
     if (done) closed.push(done);
   }
   if (closed.length) {
-    await sendMessage(chatId, closed.map((j) => `Ich habe ${escapeHtml(flowLabel(j))} verworfen.`).join("\n"));
+    await sendMessage(chatId, closed.map((j) => T.laidAside(flowSubject(j))).join("\n"));
   }
   return closed;
 }
@@ -136,7 +123,7 @@ export async function cancelAll(db: AdminClient, chatId: number) {
     const done = await close(db, job, null);
     if (done) closed.push(done);
   }
-  return closed.map(flowLabel);
+  return closed.map(flowSubject);
 }
 
 /** Antwort auf eine Rückfrage: die 30 Minuten laufen ab jetzt neu (Trigger setzt updated_at). */

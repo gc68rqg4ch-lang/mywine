@@ -13,6 +13,7 @@ import { TASTED_SOURCE } from "@/lib/chat/tasted";
 import { EXPIRED_ERROR, MENU_SOURCE } from "@/lib/chat/pending";
 import { MENU_VERSION } from "@/lib/chat/menu-view";
 import { runLater } from "@/lib/later";
+import { VARIANTS } from "@/lib/bot/texts";
 
 const MICHEL = "86c222d0-3a8c-4d5f-9564-f5654769ecd6";
 const SARA = "c7690541-4e68-4051-aa8f-6a2920fea55b";
@@ -101,10 +102,10 @@ test("Abgelaufene Rückfrage (älter als 30 Min.): verworfen, gemeldet, neue Nac
   await say("Wir verkosten gerade einen Wein");
   assert.equal(job().status, "discarded");
   assert.equal(job().error, EXPIRED_ERROR);
-  assert.match(texts()[0], /^⏱ Die angefangene Erfassung von Pintia 2019 \(\d\d:\d\d\) ist abgelaufen\.$/);
+  assert.equal(texts()[0], "Den angefangenen Pintia 2019 lasse ich mal beiseite.");
   // Die neue Nachricht wird nicht als „Anzahl“ abgefangen.
   assert.ok(!texts().some((t) => t.includes("Anzahl zwischen 1 und 999")));
-  assert.match(lastText(), /erfasse ihn als verkostet/);
+  assert.match(lastText(), /notiere ihn als verkostet/);
   assert.equal((tasted().extracted as { step: string }).step, "t_armed");
 });
 
@@ -120,7 +121,7 @@ test("Die 30 Minuten laufen ab der letzten Antwort, nicht ab dem Start", async (
   // Auch eine unpassende kurze Antwort zählt als Antwort (Rückfrage, Zeit neu).
   job().updated_at = minutesAgo(25);
   await say("teuer");
-  assert.match(lastText(), /Preis wie/);
+  assert.match(lastText(), /Was hast du pro Flasche bezahlt\?/);
   assert.ok(Date.parse(String(job().updated_at)) > Date.now() - 60_000);
   assert.deepEqual(lastButtons().map((b) => b.text), ["✖️ Abbrechen"]);
 });
@@ -129,13 +130,13 @@ test("Neues Anliegen verwirft den alten Ablauf (Text mit neuem Wein, Menü-Knopf
   reset([purchaseJob(2)]);
   await say("Wir probieren jetzt einen Rotwein");
   assert.equal(job().status, "discarded");
-  assert.match(texts()[0], /^Ich habe die angefangene Erfassung von Pintia 2019 \(\d\d:\d\d\) verworfen\.$/);
-  assert.match(lastText(), /erfasse ihn als verkostet/);
+  assert.equal(texts()[0], "Den angefangenen Pintia 2019 lasse ich mal beiseite.");
+  assert.match(lastText(), /notiere ihn als verkostet/);
 
   reset([purchaseJob(2)]);
   await say("🍽 Verkostet");
   assert.equal(job().status, "discarded");
-  assert.match(texts()[0], /verworfen/);
+  assert.match(texts()[0], /lasse ich mal beiseite/);
   assert.match(lastText(), /Verkostet/);
 
   reset([purchaseJob(2, "vintage")]);
@@ -149,14 +150,14 @@ test("Abbrechen: Knopf unter jeder Rückfrage und /abbrechen", async () => {
   await say("x"); // erneute Rückfrage mit „✖️ Abbrechen“
   await press("✖️ Abbrechen");
   assert.equal(job().status, "discarded");
-  assert.match(lastText(), /Verworfen – ich habe nichts gespeichert/);
+  assert.ok((VARIANTS.cancelled as readonly string[]).includes(lastText()), lastText());
 
   reset([purchaseJob(2, "price")]);
   await say("/abbrechen");
   assert.equal(job().status, "discarded");
-  assert.match(lastText(), /^✖️ Abgebrochen – ich habe die angefangene Erfassung von Pintia 2019 \(\d\d:\d\d\) verworfen\.$/);
+  assert.equal(lastText(), "Gut, den angefangenen Pintia 2019 lasse ich bleiben.");
   await say("/abbrechen");
-  assert.match(lastText(), /Es ist nichts offen/);
+  assert.match(lastText(), /Es ist gerade nichts offen/);
 });
 
 test("Foto mit Bildtext „… Vier von fünf Sternen“: Sterne nicht fragen; Jahrgang vom Etikett wartet; danach Ergänzungs-Knöpfe", async () => {
@@ -168,7 +169,7 @@ test("Foto mit Bildtext „… Vier von fünf Sternen“: Sterne nicht fragen; J
   await photoAlbum("la-cree", "Den hatten wir gerade im Restaurant probiert. Top Wine! Vier von fünf Sternen.");
   // Nur die Jahrgangsfrage – und dann warten (nichts gespeichert, keine Sterne-Frage).
   assert.equal((tasted().extracted as { step: string }).step, "t_vintage");
-  assert.match(lastText(), /Jahrgang <b>2022<\/b> – stimmt das\?/);
+  assert.match(lastText(), /Ist es der Jahrgang <b>2022<\/b>\?/);
   assert.equal(net.tables.wine_encounters.length, 0, "wartet auf die Antwort");
   assert.ok(!texts().some((t) => t.includes("Wie viele Sterne")), "Sterne stehen im Bildtext");
 
@@ -222,11 +223,11 @@ test("Neue Menüleiste: einmal pro Chat mitschicken, Version gemerkt", async () 
   reset();
   net.tables.ingest_jobs = []; // noch kein Merker
   await say("/id", 222);
-  assert.match(texts()[0], /Menüleiste unten ist neu/);
+  assert.match(texts()[0], /Menüleiste gibt es jetzt auch/);
   assert.ok((sent()[0].body.reply_markup as { keyboard?: { text: string }[][] }).keyboard!.flat().some((b) => b.text === "🍽 Verkostet"));
   net.telegram.length = 0;
   await say("/id", 222);
-  assert.ok(!texts().some((t) => t.includes("Menüleiste unten ist neu")), "nur einmal");
+  assert.ok(!texts().some((t) => t.includes("Menüleiste")), "nur einmal");
 });
 
 test("Schnelle Chat-Vorschläge (Ja/Nein im Knopf) laufen nach 30 Minuten ab", async () => {
@@ -238,5 +239,5 @@ test("Schnelle Chat-Vorschläge (Ja/Nein im Knopf) laufen nach 30 Minuten ab", a
       message: { message_id: 9, chat: { id: 111, type: "private" }, date: Math.floor(Date.now() / 1000) - 45 * 60, text: "❓ Pintia öffnen?" },
     },
   } as never);
-  assert.match(lastText(), /^⏱ Der Vorschlag „Pintia öffnen“ ist abgelaufen/);
+  assert.equal(lastText(), "Meinen Vorschlag „Pintia öffnen“ lasse ich mal beiseite – frag mich einfach nochmals.");
 });

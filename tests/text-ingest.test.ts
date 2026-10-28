@@ -86,7 +86,7 @@ test("A) Neuer Wein: Produzent, Herkunft, Trinkreife und Rebsorten per Recherche
   assert.deepEqual([st.storage_room, st.quantity, st.price, st.vendor_name, st.restock], ["Weinkeller", 6, 66, "Mövenpick", undefined]);
   const texts = net.telegram.map((t) => String(t.body.text));
   assert.ok(texts.some((t) => t.includes("Vega Sicilia – Pintia 2019") && t.includes("Trinkreife 2024–2032")), texts.join("\n---\n"));
-  assert.match(lastText(), /^Normalpreis\?/, "nur die fehlende Angabe wird gefragt");
+  assert.match(lastText(), /^Und was kostet er normalerweise\?/, "nur die fehlende Angabe wird gefragt");
 
   await handleUpdate(msg("72") as never);
   st = state("aaaaaaaa-0000-4000-8000-00000000000a");
@@ -163,12 +163,12 @@ test("B) Nachkauf: Wein + Jahrgang liegt schon im Bestand → Rückfrage, keine 
   const known = state("bbbbbbbb-0000-4000-8000-00000000000b").proposal;
   assert.deepEqual([known.region, known.alcohol_content, known.appellation], ["Toro", 14.5, "DO Toro"]);
   assert.equal(st.step, "restock"); assert.equal(job("bbbbbbbb-0000-4000-8000-00000000000b").matched_wine_id, W);
-  assert.match(lastText(), /Ist es ein Nachkauf\?/);
+  assert.match(lastText(), /Hast du nachgekauft\?/);
   await handleUpdate(cb("restock:bbbbbbbb-0000-4000-8000-00000000000b") as never);
   st = state("bbbbbbbb-0000-4000-8000-00000000000b");
   assert.equal(st.restock, true); assert.equal(st.step, "location", "Lagerort fehlt noch, Anzahl nicht");
   await handleUpdate(cb("loc:bbbbbbbb-0000-4000-8000-00000000000b:wohnzimmer") as never);
-  assert.equal(state("bbbbbbbb-0000-4000-8000-00000000000b").step, "price"); assert.match(lastText(), /3 Flaschen\. Was hast du bezahlt\?/);
+  assert.equal(state("bbbbbbbb-0000-4000-8000-00000000000b").step, "price"); assert.match(lastText(), /3 Flaschen\. Was hast du pro Flasche bezahlt\?/);
 });
 
 test("C) „Neuer Wein“ in der Menüleiste: wartet auf eine Beschreibung", async () => {
@@ -189,7 +189,7 @@ test("D) Ohne Jahrgang: Rückfrage (Zahl oder „Ohne Jahrgang (NV)“), Jahrgan
   const vintageButtons = (net.telegram.at(-1)!.body.reply_markup as { inline_keyboard: { text: string }[][] }).inline_keyboard.flat().map((b) => b.text);
   assert.ok(vintageButtons.includes("Ohne Jahrgang (NV)"));
   await handleUpdate(msg("irgendwann") as never);
-  assert.match(lastText(), /nur die Jahreszahl/);
+  assert.match(lastText(), /Eine Jahreszahl wie/);
   await handleUpdate(msg("2017") as never);
   st = state("dddddddd-0000-4000-8000-00000000000d");
   assert.equal(st.proposal.vintage_year, 2017); assert.equal(st.vintage_confirmed, true);

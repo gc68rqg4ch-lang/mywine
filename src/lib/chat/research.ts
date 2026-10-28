@@ -1,5 +1,6 @@
 import "server-only";
 
+import { T } from "@/lib/bot/texts";
 // „🔎 Nachrecherchieren“ im Bot: recherchiert einen Wein (gleiche Funktion wie die App),
 // meldet, was ergänzt wurde, und fragt bei Abweichungen pro Punkt in der Ich-Form nach:
 // „Ich habe beim Alkohol 14.5 % gefunden, bei dir steht 15 %. Übernehmen?“ [Ja] [Nein].
@@ -54,11 +55,11 @@ export async function startBotResearch(chatId: number, wineId: string, year: num
   const db = createAdminClient();
   const { data: wine } = await db.from("wines").select("name, producer").eq("id", wineId).maybeSingle();
   if (!wine) {
-    await sendMessage(chatId, "Diesen Wein finde ich nicht mehr.");
+    await sendMessage(chatId, T.researchWineGone);
     return;
   }
   if (announce) {
-    await sendMessage(chatId, `🔎 Ich recherchiere ${e(wineName(wine))}. Das dauert etwa eine Minute, ich melde mich.`);
+    await sendMessage(chatId, T.researchStart(wineName(wine)));
   }
   after(() => runBotResearch(chatId, wineId, year, wineName(wine)));
 }
@@ -85,7 +86,7 @@ export async function runBotResearch(chatId: number, wineId: string, year: numbe
     for (const s of suggestions) await sendMessage(chatId, suggestionQuestion(s), keyboard(s.id));
   } catch (error) {
     console.error("bot research failed", wineId, error);
-    const text = apiProblemForBot(error) ?? "❌ Die Recherche hat leider nicht geklappt. Versuch es bitte später nochmals.";
+    const text = apiProblemForBot(error) ?? T.researchError;
     await sendMessage(chatId, escapeHtml(text)).catch(() => undefined);
   }
 }
@@ -105,11 +106,11 @@ export async function handleResearchCallback(cb: TgCallbackQuery, actor: Actor) 
     const outcome = result.ok
       ? accept
         ? `✅ Ich habe es übernommen. ${e(result.message)}`
-        : "Okay, ich lasse deine Angabe, wie sie ist."
+        : T.researchKept
       : `⚠️ ${e(result.error)}`;
     await editMessage(chatId, messageId, `${question}\n${outcome}`);
   } catch (error) {
     console.error("research callback failed", error);
-    await answerCallback(cb.id, "Das hat leider nicht geklappt.");
+    await answerCallback(cb.id, T.errorNothingChanged);
   }
 }

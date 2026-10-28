@@ -14,6 +14,7 @@ import { callbackData } from "@/lib/ingest/messages";
 import type { IngestState } from "@/lib/ingest/schema";
 import { tastedData } from "@/lib/chat/tasted";
 import { runLater } from "@/lib/later";
+import { VARIANTS } from "@/lib/bot/texts";
 
 const net: Net = {
   tables: {
@@ -64,7 +65,7 @@ test("Album erkennen: Vorschlag mit Recherche, unsicherer Jahrgang wird vermerkt
   await processJob(JOB, 111);
   // Ohne Bildtext: erst fragen, nie ungefragt einbuchen.
   assert.equal(state().step, "intent");
-  assert.match(lastText(), /Pintia[\s\S]*2019\nHast du ihn gekauft \(Bestand\) oder nur verkostet\?/);
+  assert.match(lastText(), /Pintia[\s\S]*2019\nHast du ihn gekauft oder nur verkostet\?/);
   const intentButtons = (net.telegram.at(-1)!.body.reply_markup as { inline_keyboard: { text: string }[][] }).inline_keyboard.flat().map((b) => b.text);
   assert.deepEqual(intentButtons, ["🛒 Gekauft", "🍷 Nur verkostet", "✖️ Abbrechen"]);
   assert.equal(net.tables.inventory_items.length, 0);
@@ -80,13 +81,13 @@ test("Album erkennen: Vorschlag mit Recherche, unsicherer Jahrgang wird vermerkt
   assert.deepEqual([s.drink_from_year, s.drink_until_year], [2024, 2032]);
   assert.deepEqual(s.proposal.grape_shares, [{ grape: "Tinta de Toro", percent: 100 }]);
   assert.match(lastText(), /Pintia/);
-  assert.ok(net.telegram.some((t) => String(t.body.text).includes("2 Fotos erhalten")));
+  assert.ok(net.telegram.some((t) => (VARIANTS.photosReceived as readonly string[]).includes(String(t.body.text))), "freundliche Eingangsmeldung");
 });
 
 test("Jahrgang Pflicht: nach [Speichern] zuerst die Rückfrage zum Jahrgang", async () => {
   await handleUpdate(cb(callbackData("save", JOB)) as never);
   assert.equal(state().step, "vintage");
-  assert.match(lastText(), /Jahrgang <b>2019<\/b> gelesen, bin mir aber nicht sicher/);
+  assert.match(lastText(), /Ich lese den Jahrgang <b>2019<\/b>, bin mir aber nicht ganz sicher/);
   const buttons = (net.telegram.filter((t) => t.method === "sendMessage").at(-1)!.body.reply_markup as { inline_keyboard: { text: string }[][] }).inline_keyboard.flat().map((b) => b.text);
   assert.deepEqual(buttons, ["✅ 2019 stimmt", "Ohne Jahrgang (NV)", "✖️ Abbrechen"]);
 

@@ -679,7 +679,7 @@ function errorText(error: unknown) {
   if (code === "42501") return "Keine Berechtigung – nichts geändert.";
   if (code === "22023") return "Ungültiger Wert – nichts geändert.";
   if (code === "P0002") return "Das passt nicht mehr zum aktuellen Stand – nichts geändert.";
-  return "Speichern ist fehlgeschlagen – nichts geändert.";
+  return "Das hat leider nicht geklappt – ich habe nichts geändert.";
 }
 
 /**

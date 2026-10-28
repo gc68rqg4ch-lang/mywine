@@ -77,31 +77,24 @@ export function proposalMessage(state: IngestState, matched: boolean) {
     `Trauben: ${e(formatShares(p.grape_shares) || "–")}`,
     `Alkohol: ${p.alcohol_content != null ? `${p.alcohol_content.toLocaleString("de-CH")} %` : "–"}`,
     `Flasche: ${e(formatBottleSize(p.bottle_size_ml) ?? "–")}`,
-    "",
-    `<i>Erkennung: ${Math.round(r.confidence * 100)} % (${e(modelLabel(r.model))})</i>`,
   ];
-  if (r.notes) lines.push(`<i>Unsicher: ${e(r.notes)}</i>`);
+  // Keine Technik (Modell, Prozent) – nur, wo ich unsicher bin.
+  if (r.notes) lines.push("", `<i>Nicht ganz sicher bin ich bei: ${e(r.notes)}</i>`);
   const grapeNote = {
     research: "🍇 <i>Die Rebsorten habe ich für diesen Jahrgang recherchiert</i>",
     existing: "🍇 <i>Die Rebsorten habe ich aus deinem Bestand übernommen</i>",
   }[state.grape_source as string];
   if (grapeNote && p.grape_shares.length) lines.push(grapeNote);
-  if (matched) lines.push("✅ <i>Diesen Wein kenne ich schon – ich lege nur eine neue Charge an.</i>");
+  if (matched) lines.push("<i>Diesen Wein kenne ich schon – ich lege nur eine neue Charge an.</i>");
   if (r.enriched_fields.length) {
     lines.push(
       `🔎 <i>Im Web ergänzt habe ich: ${r.enriched_fields.map((f) => FIELD_LABELS[f]).join(", ")}</i>`,
     );
   }
   if (!p.name) {
-    lines.push("", "⚠️ Zum Speichern brauche ich den Namen des Weins – bitte korrigieren.");
+    lines.push("", "Mir fehlt noch der Name des Weins – magst du ihn kurz korrigieren?");
   }
   return lines.join("\n");
-}
-
-function modelLabel(model: string) {
-  if (model.includes("haiku")) return "Haiku";
-  if (model.includes("sonnet")) return "Sonnet";
-  return model;
 }
 
 export function reviewKeyboard(jobId: string): TgInlineKeyboard {

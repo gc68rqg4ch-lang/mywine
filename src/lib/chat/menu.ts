@@ -24,6 +24,7 @@ import { countPendingSuggestions } from "@/lib/research/suggestions";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { wineDetailsText, type WineDetails } from "./details";
+import { T } from "@/lib/bot/texts";
 import { encounterSummary, loadWineEncounters } from "@/lib/edit/encounters";
 import { discardAttach, startAttach } from "@/lib/ingest/attach";
 import { startDescribe } from "@/lib/ingest/flow";
@@ -896,7 +897,7 @@ export async function handleMenuCallback(cb: TgCallbackQuery, actor: MenuActor) 
     console.error("menu callback failed", cb.data, error);
     await answerCallback(cb.id, "Das hat leider nicht geklappt.");
     const back = "back" in action ? action.back : { kind: "none" as const };
-    await editMessage(chatId, messageId, "❌ Das hat leider nicht geklappt – versuch es bitte nochmals.", {
+    await editMessage(chatId, messageId, T.errorNothingChanged, {
       inline_keyboard: backRow(back),
     }).catch(() => undefined);
   }

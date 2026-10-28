@@ -3,6 +3,7 @@
 // API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.“
 
 import { formatDate } from "@/lib/format";
+import { T } from "@/lib/bot/texts";
 
 export type ApiProblem =
   | { kind: "usage_limit"; until: string | null; message: string }
@@ -50,7 +51,10 @@ export function apiProblem(error: unknown): ApiProblem | null {
 export function apiProblemForBot(error: unknown) {
   const problem = apiProblem(error);
   if (!problem) return null;
-  return problem.kind === "usage_limit"
-    ? `⛔ Ich komme gerade nicht an Claude: ${problem.message}`
-    : `❌ Ich komme gerade nicht an Claude. ${problem.message}`;
+  // Freundlich und ohne Technik (die Einzelheiten stehen im Log bzw. in der App).
+  if (problem.kind === "usage_limit") {
+    const until = usageLimit(error)?.until;
+    return T.apiPaused(until ?? null);
+  }
+  return T.apiUnavailable;
 }

@@ -8,6 +8,7 @@ import "server-only";
 import type { Database } from "@/lib/database.types";
 import { WINE_TYPE_LABELS, formatMoney, formatStarNumber, todayIso, wineName, type WineType } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
+import { genericPlaceKind } from "./places";
 import {
   DASH,
   clean,
@@ -205,6 +206,14 @@ async function describePlace(
   }
   const name = clean(ref.name);
   if (!name) return { error: "Ort: bitte einen Namen angeben." };
+  // Ort-Regel: „Restaurant“, „Bar“, „bei Freunden“ … ohne Namen legen keinen Ort an.
+  if (genericPlaceKind(name)) {
+    return {
+      label: DASH,
+      note: `„${name}“ ist kein Name – ich lege keinen Ort an.`,
+      resolve: async () => ({ id: null, created: false }),
+    };
+  }
   if (name.length > 120) return { error: "Ort: Name zu lang." };
   if (ref.kind != null && !PLACE_KINDS.includes(ref.kind)) return { error: "Ort: unbekannte Art." };
   const city = clean(ref.city);

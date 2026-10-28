@@ -133,12 +133,12 @@ test("Absicht erkennen: Bildtext/Nachricht, Ankündigung, Preis", () => {
 test("Foto ohne Hinweis: zuerst Frage „Gekauft“ / „Nur verkostet“ – nichts eingebucht", async () => {
   reset();
   await photoAlbum("ohne", null);
-  assert.match(lastText(), /Hast du ihn gekauft \(Bestand\) oder nur verkostet\?/);
+  assert.match(lastText(), /Hast du ihn gekauft oder nur verkostet\?/);
   assert.deepEqual(lastButtons().map((b) => b.text), ["🛒 Gekauft", "🍷 Nur verkostet", "✖️ Abbrechen"]);
   assert.equal(net.tables.inventory_items.length + net.tables.wine_encounters.length, 0);
   await press("🍷 Nur verkostet");
   assert.equal(step(), "t_vintage", "weiter im Schnellablauf");
-  assert.match(lastText(), /Jahrgang <b>2019<\/b> – stimmt das\?/);
+  assert.match(lastText(), /Ist es der Jahrgang <b>2019<\/b>\?/);
 });
 
 test("Schnellablauf: Foto „im Restaurant probiert“ → Jahrgang → ⭐ → gespeichert, danach freiwillige Angaben", async () => {
@@ -149,7 +149,7 @@ test("Schnellablauf: Foto „im Restaurant probiert“ → Jahrgang → ⭐ → 
   assert.equal((tastedJob().extracted as { wineId: string }).wineId, PINTIA);
   assert.deepEqual(lastButtons().map((b) => b.text), ["✅ 2019 stimmt", "Ohne Jahrgang (NV)", "✖️ Abbrechen"]);
   await press("✅ 2019 stimmt");
-  assert.match(lastText(), /⭐ Wie viele Sterne gibst du dem Vega Sicilia – Pintia 2019, Michel\?/);
+  assert.match(lastText(), /Und wie hat er dir geschmeckt, Michel\? Wie viele Sterne gibst du dem Vega Sicilia – Pintia 2019\?/);
   await press("4½ ★");
 
   // Sofort gespeichert: Eintrag mit Bewertung von Michel am bestehenden Wein.
@@ -158,7 +158,7 @@ test("Schnellablauf: Foto „im Restaurant probiert“ → Jahrgang → ⭐ → 
   const [enc] = net.tables.wine_encounters;
   assert.deepEqual([enc.wine_id, enc.vintage_year, enc.person_id, enc.source], [PINTIA, 2019, MICHEL, "bot"]);
   assert.deepEqual(net.tables.wine_ratings.map((r) => [r.person_id, r.rating, r.encounter_id]), [[MICHEL, 4.5, enc.id]]);
-  assert.match(lastText(), /^✅ Ich habe <b>Vega Sicilia – Pintia<\/b> 2019 als verkostet gespeichert mit ⭐ 4½\./);
+  assert.match(lastText(), /^(Wunderbar|Schön|Sehr gut)! Ich habe <b>Vega Sicilia – Pintia<\/b> 2019 als verkostet notiert – mit ⭐ 4½\./);
   assert.deepEqual(lastButtons().map((b) => b.text), ["📍 Ort", "💰 Preis", "🎉 Anlass", "👥 Begleitung", "🛒 Kaufen?", "📝 Notiz", "⭐ für Sara", "✅ Fertig"]);
   await runLater(); // Ergänzungen erst nach dem Speichern (Websuche)
 
@@ -182,14 +182,14 @@ test("Schnellablauf: Foto „im Restaurant probiert“ → Jahrgang → ⭐ → 
   assert.deepEqual(net.tables.wine_ratings.map((r) => [r.person_id, r.rating]), [[MICHEL, 4.5], [SARA, 4]]);
   await press("✅ Fertig");
   assert.equal(tastedJob().status, "confirmed");
-  assert.match(lastText(), /^👍 Fertig/);
+  assert.match(lastText(), /steht jetzt unter „Verkostet“/);
 });
 
 test("Ankündigung „wir verkosten einen Wein“: die nächste Nachricht gilt als verkostet (Freitext in einem Schritt)", async () => {
   reset();
   await say("Wir verkosten gerade einen Wein");
   assert.equal(step(), "t_armed");
-  assert.match(lastText(), /erfasse ihn als verkostet/);
+  assert.match(lastText(), /notiere ihn als verkostet/);
 
   tastedReply = {
     name: "Pintia", producer: null, vintage_year: 2019, type: null, country: null, region: null,
@@ -228,7 +228,7 @@ test("Freitext ohne Jahrgang und Sterne: nur Fehlendes fragen; [Nein] speichert 
   assert.equal(step(), "t_rate");
   await say("4,5");
   assert.equal(step(), "t_confirm");
-  assert.match(lastText(), /Neuer Wein – ich lege ihn an/);
+  assert.match(lastText(), /Diesen Wein lege ich neu an/);
   await press("✖️ Nein");
   assert.equal(tastedJob().status, "discarded");
   assert.equal(net.tables.wines.length + net.tables.wine_encounters.length, 1, "nur Pintia, kein Eintrag");

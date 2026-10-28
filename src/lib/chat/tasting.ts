@@ -1,5 +1,6 @@
 import "server-only";
 
+import { T, say } from "@/lib/bot/texts";
 import { after } from "next/server";
 import { apiProblemForBot } from "@/lib/ai/api-errors";
 import type { Json } from "@/lib/database.types";
@@ -288,7 +289,7 @@ export async function handleTastingText(jobId: string, draft: TastingDraft, chat
       console.error("tasting extraction failed", error);
       await saveDraft(db, jobId, { ...draft, step: "text" }).catch(() => undefined);
       const limit = apiProblemForBot(error);
-      await sendMessage(chatId, limit ? e(limit) : "❌ Das konnte ich nicht zuordnen. Schreib es bitte nochmals – oder tippe ✖️ Abbrechen.").catch(
+      await sendMessage(chatId, limit ? e(limit) : T.tastingNotUnderstood).catch(
         () => undefined,
       );
     }
@@ -329,13 +330,13 @@ export async function handleTastingCallback(cb: TgCallbackQuery) {
   const messageId = cb.message?.message_id;
   const parsed = decode(cb.data);
   if (chatId == null || messageId == null || !parsed) {
-    await answerCallback(cb.id, "Dieser Knopf ist nicht mehr gültig.");
+    await answerCallback(cb.id, T.tastingStale);
     return;
   }
   const db = createAdminClient();
   const job = await loadDraft(db, parsed.jobId, chatId);
   if (!job || job.status !== "needs_review") {
-    await answerCallback(cb.id, job?.status === "confirmed" ? "Schon gespeichert." : "Dieser Entwurf ist abgeschlossen.");
+    await answerCallback(cb.id, job?.status === "confirmed" ? say("saved") : T.tastingClosed);
     await clearKeyboard(chatId, messageId);
     return;
   }
@@ -346,7 +347,7 @@ export async function handleTastingCallback(cb: TgCallbackQuery) {
       case "c": {
         await db.from("ingest_jobs").update({ status: "discarded" }).eq("id", job.id);
         await answerCallback(cb.id);
-        await editMessage(chatId, messageId, `📝 ${e(draft.title)}: Verkostung verworfen.`);
+        await editMessage(chatId, messageId, T.tastingDiscarded(draft.title));
         return;
       }
       case "f": {
@@ -374,13 +375,13 @@ export async function handleTastingCallback(cb: TgCallbackQuery) {
       case "a": {
         const saved = await insertTasting(db, job.id, draft);
         if (!saved) {
-          await answerCallback(cb.id, "Schon gespeichert.");
+          await answerCallback(cb.id, say("saved"));
           return;
         }
         const name = await personName(db, draft.personId);
         const summary = draftSummary(normalizeData(draft.sat, todayIso()));
         const url = appUrl(`/flasche/${draft.itemId}/verkostung?t=${saved.tastingId}`);
-        await answerCallback(cb.id, parsed.action === "a" ? "Gespeichert – jetzt in der App bearbeiten." : "Gespeichert.");
+        await answerCallback(cb.id, parsed.action === "a" ? "Gespeichert – jetzt kannst du sie in der App bearbeiten." : say("saved"));
         await editMessage(
           chatId,
           messageId,
@@ -392,6 +393,6 @@ export async function handleTastingCallback(cb: TgCallbackQuery) {
     }
   } catch (error) {
     console.error("tasting callback failed", cb.data, error);
-    await answerCallback(cb.id, "Das hat nicht geklappt.");
+    await answerCallback(cb.id, T.errorNothingChanged);
   }
 }

@@ -126,7 +126,7 @@ test("Alles oder nichts – gemeldeter Fall: neuer Wein „aria“/„ff“, Ein
       [`rating:${M}`]: "4.5",
     }) as Edit[];
     const result = await applyEdit(db, { ...(edit as Extract<Edit, { kind: "addEncounter" }>), personId: M });
-    assert.deepEqual(result, { ok: false, error: "Speichern ist fehlgeschlagen – nichts geändert." });
+    assert.deepEqual(result, { ok: false, error: "Das hat leider nicht geklappt – ich habe nichts geändert." });
   } finally {
     net.fail = undefined;
     console.error = original;

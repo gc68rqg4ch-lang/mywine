@@ -38,8 +38,7 @@ export function DeleteEncounter({
     const data = new FormData();
     data.set("kind", "deleteWine");
     data.set("wineId", emptyWine.wineId);
-    // Die Auswahl „Eintrag und Wein“ ist die Bestätigung – der Name wird nicht nochmals getippt.
-    data.set("confirmName", emptyWine.name);
+    // Die Auswahl „Eintrag und Wein“ ist die Bestätigung.
     data.set("back", lastListUrl("/verkostet") ?? "/verkostet");
     markRestore();
     setError(null);

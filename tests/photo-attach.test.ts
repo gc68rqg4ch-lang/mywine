@@ -73,7 +73,7 @@ test("A) Album mit zwei Fotos: Vorder- und Rückseite, je mit Vorschaubild; kein
 test("B) Einzelfoto: Seite wählen; Vorderseite gibt es schon → Rückfrage → ersetzen", async () => {
   const b = await attach(["#206080"]);
   assert.equal(jobs().find((j) => j.id === b)!.extracted.step, "side");
-  assert.match(lastText(), /Vorderseite oder die Rückseite/);
+  assert.match(lastText(), /Vorder- oder die Rückseite/);
   await handleUpdate(cb(`A:f:${b}`));
   assert.match(lastText(), /habe ich schon: Vorderseite\. Soll ich sie durch die neuen Fotos ersetzen\?/);
   assert.equal(media().length, 2, "vor der Antwort bleibt alles");

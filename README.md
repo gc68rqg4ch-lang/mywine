@@ -131,8 +131,9 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   oder ≥ Anzahl = ganze Position) mit genau einem Journal-Eintrag „deleted“. Die letzte Flasche weg → der Wein
   bleibt mit Bewertungen und Verkostungen. Auch das Chat-Tool `propose_delete_bottles` geht diesen Weg.
 - **Ganzer Wein** (`deleteWine`): „🗑 Wein löschen“ ganz unten auf der Weinseite öffnet die rote Bestätigung. Die
-  Rückfrage zeigt, was alles verschwindet („7 Flaschen …, 3 Bewertungen, …, 4 Fotos, 1 PDF“); erst wenn der
-  Weinname eingetippt ist, wird „Endgültig löschen“ aktiv. `public.delete_wine(p_wine_id)` löscht alles ohne
+  Rückfrage zeigt, was alles verschwindet („7 Flaschen …, 3 Bewertungen, …, 4 Fotos, 1 PDF“), darunter in Rot „Alles
+  wird endgültig gelöscht und lässt sich nicht wiederherstellen.“ – dann „Abbrechen“ / „Endgültig löschen“ (ohne
+  Namenseingabe). `public.delete_wine(p_wine_id)` löscht alles ohne
   Journal und liefert die Storage-Pfade; danach werden Originale und Vorschaubilder aus den Buckets entfernt
   (Admin-Client, serverseitig). Anschliessend zurück zur Liste (Zustand erhalten).
 - **Bot:** unter ✏️ Bearbeiten „🗑 Flaschen löschen“ (Position wählen, Anzahl, Rückfrage „🗑 Löschen“ /
@@ -242,6 +243,7 @@ Abgedeckt: Bot-Zugang und `/id` (`access`), Bewerten (`rating`), Wein-Menü (`wi
 Erfassung per Foto, Text, Nachkauf und Jahrgang-Pflicht (`photo-ingest`, `text-ingest`, `ingest-helpers`),
 Verkostet im Bot – Absicht, Schnellablauf, Freitext, Abgleich ohne Produzent, alles oder nichts, leerer Wein (`tasted-bot`),
 offene Rückfragen – Ablauf nach 30 Min., neues Anliegen, Abbrechen, Bildtext, Menüleiste (`bot-pending`),
+Sprache – keine technischen Texte, Varianten, Ort-Regel, Wein löschen ohne Namen (`bot-texts`),
 Fotos nachreichen (`photo-attach`, `media-*`), Bearbeiten-Modul inkl. `move_bottles` und `change_vintage`
 (`edit`), Weinseite mit Bearbeiten in der Karte, Büroklammer und Reihenfolge (`wine-units`), unwiderruflich löschen – Flaschen und ganzer Wein samt Dateien (`delete`), Weinseite (`wine-page`), Übersicht, Typ-Filter und Gruppierungen inkl. Trinkreife (`overview`,
 `lists`, `drink-status`), Verkostung (`tasting`), Recherche mit Lücken, Vorschlägen und Limit-Stopp
@@ -392,6 +394,20 @@ Eintrag, Bewertungen; bei einem Fehler wird Angelegtes zurückgenommen und ich m
   WSET-Verkostungen (`wouldLeaveEmptyWine`), frage ich zusätzlich „Der Wein bleibt sonst leer zurück. Auch den Wein
   löschen?“ → „Nur Eintrag“ / „Eintrag und Wein“ / „Abbrechen“. Die App fragt beim Löschen eines Verkostet-Eintrags
   genauso.
+
+### Antoines Sprache (alle Bot-Texte)
+
+`src/lib/bot/texts.ts`: die Meldungen von Antoine an einem Ort – wie ein freundlicher Sommelier (Ich-Form, du,
+Schweizer Schreibweise, kurz und warm, keine technischen Meldungen, Emojis sparsam). Häufige Meldungen (Foto
+erhalten, gespeichert, fertig, abgebrochen) gibt es in 2–3 Varianten, zufällig gewählt (`say`, `pick`). Fehler
+lauten z. B. „Da ist mir leider etwas schiefgegangen – ich habe nichts gespeichert. Versuchst du es nochmals?“,
+Abgelaufenes/Verworfenes „Den angefangenen Pintia 2019 lasse ich mal beiseite.“ Knopf-Beschriftungen und Menüs
+stehen weiterhin bei den Tastaturen (`messages.ts`, `menu-view.ts`, `tasted.ts`).
+
+**Ort-Regel** (App und Bot, `src/lib/edit/places.ts`): Allgemeine Wörter wie „Restaurant“, „Bar“, „zuhause bei
+Freunden“ oder „Weingut“ ohne Namen legen keinen Ort an (gemeinsames Modul: `describePlace`). Der Bot merkt sich
+höchstens die Art und fragt beim 📍 Ort gezielt nach („In welchem Restaurant wart ihr?“). Nur echte Namen
+(„Kronenhalle“, „Napa Grill“, „Restaurant Kronenhalle“) werden Orte.
 
 ### Offene Rückfragen (alle Abläufe im Bot)
 
