@@ -1,3 +1,4 @@
+import { parseBestBefore, toBestBeforeValue } from "./best-before";
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -8,6 +9,7 @@ import { strictSchemaProblems } from "@/lib/ai/schema-limits";
 import { hasCompletePercents, normalizeGrapeShares, type GrapeShare } from "@/lib/grapes/shares";
 import {
   GrapeShareSchema,
+  CorrectionSchema,
   RecognitionSchema,
   TastedTextSchema,
   TextEntrySchema,
@@ -46,6 +48,10 @@ export class RecognitionError extends Error {}
 const NAME_RULE =
   "Den Produzenten nicht in den Namen – ausser der Name besteht nur aus einer Qualitäts-/Reifestufe oder einem Gattungswort (Reserva, Gran Reserva, Grande Reserva, Riserva, Crianza, Reserve, Grand Vin, Cuvée, Tinto, Rosso): dann Produzent bzw. Marke davor, z. B. „Legaris Reserva“, „Protos Reserva“, „Pago de los Capellanes Reserva“ (ohne „Bodegas“).";
 
+/** Gilt für Foto und Text: Ablaufdatum nur, wenn klar lesbar – sonst leer. */
+const BEST_BEFORE_RULE =
+  "best_before: Ablaufdatum, falls eins dasteht (oft bei alkoholfreien Weinen und Schaumweinen: „mindestens haltbar bis“, „MHD“, „best before“, „à consommer de préférence avant“, „consumir preferentemente antes de“, „da consumarsi preferibilmente entro“). Mit Tag als YYYY-MM-DD, nur Monat und Jahr als YYYY-MM (z. B. „09/2028“ oder „SEP 2028“ → 2028-09). Leer, wenn keins dasteht oder es nicht klar lesbar ist – nicht raten, nie den Jahrgang oder das Abfülldatum (Los/Lot) nehmen.";
+
 const RECOGNITION_SYSTEM = `Du liest Weinetiketten für eine private Weinsammlung in der Schweiz.
 Du bekommst Fotos der Vorder- und meist auch der Rückseite derselben Flasche.
 Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. Land aus "Product of Spain").
@@ -57,7 +63,8 @@ Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine le
 - grape_shares: Rebsorten, die auf dem Etikett stehen; percent nur, wenn der Anteil aufgedruckt ist (z. B. "85 % Tempranillo"), sonst null. Bei reinsortigen Weinen ("100 % Merlot" oder Sortenbezeichnung wie "Pinot Noir") ist percent 100.
 - vintage_certain: true nur, wenn der Jahrgang klar auf dem Etikett steht. Fehlt er oder ist er unleserlich, ist vintage_year null bzw. vintage_certain false – rate keinen Jahrgang.
 - image_sides: für jedes Foto in Reihenfolge, ob es das Vorderetikett (front), das Rückenetikett (back) oder etwas anderes (other) zeigt.
-- confidence: wie sicher Name, Produzent und Jahrgang stimmen (1.0 = klar lesbar, unter 0.7 = geraten oder unleserlich).`;
+- confidence: wie sicher Name, Produzent und Jahrgang stimmen (1.0 = klar lesbar, unter 0.7 = geraten oder unleserlich).
+- ${BEST_BEFORE_RULE}`;
 
 function imageBlocks(images: LabelImage[]): Anthropic.Beta.BetaContentBlockParam[] {
   // „Foto n“ vor jedem Bild, damit image_sides der Reihenfolge eindeutig folgt.
@@ -102,7 +109,15 @@ export type RecognitionResult = {
   imageSides: Recognition["image_sides"] | null;
   /** Jahrgang eindeutig gelesen; sonst fragt der Bot nach. */
   vintageCertain: boolean;
+  /** Ablaufdatum vom Etikett („2028-09“ bzw. „2027-05-31“), nur wenn gültig; sonst null. */
+  bestBefore?: string | null;
 };
+
+/** Ablaufdatum aus der Erkennung prüfen und vereinheitlichen; ungültig/leer → null. */
+export function cleanBestBefore(raw: string | null | undefined) {
+  const bb = parseBestBefore(raw);
+  return bb ? toBestBeforeValue(bb) : null;
+}
 
 /** Etikett erkennen: zuerst Haiku, bei Konfidenz < 0.7 nochmals mit Sonnet. */
 export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionResult> {
@@ -114,7 +129,7 @@ export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionR
     result = await recognizeWith(model, images);
   }
 
-  const { confidence, uncertain_notes, image_sides, vintage_certain, ...proposal } = result;
+  const { confidence, uncertain_notes, image_sides, vintage_certain, best_before, ...proposal } = result;
   return {
     proposal: normalizeProposal(proposal),
     model,
@@ -122,6 +137,7 @@ export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionR
     notes: uncertain_notes?.trim() || null,
     imageSides: image_sides.length === images.length ? image_sides : null,
     vintageCertain: vintage_certain && proposal.vintage_year != null,
+    bestBefore: cleanBestBefore(best_before),
   };
 }
 
@@ -363,10 +379,11 @@ const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in 
 - name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500).
 - Land auf Deutsch.
+- ${BEST_BEFORE_RULE}
 - purchase: Anzahl Flaschen, Lagerort (nur Weinkeller oder Wohnzimmer), bezahlter Preis (price) und Normalpreis (regular_price) pro Flasche in CHF, Händler. Ein einzelner Preis ist der bezahlte (price); regular_price nur, wenn ausdrücklich ein Normal-/Regulärpreis genannt ist (z. B. „49 statt 66“: price 49, regular_price 66). Nicht Genanntes: 0 bzw. leer. Ein Gesamtpreis für mehrere Flaschen wird durch die Anzahl geteilt.`;
 
 /** Freitext → Wein + Kaufangaben (Haiku, bei Fehler oder Ablehnung Sonnet). */
-export async function parseTextEntry(text: string): Promise<{ proposal: WineProposal; purchase: TextEntry["purchase"] }> {
+export async function parseTextEntry(text: string): Promise<{ proposal: WineProposal; purchase: TextEntry["purchase"]; bestBefore: string | null }> {
   const run = async (model: string) => {
     const response = await anthropic().beta.messages.parse({
       model,
@@ -388,32 +405,37 @@ export async function parseTextEntry(text: string): Promise<{ proposal: WineProp
     if (error instanceof Anthropic.AuthenticationError || usageLimit(error)) throw error;
     parsed = await run(FALLBACK_MODEL);
   }
-  const { purchase, ...wine } = parsed;
-  return { proposal: normalizeProposal(wine), purchase };
+  const { purchase, best_before, ...wine } = parsed;
+  return { proposal: normalizeProposal(wine), purchase, bestBefore: cleanBestBefore(best_before) };
 }
 
-/** Übernimmt eine Freitext-Korrektur in den Vorschlag (Haiku, strukturierte Ausgabe). */
+/**
+ * Übernimmt eine Freitext-Korrektur in den Vorschlag (Haiku, strukturierte Ausgabe), samt
+ * Ablaufdatum („haltbar bis 10/2028“). bestBefore: null = keins (bzw. entfernt).
+ */
 export async function applyCorrection(
   proposal: WineProposal,
   correction: string,
-): Promise<WineProposal> {
+  bestBefore: string | null = null,
+): Promise<WineProposal & { bestBefore: string | null }> {
   const response = await anthropic().beta.messages.parse({
     model: RECOGNITION_MODEL,
     max_tokens: 16000,
     system:
-      "Du pflegst Weindaten. Übernimm die Korrektur des Users in die bestehenden Daten und gib den vollständigen, aktualisierten Datensatz zurück. Ändere nur, was die Korrektur betrifft. Land auf Deutsch.",
+      "Du pflegst Weindaten. Übernimm die Korrektur des Users in die bestehenden Daten und gib den vollständigen, aktualisierten Datensatz zurück. Ändere nur, was die Korrektur betrifft. Land auf Deutsch. best_before (Ablaufdatum) als YYYY-MM-DD bzw. YYYY-MM, leer = keins.",
     messages: [
       {
         role: "user",
-        content: `Aktuelle Daten: ${JSON.stringify(proposal)}\n\nKorrektur: ${correction}`,
+        content: `Aktuelle Daten: ${JSON.stringify({ ...proposal, best_before: bestBefore ?? "" })}\n\nKorrektur: ${correction}`,
       },
     ],
-    output_config: { format: betaZodOutputFormat(WineProposalSchema) },
+    output_config: { format: betaZodOutputFormat(CorrectionSchema) },
   });
   if (response.stop_reason === "refusal" || !response.parsed_output) {
     throw new RecognitionError("Die Korrektur konnte nicht übernommen werden.");
   }
-  return normalizeProposal(response.parsed_output);
+  const { best_before, ...wine } = response.parsed_output;
+  return { ...normalizeProposal(wine), bestBefore: cleanBestBefore(best_before) };
 }
 
 const TASTED_SYSTEM = (today: string) => `Du erfasst für eine private Weinsammlung in der Schweiz einen Wein, den jemand irgendwo verkostet hat (Restaurant, Bar, bei Freunden), aus einer kurzen Nachricht – z. B. „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne, würd ich kaufen“.

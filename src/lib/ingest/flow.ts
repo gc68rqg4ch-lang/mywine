@@ -1,3 +1,4 @@
+import { appendNote, bestBeforeSentence, bestBeforeInText, formatBestBefore, parseBestBefore, toBestBeforeValue } from "./best-before";
 import "server-only";
 
 // Gemeinsamer Ablauf der Erfassung (Foto und Text) nach der Erkennung: Kaufangaben
@@ -166,6 +167,8 @@ export async function continuePhotoPurchase(
       grape_source: grapes.source,
       drink_from_year: web?.drink.from ?? null,
       drink_until_year: web?.drink.until ?? null,
+      // Ablaufdatum vom Etikett, sonst aus dem Bildtext („haltbar bis 09/2028“).
+      ...bestBeforeState(recognition.bestBefore ?? (bestBeforeInText(caption) && toBestBeforeValue(bestBeforeInText(caption)!))),
       recognition: {
         model: recognition.model,
         confidence: recognition.confidence,
@@ -190,7 +193,7 @@ export async function continuePhotoPurchase(
     if (error) throw error;
 
     if (similar.length) await askSimilar(chatId, jobId, similar);
-    else await sendMessage(chatId, proposalMessage(state, Boolean(known)), reviewKeyboard(jobId));
+    else await sendMessage(chatId, proposalMessage(state, Boolean(known), await bestBeforeConflict(db, known?.id ?? null, state)), reviewKeyboard(jobId));
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }
@@ -300,7 +303,7 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
       );
       return;
     case "confirm":
-      await sendMessage(chatId, textSummaryMessage(state), confirmKeyboard(job.id));
+      await sendMessage(chatId, textSummaryMessage(state, await bestBeforeConflict(createAdminClient(), job.matched_wine_id, state)), confirmKeyboard(job.id));
       return;
     case "saving":
       later(() => saveJob(job, chatId));
@@ -426,6 +429,7 @@ export async function saveJob(job: IngestJob, chatId: number) {
     await fillWineGaps(db, wineId, state.proposal);
     await storeGrapes(db, wineId, state);
     await storeDrinkWindow(db, wineId, state);
+    await storeBestBefore(db, wineId, state);
     // Händler aus dem Text erst jetzt anlegen bzw. zuordnen.
     const vendor =
       state.vendor_id === undefined && state.vendor_name ? await resolveVendor(db, state.vendor_name) : null;
@@ -665,6 +669,8 @@ export async function processTextJob(jobId: string, chatId: number, text: string
       recognition: { ...enriched, sources: [...enriched.sources, ...grapes.sources].slice(0, 8) },
       drink_from_year: drink.from,
       drink_until_year: drink.until,
+      // Ablaufdatum aus dem Text (eindeutig im Text, sonst die Erkennung).
+      ...bestBeforeState((bestBeforeInText(text) && toBestBeforeValue(bestBeforeInText(text)!)) ?? parsed.bestBefore),
       ...(p.storage_room ? { storage_room: p.storage_room } : {}),
       ...(Number.isInteger(p.quantity) && p.quantity > 0 && p.quantity <= 999
         ? { quantity: p.quantity }
@@ -816,7 +822,7 @@ export async function chooseSimilar(db: AdminClient, job: IngestJob, chatId: num
 
   if (state.source !== "text") {
     const next = await advanceJob(db, job, "similar", { ...patch, step: "review" }, columns);
-    if (next) await sendMessage(chatId, proposalMessage(jobState(next)!, Boolean(wine)), reviewKeyboard(job.id));
+    if (next) await sendMessage(chatId, proposalMessage(jobState(next)!, Boolean(wine), await bestBeforeConflict(db, wine?.id ?? null, jobState(next)!)), reviewKeyboard(job.id));
     return next;
   }
   if (wine && !needsVintage({ ...state, ...patch })) patch.restock = await inStock(db, wine.id, proposal.vintage_year);
@@ -828,4 +834,69 @@ export async function chooseSimilar(db: AdminClient, job: IngestJob, chatId: num
   if (step === "producer") await sendMessage(chatId, T.producerAsk, cancelKeyboard(job.id));
   else await askFor(next, chatId, vendors);
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// Ablaufdatum (Mindesthaltbarkeit) vom Etikett
+
+/**
+ * Ablaufdatum in den Zustand: best_before und Trinkfenster „bis“ = Jahr des Datums (das Etikett
+ * geht der Recherche vor; „ab“ bleibt, wie es ist). Ohne Datum: ein früher daraus gesetztes
+ * „bis“ fällt weg.
+ */
+export function bestBeforeState(value: string | null | undefined, before?: Pick<IngestState, "best_before" | "drink_until_year">): Partial<IngestState> {
+  const bb = parseBestBefore(value);
+  if (bb) return { best_before: toBestBeforeValue(bb), drink_until_year: bb.year };
+  const old = parseBestBefore(before?.best_before);
+  return { best_before: undefined, ...(old && before?.drink_until_year === old.year ? { drink_until_year: null } : {}) };
+}
+
+/** Bestehendes Trinkfenster „bis“ dieses Weins und Jahrgangs (null = keins bzw. neuer Wein). */
+async function existingDrinkUntil(db: AdminClient, wineId: string | null, year: number | null) {
+  if (!wineId) return null;
+  let q = db.from("wine_vintages").select("drink_from_year, drink_until_year").eq("wine_id", wineId);
+  q = year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
+  const { data } = await q.maybeSingle();
+  return data ?? null;
+}
+
+/**
+ * Hinweis für die Zusammenfassung, wenn das Trinkfenster schon anders gefüllt ist – es wird
+ * nicht überschrieben („Trinkreife bleibt bis 2030 (Etikett: September 2028)“).
+ */
+export async function bestBeforeConflict(db: AdminClient, wineId: string | null, state: IngestState): Promise<string[]> {
+  const bb = parseBestBefore(state.best_before);
+  if (!bb) return [];
+  const existing = await existingDrinkUntil(db, wineId, state.proposal.vintage_year).catch(() => null);
+  const until = existing?.drink_until_year ?? null;
+  const from = existing?.drink_from_year ?? null;
+  if (until != null && until !== bb.year) return [T.bestBeforeKeepsUntil(until, formatBestBefore(bb))];
+  if (until == null && from != null && from > bb.year) return [T.bestBeforeKeepsFrom(from, formatBestBefore(bb))];
+  return [];
+}
+
+/**
+ * Beim Einbuchen: „bis“ = Jahr des Ablaufdatums (nur wenn leer und mit „ab“ verträglich) und
+ * „Haltbar bis …“ an die Notiz des Jahrgangs hängen – auch ohne Jahrgang (NV). Nie überschreiben.
+ */
+export async function storeBestBefore(db: AdminClient, wineId: string, state: IngestState) {
+  const bb = parseBestBefore(state.best_before);
+  if (!bb) return;
+  const year = state.proposal.vintage_year;
+  try {
+    let q = db.from("wine_vintages").select("id, drink_from_year, drink_until_year, notes").eq("wine_id", wineId);
+    q = year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year);
+    const { data: row, error } = await q.maybeSingle();
+    if (error) throw error;
+    const notes = appendNote(row?.notes, bestBeforeSentence(bb));
+    const fits = row?.drink_from_year == null || row.drink_from_year <= bb.year;
+    const until = row?.drink_until_year == null && fits ? bb.year : (row?.drink_until_year ?? null);
+    const { error: saveError } = row
+      ? await db.from("wine_vintages").update({ drink_until_year: until, notes }).eq("id", row.id)
+      : await db.from("wine_vintages").insert({ wine_id: wineId, vintage_year: year, drink_until_year: bb.year, notes });
+    if (saveError) throw saveError;
+  } catch (error) {
+    // Die Flasche ist gespeichert; Ablaufdatum lässt sich in der App nachtragen.
+    console.error("storing best before failed", error);
+  }
 }

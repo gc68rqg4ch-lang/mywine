@@ -1,7 +1,8 @@
 import "server-only";
 
 import { T } from "@/lib/bot/texts";
-import { formatBottleSize, formatBottles, formatMoney, wineTypeLabel } from "@/lib/format";
+import { formatBottleSize, formatBottles, formatMoney, todayIso, wineTypeLabel } from "@/lib/format";
+import { formatBestBefore, isExpired, parseBestBefore } from "./best-before";
 import { formatShares } from "@/lib/grapes/shares";
 import { escapeHtml } from "@/lib/telegram/api";
 import type { TgInlineKeyboard } from "@/lib/telegram/types";
@@ -75,7 +76,14 @@ const FIELD_LABELS: Record<EnrichableField, string> = {
 
 const e = (value: string) => escapeHtml(value);
 
-export function proposalMessage(state: IngestState, matched: boolean) {
+/** „📆 Haltbar bis September 2028“ (mit „schon abgelaufen“), wenn ein Ablaufdatum da ist. */
+export function bestBeforeLine(state: Pick<IngestState, "best_before">, today = todayIso()) {
+  const bb = parseBestBefore(state.best_before);
+  return bb ? T.bestBeforeLine(e(formatBestBefore(bb)), isExpired(bb, today)) : null;
+}
+
+/** extra: Hinweise aus der DB (z. B. bestehendes Trinkfenster bleibt). */
+export function proposalMessage(state: IngestState, matched: boolean, extra: string[] = []) {
   const p = state.proposal;
   const r = state.recognition;
   const lines = [
@@ -90,6 +98,8 @@ export function proposalMessage(state: IngestState, matched: boolean) {
     `Trauben: ${e(formatShares(p.grape_shares) || "–")}`,
     `Alkohol: ${p.alcohol_content != null ? `${p.alcohol_content.toLocaleString("de-CH")} %` : "–"}`,
     `Flasche: ${e(formatBottleSize(p.bottle_size_ml) ?? "–")}`,
+    ...[bestBeforeLine(state)].filter((l): l is string => l != null),
+    ...extra,
   ];
   // Keine Technik (Modell, Prozent) – nur, wo ich unsicher bin.
   if (r.notes) lines.push("", `<i>Nicht ganz sicher bin ich bei: ${e(r.notes)}</i>`);
@@ -332,6 +342,7 @@ export function wineSummaryLines(state: IngestState) {
         .filter(Boolean)
         .join(" · "),
     ),
+    bestBeforeLine(state),
   ].filter((l) => l && l !== "<b></b>");
 }
 
@@ -347,8 +358,8 @@ export function priceLine(paid: number | null | undefined, regular: number | nul
   return null;
 }
 
-/** Zusammenfassung vor dem Speichern (Text-Erfassung). */
-export function textSummaryMessage(state: IngestState) {
+/** Zusammenfassung vor dem Speichern (Text-Erfassung). extra: Hinweise aus der DB. */
+export function textSummaryMessage(state: IngestState, extra: string[] = []) {
   const purchase = [
     state.quantity != null ? formatBottles(state.quantity) : null,
     state.storage_room ?? null,
@@ -367,6 +378,7 @@ export function textSummaryMessage(state: IngestState) {
   return [
     "📝 <b>Zusammenfassung</b>",
     ...wineSummaryLines(state),
+    ...extra,
     e(purchase),
     state.is_gift
       ? [T.giftLine(state.gift_from ?? null), state.regular_price != null ? e(`Normalpreis ${formatMoney(state.regular_price, "CHF")}`) : null]

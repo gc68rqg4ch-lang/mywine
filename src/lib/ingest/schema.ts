@@ -30,6 +30,21 @@ export const WineProposalSchema = z.object({
 });
 export type WineProposal = z.infer<typeof WineProposalSchema>;
 
+/**
+ * Ablaufdatum vom Etikett als Text (nicht nullable – Grenze von 16 Union-Feldern):
+ * „YYYY-MM-DD“ mit Tag, „YYYY-MM“ nur Monat/Jahr, leer = keins oder nicht sicher lesbar.
+ */
+const BestBeforeField = z
+  .string()
+  .describe(
+    "Ablaufdatum („mindestens haltbar bis“, „zu verbrauchen bis“, „best before“, „à consommer de préférence avant“, „consumir preferentemente antes de“ …) als YYYY-MM-DD bzw. YYYY-MM, wenn nur Monat und Jahr dastehen; leer, wenn keins da ist oder es nicht klar lesbar ist (nicht raten). Nicht der Jahrgang.",
+  )
+  // Fehlt das Feld in der Antwort, gilt „keins“ (die Erkennung scheitert deswegen nicht).
+  .catch("");
+
+/** Korrektur des Vorschlags (✏️ Korrigieren): Weindaten plus Ablaufdatum. */
+export const CorrectionSchema = WineProposalSchema.extend({ best_before: BestBeforeField });
+
 export const RecognitionSchema = WineProposalSchema.extend({
   confidence: z
     .number()
@@ -44,6 +59,7 @@ export const RecognitionSchema = WineProposalSchema.extend({
   image_sides: z
     .array(z.enum(["front", "back", "other"]))
     .describe("Pro Foto in der gesendeten Reihenfolge: front = Vorderetikett, back = Rückenetikett, other = anderes"),
+  best_before: BestBeforeField,
 });
 export type Recognition = z.infer<typeof RecognitionSchema>;
 
@@ -111,6 +127,7 @@ export type IngestState = {
     confidence: number;
     notes: string | null;
     imageSides: ("front" | "back" | "other")[] | null;
+    bestBefore?: string | null;
   };
   /** photo (Standard) oder text: Erfassung per Freitext ohne Etikett. */
   source?: "photo" | "text";
@@ -133,6 +150,8 @@ export type IngestState = {
   vintage_uncertain?: boolean;
   /** Die Person hat den Jahrgang bestätigt (auch „ohne Jahrgang“). */
   vintage_confirmed?: boolean;
+  /** Ablaufdatum vom Etikett bzw. aus dem Text: „2028-09“ oder „2027-05-31“ (best-before.ts). */
+  best_before?: string;
   /** Erster Vorschlag ohne vorherige Rückfrage: weitere Fotos innert 15 s gehören noch dazu. */
   photo_join?: boolean;
   recognition: {
@@ -178,6 +197,7 @@ export const TextEntrySchema = WineProposalSchema.extend({
     gift: z.boolean().describe("true, wenn der Wein ein Geschenk ist (geschenkt bekommen, Mitbringsel)"),
     gift_from: z.string().describe("Von wem geschenkt (Name); leer = nicht genannt"),
   }),
+  best_before: BestBeforeField,
 });
 export type TextEntry = z.infer<typeof TextEntrySchema>;
 

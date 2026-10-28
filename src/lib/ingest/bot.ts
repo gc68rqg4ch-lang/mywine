@@ -96,6 +96,8 @@ import {
   acceptRestock,
   chooseSimilar,
   advanceTo,
+  bestBeforeConflict,
+  bestBeforeState,
   confirmAndSave,
   continuePhotoPurchase,
   giftPatch,
@@ -789,7 +791,10 @@ export function purchaseAnswerFit(step: IngestState["step"], text: string): "ans
 async function correctJob(job: IngestJob, state: IngestState, chatId: number, correction: string) {
   const db = createAdminClient();
   try {
-    let proposal: WineProposal = await applyCorrection(state.proposal, correction);
+    const { bestBefore, ...corrected } = await applyCorrection(state.proposal, correction, state.best_before ?? null);
+    let proposal: WineProposal = corrected;
+    // Ablaufdatum: geändert oder entfernt → Trinkfenster bis entsprechend (nur aus dem Etikett).
+    const bestBeforePatch = bestBeforeState(bestBefore, state);
     let enriched = state.recognition;
     let grapeSource = state.grape_source ?? null;
     const grapesCorrected =
@@ -836,6 +841,7 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
         grape_source: grapeSource,
         drink_from_year: drink.from,
         drink_until_year: drink.until,
+        ...bestBeforePatch,
         // Jahrgang in der Korrektur genannt: gilt als bestätigt.
         ...(proposal.vintage_year != null && proposal.vintage_year !== state.proposal.vintage_year
           ? { vintage_confirmed: true, vintage_uncertain: false }
@@ -844,7 +850,8 @@ async function correctJob(job: IngestJob, state: IngestState, chatId: number, co
       { matched_wine_id: known?.id ?? null },
     );
     if (!next) return;
-    await sendMessage(chatId, proposalMessage(jobState(next)!, Boolean(known)), reviewKeyboard(job.id));
+    const extra = await bestBeforeConflict(db, known?.id ?? null, jobState(next)!);
+    await sendMessage(chatId, proposalMessage(jobState(next)!, Boolean(known), extra), reviewKeyboard(job.id));
   } catch (error) {
     console.error("correction failed", error);
     // Der Job bleibt im Korrekturmodus – die nächste Textantwort ist ein neuer Versuch.

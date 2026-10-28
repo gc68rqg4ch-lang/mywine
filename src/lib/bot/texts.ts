@@ -135,6 +135,12 @@ export const T = {
 
   // --- Fotos
   photoOnly: "Schick mir bitte ein Foto vom Etikett (am besten JPEG oder PNG).",
+  /** Ablaufdatum in der Zusammenfassung (Wert schon HTML-sicher). */
+  bestBeforeLine: (date: string, expired: boolean) => `📆 Haltbar bis ${date}${expired ? " – <i>schon abgelaufen</i>" : ""}`,
+  bestBeforeKeepsUntil: (until: number, date: string) =>
+    `<i>Bei dir steht die Trinkreife bis ${until} – die lasse ich so (Etikett: haltbar bis ${date}).</i>`,
+  bestBeforeKeepsFrom: (from: number, date: string) =>
+    `<i>Bei dir steht die Trinkreife ab ${from} – „bis“ lasse ich deshalb leer (Etikett: haltbar bis ${date}).</i>`,
   /** Foto kam kurz nach der ersten Frage: gehört noch zum selben Wein (Varianten). */
   photoAdded: (random?: () => number) =>
     pick(["📷 Danke, das Foto lege ich zum selben Wein.", "📷 Das Foto nehme ich gleich zu diesem Wein dazu."], random),

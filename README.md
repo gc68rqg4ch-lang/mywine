@@ -428,6 +428,14 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 - **Korrigieren:** Freitext-Antwort, die per `claude-haiku-5-5` in den Vorschlag übernommen wird.
 - **Album:** Telegram schickt jedes Foto einzeln. Alle Fotos eines Albums landen über eine aus
   `media_group_id` abgeleitete Job-ID im selben Job; erkannt wird nach 3 s Ruhe, genau einmal.
+- **Ablaufdatum** (Mindesthaltbarkeit, v. a. alkoholfreie Weine und Schaumweine; `src/lib/ingest/best-before.ts`):
+  Foto- und Text-Erkennung lesen `best_before` (Text: `YYYY-MM-DD` bzw. `YYYY-MM`, leer = keins oder unsicher – kein
+  nullable-Feld wegen der Grenze von 16 Unions), dazu Bild- und Freitext („haltbar bis 09/2028“, „best before SEP
+  2028“, „à consommer de préférence avant …“, „consumir preferentemente antes de …“ u. a.). Zusammenfassung: „📆
+  Haltbar bis September 2028“ (abgelaufen → „schon abgelaufen“), änderbar per ✏️ Korrigieren. Beim Einbuchen
+  (`storeBestBefore`): `drink_until_year` = Jahr, nur wenn leer und mit „ab“ verträglich (sonst bleibt der Wert,
+  Antoine erwähnt das in der Zusammenfassung); `notes` + „Haltbar bis 31.05.27“ bzw. „Haltbar bis September 2028“
+  angehängt, nichts überschrieben; auch für NV. `drink_from_year` nur aus anderen Quellen.
 - **Einzelfotos kurz nacheinander** (z. B. Vorder- und Rückseite als zwei Nachrichten): Kam innert 15 s
   (`PHOTO_JOIN_MS`) schon ein Foto dieses Chats, gehört das neue in denselben Ablauf (`findOpenPhotoJob`) –
   solange er noch sammelt (`received`), erkannt wird (`processing`, die Erkennung läuft dann nochmals mit allen
