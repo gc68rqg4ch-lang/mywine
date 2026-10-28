@@ -1329,6 +1329,7 @@ export type Database = {
           id: string
           notes: string | null
           personal_rating: number | null
+          taste_profile_checked_at: string | null
           updated_at: string
           vintage_rating: string | null
           vintage_year: number | null
@@ -1341,6 +1342,7 @@ export type Database = {
           id?: string
           notes?: string | null
           personal_rating?: number | null
+          taste_profile_checked_at?: string | null
           updated_at?: string
           vintage_rating?: string | null
           vintage_year?: number | null
@@ -1353,6 +1355,7 @@ export type Database = {
           id?: string
           notes?: string | null
           personal_rating?: number | null
+          taste_profile_checked_at?: string | null
           updated_at?: string
           vintage_rating?: string | null
           vintage_year?: number | null
