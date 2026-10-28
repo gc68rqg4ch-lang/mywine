@@ -23,6 +23,8 @@ export async function researchWine(
   scope: ResearchScope,
   taste: TasteMode = "missing",
   year?: number | null,
+  /** Sammellauf: in den letzten 12 Monaten gesuchte Profil-Jahrgänge überspringen (Option, Standard an). */
+  skipRecent = true,
 ): Promise<ResearchOutcome> {
   const session = await getSession();
   if (!session.isMember || !UUID_RE.test(wineId)) return { status: "error", filled: [], suggested: 0, seconds: 0 };
@@ -30,6 +32,7 @@ export async function researchWine(
     const outcome = await researchAndFillWine(session.supabase, wineId, scope === "all" ? "all" : "cellar", {
       taste: TASTE_MODES.includes(taste) ? taste : "missing",
       ...(year === undefined || year === null || Number.isInteger(year) ? { year } : {}),
+      skipRecent: skipRecent !== false,
     });
     if (outcome.filled.length || outcome.suggested) revalidatePath("/", "layout");
     return outcome;
@@ -72,7 +75,8 @@ export async function researchWineFromHeader(_prev: ActionState, formData: FormD
 
 /** „🔎 Geschmacksprofil recherchieren“ in der Karte – nur das Profil. */
 export async function researchTasteFromPage(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const outcome = await researchWine(String(formData.get("wineId") ?? ""), "all", "only", formYear(formData));
+  // Bewusster Einzelauftrag: die 12-Monats-Regel gilt hier nicht.
+  const outcome = await researchWine(String(formData.get("wineId") ?? ""), "all", "only", formYear(formData), false);
   if (outcome.status === "nothing") return { ok: noProfileText(outcome.tasteYear ?? null) };
   return pageMessage(outcome);
 }

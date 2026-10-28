@@ -184,7 +184,8 @@ test("Ungültige Antwort (Alkohol 40 %, Jahr 1700, 2017.5, 140 %): nichts gespei
   const invalid = await researchAndFillWine(db, W3, "cellar");
   assert.equal(invalid.status, "nothing", JSON.stringify(invalid));
   assert.equal(net.tables.wines.find((w) => w.id === W3)!.alcohol_content, null);
-  assert.equal(net.tables.wine_vintages.some((v) => v.wine_id === W3), false);
+  assert.equal(net.tables.wine_vintages.some((v) => v.wine_id === W3 && (v.drink_from_year != null || v.drink_until_year != null)), false, "kein Trinkfenster gespeichert");
+  assert.ok(net.tables.wine_vintages.find((v) => v.wine_id === W3 && v.vintage_year === 2017)?.taste_profile_checked_at, "Profilsuche vermerkt (auch ohne Fund)");
   assert.equal(grapeCalls.length, before, "140 % → ohne Anteil; gleiche Sorten → nichts zu tun");
   assert.equal(net.tables.research_suggestions.length, suggestionsBefore);
   assert.ok(net.tables.wines.find((w) => w.id === W3)!.researched_at, "researched_at auch ohne Fund gesetzt");
@@ -211,10 +212,10 @@ test("Wein ohne Flaschen wird recherchiert: Stammdaten und Profil; verkostete Ja
   net.tables.wine_encounters = [];
 });
 
-test("7-Tage-Regel für „kürzlich geprüfte überspringen“", async () => {
+test("12-Monats-Regel für „recherchierte überspringen“ (wines.researched_at)", async () => {
   const now = Date.parse("2026-10-27T12:00:00Z");
-  assert.equal(researchedRecently({ researched_at: "2026-10-21T12:00:01Z" }, now), true);
-  assert.equal(researchedRecently({ researched_at: "2026-10-20T11:59:00Z" }, now), false);
+  assert.equal(researchedRecently({ researched_at: "2025-10-28T12:00:00Z" }, now), true, "vor knapp 12 Monaten");
+  assert.equal(researchedRecently({ researched_at: "2025-10-26T12:00:00Z" }, now), false, "vor mehr als 12 Monaten");
   assert.equal(researchedRecently({ researched_at: null }, now), false);
 });
 

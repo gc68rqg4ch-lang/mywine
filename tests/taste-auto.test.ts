@@ -143,13 +143,14 @@ test("Nichts gefunden oder API-Limit: keine Meldung, Fehler nur im Log", async (
   assert.ok((await applyEdit(db, { kind: "addEncounter", wine: { wineId: W }, year: 2019, set: {}, personId: MICHEL, source: "bot", ratings: [] })).ok);
   await runLater();
   assert.equal(profiles().length, 0);
+  assert.ok(net.tables.wine_vintages.find((v) => v.wine_id === W && v.vintage_year === 2019)?.taste_profile_checked_at, "erfolglose Suche setzt das Datum");
 
   tasteReply = () => claudeError(400, "You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.") as never;
   const logged: string[] = [];
   const original = console.error;
   console.error = (...args: unknown[]) => void logged.push(args.map(String).join(" "));
   try {
-    assert.ok((await applyEdit(db, { kind: "addEncounter", wine: { wineId: W }, year: 2019, set: {}, personId: MICHEL, source: "bot", ratings: [] })).ok);
+    assert.ok((await applyEdit(db, { kind: "addEncounter", wine: { wineId: W }, year: 2018, set: {}, personId: MICHEL, source: "bot", ratings: [] })).ok);
     await runLater();
   } finally {
     console.error = original;

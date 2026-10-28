@@ -4,10 +4,11 @@ import { getMemberSession } from "@/lib/auth";
 import {
   GAP_KEYS,
   GAP_LABELS,
-  RECENT_DAYS,
+  RECENT_MONTHS,
   gapCounts,
   needsResearch,
   researchedRecently,
+  tasteTargets,
   wineGaps,
   type ResearchScope,
 } from "@/lib/research/gaps";
@@ -32,7 +33,8 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const scope: ResearchScope = params.alle === "1" ? "all" : "cellar";
   // „Auch vollständige Weine prüfen“: alle Weine der Auswahl, Abweichungen werden Vorschläge.
   const complete = params.vollstaendig === "1";
-  // „In den letzten 7 Tagen geprüfte überspringen“ – Standard an; ?kuerzlich=1 schaltet es aus.
+  // „In den letzten 12 Monaten recherchierte überspringen“ – Standard an; ?kuerzlich=1 schaltet es aus.
+  // Stammdaten: wines.researched_at; Geschmacksprofil: wine_vintages.taste_profile_checked_at je Jahrgang.
   const skipRecent = params.kuerzlich !== "1";
   // „Geschmacksprofil fehlt“: nur Weine ohne Profil, nur das Profil recherchieren.
   const profile = params.profil === "1";
@@ -54,12 +56,15 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const cellar = inScope("cellar").filter(needsResearch);
   const all = inScope("all").filter(needsResearch);
   const counts = { cellar: gapCounts(cellar), all: gapCounts(all) };
-  const noProfile = (s: ResearchScope) => inScope(s).filter((g) => !data.withProfile.has(g.wine.id));
+  // Geschmacksprofil fehlt: Weine mit mindestens einem Jahrgang ohne Profil (Jahrgänge mit Profil nie).
+  const missingProfile = (g: (typeof cellar)[number], skip: boolean) => tasteTargets(g, data, { skipRecent: skip });
+  const noProfile = (s: ResearchScope) => inScope(s).filter((g) => missingProfile(g, false).length > 0);
   const profileCounts = { cellar: noProfile("cellar").length, all: noProfile("all").length };
   const chosen = profile ? noProfile(scope) : complete ? inScope(scope) : scope === "all" ? all : cellar;
-  // Beim Profil zählt die 7-Tage-Regel nicht: die bisherige Recherche hat kein Profil gesucht.
-  const recent = profile ? [] : chosen.filter((g) => researchedRecently(g.wine));
-  const selected = skipRecent && !profile ? chosen.filter((g) => !researchedRecently(g.wine)) : chosen;
+  // In den letzten 12 Monaten recherchiert: beim Profil je Jahrgang (alle fehlenden kürzlich gesucht), sonst der Wein.
+  const isRecent = (g: (typeof chosen)[number]) => (profile ? missingProfile(g, true).length === 0 : researchedRecently(g.wine));
+  const recent = chosen.filter(isRecent);
+  const selected = skipRecent ? chosen.filter((g) => !isRecent(g)) : chosen;
   const completeCount = selected.filter((g) => !needsResearch(g)).length;
   const list = selected.sort(
     (a, b) => compareWineNames(a.wine, b.wine),
@@ -70,6 +75,8 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
     name: g.wine.name,
     years: g.vintages.map((v) => v.year),
     gaps: profile ? ["Geschmacksprofil"] : [...g.gaps.map((k) => GAP_LABELS[k]), ...(g.basics ? ["Land/Typ"] : [])],
+    // Profil: der neueste Jahrgang ohne Profil (bei eingeschalteter Option: nicht in den letzten 12 Monaten gesucht).
+    ...(profile ? { tasteYear: missingProfile(g, skipRecent)[0] ?? null } : {}),
     complete: profile ? false : !needsResearch(g),
   }));
 
@@ -180,20 +187,20 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
       </Link>
       )}
 
-      {!profile && (
       <Link href={href({ skipRecent: !skipRecent })} className="check-toggle" role="switch" aria-checked={skipRecent}>
         <span className="check-box" aria-hidden>
           {skipRecent ? "✓" : ""}
         </span>
         <span>
-          In den letzten {RECENT_DAYS} Tagen geprüfte überspringen
+          In den letzten {RECENT_MONTHS} Monaten recherchierte überspringen
           <span className="muted small">
             {" "}
-            – {recent.length === 1 ? "1 Wein betroffen" : `${recent.length} Weine betroffen`}
+            – übersprungen, weil in den letzten {RECENT_MONTHS} Monaten {profile ? "nach dem Profil gesucht" : "recherchiert"}:{" "}
+            {skipRecent ? recent.length : 0}
+            {!skipRecent && recent.length ? ` (ausgeschaltet – ${recent.length} werden nochmals gesucht)` : ""}
           </span>
         </span>
       </Link>
-      )}
 
       {/* key: bei Wechsel von Umfang oder Optionen frisch beginnen */}
       <BatchResearch
@@ -201,6 +208,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
         candidates={candidates}
         scope={scope}
         taste={profile ? "only" : "missing"}
+        skipRecent={skipRecent}
         skipped={skipRecent ? recent.length : 0}
       />
     </div>

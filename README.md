@@ -173,9 +173,15 @@ Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delet
   Option „Auch vollständige Weine prüfen“ (`?vollstaendig=1`, Standard aus): dann alle Weine der Auswahl, auch
   ohne Lücken – Abweichungen werden Vorschläge, nichts wird überschrieben. Die Bestätigung nennt beide Zahlen
   („2 Weine mit Lücken, 2 vollständige zur Kontrolle“) und die geschätzte Dauer. `wines.researched_at` wird nach
-  jeder erfolgreichen Recherche gesetzt (Nachrecherchieren, Sammellauf, Bot), auch ohne Fund; Option „In den
-  letzten 7 Tagen geprüfte überspringen“ (Standard an, `?kuerzlich=1` schaltet aus) – die Bestätigung nennt die
-  Zahl der übersprungenen. Die Weinseite zeigt „Zuletzt recherchiert am …“ beim Nachrecherchieren.
+  jeder erfolgreichen Recherche der Stammdaten gesetzt (Nachrecherchieren, Sammellauf, Bot), auch ohne Fund; Option
+  „In den letzten 12 Monaten recherchierte überspringen“ (Standard an, `?kuerzlich=1` schaltet aus) – die Übersicht
+  nennt „übersprungen, weil in den letzten 12 Monaten recherchiert: N“. Weiterhin werden nur leere Felder gefüllt.
+  **Geschmacksprofil:** jede Profilsuche setzt `wine_vintages.taste_profile_checked_at` (auch ohne Fund; Sammellauf,
+  automatische Suche nach Einbuchen/Verkostet, Nachrecherchieren). „Geschmacksprofil fehlt“ und der Sammellauf
+  überspringen Jahrgänge, die in den letzten 12 Monaten gesucht wurden (gleiche Option), und suchen je Wein den
+  neuesten Jahrgang ohne Profil; Jahrgänge mit Profil nie. Die automatische Suche überspringt kürzlich erfolglos
+  gesuchte Jahrgänge. 🔎 „Nachrecherchieren“ auf der Weinseite (und „🔎 Geschmacksprofil recherchieren“ in der Karte)
+  ignoriert die Regel. Regeln in `src/lib/research/gaps.ts` (`withinRecentMonths`, `tasteTargets`).
 - **Recherche pro Wein, immer vollständig** (`src/lib/research/`): ein Durchgang mit `claude-sonnet-5-5` +
   `web_search` (`researchWineWeb`) für alle leeren Angaben – Produzent, Land, Region, Appellation, Typ, Alkohol,
   Trinkfenster je Jahrgang, Rebsorten mit %. Vorhandenes wird nie überschrieben (Stammdaten nur wenn leer,

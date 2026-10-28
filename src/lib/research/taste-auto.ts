@@ -3,26 +3,27 @@ import "server-only";
 // Geschmacksprofil automatisch nach dem Erfassen (Einbuchen per Foto/Text, Nachkauf,
 // Verkostet in Bot und App): im Hintergrund nach der Antwort, für genau diesen Jahrgang,
 // mit denselben Regeln wie die Recherche (jahrgangsgenau, nur Belegtes, NV-Ausnahme).
-// Gibt es schon ein Profil, wird nicht gesucht. Nichts gefunden oder Fehler (auch API-Limit):
-// keine Meldung an die Person, nur ins Log.
+// Gibt es schon ein Profil oder wurde der Jahrgang in den letzten 12 Monaten (ohne Fund) gesucht,
+// wird nicht gesucht. Jede Suche setzt wine_vintages.taste_profile_checked_at. Nichts gefunden
+// oder Fehler (auch API-Limit): keine Meldung an die Person, nur ins Log.
 
 import { later } from "@/lib/later";
 import type { AdminClient } from "@/lib/supabase/admin";
 
-export type AutoTasteResult = "exists" | "saved" | "suggested" | "unchanged" | "none" | "failed";
+export type AutoTasteResult = "exists" | "recent" | "saved" | "suggested" | "unchanged" | "none" | "failed";
 
 export async function autoTasteProfile(db: AdminClient, wineId: string, year: number | null): Promise<AutoTasteResult> {
   try {
     // Erst hier laden: die Recherche zieht das Bearbeiten-Modul nach (Vorschläge) – kein Kreis beim Start.
-    const [{ loadExactTasteProfile }, { researchTasteProfile, saveResearchedProfile }] = await Promise.all([
-      import("@/lib/taste/store"),
-      import("./taste"),
-    ]);
+    const [{ loadExactTasteProfile, markTasteChecked, tasteCheckedAt }, { researchTasteProfile, saveResearchedProfile }, { withinRecentMonths }] =
+      await Promise.all([import("@/lib/taste/store"), import("./taste"), import("./gaps")]);
     if (await loadExactTasteProfile(db, wineId, year)) return "exists";
+    if (withinRecentMonths(await tasteCheckedAt(db, wineId, year))) return "recent";
     const { data: wine, error } = await db.from("wines").select("name, producer, type, region, country").eq("id", wineId).maybeSingle();
     if (error) throw error;
     if (!wine) return "none";
     const profile = await researchTasteProfile(wine, year);
+    await markTasteChecked(db, wineId, year);
     if (!profile) return "none";
     return await saveResearchedProfile(db, wineId, profile);
   } catch (error) {

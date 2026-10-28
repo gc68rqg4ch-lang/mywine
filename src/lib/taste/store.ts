@@ -54,3 +54,22 @@ export async function saveTasteProfile(
   if (error) throw error;
   return "saved";
 }
+
+/** Letzte Profilsuche für diesen Jahrgang (wine_vintages.taste_profile_checked_at), auch ohne Fund. */
+export async function tasteCheckedAt(db: Db, wineId: string, year: number | null) {
+  const q = db.from("wine_vintages").select("taste_profile_checked_at").eq("wine_id", wineId);
+  const { data, error } = await (year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year)).maybeSingle();
+  if (error) throw error;
+  return data?.taste_profile_checked_at ?? null;
+}
+
+/** Nach jeder Profilsuche (auch ohne Fund) vermerken – Jahrgang ggf. anlegen. Kein Upsert: erst lesen. */
+export async function markTasteChecked(db: Db, wineId: string, year: number | null, at = new Date().toISOString()) {
+  const q = db.from("wine_vintages").select("id").eq("wine_id", wineId);
+  const { data: row, error } = await (year == null ? q.is("vintage_year", null) : q.eq("vintage_year", year)).maybeSingle();
+  if (error) throw error;
+  const { error: saveError } = row
+    ? await db.from("wine_vintages").update({ taste_profile_checked_at: at }).eq("id", row.id)
+    : await db.from("wine_vintages").insert({ wine_id: wineId, vintage_year: year, taste_profile_checked_at: at });
+  if (saveError) throw saveError;
+}

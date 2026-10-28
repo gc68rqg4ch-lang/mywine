@@ -18,6 +18,8 @@ export type BatchCandidate = {
   gaps: string[];
   /** Ohne Lücken – nur zur Kontrolle (Abweichungen werden Vorschläge). */
   complete: boolean;
+  /** „Geschmacksprofil fehlt“: dieser Jahrgang (neuester ohne Profil). */
+  tasteYear?: number | null;
 };
 
 /** Schätzung pro Wein, bis eigene Messwerte da sind (Websuche mit mehreren Abfragen). */
@@ -44,18 +46,21 @@ export function BatchResearch({
   candidates: initial,
   scope,
   taste = "missing",
+  skipRecent = true,
   skipped = 0,
 }: {
   candidates: BatchCandidate[];
   scope: ResearchScope;
   /** „only“: nur das Geschmacksprofil (Option „Geschmacksprofil fehlt“). */
   taste?: TasteMode;
-  /** In den letzten 7 Tagen recherchiert – nicht in candidates. */
+  /** Option „In den letzten 12 Monaten recherchierte überspringen“ (gilt auch fürs Profil). */
+  skipRecent?: boolean;
+  /** In den letzten 12 Monaten recherchiert – nicht in candidates. */
   skipped?: number;
 }) {
   const router = useRouter();
   // Liste beim Laden festhalten: nach dem Lauf lädt die Seite neu, frisch geprüfte Weine
-  // würden sonst (7-Tage-Regel) aus Liste und Zusammenfassung verschwinden.
+  // würden sonst (12-Monats-Regel) aus Liste und Zusammenfassung verschwinden.
   const [candidates] = useState(initial);
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [phase, setPhase] = useState<"idle" | "confirm" | "running" | "stopping" | "done">("idle");
@@ -82,7 +87,7 @@ export function BatchResearch({
       setRows((r) => ({ ...r, [c.wineId]: { state: "running" } }));
       let outcome: ResearchOutcome;
       try {
-        outcome = await researchWine(c.wineId, scope, taste);
+        outcome = await researchWine(c.wineId, scope, taste, c.tasteYear, skipRecent);
       } catch {
         outcome = { status: "error", filled: [], suggested: 0, seconds: 0 };
       }
@@ -103,7 +108,7 @@ export function BatchResearch({
     return (
       <p className="empty">
         {skipped
-          ? `Nichts zu tun – ${skipped === 1 ? "1 Wein wurde" : `${skipped} Weine wurden`} in den letzten 7 Tagen schon geprüft.`
+          ? `Nichts zu tun – ${skipped === 1 ? "1 Wein wurde" : `${skipped} Weine wurden`} in den letzten 12 Monaten schon recherchiert.`
           : taste === "only"
             ? "Alle Weine haben ein Geschmacksprofil. 🎉"
             : "Keine Lücken – hier gibt es nichts zu recherchieren. 🎉"}
@@ -150,8 +155,8 @@ export function BatchResearch({
             </p>
             {skipped > 0 && (
               <p className="small">
-                {skipped === 1 ? "1 Wein überspringe ich" : `${skipped} Weine überspringe ich`} – in den letzten 7 Tagen
-                schon geprüft.
+                {skipped === 1 ? "1 Wein überspringe ich" : `${skipped} Weine überspringe ich`} – in den letzten 12 Monaten
+                schon recherchiert.
               </p>
             )}
             <p className="muted small">Abweichungen lege ich als Vorschläge ab – ich überschreibe nichts.</p>

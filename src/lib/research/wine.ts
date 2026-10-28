@@ -14,9 +14,10 @@ import { replaceGrapeShares } from "@/lib/grapes/store";
 import { researchWineWeb } from "@/lib/ingest/recognize";
 import { recordSuggestion } from "./suggestions";
 import { researchTasteProfile, saveResearchedProfile } from "./taste";
+import { markTasteChecked } from "@/lib/taste/store";
 import type { EnrichableField } from "@/lib/ingest/schema";
 import { grapesOnlyAddPercent, sameGrapes, sameValue, sourceNote, type SuggestionField } from "./compare";
-import { TASTED, wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
+import { TASTED, profileKey, tasteTargets, wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
 
 type Db = SupabaseClient<Database>;
 
@@ -29,9 +30,9 @@ export async function loadGapData(db: Db, wineId?: string) {
     wineId ? db.from("wines").select(WINE_COLUMNS).eq("id", wineId) : db.from("wines").select(WINE_COLUMNS),
     one(db.from("inventory_items").select("wine_id, vintage_year, status")),
     one(db.from("wine_encounters").select("wine_id, vintage_year")),
-    one(db.from("wine_vintages").select("wine_id, vintage_year, drink_from_year, drink_until_year")),
+    one(db.from("wine_vintages").select("wine_id, vintage_year, drink_from_year, drink_until_year, taste_profile_checked_at")),
     one(db.from("wine_grape_shares").select("wine_id, vintage_year, grape, percent, source")),
-    one(db.from("wine_taste_profiles").select("wine_id")),
+    one(db.from("wine_taste_profiles").select("wine_id, vintage_year")),
   ]);
   for (const r of [wines, items, encounters, vintages, shares, profiles]) if (r.error) throw r.error;
   return {
@@ -43,7 +44,8 @@ export async function loadGapData(db: Db, wineId?: string) {
     ],
     vintages: (vintages.data ?? []) as GapVintage[],
     shares: (shares.data ?? []) as GapShare[],
-    withProfile: new Set((profiles.data ?? []).map((p) => p.wine_id)),
+    /** Vorhandene Profile je Wein und Jahrgang (profileKey). */
+    profiles: new Set((profiles.data ?? []).map((p) => profileKey(p.wine_id, p.vintage_year))),
   };
 }
 
@@ -56,7 +58,7 @@ export type ResearchOutcome = {
   /**
    * Geschmacksprofil: saved = gespeichert (gilt sofort), suggested = Vorschlag (Profil von Hand),
    * none = keine verlässlichen Angaben (Bestehendes bleibt), unchanged = Vorschlag schon offen
-   * bzw. abgelehnt, skipped = nicht gesucht (schon vorhanden).
+   * bzw. abgelehnt, skipped = nicht gesucht (Profil schon da oder in den letzten 12 Monaten gesucht).
    */
   taste?: "saved" | "suggested" | "none" | "unchanged" | "skipped";
   /** Jahrgang, für den das Profil gesucht wurde (null = Wein ohne Jahrgang). */
@@ -104,7 +106,15 @@ export async function researchAndFillWine(
   db: Db,
   wineId: string,
   scope: ResearchScope,
-  options: { taste?: TasteMode; year?: number | null } = {},
+  options: {
+    taste?: TasteMode;
+    year?: number | null;
+    /**
+     * Profil (missing/only): Jahrgänge überspringen, die in den letzten 12 Monaten gesucht wurden
+     * (Standard). „always“ (Nachrecherchieren) sucht immer.
+     */
+    skipRecent?: boolean;
+  } = {},
 ): Promise<ResearchOutcome> {
   const started = Date.now();
   const seconds = () => Math.round((Date.now() - started) / 1000);
@@ -117,10 +127,16 @@ export async function researchAndFillWine(
 
   const filled: string[] = [];
   let suggested = 0;
-  const profileYear = tasteYear(gaps, options.year);
+  // Welcher Jahrgang? Nachrecherchieren: der gewählte (bzw. neueste). Sammellauf: der neueste
+  // ohne Profil, der nicht in den letzten 12 Monaten gesucht wurde – sonst nichts.
+  const targets = tasteTargets(gaps, data, { skipRecent: options.skipRecent ?? true });
+  const profileYear =
+    tasteMode === "always" || options.year !== undefined ? tasteYear(gaps, options.year) : (targets[0] ?? tasteYear(gaps, undefined));
   const taste = async (): Promise<ResearchOutcome["taste"]> => {
-    if (tasteMode === "missing" && data.withProfile.has(wineId)) return "skipped";
+    if (tasteMode !== "always" && !targets.includes(profileYear)) return "skipped";
     const profile = await researchTasteProfile(wine, profileYear);
+    // Jede Profilsuche vermerken – auch ohne Fund (nicht bei einem Fehler).
+    await markTasteChecked(db, wineId, profileYear);
     if (!profile) return "none";
     const saved = await saveResearchedProfile(db, wineId, profile);
     if (saved === "saved") filled.push("Geschmacksprofil");
@@ -129,8 +145,8 @@ export async function researchAndFillWine(
   };
 
   if (tasteMode === "only") {
+    // Nur das Profil: wines.researched_at (Stammdaten) bleibt, massgebend ist taste_profile_checked_at.
     const result = await taste();
-    await markResearched(db, wineId);
     return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, tasteYear: profileYear, seconds: seconds() };
   }
 
