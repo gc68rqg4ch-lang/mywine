@@ -61,6 +61,27 @@ export function parsePrice(text: string) {
   return Number.isFinite(value) && value >= 0 && value < 100_000 ? value : null;
 }
 
+/** Minus vor einer Zahl („-5“, „− 5“, „CHF -5“) – nicht der Strich nach dem Betrag („38.–“). */
+const NEGATIVE = /(^|[^\d.,])[-−–]\s*\d/;
+
+/**
+ * Strenge Prüfung für eingetippte Preise im Bot (Kaufpreis, Normalpreis, Geschenk-Wert,
+ * Preis bei Verkostet): Betrag über 0. Gleiche Schreibweisen wie parsePrice („38“, „34.80“,
+ * „34,80“, „CHF 38“, „38 Franken“, „38.–“, „1'250“). Nicht: 0, negative Beträge, Text ohne Zahl.
+ */
+export function parseAmount(text: string) {
+  if (NEGATIVE.test(text)) return null;
+  const value = parsePrice(text);
+  return value != null && value > 0 ? value : null;
+}
+
+/** Eingetippt „0“ (bzw. „0.00“, „CHF 0“)? Beim Kaufpreis gibt es dafür „🎁 Geschenk“. */
+export const isZeroAmount = (text: string) => !NEGATIVE.test(text) && parsePrice(text) === 0;
+
+/** Preis aus Bild- oder Freitext (Claude): 0, negativ oder ungültig = kein Preis (null). */
+export const positiveAmount = (value: number | null | undefined) =>
+  value != null && Number.isFinite(value) && value > 0 && value < 100_000 ? Math.round(value * 100) / 100 : null;
+
 /**
  * Differenz zwischen Normalpreis und bezahltem Preis. Positiv = Rabatt,
  * negativ = Aufpreis; null wenn ein Preis fehlt oder beide gleich sind.

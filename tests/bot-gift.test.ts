@@ -7,7 +7,8 @@ import { test } from "node:test";
 import { claudeText, claudeTool, installNet, type Net } from "./stub-net";
 import { handleUpdate } from "@/lib/ingest/bot";
 import { continuePhotoPurchase, nextPurchaseStep, processTextJob, saveJob } from "@/lib/ingest/flow";
-import { cleanGiftFrom, giftInText, giftValueInText, parseGiftValue } from "@/lib/ingest/gift";
+import { cleanGiftFrom, giftInText, giftValueInText } from "@/lib/ingest/gift";
+import { parseAmount } from "@/lib/format";
 import { expireStale, MENU_SOURCE } from "@/lib/chat/pending";
 import { MENU_VERSION } from "@/lib/chat/menu-view";
 import { VARIANTS } from "@/lib/bot/texts";
@@ -141,7 +142,7 @@ test("Normalpreis: 34.80 gespeichert; 0, -5, „keine Ahnung“ → freundlich n
   assert.equal(state().regular_price, 34.8);
   await confirmAndSave();
   assert.equal(item().regular_price, 34.8);
-  assert.equal(parseGiftValue("CHF 38.-"), 38);
+  assert.equal(parseAmount("CHF 38.-"), 38);
   assert.equal(giftValueInText("Geschenk von Marc, Wert ca. 40 Franken"), 40);
   assert.equal(giftValueInText("Geschenk von Marc"), null);
   assert.ok([...VARIANTS.giftValue, ...VARIANTS.giftValueRetry].every((t) => !/ß/.test(t)));

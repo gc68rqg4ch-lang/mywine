@@ -340,6 +340,10 @@ steht die Anzahl im Bild- oder Freitext, z. B. „6 Flaschen“, entfällt die F
 Normalpreis (**[Gleich wie bezahlt] [Überspringen]**), Händler (Buttons aus `vendors`, **[Neuer Händler]**
 per Freitext oder **[Überspringen]**) → Wein anlegen oder wiederverwenden, `inventory_items` mit
 `status = sealed`, `purchased_at = heute`, `vendor_id` und den Fotos anlegen, Job auf `confirmed`.
+**Preise eintippen** (Kaufpreis, Normalpreis, Geschenk-Wert, 💰 Preis bei Verkostet): eine gemeinsame strenge Prüfung
+(`parseAmount` in `src/lib/format.ts`) – Betrag über 0 in den bisherigen Schreibweisen („38“, „34.80“, „34,80“,
+„CHF 38“, „38 Franken“, „38.–“, „1'250“); 0, negative Beträge und Text ohne Zahl → freundlich nochmals fragen, beim
+Kaufpreis „0“ mit Hinweis auf **[🎁 Geschenk]**. Preise aus Bild-/Freitext gelten nur über 0 (`positiveAmount`).
 **Geschenk:** Bei der Preisfrage gibt es **[🎁 Geschenk]** – danach fragt Antoine „Von wem?“ (Freitext, getrimmt,
 oder **[Überspringen]** → `gift_from = NULL`), dann nach dem Normalpreis (Wert pro Flasche, Betrag über 0 oder
 **[🤷 Weiss ich nicht]** → `regular_price = NULL`); gespeichert `is_gift = true`, `purchase_price = 0`, kein Händler. Steht im Bildtext oder Freitext schon „Geschenk von Marc“, wird es direkt übernommen (Freitext:

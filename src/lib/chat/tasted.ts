@@ -11,7 +11,7 @@ import { later } from "@/lib/later";
 import { applyEdit } from "@/lib/edit/edit";
 import { AMBIGUOUS_WINE, encounterPrice, matchWine, type WineCandidate } from "@/lib/edit/encounters";
 import type { Edit } from "@/lib/edit/types";
-import { formatDate, formatStarNumber, todayIso, wineName, wineTypeLabel } from "@/lib/format";
+import { formatDate, formatStarNumber, positiveAmount, todayIso, wineName, wineTypeLabel } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import { answerCallback, clearKeyboard, editMessage, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
@@ -358,7 +358,7 @@ export function fromTasting(t: TastedText["tasting"]): Pick<TastedState, "set" |
       ...(/^\d{4}-\d{2}-\d{2}$/.test(t.tasted_on) && t.tasted_on <= todayIso() ? { tastedOn: t.tasted_on } : {}),
       // Ort-Regel: „Restaurant“ allein ist kein Ort – nur die Art merken.
       ...(place.name ? { place: place.name.slice(0, 120) } : {}),
-      ...(t.price > 0 ? { price: Math.round(t.price * 100) / 100, priceUnit: t.price_unit || "bottle", currency: t.currency || "CHF" } : {}),
+      ...(positiveAmount(t.price) != null ? { price: positiveAmount(t.price)!, priceUnit: t.price_unit || "bottle", currency: t.currency || "CHF" } : {}),
       ...(t.occasion.trim() ? { occasion: t.occasion.trim() } : {}),
       ...(t.companions.trim() ? { companions: t.companions.trim() } : {}),
       ...(t.note.trim() ? { note: t.note.trim() } : {}),
@@ -642,7 +642,7 @@ export async function handleTastedText(db: AdminClient, job: IngestJob, chatId: 
       if (field === "price") {
         const price = parseEncounterPrice(value);
         if (!price) {
-          await sendMessage(chatId, EXTRA_QUESTIONS.price, cancelKeyboard(job.id, "back"));
+          await sendMessage(chatId, T.extra.priceRetry, cancelKeyboard(job.id, "back"));
           return;
         }
         set = { price: price.price, priceUnit: price.unit, currency: price.currency };

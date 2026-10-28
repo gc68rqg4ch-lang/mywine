@@ -1,7 +1,8 @@
 import "server-only";
 
 import { later } from "@/lib/later";
-import { cleanGiftFrom, parseGiftValue } from "./gift";
+import { cleanGiftFrom } from "./gift";
+import { isZeroAmount, parseAmount } from "@/lib/format";
 import { findDocumentAwaitingText, handleDocument, handleDocumentCallback, handleDocumentSearch, isDocumentCallback, isPdfDocument } from "./document";
 import { after } from "next/server";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
@@ -36,8 +37,9 @@ import {
   HELP_TEXT,
   cancelKeyboard,
   giftValueKeyboard,
+  priceKeyboard,
+  regularPriceKeyboard,
   parseCallbackData,
-  parsePrice,
   parseQuantity,
   skipVendorKeyboard,
   proposalMessage,
@@ -659,9 +661,10 @@ async function handleText(msg: TgMessage, actor: Actor) {
       return;
     }
     case "price": {
-      const price = parsePrice(text);
+      // Strenge Prüfung (Betrag über 0); „0“ → Hinweis auf „🎁 Geschenk“ (Knöpfe bleiben).
+      const price = parseAmount(text);
       if (price == null) {
-        await sendMessage(chatId, T.priceRetry, cancelKeyboard(job.id));
+        await sendMessage(chatId, isZeroAmount(text) ? T.priceZero() : T.priceRetry, priceKeyboard(job.id));
         return;
       }
       await advanceTo(db, job, chatId, "price", { price });
@@ -674,10 +677,10 @@ async function handleText(msg: TgMessage, actor: Actor) {
     }
     case "regular_price": {
       // Geschenk: Wert pro Flasche – nur Beträge über 0; „🤷 Weiss ich nicht“ bleibt als Knopf.
-      const regularPrice = state.is_gift ? parseGiftValue(text) : parsePrice(text);
+      const regularPrice = parseAmount(text);
       if (regularPrice == null) {
         if (state.is_gift) await sendMessage(chatId, T.giftValueRetry(), giftValueKeyboard(job.id));
-        else await sendMessage(chatId, T.regularPriceRetry, cancelKeyboard(job.id));
+        else await sendMessage(chatId, T.regularPriceRetry, regularPriceKeyboard(job.id, state.price ?? null));
         return;
       }
       await advanceTo(db, job, chatId, "regular_price", { regular_price: regularPrice });
@@ -717,7 +720,7 @@ export function purchaseAnswerFit(step: IngestState["step"], text: string): "ans
       return !strongNewConcern(text) && parseQuantity(text) ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
     case "price":
     case "regular_price":
-      return !strongNewConcern(text) && parsePrice(text) != null ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
+      return !strongNewConcern(text) && parseAmount(text) != null ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
     default:
       return "answer";
   }

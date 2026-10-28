@@ -25,6 +25,10 @@ export const VARIANTS = {
     "Schönes Etikett! Ich lese es kurz …",
   ],
   saved: ["Gespeichert.", "Ist notiert.", "Erledigt – ist gespeichert."],
+  priceZero: [
+    "0 Franken? Falls es ein Geschenk war, tippe einfach „🎁 Geschenk“ – sonst schreib mir den Preis pro Flasche, z. B. <i>24.50</i>.",
+    "War er geschenkt? Dann tippe „🎁 Geschenk“. Sonst brauche ich einen Betrag über 0, z. B. <i>24.50</i>.",
+  ],
   quantityOther: [
     "Gerne – wie viele Flaschen sind es? Schreib mir einfach die Zahl, z. B. <i>24</i>.",
     "Wie viele sind es denn? Eine Zahl genügt, z. B. <i>24</i>.",
@@ -154,7 +158,9 @@ export const T = {
   /** Statt Preis: „🎁 Geschenk von Marc“ bzw. „🎁 Geschenk“. */
   giftLine: (from: string | null) => (from ? `🎁 Geschenk von ${e(from)}` : "🎁 Geschenk"),
   regularPrice: "Und was kostet er normalerweise?",
-  regularPriceRetry: "Was kostet er normalerweise? Z. B. <i>29.90</i> – oder tippe einen Knopf.",
+  regularPriceRetry: "Was kostet er normalerweise? Bitte einen Betrag über 0, z. B. <i>29.90</i> – oder tippe einen Knopf.",
+  /** Kaufpreis „0“: dafür gibt es „🎁 Geschenk“ (Varianten). */
+  priceZero: (random?: () => number) => say("priceZero", random),
   vendorAsk: (hasVendors: boolean) => (hasVendors ? "Wo hast du ihn gekauft?" : "Wo hast du ihn gekauft? Schreib mir den Namen – oder tippe „Überspringen“."),
   vendorName: "Wie heisst der Händler?",
   vendorRetry: "Wie heisst der Händler? Schreib mir einfach den Namen – oder tippe „Überspringen“.",
@@ -199,6 +205,8 @@ export const T = {
     },
     placeRecent: "Tippe einen der letzten Orte an oder schreib mir den Namen.",
     price: "💰 Was hat er gekostet? Z. B. <i>120</i>, <i>14 Glas</i> oder <i>90 EUR</i>.",
+    /** Kein gültiger Betrag (0, negativ, ohne Zahl): freundlich nochmals fragen. */
+    priceRetry: "💰 Den Preis verstehe ich nicht ganz – bitte einen Betrag über 0, z. B. <i>120</i>, <i>14 Glas</i> oder <i>90 EUR</i>.",
     occasion: "🎉 Was war der Anlass?",
     companions: "👥 Mit wem warst du da?",
     note: "📝 Was möchtest du dir zum Wein notieren?",

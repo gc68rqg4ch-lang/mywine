@@ -10,7 +10,7 @@ import { later } from "@/lib/later";
 import { apiProblemForBot } from "@/lib/ai/api-errors";
 import { savedWineKeyboard } from "@/lib/chat/menu";
 import type { Database } from "@/lib/database.types";
-import { formatBottles, formatMoney, todayIso, wineTitle } from "@/lib/format";
+import { formatBottles, formatMoney, positiveAmount, todayIso, wineTitle } from "@/lib/format";
 import { researchGrapeShares } from "@/lib/grapes/research";
 import { hasAnyPercent, hasCompletePercents, type GrapeShare, type GrapeSource } from "@/lib/grapes/shares";
 import { loadGrapeShares, replaceGrapeShares } from "@/lib/grapes/store";
@@ -625,12 +625,13 @@ export async function processTextJob(jobId: string, chatId: number, text: string
         : quantityInText(text)
           ? { quantity: quantityInText(text)! }
           : {}),
-      ...(p.price > 0 ? { price: p.price } : {}),
-      ...(p.regular_price > 0 ? { regular_price: p.regular_price } : {}),
+      // Preise aus dem Text: 0, negativ oder ungültig = nicht genannt → Antoine fragt nach.
+      ...(positiveAmount(p.price) != null ? { price: positiveAmount(p.price)! } : {}),
+      ...(positiveAmount(p.regular_price) != null ? { regular_price: positiveAmount(p.regular_price)! } : {}),
       ...(p.vendor.trim() ? { vendor_name: p.vendor.trim().replace(/\s+/g, " ").slice(0, 80) } : {}),
       // Geschenk im Text („Geschenk von Marc“): direkt übernehmen, Preisfrage entfällt.
       ...(p.gift || gift
-        ? giftPatch(cleanGiftFrom(p.gift_from) ?? gift?.from, p.regular_price > 0 ? p.regular_price : giftValueInText(text))
+        ? giftPatch(cleanGiftFrom(p.gift_from) ?? gift?.from, positiveAmount(p.regular_price) ?? giftValueInText(text))
         : {}),
     };
     // Jahrgang zuerst: davon hängt ab, ob es ein Nachkauf ist.

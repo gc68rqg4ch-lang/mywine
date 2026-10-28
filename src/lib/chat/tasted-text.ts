@@ -2,7 +2,7 @@
 // Ankündigung („wir verkosten einen Wein“), Preis aus einer Antwort lesen.
 
 import { PENDING_TTL_MS } from "./ttl";
-import { parsePrice } from "@/lib/format";
+import { parseAmount } from "@/lib/format";
 import type { Currency, PriceUnit } from "@/lib/edit/types";
 
 /** So lange gilt „wir verkosten gleich einen Wein“ für das nächste Foto bzw. die nächste Nachricht. */
@@ -54,8 +54,8 @@ export function announcesTasting(text: string) {
 /** Preis aus einer Antwort: „120“, „14 Glas“, „90 EUR die Flasche“, „AED 65“. */
 export function parseEncounterPrice(text: string): { price: number; unit: PriceUnit; currency: Currency } | null {
   const t = norm(text);
-  const number = t.match(/\d+(?:[.,]\d{1,2})?/);
-  const price = number ? parsePrice(number[0]) : null;
+  // Gleiche strenge Prüfung wie beim Einbuchen: Betrag über 0, nicht negativ.
+  const price = parseAmount(t);
   if (price == null) return null;
   const currency: Currency = /\b(aed|dirham|dhs?)\b/.test(t) ? "AED" : /\b(eur|euro)\b|€/.test(t) ? "EUR" : "CHF";
   const unit: PriceUnit = /glas/.test(t) ? "glass" : "bottle";

@@ -14,6 +14,7 @@ import { jobIdFor, photoFolder } from "@/lib/ingest/jobs";
 import { TASTED_SOURCE, nextTastedStep, processTastedText } from "@/lib/chat/tasted";
 import { announcesTasting, parseEncounterPrice, tastedIntent } from "@/lib/chat/tasted-text";
 import { runLater } from "@/lib/later";
+import { T } from "@/lib/bot/texts";
 import { tastedListScreen } from "@/lib/chat/menu";
 import { MAIN_KEYBOARD, MENU_TEXT, menuKeyFor } from "@/lib/chat/menu-view";
 import { editTools } from "@/lib/chat/edit-tools";
@@ -172,6 +173,15 @@ test("Schnellablauf: Foto „im Restaurant probiert“ → Jahrgang → ⭐ → 
   await say("14 Glas");
   assert.deepEqual([enc.price, enc.price_unit, enc.currency], [14, "glass", "CHF"]);
   assert.match(lastText(), /📍 Kronenhalle · 💰 CHF\s14\.00 \/ Glas/);
+  // Strenge Prüfung wie beim Einbuchen: 0, -5, kein Betrag → freundlich nochmals fragen; Preis bleibt.
+  await press("💰 Preis");
+  for (const bad of ["0", "-5", "keine Ahnung"]) {
+    await say(bad);
+    assert.equal(lastText(), T.extra.priceRetry, bad);
+    assert.equal(enc.price, 14, bad);
+  }
+  await say("34,80");
+  assert.deepEqual([enc.price, enc.price_unit], [34.8, "bottle"]);
 
   // Kaufen? und ⭐ für Sara
   await press("🛒 Kaufen?");
