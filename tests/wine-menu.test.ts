@@ -26,7 +26,10 @@ const NEW = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const PM = "86c222d0-3a8c-4d5f-9564-f5654769ecd6", PS = "c7690541-4e68-4051-aa8f-6a2920fea55b";
 
 const subjects = [{ kind: "item", itemId: I1 } as const, { kind: "vintage", wineId: W1, year: 2022 } as const, { kind: "vintage", wineId: W1, year: null } as const];
-const lists = [{ kind: "open" }, { kind: "ready" }, { kind: "stock" }, { kind: "type", code: "f" }, { kind: "none" }] as const;
+const lists = [
+  { kind: "open" }, { kind: "ready" }, { kind: "stock" }, { kind: "type", code: "f" }, { kind: "type", code: "r", page: 12 }, { kind: "none" },
+  { kind: "readyStatus", status: "overdue" }, { kind: "readyList", status: "unknown", code: "all", page: 10 }, { kind: "readyList", status: "now", code: "y" },
+] as const;
 const actions: MenuAction[] = [];
 for (const back of lists) {
   actions.push({ op: "list", list: back, offset: 0 }, { op: "list", list: back, offset: 16 });
@@ -168,7 +171,8 @@ assert.equal(opened.length, 1); assert.match(s.text, /Geöffnet/);
 
 test("Trinkreif und Ausgetrunken", async () => {
 s = await show({ op: "list", list: { kind: "ready" }, offset: 0 });
-assert.match(s.text, /✅ Trinkreif 4/);
+assert.ok(texts(s).includes("✅ Trinkreif (4 Fl.)"), texts(s).join(" | "));
+s = await show({ op: "list", list: { kind: "readyList", status: "ready", code: "r" }, offset: 0 });
 assert.match(s.text, /✅ 🍷 Palermo 2022 · \d{4}–\d{4} · 4 Fl\./);
 s = await show({ op: "drunk", itemId: I1, back: { kind: "open" } });
 assert.match(s.text, /ausgetrunken/);

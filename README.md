@@ -484,11 +484,16 @@ Foto zuordnen, Chat-Vorschläge mit Ja/Nein und Blättern im Menü:
 ### Menüs (Knöpfe)
 
 - **Menüleiste unten** (Reply-Keyboard, kommt mit `/start` bzw. `/help`): 🍷 Offen · 📦 Bestand · ⏰ Trinkreif ·
-  🍽 Verkostet · 📷 Neuer Wein. Bestand zeigt zuerst die Weintypen, dann die Weine des Typs. ⏰ Trinkreif nutzt dieselbe
-  Einteilung wie die App (⚠️ über dem Höhepunkt, ⏰ jetzt trinken, ✅ trinkreif, ⏳ noch lagern, ❔ unbekannt).
+  🍽 Verkostet · 📷 Neuer Wein. Bestand zeigt zuerst die Weintypen, dann die Weine des Typs. ⏰ Trinkreif zeigt
+  zuerst nur die Stufen mit Anzahl Flaschen (gleiche Einteilung wie die App: ⚠️ über dem Höhepunkt, ⏰ jetzt
+  trinken, ✅ trinkreif, ⏳ noch lagern, ❔ unbekannt; leere fehlen), dann die Weintypen der Stufe plus „Alle“
+  (bei nur einem Typ übersprungen), dann die Liste.
 - **Listen:** pro Wein eine Zeile mit Emoji statt Weintyp (🍷 Rot, 🥂 Weiss, 🌸 Rosé, 🍾 Schaumwein,
   🍯 Süsswein, 🥃 Likörwein), z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“; Produzent bzw. Lagerort nur, wenn nötig
-  zur Unterscheidung. Darunter je Wein ein Knopf (8 pro Seite, dann „Mehr…“).
+  zur Unterscheidung. Darunter je Wein ein Knopf, 10 pro Seite. Bestand und Trinkreif blättern mit „◀︎ Vorherige“
+  (nicht auf Seite 1), „Weitere ▶︎“ (nicht auf der letzten) und „↩︎ Andere Auswahl“ (Weintyp bzw. Stufe), im Text
+  „Seite 2 von 11“; „‹ Zurück“ im Wein-Menü führt auf dieselbe Seite (Seite im callback_data, `L:tr.1` u. ä.).
+  Menüs laufen wie alle Rückfragen 10 Minuten nach dem letzten Antippen ab. Offen behält „Mehr…“.
 - **ℹ️ Details** im Wein-Menü: kompakte Nachricht zum Jahrgang (Name, Produzent, Herkunft mit Flagge, Rebsorten
   mit %, Alkohol, Trinkreife, Flaschen je Lagerort, offene Flaschen mit Füllstand, Preise mit Rabatt, Bewertungen,
   letzte Verkostung, Link auf die Weinseite); leere Angaben fallen weg (`src/lib/chat/details.ts`). Darunter

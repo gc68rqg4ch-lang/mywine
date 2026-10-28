@@ -111,7 +111,7 @@ test("Bot „⏰ Trinkreif“: dieselbe Einteilung und Reihenfolge", async () =>
   const { screenFor } = await import("@/lib/chat/menu");
   const { createAdminClient } = await import("@/lib/supabase/admin");
   const { screen } = await screenFor(createAdminClient(), { op: "list", list: { kind: "ready" }, offset: 0 }, { chatId: 111 });
-  assert.match(screen.text, /⚠️ Über dem Höhepunkt 3 · ⏰ Jetzt trinken 2 · ✅ Trinkreif 0 · ⏳ Noch lagern 1 · ❔ Unbekannt 0/);
-  const lines = screen.text.split("\n").filter((l) => /Fl\.$/.test(l));
-  assert.deepEqual(lines.map((l) => l.split(" ")[0]), ["⚠️", "⏰", "⏳"]);
+  // Zuerst nur die Stufen (gleiche Einteilung und Reihenfolge wie die App), leere fehlen.
+  assert.match(screen.text, /⏰ <b>Trinkreife<\/b> · 6 Fl\./);
+  assert.deepEqual(screen.keyboard.inline_keyboard.flat().map((b) => b.text), ["⚠️ Über dem Höhepunkt (3 Fl.)", "⏰ Jetzt trinken (2 Fl.)", "⏳ Noch lagern (1 Fl.)"]);
 });

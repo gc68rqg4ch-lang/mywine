@@ -189,6 +189,13 @@ export const T = {
   attachReplacing: "📷 Ich ersetze die Fotos …",
   attachWhichSide: "📷 Ist das die Vorder- oder die Rückseite?",
 
+  // --- Menüs: Trinkreif und Blättern
+  readyIntro: (bottles: number) => `⏰ <b>Trinkreife</b> · ${bottles} Fl.\nWelche Flaschen möchtest du sehen?`,
+  readyEmpty: "⏰ Im Bestand liegt gerade keine ungeöffnete Flasche.",
+  readyWhichType: (stage: string, bottles: number) => `${stage} · ${bottles} Fl.\nWelchen Typ möchtest du sehen?`,
+  readyNoneLeft: "Hier liegt gerade nichts mehr – such dir eine andere Auswahl aus.",
+  pageOf: (page: number, pages: number) => `Seite ${page} von ${pages}`,
+
   // --- Dokumente (PDF)
   docWhichWine: (file: string) => `📎 Danke für „${e(file)}“. Zu welchem Wein gehört das?`,
   docWhichWineNone: (file: string) =>

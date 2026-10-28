@@ -11,7 +11,6 @@ import {
   currentYear,
   drinkStatus,
   drinkWindowLabel,
-  emptyDrinkCounts,
   formatVintages,
   type DrinkStatus,
 } from "@/lib/cellar/overview";
@@ -51,8 +50,11 @@ import {
   daysLabel,
   decodeMenu,
   formatStars,
+  onPage,
   openBottleLine,
   pageButtons,
+  pageLabel,
+  pageNav,
   ratingKeyboard,
   shortNames,
   typeCode,
@@ -198,42 +200,39 @@ async function typeListScreen(db: AdminClient, code: TypeCode, offset: number, s
   const names = uniqueNames(wines);
   const entries = wines.map((w, i) => ({ wine: w, name: names[i] }));
   const list: ListRef = { kind: "type", code };
-  const lines = entries
-    .slice(offset, offset + PAGE_SIZE)
-    .map((x) => e(`${info.emoji} ${x.name} ${formatVintages(x.wine.vintages)} · ${x.wine.sealed} Fl.`));
+  const page = entries.slice(offset, offset + PAGE_SIZE);
+  const lines = page.map((x) => e(`${info.emoji} ${x.name} ${formatVintages(x.wine.vintages)} · ${x.wine.sealed} Fl.`));
   const total = wines.reduce((s, w) => s + w.sealed, 0);
+  const header = [`<b>${info.emoji} ${info.label}</b> · ${total} Fl. · ${winesLabel(wines.length)}`, pageLabel(offset, entries.length)];
   return {
-    text: withStatus(status, [`<b>${info.emoji} ${info.label}</b> · ${total} Fl. · ${winesLabel(wines.length)}`, ...lines].join("\n")),
+    text: withStatus(status, [header.filter(Boolean).join(" · "), ...lines].join("\n")),
     keyboard: {
       inline_keyboard: [
-        ...pageButtons(
-          entries,
-          offset,
-          (x) => btn(`${info.emoji} ${x.name}${x.wine.vintages.length === 1 ? ` ${yearLabel(x.wine.vintages[0])}` : ""}`, {
+        ...page.map((x) => [
+          btn(`${info.emoji} ${x.name}${x.wine.vintages.length === 1 ? ` ${yearLabel(x.wine.vintages[0])}` : ""}`, {
             op: "wine",
             wineId: x.wine.wine_id,
-            back: list,
+            // „‹ Zurück“ im Wein-Menü führt auf genau diese Seite.
+            back: onPage(list, offset),
           }),
-          { op: "list", list, offset: offset + PAGE_SIZE },
-        ),
-        ...backRow({ kind: "stock" }),
+        ]),
+        ...pageNav(list, offset, entries.length, { kind: "stock" }),
       ],
     },
   };
 }
 
-// Gleiche Einteilung wie die Gruppierung „Trinkreife“ in der App.
+// Gleiche Einteilung wie die Gruppierung „Trinkreife“ in der App (5 Stufen aus dem Trinkfenster).
 const READY_EMOJI: Record<DrinkStatus, string> = { overdue: "⚠️", now: "⏰", ready: "✅", wait: "⏳", unknown: "❔" };
 
-async function readyScreen(db: AdminClient, offset: number, status?: string): Promise<Screen> {
-  const wines = await loadCellar(db, null);
-  const counts = emptyDrinkCounts();
-  const entries: { wineId: string; type: OpenBottleRow["type"]; producer: string | null; name: string; year: number | null; status: DrinkStatus; window: string; sealed: number }[] = [];
-  for (const w of wines) {
+type ReadyEntry = { wineId: string; type: OpenBottleRow["type"]; producer: string | null; name: string; year: number | null; status: DrinkStatus; window: string; sealed: number };
+
+/** Ungeöffnete Flaschen je Wein und Jahrgang mit ihrer Stufe. */
+async function readyEntries(db: AdminClient): Promise<ReadyEntry[]> {
+  const entries: ReadyEntry[] = [];
+  for (const w of await loadCellar(db, null)) {
     for (const r of w.rows) {
       if (r.sealed === 0) continue;
-      counts[r.drink_status] += r.sealed;
-      if (r.drink_status === "unknown") continue;
       entries.push({
         wineId: w.wine_id,
         type: w.type,
@@ -246,28 +245,81 @@ async function readyScreen(db: AdminClient, offset: number, status?: string): Pr
       });
     }
   }
-  entries.sort((a, b) => DRINK_STATUS_ORDER.indexOf(a.status) - DRINK_STATUS_ORDER.indexOf(b.status));
-  const summary = DRINK_STATUS_ORDER
-    .map((s) => `${READY_EMOJI[s]} ${DRINK_STATUS_LABELS[s]} ${counts[s]}`)
-    .join(" · ");
-  const names = shortNames(entries);
-  const lines = entries
-    .slice(offset, offset + PAGE_SIZE)
-    .map((x, i) => e(`${READY_EMOJI[x.status]} ${typeEmoji(x.type)} ${names[offset + i]}${x.window ? ` · ${x.window}` : ""} · ${x.sealed} Fl.`));
-  const text = [
-    `<b>⏰ Trinkreife</b> (Flaschen)`,
-    summary,
-    ...(entries.length ? ["", ...lines] : ["", "Für keinen Wein ist ein Trinkfenster erfasst."]),
-  ].join("\n");
+  return entries;
+}
+
+const bottles = (list: { sealed: number }[]) => list.reduce((s, x) => s + x.sealed, 0);
+const stageLabel = (s: DrinkStatus) => `${READY_EMOJI[s]} ${DRINK_STATUS_LABELS[s]}`;
+
+/** Zwei Knöpfe pro Zeile. */
+const pairs = (buttons: TgInlineButton[]) => {
+  const rows: TgInlineButton[][] = [];
+  for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
+  return rows;
+};
+
+/** ⏰ Trinkreif, Schritt 1: nur die Stufen mit Anzahl Flaschen (leere fehlen). */
+async function readyScreen(db: AdminClient, status?: string): Promise<Screen> {
+  const entries = await readyEntries(db);
+  if (!entries.length) return { text: withStatus(status, T.readyEmpty), keyboard: { inline_keyboard: [] } };
+  const stages = DRINK_STATUS_ORDER.filter((s) => entries.some((x) => x.status === s));
   return {
-    text: withStatus(status, text),
+    text: withStatus(status, T.readyIntro(bottles(entries))),
     keyboard: {
-      inline_keyboard: pageButtons(
-        entries.map((x, i) => ({ ...x, label: names[i] })),
-        offset,
-        (x) => btn(`${READY_EMOJI[x.status]} ${x.label}`, { op: "vintage", wineId: x.wineId, year: x.year, back: { kind: "ready" } }),
-        { op: "list", list: { kind: "ready" }, offset: offset + PAGE_SIZE },
-      ),
+      inline_keyboard: stages.map((s) => [
+        btn(`${stageLabel(s)} (${bottles(entries.filter((x) => x.status === s))} Fl.)`, { op: "list", list: { kind: "readyStatus", status: s }, offset: 0 }),
+      ]),
+    },
+  };
+}
+
+/** Schritt 2: Weintypen der Stufe plus „Alle“ (wie im Bestand); bei nur einem Typ direkt die Liste. */
+async function readyTypesScreen(db: AdminClient, stage: DrinkStatus, status?: string): Promise<Screen> {
+  const entries = (await readyEntries(db)).filter((x) => x.status === stage);
+  const codes = TYPE_CODES.filter((c) => entries.some((x) => typeCode(x.type) === c));
+  if (codes.length <= 1) return readyListScreen(db, stage, codes[0] ?? "all", 0, status);
+  const count = (c: TypeCode) => bottles(entries.filter((x) => typeCode(x.type) === c));
+  const all: ListRef = { kind: "readyList", status: stage, code: "all" };
+  return {
+    text: withStatus(status, [T.readyWhichType(`<b>${stageLabel(stage)}</b>`, bottles(entries)), ...codes.map((c) => `${typeInfo(c).emoji} ${typeInfo(c).label} · ${count(c)} Fl.`)].join("\n")),
+    keyboard: {
+      inline_keyboard: [
+        ...pairs(codes.map((c) => btn(`${typeInfo(c).emoji} ${typeInfo(c).label} (${count(c)})`, { op: "list", list: { kind: "readyList", status: stage, code: c }, offset: 0 }))),
+        [btn(`Alle (${bottles(entries)})`, { op: "list", list: all, offset: 0 })],
+        [btn("↩︎ Andere Auswahl", { op: "list", list: { kind: "ready" }, offset: 0 })],
+      ],
+    },
+  };
+}
+
+/** Schritt 3: Weine der Stufe (eines Typs oder alle), 10 pro Seite, je ein Knopf ins Wein-Menü. */
+async function readyListScreen(db: AdminClient, stage: DrinkStatus, code: TypeCode | "all", offset: number, status?: string): Promise<Screen> {
+  const all = (await readyEntries(db)).filter((x) => x.status === stage);
+  const entries = code === "all" ? all : all.filter((x) => typeCode(x.type) === code);
+  const types = new Set(all.map((x) => typeCode(x.type)));
+  // „Andere Auswahl“: Typ-Auswahl der Stufe – gab es nur einen Typ, zurück zu den Stufen.
+  const choose: ListRef = types.size > 1 ? { kind: "readyStatus", status: stage } : { kind: "ready" };
+  const list: ListRef = { kind: "readyList", status: stage, code };
+  if (!entries.length) {
+    return { text: withStatus(status, T.readyNoneLeft), keyboard: { inline_keyboard: pageNav(list, 0, 0, choose) } };
+  }
+  const names = shortNames(entries);
+  const start = Math.min(offset, Math.max(0, Math.floor((entries.length - 1) / PAGE_SIZE) * PAGE_SIZE));
+  const page = entries.slice(start, start + PAGE_SIZE);
+  const typeTitle = code === "all" ? null : `${typeInfo(code).emoji} ${typeInfo(code).label}`;
+  const header = [`<b>${stageLabel(stage)}</b>`, typeTitle, `${bottles(entries)} Fl.`, pageLabel(start, entries.length)].filter(Boolean).join(" · ");
+  const lines = page.map((x, i) =>
+    e(`${READY_EMOJI[x.status]} ${typeEmoji(x.type)} ${names[start + i]}${x.window ? ` · ${x.window}` : ""} · ${x.sealed} Fl.`),
+  );
+  return {
+    text: withStatus(status, [header, ...lines].join("\n")),
+    keyboard: {
+      inline_keyboard: [
+        ...page.map((x, i) => [
+          btn(`${READY_EMOJI[x.status]} ${typeEmoji(x.type)} ${names[start + i]}`, { op: "vintage", wineId: x.wineId, year: x.year, back: onPage(list, start) }),
+        ]),
+        ...pageNav(list, start, entries.length, choose),
+      ],
     },
   };
 }
@@ -313,7 +365,11 @@ function listScreen(db: AdminClient, list: ListRef, offset: number, status?: str
     case "open":
       return openListScreen(db, offset, status);
     case "ready":
-      return readyScreen(db, offset, status);
+      return readyScreen(db, status);
+    case "readyStatus":
+      return readyTypesScreen(db, list.status, status);
+    case "readyList":
+      return readyListScreen(db, list.status, list.code, offset, status);
     case "stock":
       return stockScreen(db, status);
     case "type":
@@ -944,7 +1000,7 @@ export async function sendMainMenu(chatId: number, key: "open" | "stock" | "read
         ? await stockScreen(db)
         : key === "tasted"
           ? await tastedListScreen(db)
-          : await readyScreen(db, 0);
+          : await readyScreen(db);
   await sendMessage(chatId, screen.text, screen.keyboard.inline_keyboard.length ? screen.keyboard : MAIN_KEYBOARD);
 }
 

@@ -1,7 +1,9 @@
 // Menüs des Telegram-Bots: Callback-Format, Emojis, Zeilen und Knöpfe (rein, ohne DB).
 //
 // callback_data (max. 64 Bytes), Felder mit ":" getrennt, `<l>` = Liste für „Zurück“:
-//   L:<l>[:<offset>]          Liste: o = offen, r = trinkreif, b = Bestand (Weintypen), t<typ> = Weine eines Typs
+//   L:<l>[:<offset>]          Liste: o = offen, b = Bestand (Weintypen), t<typ> = Weine eines Typs,
+//                             r = Trinkreif (Stufen), r<stufe> = Weintypen der Stufe, r<stufe><typ|a> = Weine
+//                             (Stufen o/n/r/w/u wie DRINK_STATUS_ORDER); als Rücksprung mit „.<seite>“ (ab Seite 2)
 //   W:<wine>:<l>              Wein (Jahrgang wählen)      V:<wine>:<jahr|->:<l>   Jahrgang (ungeöffnet)
 //   O:<item>:<l>              offene Flasche              G:<item>:<n>:<l>        n Gläser getrunken
 //   F:<item>:<l>              Füllstand wählen            P:<item>:<prozent>:<l>  Füllstand setzen
@@ -16,10 +18,12 @@
 //   H:<subj>:<l>              Nachrecherchieren (Abweichungen danach mit [Ja] [Nein])
 // subj = o<item> oder v<wine>.<jahr|->; person = Anfang der Personen-UUID (8 Zeichen).
 
+import { T } from "@/lib/bot/texts";
+import type { DrinkStatus } from "@/lib/cellar/overview";
 import { asWineType, formatStarNumber, wineName } from "@/lib/format";
 import type { TgInlineButton, TgInlineKeyboard, TgReplyKeyboard } from "@/lib/telegram/types";
 
-export const PAGE_SIZE = 8;
+export const PAGE_SIZE = 10;
 
 // ---------------------------------------------------------------------------
 // Weintypen
@@ -63,11 +67,17 @@ export const typeInfo = (code: TypeCode) => TYPE_INFO[code];
 // ---------------------------------------------------------------------------
 // Callback-Daten
 
+/** Listen bzw. Auswahl-Menüs; page (ab 1 = Seite 2) nur als Rücksprung aus dem Wein-Menü. */
 export type ListRef =
   | { kind: "open" }
+  /** ⏰ Trinkreif: Stufen wählen */
   | { kind: "ready" }
+  /** Weintypen einer Stufe wählen */
+  | { kind: "readyStatus"; status: DrinkStatus }
+  /** Weine einer Stufe (eines Typs oder alle) */
+  | { kind: "readyList"; status: DrinkStatus; code: TypeCode | "all"; page?: number }
   | { kind: "stock" }
-  | { kind: "type"; code: TypeCode }
+  | { kind: "type"; code: TypeCode; page?: number }
   /** „Verkostet“: letzte Einträge */
   | { kind: "tasted" }
   | { kind: "none" };
@@ -119,33 +129,67 @@ export type EditArea = keyof typeof EDIT_AREAS;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const KEY_RE = /^[0-9a-f]{8}$/;
 
+/** Stufen der Trinkreife im callback_data (gleiche 5 Stufen wie in der App). */
+const STATUS_CODES: Record<DrinkStatus, string> = { overdue: "o", now: "n", ready: "r", wait: "w", unknown: "u" };
+const statusFromCode = (c: string | undefined) =>
+  (Object.keys(STATUS_CODES) as DrinkStatus[]).find((s) => STATUS_CODES[s] === c) ?? null;
+const pageSuffix = (page: number | undefined) => (page ? `.${page}` : "");
+
 export function encodeList(list: ListRef) {
   switch (list.kind) {
     case "open":
       return "o";
     case "ready":
       return "r";
+    case "readyStatus":
+      return `r${STATUS_CODES[list.status]}`;
+    case "readyList":
+      return `r${STATUS_CODES[list.status]}${list.code === "all" ? "a" : list.code}${pageSuffix(list.page)}`;
     case "stock":
       return "b";
     case "tasted":
       return "k";
     case "type":
-      return `t${list.code}`;
+      return `t${list.code}${pageSuffix(list.page)}`;
     case "none":
       return "-";
   }
 }
 
-function decodeList(s: string | undefined): ListRef | null {
-  if (s === "o") return { kind: "open" };
-  if (s === "r") return { kind: "ready" };
-  if (s === "b") return { kind: "stock" };
-  if (s === "k") return { kind: "tasted" };
-  if (s === "-") return { kind: "none" };
-  if (s?.length === 2 && s[0] === "t" && TYPE_CODES.includes(s[1] as TypeCode)) {
-    return { kind: "type", code: s[1] as TypeCode };
+function decodeList(raw: string | undefined): ListRef | null {
+  const [s, pagePart] = (raw ?? "").split(".");
+  const page = pagePart == null ? undefined : Number(pagePart);
+  if (page !== undefined && !(Number.isInteger(page) && page >= 1 && page <= 999)) return null;
+  const paged = (ref: Extract<ListRef, { page?: number }>): ListRef => (page ? { ...ref, page } : ref);
+  if (s === "o" && !pagePart) return { kind: "open" };
+  if (s === "r" && !pagePart) return { kind: "ready" };
+  if (s === "b" && !pagePart) return { kind: "stock" };
+  if (s === "k" && !pagePart) return { kind: "tasted" };
+  if (s === "-" && !pagePart) return { kind: "none" };
+  if (s.length === 2 && s[0] === "t" && TYPE_CODES.includes(s[1] as TypeCode)) {
+    return paged({ kind: "type", code: s[1] as TypeCode });
+  }
+  const status = s[0] === "r" ? statusFromCode(s[1]) : null;
+  if (status && s.length === 2 && !pagePart) return { kind: "readyStatus", status };
+  if (status && s.length === 3 && (s[2] === "a" || TYPE_CODES.includes(s[2] as TypeCode))) {
+    return paged({ kind: "readyList", status, code: s[2] === "a" ? "all" : (s[2] as TypeCode) });
   }
   return null;
+}
+
+/** Liste ohne Seite (für „L:“) und die Seite als offset. */
+export function listTarget(list: ListRef): { list: ListRef; offset: number } {
+  if ("page" in list && list.page) {
+    const { page, ...rest } = list;
+    return { list: rest as ListRef, offset: page * PAGE_SIZE };
+  }
+  return { list, offset: 0 };
+}
+
+/** Rücksprung aus dem Wein-Menü auf genau diese Seite der Liste. */
+export function onPage<L extends ListRef>(list: L, offset: number): L {
+  const page = Math.floor(offset / PAGE_SIZE);
+  return page ? { ...list, page } : list;
 }
 
 const encodeYear = (year: number | null) => (year == null ? "-" : String(year));
@@ -392,6 +436,24 @@ export function openBottleLine(row: OpenBottleRow, name: string) {
 
 export const btn = (text: string, action: MenuAction): TgInlineButton => ({ text, callback_data: encodeMenu(action) });
 
+/**
+ * Blättern in Bestand und Trinkreif: „◀︎ Vorherige“ (nicht auf Seite 1), „Weitere ▶︎“ (nicht auf
+ * der letzten Seite) und „↩︎ Andere Auswahl“ (zurück zu Weintyp bzw. Stufe).
+ */
+export function pageNav(list: ListRef, offset: number, total: number, choose: ListRef): TgInlineButton[][] {
+  const steps = [
+    offset > 0 ? btn("◀︎ Vorherige", { op: "list", list, offset: Math.max(0, offset - PAGE_SIZE) }) : null,
+    offset + PAGE_SIZE < total ? btn("Weitere ▶︎", { op: "list", list, offset: offset + PAGE_SIZE }) : null,
+  ].filter((b): b is TgInlineButton => b != null);
+  return [...(steps.length ? [steps] : []), [btn("↩︎ Andere Auswahl", { op: "list", list: choose, offset: 0 })]];
+}
+
+/** „Seite 2 von 11“ – nur bei mehr als einer Seite. */
+export function pageLabel(offset: number, total: number) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  return pages > 1 ? T.pageOf(Math.floor(offset / PAGE_SIZE) + 1, pages) : null;
+}
+
 /** Eine Seite Knöpfe (je eine Zeile) und bei Bedarf „Mehr…“. */
 export function pageButtons<T>(
   items: T[],
@@ -405,7 +467,8 @@ export function pageButtons<T>(
 }
 
 export function backRow(back: ListRef): TgInlineButton[][] {
-  return back.kind === "none" ? [] : [[btn("‹ Zurück", { op: "list", list: back, offset: 0 })]];
+  // Zurück auf dieselbe Seite der Liste, aus der man gekommen ist.
+  return back.kind === "none" ? [] : [[btn("‹ Zurück", { op: "list", ...listTarget(back) })]];
 }
 
 export const RATING_STEPS = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
