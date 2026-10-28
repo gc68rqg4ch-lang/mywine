@@ -107,6 +107,10 @@ export type Edit =
   /** Jahrgang nur dieser Charge (change_vintage mit p_item_id). */
   | { kind: "batchVintage"; itemId: string; to: number | null }
   | { kind: "deleteBatch"; itemId: string }
+  /** Flaschen löschen (falsch erfasst, nicht getrunken); ohne count die ganze Charge bzw. Position. */
+  | { kind: "deleteBottles"; itemId: string; count?: number }
+  /** Ganzen Wein unwiderruflich löschen (App: mit eingetipptem Namen zur Bestätigung). */
+  | { kind: "deleteWine"; wineId: string; confirmName?: string }
   /** Offene Flasche: Füllstand und/oder „Geöffnet am“. */
   | { kind: "openBottle"; itemId: string; fill?: number; openedOn?: string }
   /** Getrunkene Flasche: „Getrunken am“. */

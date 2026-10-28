@@ -48,8 +48,8 @@ export function decodeEditCallback(data: string | undefined) {
   return { confirm: tag === "ce", jobId: id };
 }
 
-export function editKeyboard(jobId: string): TgInlineKeyboard {
-  return { inline_keyboard: [[{ text: "Ja", callback_data: editYes(jobId) }, { text: "Nein", callback_data: editNo(jobId) }]] };
+export function editKeyboard(jobId: string, labels: { yes: string; no: string } = { yes: "Ja", no: "Nein" }): TgInlineKeyboard {
+  return { inline_keyboard: [[{ text: labels.yes, callback_data: editYes(jobId) }, { text: labels.no, callback_data: editNo(jobId) }]] };
 }
 
 export function isChatCallback(data: string | undefined) {

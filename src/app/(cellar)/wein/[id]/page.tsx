@@ -40,6 +40,9 @@ import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, type PersonRating } from "./ratings-card";
 import { EncounterSection } from "./encounters";
+import { DangerZone } from "./delete-sections";
+import { loadWineDeleteSummary } from "@/lib/edit/delete";
+import { wineDeleteSummaryText } from "@/lib/edit/delete-text";
 import { BackLink } from "@/components/back-link";
 import { loadPlaces, loadWineEncounters } from "@/lib/edit/encounters";
 
@@ -160,6 +163,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     loadDocuments(supabase, wine.id, year),
     editing ? loadPlaces(supabase) : Promise.resolve([]),
   ]);
+  const deleteSummary = editing ? await loadWineDeleteSummary(supabase, wine.id) : null;
   const suggestions = await loadPendingSuggestions(supabase, { wineId: wine.id, year }).catch((error) => {
     console.error("loading suggestions failed", error);
     return [];
@@ -511,6 +515,11 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         {wineColumn}
         {ratingsColumn}
       </div>
+
+      {/* Ganz unten, deutlich abgesetzt: den ganzen Wein löschen. */}
+      {editing && deleteSummary && (
+        <DangerZone wineId={wine.id} name={wine.name} summary={wineDeleteSummaryText(deleteSummary)} back={back.href} />
+      )}
     </div>
   );
 }

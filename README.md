@@ -96,7 +96,7 @@ Persönliche Weinsammlungs-App – Next.js (App Router, TypeScript) mit Supabase
     abgelehnt), Jahrgang (über `public.change_vintage()`, ganzer Jahrgang samt Bewertungen, Verkostungen,
     Rebsorten, Fotos; bestehender Ziel-Jahrgang → Rückfrage und Zusammenführen) und Trinkfenster, je Charge
     Anzahl, Flaschengrösse, Lagerort (auch nur ein Teil der Flaschen), Kaufdatum, Händler, Geschenk, Preise,
-    Jahrgang nur dieser Charge und Löschen (Rückfrage); offene Flasche: Füllstand, „Geöffnet am“; getrunkene:
+    Jahrgang nur dieser Charge und „🗑 Flaschen löschen“ (siehe unten); offene Flasche: Füllstand, „Geöffnet am“; getrunkene:
     „Getrunken am“, zurück auf offen. Rebsorten (Bearbeiten, Nachrecherchieren), Fotos (hinzufügen, ersetzen,
     löschen) und Bewertungen löschen gibt es nur hier; in der Anzeige bleiben Öffnen, Füllstand und Sterne.
 
@@ -109,6 +109,23 @@ derselben Meldung („2 Flaschen ins Wohnzimmer verschoben“) in App und Bot. D
 Verschieben (ganz oder teilweise) läuft nur über `public.move_bottles()`: atomar, führt mit einer gleichen
 Charge am Ziel zusammen und schreibt genau einen Journal-Eintrag „verschoben“. Wird „Getrunken am“ geändert,
 zieht ein Trigger den Journal-Eintrag „getrunken“ mit.
+
+### Unwiderruflich löschen (falsch erfasst)
+
+Löschen heisst „falsch erfasst“, nicht „getrunken“ (`src/lib/edit/delete.ts`, Texte in `delete-text.ts`):
+
+- **Flaschen** (`deleteBottles`): bei jeder Charge, offenen und getrunkenen Flasche „🗑 Flaschen löschen“, bei
+  Chargen > 1 mit wählbarer Anzahl (Standard 1). Läuft über `public.delete_bottles(p_item_id, p_quantity)` (NULL
+  oder ≥ Anzahl = ganze Position) mit genau einem Journal-Eintrag „deleted“. Die letzte Flasche weg → der Wein
+  bleibt mit Bewertungen und Verkostungen. Auch das Chat-Tool `propose_delete_bottles` geht diesen Weg.
+- **Ganzer Wein** (`deleteWine`): ganz unten auf der Weinseite im ✏️-Modus in der roten „Gefahrenzone“. Die
+  Rückfrage zeigt, was alles verschwindet („7 Flaschen …, 3 Bewertungen, …, 4 Fotos, 1 PDF“); erst wenn der
+  Weinname eingetippt ist, wird „Endgültig löschen“ aktiv. `public.delete_wine(p_wine_id)` löscht alles ohne
+  Journal und liefert die Storage-Pfade; danach werden Originale und Vorschaubilder aus den Buckets entfernt
+  (Admin-Client, serverseitig). Anschliessend zurück zur Liste (Zustand erhalten).
+- **Bot:** unter ✏️ Bearbeiten „🗑 Flaschen löschen“ (Position wählen, Anzahl, Rückfrage „🗑 Löschen“ /
+  „Abbrechen“) und „🗑 Wein löschen“ (Übersicht, dann „Ja, endgültig löschen“ / „Abbrechen“). Im Chat-Modus nur als
+  Vorschlag (`propose_delete_bottles`, `propose_delete_wine`) mit Ja/Nein, nie direkt.
   - `/flasche/[id]` leitet auf die Weinseite mit dem Jahrgang der Flasche weiter (Bot-Links, Lesezeichen).
 - **Listen allgemein** (Bestand, Offen, Getrunken, Verkostet – gemeinsame Ansicht `src/components/cellar/list-view.tsx`):
   - **Weintypen:** Rot, Weiss, Rosé, Schaumwein, Süsswein, Likörwein (`WINE_TYPES` in `src/lib/format.ts`). Orange gibt es
@@ -212,7 +229,7 @@ Datenbank noch API-Schlüssel und legen nichts in der Produktions-DB an:
 Abgedeckt: Bot-Zugang und `/id` (`access`), Bewerten (`rating`), Wein-Menü (`wine-menu`), Details (`details`),
 Erfassung per Foto, Text, Nachkauf und Jahrgang-Pflicht (`photo-ingest`, `text-ingest`, `ingest-helpers`),
 Fotos nachreichen (`photo-attach`, `media-*`), Bearbeiten-Modul inkl. `move_bottles` und `change_vintage`
-(`edit`), Weinseite (`wine-page`), Übersicht, Typ-Filter und Gruppierungen inkl. Trinkreife (`overview`,
+(`edit`), unwiderruflich löschen – Flaschen und ganzer Wein samt Dateien (`delete`), Weinseite (`wine-page`), Übersicht, Typ-Filter und Gruppierungen inkl. Trinkreife (`overview`,
 `lists`, `drink-status`), Verkostung (`tasting`), Recherche mit Lücken, Vorschlägen und Limit-Stopp
 (`research`, `api-errors`) sowie die Schema-Grenzen der Claude API (`schema-limits`).
 

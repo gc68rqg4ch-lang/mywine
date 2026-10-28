@@ -18,13 +18,25 @@ export const EDIT_SOURCE = "telegram_edit";
 
 type StoredEdit = { kind: "edit"; edit: Edit; text: string };
 
-/** Vorschau als Bot-Nachricht: was, vorher → nachher, Hinweise, Frage. */
-export function editQuestion(preview: EditPreview) {
+const isDelete = (edit: Edit) => edit.kind === "deleteBottles" || edit.kind === "deleteBatch" || edit.kind === "deleteWine";
+
+/** Vorschau als Bot-Nachricht: was, vorher → nachher, Hinweise, Frage (beim Löschen deutlich). */
+export function editQuestion(preview: EditPreview, edit?: Edit) {
+  if (edit && isDelete(edit)) {
+    return `🗑 ${escapeHtml(previewLines(preview).join("\n"))}\n\n<b>Wirklich löschen?</b>`;
+  }
   return `✏️ ${escapeHtml(previewLines(preview).join("\n"))}\n\nSoll ich das so ändern?`;
 }
 
-/** Legt den Vorschlag ab und schickt ihn mit [Ja] [Nein]. */
-export async function sendEditProposal(db: AdminClient, chatId: number, edit: Edit, preview: EditPreview) {
+/** Knöpfe unter einem Vorschlag; beim Löschen „Löschen“ bzw. „Ja, endgültig löschen“ / „Abbrechen“. */
+export function proposalKeyboard(jobId: string, edit: Edit) {
+  if (edit.kind === "deleteWine") return editKeyboard(jobId, { yes: "Ja, endgültig löschen", no: "Abbrechen" });
+  if (isDelete(edit)) return editKeyboard(jobId, { yes: "🗑 Löschen", no: "Abbrechen" });
+  return editKeyboard(jobId);
+}
+
+/** Legt den Vorschlag bis zur Antwort in ingest_jobs ab (nichts wird geändert); liefert die Job-ID. */
+export async function storeEditProposal(db: AdminClient, chatId: number, edit: Edit, preview: EditPreview) {
   const stored: StoredEdit = { kind: "edit", edit, text: previewLines(preview).join(" · ") };
   const { data, error } = await db
     .from("ingest_jobs")
@@ -32,7 +44,13 @@ export async function sendEditProposal(db: AdminClient, chatId: number, edit: Ed
     .select("id")
     .single();
   if (error) throw error;
-  await sendMessage(chatId, editQuestion(preview), editKeyboard(data.id));
+  return data.id;
+}
+
+/** Legt den Vorschlag ab und schickt ihn mit [Ja] [Nein] (beim Löschen mit deutlichen Knöpfen). */
+export async function sendEditProposal(db: AdminClient, chatId: number, edit: Edit, preview: EditPreview) {
+  const jobId = await storeEditProposal(db, chatId, edit, preview);
+  await sendMessage(chatId, editQuestion(preview, edit), proposalKeyboard(jobId, edit));
 }
 
 /** [Ja] / [Nein] unter einem Bearbeiten-Vorschlag (die Knöpfe sind schon entfernt). */

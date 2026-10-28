@@ -29,6 +29,7 @@ import {
   type Db,
   type PreparedEdit,
 } from "./helpers";
+import { prepareDeleteBottles, prepareDeleteWine } from "./delete";
 import { prepareAddEncounter, prepareDeleteEncounter, prepareEncounter, prepareWantToBuy } from "./encounters";
 import {
   ROOMS,
@@ -395,30 +396,9 @@ async function prepareBatchVintage(db: Db, itemId: string, to: number | null): P
   );
 }
 
-async function prepareDeleteBatch(db: Db, itemId: string): Promise<PreparedEdit> {
-  const item = await loadItem(db, itemId);
-  if (!item) return fail("Diese Charge gibt es nicht mehr.");
-  const facts = [
-    item.status === "sealed" ? bottles(item.quantity) : STATUS_TEXT[item.status],
-    item.storage_room,
-    item.purchased_at && `gekauft ${date(item.purchased_at)}`,
-    item.purchase_price != null && money(item.purchase_price),
-  ].filter(Boolean);
-  return ready(
-    {
-      title: itemTitle(item),
-      action: "Charge löschen",
-      changes: [],
-      notes: [`Wird endgültig gelöscht: ${facts.join(", ")}. Bewertungen und Verkostungen bleiben beim Wein.`],
-    },
-    item.wine_id,
-    async () => {
-      const { error } = await db.from("inventory_items").delete().eq("id", itemId);
-      if (error) throw error;
-      return `die Charge gelöscht (${facts[0]})`;
-    },
-    item.vintage_year,
-  );
+/** Ganze Charge bzw. Flasche löschen – wie „Flaschen löschen“ ohne Anzahl (delete_bottles, Journal „deleted“). */
+function prepareDeleteBatch(db: Db, itemId: string): Promise<PreparedEdit> {
+  return prepareDeleteBottles(db, itemId);
 }
 
 // ---------------------------------------------------------------------------
@@ -678,6 +658,10 @@ export async function prepareEdit(db: Db, edit: Edit): Promise<PreparedEdit> {
       return prepareTasting(db, edit);
     case "deleteTasting":
       return prepareDeleteTasting(db, edit.tastingId);
+    case "deleteBottles":
+      return prepareDeleteBottles(db, edit.itemId, edit.count);
+    case "deleteWine":
+      return prepareDeleteWine(db, edit.wineId, edit.confirmName);
     case "addEncounter":
       return prepareAddEncounter(db, edit);
     case "encounter":

@@ -239,10 +239,22 @@ export function editTools(db: AdminClient, pending: PendingProposal[], actor: Ac
     }),
 
     betaZodTool({
-      name: "propose_delete_batch",
-      description: "Schlägt vor, eine Charge bzw. Flasche ganz zu löschen (z. B. Fehlerfassung). Nicht für Ausgetrunken – dafür propose_mark_drunk.",
-      inputSchema: z.object({ inventory_item_id: z.uuid().describe("Aus list_batches") }),
-      run: async ({ inventory_item_id }) => proposeEdit({ kind: "deleteBatch", itemId: inventory_item_id }),
+      name: "propose_delete_bottles",
+      description:
+        "Schlägt vor, Flaschen unwiderruflich zu löschen (falsch erfasst) – ganze Charge/Flasche oder mit count nur einen Teil. Wird im Journal als gelöscht vermerkt, nicht als getrunken. Nicht für Austrinken – dafür propose_mark_drunk.",
+      inputSchema: z.object({
+        inventory_item_id: z.uuid().describe("Aus list_batches"),
+        count: z.number().int().min(1).max(999).optional().describe("Nur so viele Flaschen; weglassen = alle"),
+      }),
+      run: async ({ inventory_item_id, count }) => proposeEdit({ kind: "deleteBottles", itemId: inventory_item_id, count }),
+    }),
+
+    betaZodTool({
+      name: "propose_delete_wine",
+      description:
+        "Schlägt vor, einen Wein mit allem (Flaschen, Bewertungen, Verkostungen, Verkostet-Einträge, Fotos, PDFs) unwiderruflich zu löschen. Nur auf ausdrücklichen Wunsch.",
+      inputSchema: z.object({ wine_id: z.uuid() }),
+      run: async ({ wine_id }) => proposeEdit({ kind: "deleteWine", wineId: wine_id }),
     }),
 
     betaZodTool({

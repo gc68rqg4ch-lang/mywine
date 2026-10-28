@@ -162,6 +162,12 @@ export function editsFromForm(form: FormData): Edit[] | { error: string } {
       }
       case "deleteBatch":
         return [{ kind: "deleteBatch", itemId: r.id("itemId") }];
+      case "deleteBottles": {
+        const count = r.has("count") ? r.int("count", "Anzahl") : null;
+        return [{ kind: "deleteBottles", itemId: r.id("itemId"), ...(count != null ? { count } : {}) }];
+      }
+      case "deleteWine":
+        return [{ kind: "deleteWine", wineId: r.id("wineId"), confirmName: r.text("confirmName") }];
       case "openBottle": {
         const fill = r.int("fill", "Füllstand");
         const openedOn = r.text("openedOn");

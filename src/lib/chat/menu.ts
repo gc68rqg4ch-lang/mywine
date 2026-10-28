@@ -11,7 +11,7 @@ import {
   formatVintages,
   type DrinkStatus,
 } from "@/lib/cellar/overview";
-import { asWineType, daysSince, formatBottleSize, wineName } from "@/lib/format";
+import { asWineType, daysSince, formatBottleSize, formatDate, wineName, zurichDate } from "@/lib/format";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { answerCallback, editMessage, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
 import { appBaseUrl } from "@/lib/telegram/config";
@@ -30,6 +30,9 @@ import { DESCRIBE_TEXT, cancelKeyboard } from "@/lib/ingest/messages";
 import { editAreaText, editContextNote } from "./edit-menu";
 import { startBotResearch } from "./research";
 import { executeProposal } from "./execute";
+import { editQuestion, proposalKeyboard, storeEditProposal } from "./edits";
+import { prepareEdit } from "@/lib/edit/edit";
+import type { Edit } from "@/lib/edit/types";
 import { appendHistory } from "./history";
 import {
   EDIT_AREAS,
@@ -566,6 +569,75 @@ async function claim(chatId: number, messageId: number) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// 🗑 Löschen (unter ✏️ Bearbeiten): Position → Anzahl → Rückfrage mit „🗑 Löschen“ / „Abbrechen“
+
+const POSITION_LABEL = { sealed: "Charge", open: "Offen", drunk: "Getrunken" } as const;
+const MAX_COUNT_BUTTONS = 6;
+
+async function deleteBottlesScreen(db: AdminClient, subject: Subject, back: ListRef): Promise<Screen> {
+  const target = await subjectTarget(db, subject);
+  if (!target) return subjectScreen(db, subject, back, "Wein nicht gefunden.");
+  const base = await subjectScreen(db, subject, back);
+  const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
+  let q = db.from("inventory_items").select("id, status, quantity, storage_room, drunk_at").eq("wine_id", target.wineId);
+  q = target.year == null ? q.is("vintage_year", null) : q.eq("vintage_year", target.year);
+  const { data, error } = await q.order("status");
+  if (error) throw error;
+  const items = data ?? [];
+  const label = (i: (typeof items)[number]) =>
+    [
+      POSITION_LABEL[i.status],
+      i.status === "sealed" ? `${i.quantity} Fl.` : null,
+      i.status === "drunk" ? (formatDate(zurichDate(i.drunk_at)) ?? "ohne Datum") : (i.storage_room ?? "ohne Lagerort"),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  return {
+    text: `${header}\n🗑 <b>Flaschen löschen</b> – welche? (falsch erfasst, nicht getrunken)${items.length ? "" : "\nKeine Flaschen dieses Jahrgangs."}`,
+    keyboard: {
+      inline_keyboard: [
+        ...items.map((i) => [btn(label(i), { op: "delCount", itemId: i.id, count: null, back })]),
+        [btn("‹ Zurück", { op: "edit", subject, back })],
+      ],
+    },
+  };
+}
+
+async function deleteCountScreen(db: AdminClient, chatId: number, itemId: string, count: number | null, back: ListRef): Promise<Screen> {
+  const { data: item, error } = await db
+    .from("inventory_items")
+    .select("id, wine_id, vintage_year, status, quantity, storage_room, drunk_at")
+    .eq("id", itemId)
+    .maybeSingle();
+  if (error) throw error;
+  const subject: Subject | null = item ? { kind: "vintage", wineId: item.wine_id, year: item.vintage_year } : null;
+  if (!item || !subject) return { text: "Diese Flaschen gibt es nicht mehr.", keyboard: { inline_keyboard: backRow(back) } };
+  // Mehr als eine Flasche: zuerst die Anzahl wählen.
+  if (count == null && item.quantity > 1) {
+    const n = Math.min(item.quantity, MAX_COUNT_BUTTONS);
+    const numbers = Array.from({ length: n }, (_, i) => i + 1).filter((c) => c < item.quantity);
+    return {
+      text: `🗑 Wie viele Flaschen löschen? (${item.quantity} in dieser ${item.status === "sealed" ? "Charge" : "Position"})`,
+      keyboard: {
+        inline_keyboard: [
+          numbers.map((c) => btn(String(c), { op: "delCount", itemId, count: c, back })),
+          [btn(`Alle ${item.quantity}`, { op: "delCount", itemId, count: item.quantity, back })],
+          [btn("‹ Zurück", { op: "delBottles", subject, back })],
+        ],
+      },
+    };
+  }
+  const edit: Edit = { kind: "deleteBottles", itemId, count: count ?? item.quantity };
+  const prepared = await prepareEdit(db, edit);
+  if (!prepared.ok) return { text: `⚠️ ${e(prepared.error)}`, keyboard: { inline_keyboard: [[btn("‹ Zurück", { op: "delBottles", subject, back })]] } };
+  const jobId = await storeEditProposal(db, chatId, edit, prepared.preview);
+  return {
+    text: editQuestion(prepared.preview, edit),
+    keyboard: { inline_keyboard: [...proposalKeyboard(jobId, edit).inline_keyboard, [btn("‹ Zurück", { op: "delBottles", subject, back })]] },
+  };
+}
+
 const CLAIMED_OPS = new Set<MenuAction["op"]>(["glasses", "drunk", "open", "openBatch", "research"]);
 
 /** Nächstes Menü zu einem Knopf (führt Aktionen aus); exportiert für Tests. */
@@ -628,6 +700,10 @@ async function screenForAction(
               inline_keyboard: [
                 ...rows,
                 [btn("🔎 Nachrecherchieren", { op: "research", subject: a.subject, back: a.back })],
+                [
+                  btn("🗑 Flaschen löschen", { op: "delBottles", subject: a.subject, back: a.back }),
+                  btn("🗑 Wein löschen", { op: "delWine", subject: a.subject, back: a.back }),
+                ],
                 [btn("‹ Zurück", subjectAction(a.subject, a.back))],
               ],
             },
@@ -642,6 +718,25 @@ async function screenForAction(
         screen: {
           text: `${header}\n<b>${EDIT_AREAS[a.area]}</b>\n${await editAreaText(db, target.wineId, target.year, a.area)}`,
           keyboard: { inline_keyboard: [[btn("‹ Andere Angabe", { op: "edit", subject: a.subject, back: a.back })]] },
+        },
+      };
+    }
+    case "delBottles":
+      return { screen: await deleteBottlesScreen(db, a.subject, a.back) };
+    case "delCount":
+      return { screen: await deleteCountScreen(db, ctx.chatId, a.itemId, a.count, a.back) };
+    case "delWine": {
+      const target = await subjectTarget(db, a.subject);
+      if (!target) return { screen: await subjectScreen(db, a.subject, a.back, "Wein nicht gefunden.") };
+      const prepared = await prepareEdit(db, { kind: "deleteWine", wineId: target.wineId });
+      if (!prepared.ok) return { screen: await subjectScreen(db, a.subject, a.back, prepared.error) };
+      // Zweistufig: erst diese Übersicht, dann „Ja, endgültig löschen“ / „Abbrechen“.
+      const edit: Edit = { kind: "deleteWine", wineId: target.wineId };
+      const jobId = await storeEditProposal(db, ctx.chatId, edit, prepared.preview);
+      return {
+        screen: {
+          text: editQuestion(prepared.preview, edit),
+          keyboard: { inline_keyboard: [...proposalKeyboard(jobId, edit).inline_keyboard, [btn("‹ Zurück", { op: "edit", subject: a.subject, back: a.back })]] },
         },
       };
     }

@@ -2138,3 +2138,25 @@ input[inputmode="decimal"] {
   border: 1px solid var(--danger);
   border-radius: 10px;
 }
+
+/* Löschen: deutlich getrennt von Öffnen/Austrinken; Gefahrenzone ganz unten */
+.delete-row {
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.delete-trigger {
+  color: var(--danger);
+}
+.delete-count {
+  max-width: 220px;
+}
+.danger-zone {
+  margin-top: 24px;
+  border: 2px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+}
+.danger-zone .section-title,
+.danger-text {
+  color: var(--danger);
+  font-weight: 600;
+}

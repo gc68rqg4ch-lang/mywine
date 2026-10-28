@@ -92,7 +92,13 @@ export type MenuAction =
   | { op: "photo"; subject: Subject; back: ListRef }
   | { op: "edit"; subject: Subject; back: ListRef }
   | { op: "research"; subject: Subject; back: ListRef }
-  | { op: "editArea"; subject: Subject; area: EditArea; back: ListRef };
+  | { op: "editArea"; subject: Subject; area: EditArea; back: ListRef }
+  /** 🗑 Flaschen löschen: Position wählen */
+  | { op: "delBottles"; subject: Subject; back: ListRef }
+  /** 🗑 Flaschen löschen: Anzahl wählen (count null) bzw. nachfragen (count) */
+  | { op: "delCount"; itemId: string; count: number | null; back: ListRef }
+  /** 🗑 Wein löschen: Übersicht, dann „Ja, endgültig löschen“ / „Abbrechen“ */
+  | { op: "delWine"; subject: Subject; back: ListRef };
 
 /** Bereiche von „✏️ Bearbeiten“ (Kürzel im callback_data). */
 export const EDIT_AREAS = {
@@ -202,11 +208,17 @@ export function encodeMenu(a: MenuAction): string {
       return `H:${encodeSubject(a.subject)}:${l}`;
     case "editArea":
       return `U:${encodeSubject(a.subject)}:${a.area}:${l}`;
+    case "delBottles":
+      return `C:${encodeSubject(a.subject)}:${l}`;
+    case "delCount":
+      return `Z:${a.itemId}:${a.count ?? "-"}:${l}`;
+    case "delWine":
+      return `J:${encodeSubject(a.subject)}:${l}`;
   }
 }
 
 export function isMenuCallback(data: string | undefined) {
-  return /^[LWVOGFPDXNQRSTEKIMBUH]:/.test(data ?? "");
+  return /^[LWVOGFPDXNQRSTEKIMBUHCZJ]:/.test(data ?? "");
 }
 
 export function decodeMenu(data: string | undefined): MenuAction | null {
@@ -267,6 +279,19 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
       if (!subject || !b) return null;
       const kind = ({ T: "tasting", E: "tell", I: "details", M: "photo", B: "edit", H: "research" } as const)[op];
       return { op: kind, subject, back: b };
+    }
+    case "C":
+    case "J": {
+      const subject = decodeSubject(f[0]);
+      const b = back(1);
+      if (!subject || !b) return null;
+      return op === "C" ? { op: "delBottles", subject, back: b } : { op: "delWine", subject, back: b };
+    }
+    case "Z": {
+      const b = back(2);
+      const count = f[1] === "-" ? null : Number(f[1]);
+      if (!UUID_RE.test(id) || !b || (count !== null && !(Number.isInteger(count) && count >= 1 && count <= 999))) return null;
+      return { op: "delCount", itemId: id, count, back: b };
     }
     case "U": {
       const subject = decodeSubject(f[0]);

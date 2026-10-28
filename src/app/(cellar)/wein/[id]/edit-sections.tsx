@@ -3,6 +3,7 @@
 
 import { ROOMS } from "@/lib/edit/types";
 import { WINE_TYPE_LABELS, formatDate, todayIso, zurichDate, type InventoryStatus, type WineType } from "@/lib/format";
+import { DeleteBottles } from "./delete-sections";
 import { EditForm } from "./edit-form";
 
 const yearInput = (year: number | null) => (year == null ? "NV" : String(year));
@@ -248,12 +249,10 @@ export function BatchEditor({ batch: b, vendors }: { batch: EditBatch; vendors: 
         </>
       )}
 
-      <EditForm
-        hidden={{ kind: "deleteBatch", itemId: b.inventory_item_id }}
-        submitLabel={b.status === "sealed" ? "Charge löschen" : "Flasche löschen"}
-        confirm={`${title} wirklich löschen? Das lässt sich nicht rückgängig machen.`}
-        danger
-        cancel={false}
+      {/* Löschen = falsch erfasst (nicht öffnen/austrinken) – deutlich abgesetzt. */}
+      <DeleteBottles
+        itemId={b.inventory_item_id}
+        bottle={{ status: b.status, quantity: b.quantity, storage_room: b.storage_room, drunk_at: b.drunk_at }}
       />
     </section>
   );
