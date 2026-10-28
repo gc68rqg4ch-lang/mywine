@@ -25,6 +25,16 @@ export const VARIANTS = {
     "Schönes Etikett! Ich lese es kurz …",
   ],
   saved: ["Gespeichert.", "Ist notiert.", "Erledigt – ist gespeichert."],
+  quantityOther: [
+    "Gerne – wie viele Flaschen sind es? Schreib mir einfach die Zahl, z. B. <i>24</i>.",
+    "Wie viele sind es denn? Eine Zahl genügt, z. B. <i>24</i>.",
+    "Schreib mir die Anzahl Flaschen, z. B. <i>24</i>.",
+  ],
+  quantityRetry: [
+    "Hm, das verstehe ich nicht ganz – wie viele Flaschen sind es? Eine ganze Zahl ab 1 genügt, z. B. <i>3</i>.",
+    "Magst du mir die Anzahl als ganze Zahl schreiben? Z. B. <i>3</i> oder <i>24</i>.",
+    "Wie viele Flaschen sind es? Bitte eine ganze Zahl ab 1, z. B. <i>24</i>.",
+  ],
   giftFrom: ["🎁 Wie schön, ein Geschenk! Von wem?", "🎁 Ein Geschenk – schön! Von wem ist er?", "🎁 Wie nett! Von wem hast du ihn bekommen?"],
   done: ["Wunderbar, dann ist alles notiert.", "Schön – alles festgehalten.", "Perfekt, ich habe alles."],
   cancelled: ["Gut, dann lassen wir das – ich habe nichts gespeichert.", "Kein Problem, ich habe nichts gespeichert.", "Alles klar, ich lasse es bleiben."],
@@ -119,6 +129,10 @@ export const T = {
   whereStored: "Wo lagerst du die Flaschen?",
   howMany: (room: string) => `${e(room)} – schön. Wie viele Flaschen sind es?`,
   howManyRetry: "Wie viele Flaschen sind es?",
+  /** „✏️ Andere Zahl“: Bitte um die Zahl als Text (Varianten). */
+  quantityOther: (random?: () => number) => say("quantityOther", random),
+  /** Keine gültige Anzahl (0, -3, „zwei“, 2.5): freundlich nochmals fragen (Varianten). */
+  quantityRetry: (random?: () => number) => say("quantityRetry", random),
   pricePaid: (bottles: string) => `${e(bottles)}. Was hast du pro Flasche bezahlt?`,
   priceRetry: "Was hast du pro Flasche bezahlt? Z. B. <i>24.50</i> – oder tippe „🎁 Geschenk“ bzw. „Überspringen“.",
   /** Geschenk: „Von wem?“ (Varianten). */

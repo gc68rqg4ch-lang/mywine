@@ -14,6 +14,7 @@ export type CallbackAction =
   | "drop"
   | "loc"
   | "qty"
+  | "qtyother"
   | "skipprice"
   | "gift"
   | "skipgift"
@@ -38,6 +39,7 @@ export function parseCallbackData(data: string | undefined) {
     "drop",
     "loc",
     "qty",
+    "qtyother",
     "skipprice",
     "gift",
     "skipgift",
@@ -136,6 +138,8 @@ export function quantityKeyboard(jobId: string): TgInlineKeyboard {
         text: String(n),
         callback_data: callbackData("qty", jobId, String(n)),
       })),
+      // Jede andere Zahl: als Text (geht auch ohne diesen Knopf).
+      [{ text: "✏️ Andere Zahl", callback_data: callbackData("qtyother", jobId) }],
       cancelRow(jobId),
     ],
   };
@@ -191,8 +195,19 @@ export const HELP_TEXT = T.help;
 
 export { parsePrice } from "@/lib/format";
 
+/**
+ * Anzahl Flaschen aus einer Antwort: ganze Zahl 1–999 am Anfang („24“, „6 Flaschen“).
+ * Nicht: 0, negative Zahlen, Dezimalzahlen („2.5“), Wörter („zwei“).
+ */
 export function parseQuantity(text: string) {
-  const match = text.trim().match(/^(\d{1,3})\b/);
+  const match = text.trim().match(/^(\d{1,4})(?![.,]\d)(?!\d)/);
+  const value = match ? Number(match[1]) : NaN;
+  return Number.isInteger(value) && value >= 1 && value <= 999 ? value : null;
+}
+
+/** Anzahl im Bild- oder Freitext: „6 Flaschen“, „12 Fl.“, „3 bottles“; sonst null. */
+export function quantityInText(text: string | null | undefined) {
+  const match = (text ?? "").match(/(?:^|[^\d.,])(\d{1,3})\s*(?:fl\b\.?|flaschen?\b|flasche\b|bottles?\b|stk\b\.?|stück\b)/i);
   const value = match ? Number(match[1]) : NaN;
   return Number.isInteger(value) && value >= 1 && value <= 999 ? value : null;
 }

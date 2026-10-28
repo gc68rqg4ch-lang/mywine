@@ -437,6 +437,16 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       return;
     }
 
+    case "qtyother": {
+      // „✏️ Andere Zahl“: um die Zahl als Text bitten (die Antwort nimmt der Schritt „quantity“ an).
+      await answerCallback(cb.id);
+      if (state.step !== "quantity") return;
+      await clearKeyboard(chatId, messageId);
+      await touchFlow(db, job.id);
+      await sendMessage(chatId, T.quantityOther(), cancelKeyboard(job.id));
+      return;
+    }
+
     case "skipprice": {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
@@ -639,7 +649,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "quantity": {
       const quantity = parseQuantity(text);
       if (!quantity) {
-        await sendMessage(chatId, T.howManyRetry, cancelKeyboard(job.id));
+        await sendMessage(chatId, T.quantityRetry(), cancelKeyboard(job.id));
         return;
       }
       await advanceTo(db, job, chatId, "quantity", { quantity });

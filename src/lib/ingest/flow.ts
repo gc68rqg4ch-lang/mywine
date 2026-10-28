@@ -30,6 +30,7 @@ import {
   vintageKeyboard,
   giftFromKeyboard,
   priceKeyboard,
+  quantityInText,
   quantityKeyboard,
   regularPriceKeyboard,
   restockKeyboard,
@@ -138,10 +139,13 @@ export async function continuePhotoPurchase(
     proposal = { ...proposal, grape_shares: grapes.shares };
 
     const gift = giftInText(caption);
+    const captionQuantity = quantityInText(caption);
     const state: IngestState = {
       step: "review",
       intent: "bought",
       ...(gift ? giftPatch(gift.from) : {}),
+      // Anzahl im Bildtext („6 Flaschen“): nicht nochmals fragen.
+      ...(captionQuantity ? { quantity: captionQuantity } : {}),
       proposal,
       // Jahrgang nicht sicher gelesen → vor dem Speichern nachfragen.
       ...(proposal.vintage_year != null && !recognition.vintageCertain ? { vintage_uncertain: true } : {}),
@@ -605,7 +609,11 @@ export async function processTextJob(jobId: string, chatId: number, text: string
       drink_from_year: drink.from,
       drink_until_year: drink.until,
       ...(p.storage_room ? { storage_room: p.storage_room } : {}),
-      ...(p.quantity > 0 && p.quantity <= 999 ? { quantity: p.quantity } : {}),
+      ...(Number.isInteger(p.quantity) && p.quantity > 0 && p.quantity <= 999
+        ? { quantity: p.quantity }
+        : quantityInText(text)
+          ? { quantity: quantityInText(text)! }
+          : {}),
       ...(p.price > 0 ? { price: p.price } : {}),
       ...(p.regular_price > 0 ? { regular_price: p.regular_price } : {}),
       ...(p.vendor.trim() ? { vendor_name: p.vendor.trim().replace(/\s+/g, " ").slice(0, 80) } : {}),
