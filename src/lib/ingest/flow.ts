@@ -5,6 +5,7 @@ import "server-only";
 // am Ende eine Zusammenfassung zeigen; dann speichern.
 
 import { cleanGiftFrom, giftInText, giftValueInText } from "./gift";
+import { REGULAR_HINT, pricesInText } from "./prices";
 import { scheduleTasteProfile } from "@/lib/research/taste-auto";
 import { later } from "@/lib/later";
 import { apiProblemForBot } from "@/lib/ai/api-errors";
@@ -31,6 +32,7 @@ import {
   giftFromKeyboard,
   giftValueKeyboard,
   priceKeyboard,
+  priceLine,
   quantityInText,
   quantityKeyboard,
   regularPriceKeyboard,
@@ -145,12 +147,16 @@ export async function continuePhotoPurchase(
 
     const gift = giftInText(caption);
     const captionQuantity = quantityInText(caption);
+    // Preise im Bildtext: ein Preis = bezahlt; „49 statt 66“ = beide; „Normalpreis 66“ = nur der.
+    const captionPrices = gift ? { paid: null, regular: null } : pricesInText(caption);
     const state: IngestState = {
       step: "review",
       intent: "bought",
       ...(gift ? giftPatch(gift.from, giftValueInText(caption)) : {}),
       // Anzahl im Bildtext („6 Flaschen“): nicht nochmals fragen.
       ...(captionQuantity ? { quantity: captionQuantity } : {}),
+      ...(captionPrices.paid != null ? { price: captionPrices.paid } : {}),
+      ...(captionPrices.regular != null ? { regular_price: captionPrices.regular } : {}),
       proposal,
       // Jahrgang nicht sicher gelesen → vor dem Speichern nachfragen.
       ...(proposal.vintage_year != null && !recognition.vintageCertain ? { vintage_uncertain: true } : {}),
@@ -279,7 +285,7 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
       return;
     case "regular_price":
       if (state.is_gift) await sendMessage(chatId, T.giftValueAsk(), giftValueKeyboard(job.id));
-      else await sendMessage(chatId, T.regularPrice, regularPriceKeyboard(job.id, state.price ?? null));
+      else await sendMessage(chatId, T.regularPrice(), regularPriceKeyboard(job.id, state.price ?? null));
       return;
     case "vendor":
       await sendMessage(
@@ -446,10 +452,7 @@ export async function saveJob(job: IngestJob, chatId: number) {
       ? [T.giftLine(cleanGiftFrom(state.gift_from)), state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null].filter(
           (p): p is string => p != null,
         )
-      : [
-          state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
-          state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
-        ].filter((p): p is string => p != null);
+      : [priceLine(state.price, state.regular_price)].filter((p): p is string => p != null);
     const vendorName = vendor?.name ?? state.vendor_name;
     if (vendorName && !state.is_gift) prices.push(`bei ${escapeHtml(vendorName)}`);
     // Gleich weiter: Wein-Menü mit dieser Charge (Öffnen, Bewerten, Verkostung, …).
@@ -535,6 +538,22 @@ export async function discardDescribe(db: AdminClient, chatId: number) {
     .eq("extracted->>step", "describe");
 }
 
+/**
+ * Bezahlt und Normalpreis aus dem Freitext: was im Text eindeutig steht (pricesInText), sonst die
+ * Erkennung. Ein einzelner Preis ohne Stichwort „normal/statt/UVP“ gilt immer als bezahlt.
+ */
+export function textPurchasePrices(text: string, p: { price: number; regular_price: number }) {
+  const found = pricesInText(text);
+  let paid = positiveAmount(p.price);
+  let regular = positiveAmount(p.regular_price);
+  if (paid == null && regular != null && !REGULAR_HINT.test(text)) [paid, regular] = [regular, null];
+  // Eindeutig im Text Genanntes gilt; die Erkennung ergänzt, ohne denselben Betrag doppelt zu vergeben.
+  return {
+    paid: found.paid ?? (paid != null && paid !== found.regular ? paid : null),
+    regular: found.regular ?? (regular != null && regular !== found.paid ? regular : null),
+  };
+}
+
 /** Liegt dieser Wein mit diesem Jahrgang schon im Bestand (ungeöffnet oder offen)? */
 async function inStock(db: AdminClient, wineId: string, year: number | null) {
   let q = db.from("inventory_items").select("id", { count: "exact", head: true }).eq("wine_id", wineId).in("status", ["sealed", "open"]);
@@ -617,6 +636,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
 
     const p = parsed.purchase;
     const gift = giftInText(text);
+    const prices = textPurchasePrices(text, p);
     const restockCandidate = known ? await inStock(db, known.id, proposal.vintage_year) : false;
     const base: IngestState = {
       step: "researching",
@@ -633,8 +653,8 @@ export async function processTextJob(jobId: string, chatId: number, text: string
           ? { quantity: quantityInText(text)! }
           : {}),
       // Preise aus dem Text: 0, negativ oder ungültig = nicht genannt → Antoine fragt nach.
-      ...(positiveAmount(p.price) != null ? { price: positiveAmount(p.price)! } : {}),
-      ...(positiveAmount(p.regular_price) != null ? { regular_price: positiveAmount(p.regular_price)! } : {}),
+      ...(prices.paid != null ? { price: prices.paid } : {}),
+      ...(prices.regular != null ? { regular_price: prices.regular } : {}),
       ...(p.vendor.trim() ? { vendor_name: p.vendor.trim().replace(/\s+/g, " ").slice(0, 80) } : {}),
       // Geschenk im Text („Geschenk von Marc“): direkt übernehmen, Preisfrage entfällt.
       ...(p.gift || gift

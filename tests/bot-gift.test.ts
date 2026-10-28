@@ -211,11 +211,11 @@ test("Normaler Preis wie bisher", async () => {
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller");
   await say("24.50");
   assert.deepEqual([state().step, state().price, state().is_gift], ["regular_price", 24.5, undefined]);
-  await press("Überspringen");
+  await press("🤷 Weiss ich nicht");
   await press("Überspringen");
   await confirmAndSave();
   assert.deepEqual([item().is_gift, item().purchase_price, item().gift_from], [false, 24.5, null]);
-  assert.match(lastText(), /bezahlt CHF\s24\.50/);
+  assert.match(lastText(), /Bezahlt CHF\s24\.50/);
 });
 
 test("„Von wem?“ läuft nach 10 Minuten ab und lässt sich abbrechen", async () => {

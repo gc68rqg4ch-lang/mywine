@@ -462,6 +462,13 @@ Ablauf in `src/lib/ingest/flow.ts`, `ingest_jobs.source = 'text'`:
   Treffer → „Meinst du <Name> (<Produzent>)?“ mit „✅ Ja, dieser“ (bucht auf den bestehenden Wein, als Nachkauf,
   wenn der Jahrgang im Bestand liegt) und „➕ Nein, neuer Wein“; mehrere → bis 3 Knöpfe. Schritt `similar`
   (läuft wie alle Rückfragen nach 10 Min. ab, ✖️ Abbrechen). Exakter Treffer: wie bisher ohne Rückfrage.
+- **Zwei Preise** (Foto, Text, Nachkauf): a) „Was habt ihr pro Flasche bezahlt?“ (`purchase_price`; „🎁 Geschenk“,
+  „Überspringen“), b) „Und was kostet eine Flasche normalerweise?“ (`regular_price`; „Gleich wie bezahlt“ nur mit
+  Betrag bei a, „🤷 Weiss ich nicht“). Beträge über `parseAmount` (über 0). Preise aus Bild-/Freitext
+  (`src/lib/ingest/prices.ts`, `textPurchasePrices`): ein einzelner Preis gilt als bezahlt (auch wenn die Erkennung
+  ihn als Normalpreis liest) → nur Frage b; „49 statt 66“ / „bezahlt 49, normal 66“ → beide, keine Frage;
+  „Normalpreis 66“ → nur Frage a. Anzeige (`priceLine`): gleich → „CHF 34.80“, verschieden → „Bezahlt CHF 29.80 ·
+  Normalpreis CHF 34.80“, sonst „Bezahlt …“ bzw. „Normalpreis …“; Geschenk wie bisher.
 - Danach nur, was im Text fehlt: Lagerort, Anzahl, Preis, Normalpreis, Händler (`nextPurchaseStep`); zum Schluss
   eine Zusammenfassung mit [Ja] [Nein]. Der Händler aus dem Text wird erst beim Speichern angelegt.
 - Das Trinkfenster wird in `wine_vintages` übernommen, wenn dort noch keines steht (auch bei der Foto-Erfassung).

@@ -172,7 +172,7 @@ export function giftFromKeyboard(jobId: string): TgInlineKeyboard {
 }
 
 export function regularPriceKeyboard(jobId: string, paid: number | null): TgInlineKeyboard {
-  const row = [{ text: "Überspringen", callback_data: callbackData("skipregular", jobId) }];
+  const row = [{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }];
   if (paid != null) {
     row.unshift({ text: "Gleich wie bezahlt", callback_data: callbackData("sameprice", jobId) });
   }
@@ -322,6 +322,18 @@ export function wineSummaryLines(state: IngestState) {
   ].filter((l) => l && l !== "<b></b>");
 }
 
+/**
+ * Preise in Zusammenfassung und Bestätigung: beide gleich → „CHF 34.80“; verschieden →
+ * „Bezahlt CHF 29.80 · Normalpreis CHF 34.80“; nur einer → „Bezahlt …“ bzw. „Normalpreis …“.
+ */
+export function priceLine(paid: number | null | undefined, regular: number | null | undefined) {
+  const money = (v: number) => formatMoney(v, "CHF");
+  if (paid != null && regular != null) return paid === regular ? money(paid) : `Bezahlt ${money(paid)} · Normalpreis ${money(regular)}`;
+  if (paid != null) return `Bezahlt ${money(paid)}`;
+  if (regular != null) return `Normalpreis ${money(regular)}`;
+  return null;
+}
+
 /** Zusammenfassung vor dem Speichern (Text-Erfassung). */
 export function textSummaryMessage(state: IngestState) {
   const purchase = [
@@ -334,8 +346,7 @@ export function textSummaryMessage(state: IngestState) {
   const prices = state.is_gift
     ? null
     : [
-        state.price != null ? `bezahlt ${formatMoney(state.price, "CHF")}` : null,
-        state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null,
+        priceLine(state.price, state.regular_price),
         state.vendor_name ? `bei ${state.vendor_name}` : null,
       ]
         .filter(Boolean)

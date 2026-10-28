@@ -103,10 +103,10 @@ test("Vorschlagstext: HTML maskiert, ohne Technik (Modell/Prozent), bekannter We
 
 test("Normalpreis-Knöpfe: „Gleich wie bezahlt“ nur mit bezahltem Preis", () => {
   const withPaid = regularPriceKeyboard(id, 20).inline_keyboard[0];
-  assert.deepEqual(withPaid.map((b) => b.text), ["Gleich wie bezahlt", "Überspringen"]);
+  assert.deepEqual(withPaid.map((b) => b.text), ["Gleich wie bezahlt", "🤷 Weiss ich nicht"]);
   assert.deepEqual(withPaid.map((b) => parseCallbackData(cbd(b))?.action), ["sameprice", "skipregular"]);
   for (const b of withPaid) assert.ok(Buffer.byteLength(cbd(b)) <= 64);
-  assert.deepEqual(regularPriceKeyboard(id, null).inline_keyboard[0].map((b) => b.text), ["Überspringen"]);
+  assert.deepEqual(regularPriceKeyboard(id, null).inline_keyboard[0].map((b) => b.text), ["🤷 Weiss ich nicht"]);
 });
 
 test("Händler-Knöpfe: zwei pro Zeile, höchstens 12, plus Neu/Überspringen und Abbrechen", () => {

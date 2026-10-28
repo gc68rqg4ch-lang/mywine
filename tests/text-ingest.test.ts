@@ -86,13 +86,13 @@ test("A) Neuer Wein: Produzent, Herkunft, Trinkreife und Rebsorten per Recherche
   assert.deepEqual([st.storage_room, st.quantity, st.price, st.vendor_name, st.restock], ["Weinkeller", 6, 66, "Mövenpick", undefined]);
   const texts = net.telegram.map((t) => String(t.body.text));
   assert.ok(texts.some((t) => t.includes("Vega Sicilia – Pintia 2019") && t.includes("Trinkreife 2024–2032")), texts.join("\n---\n"));
-  assert.match(lastText(), /^Und was kostet er normalerweise\?/, "nur die fehlende Angabe wird gefragt");
+  assert.match(lastText(), /normalerweise( kostet)?\?$/, "nur die fehlende Angabe wird gefragt");
 
   await handleUpdate(msg("72") as never);
   st = state("aaaaaaaa-0000-4000-8000-00000000000a");
   assert.equal(st.step, "confirm"); assert.equal(st.regular_price, 72);
   const summary = lastText().replace(/ /g, " ");
-  assert.match(summary, /Zusammenfassung[\s\S]*6 Flaschen · Weinkeller[\s\S]*bezahlt CHF 66.00 · Normalpreis CHF 72.00 · bei Mövenpick[\s\S]*so speichern\?/);
+  assert.match(summary, /Zusammenfassung[\s\S]*6 Flaschen · Weinkeller[\s\S]*Bezahlt CHF 66.00 · Normalpreis CHF 72.00 · bei Mövenpick[\s\S]*so speichern\?/);
   const keyboard = net.telegram.at(-1)!.body.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] };
   assert.deepEqual(keyboard.inline_keyboard[0].map((b) => b.text), ["✅ Ja", "✖️ Nein"]);
 
@@ -168,7 +168,7 @@ test("B) Nachkauf: Wein + Jahrgang liegt schon im Bestand → Rückfrage, keine 
   st = state("bbbbbbbb-0000-4000-8000-00000000000b");
   assert.equal(st.restock, true); assert.equal(st.step, "location", "Lagerort fehlt noch, Anzahl nicht");
   await handleUpdate(cb("loc:bbbbbbbb-0000-4000-8000-00000000000b:wohnzimmer") as never);
-  assert.equal(state("bbbbbbbb-0000-4000-8000-00000000000b").step, "price"); assert.match(lastText(), /3 Flaschen\. Was hast du pro Flasche bezahlt\?/);
+  assert.equal(state("bbbbbbbb-0000-4000-8000-00000000000b").step, "price"); assert.match(lastText(), /3 Flaschen\. (Sag mir noch: |Und w|W)(as habt ihr pro Flasche bezahlt\?)/);
 });
 
 test("C) „Neuer Wein“ in der Menüleiste: wartet auf eine Beschreibung", async () => {
@@ -193,12 +193,18 @@ test("D) Ohne Jahrgang: Rückfrage (Zahl oder „Ohne Jahrgang (NV)“), Jahrgan
   await handleUpdate(msg("2017") as never);
   st = state("dddddddd-0000-4000-8000-00000000000d");
   assert.equal(st.proposal.vintage_year, 2017); assert.equal(st.vintage_confirmed, true);
-  assert.equal(st.step, "confirm", "danach direkt die Zusammenfassung – alles andere stand im Text");
+  // „30 Franken“ ist der bezahlte Preis – nur noch der Normalpreis fehlt.
+  assert.deepEqual([st.step, st.price, st.regular_price], ["regular_price", 30, undefined]);
+  await handleUpdate(cb("sameprice:dddddddd-0000-4000-8000-00000000000d") as never);
+  st = state("dddddddd-0000-4000-8000-00000000000d");
+  assert.equal(st.step, "confirm", "danach die Zusammenfassung – alles andere stand im Text");
+  assert.match(lastText(), /\nCHF\s30\.00 · bei Coop\n/, "beide gleich: nur ein Betrag");
   assert.match(lastText(), /📅 Jahrgang: 2017/);
 
   newJob("eeeeeeee-0000-4000-8000-00000000000e");
   await processTextJob("eeeeeeee-0000-4000-8000-00000000000e", 111, "Pintia, 2 Flaschen, Weinkeller, 30 Franken bei Coop");
   await handleUpdate(cb("vint:eeeeeeee-0000-4000-8000-00000000000e:nv") as never);
+  await handleUpdate(cb("sameprice:eeeeeeee-0000-4000-8000-00000000000e") as never);
   st = state("eeeeeeee-0000-4000-8000-00000000000e");
   assert.equal(st.proposal.vintage_year, null); assert.equal(st.step, "confirm");
   assert.match(lastText(), /📅 Jahrgang: ohne \(NV\)/);

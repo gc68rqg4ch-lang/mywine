@@ -363,7 +363,7 @@ const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in 
 - name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500).
 - Land auf Deutsch.
-- purchase: Anzahl Flaschen, Lagerort (nur Weinkeller oder Wohnzimmer), bezahlter Preis und Normalpreis pro Flasche in CHF, Händler. Nicht Genanntes: 0 bzw. leer. Ein Gesamtpreis für mehrere Flaschen wird durch die Anzahl geteilt.`;
+- purchase: Anzahl Flaschen, Lagerort (nur Weinkeller oder Wohnzimmer), bezahlter Preis (price) und Normalpreis (regular_price) pro Flasche in CHF, Händler. Ein einzelner Preis ist der bezahlte (price); regular_price nur, wenn ausdrücklich ein Normal-/Regulärpreis genannt ist (z. B. „49 statt 66“: price 49, regular_price 66). Nicht Genanntes: 0 bzw. leer. Ein Gesamtpreis für mehrere Flaschen wird durch die Anzahl geteilt.`;
 
 /** Freitext → Wein + Kaufangaben (Haiku, bei Fehler oder Ablehnung Sonnet). */
 export async function parseTextEntry(text: string): Promise<{ proposal: WineProposal; purchase: TextEntry["purchase"] }> {

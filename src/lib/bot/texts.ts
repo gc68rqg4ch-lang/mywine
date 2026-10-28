@@ -147,8 +147,10 @@ export const T = {
   quantityOther: (random?: () => number) => say("quantityOther", random),
   /** Keine gültige Anzahl (0, -3, „zwei“, 2.5): freundlich nochmals fragen (Varianten). */
   quantityRetry: (random?: () => number) => say("quantityRetry", random),
-  pricePaid: (bottles: string) => `${e(bottles)}. Was hast du pro Flasche bezahlt?`,
-  priceRetry: "Was hast du pro Flasche bezahlt? Z. B. <i>24.50</i> – oder tippe „🎁 Geschenk“ bzw. „Überspringen“.",
+  /** Frage a: bezahlter Preis pro Flasche (→ purchase_price). */
+  pricePaid: (bottles: string, random?: () => number) =>
+    `${e(bottles)}. ${pick(["Was habt ihr pro Flasche bezahlt?", "Und was habt ihr pro Flasche bezahlt?", "Sag mir noch: Was habt ihr pro Flasche bezahlt?"], random)}`,
+  priceRetry: "Was habt ihr pro Flasche bezahlt? Z. B. <i>24.50</i> – oder tippe „🎁 Geschenk“ bzw. „Überspringen“.",
   /** Geschenk: „Von wem?“ (Varianten). */
   giftFromAsk: (random?: () => number) => say("giftFrom", random),
   /** Geschenk: Normalpreis (Wert) pro Flasche? (Varianten) */
@@ -157,8 +159,10 @@ export const T = {
   giftValueRetry: (random?: () => number) => say("giftValueRetry", random),
   /** Statt Preis: „🎁 Geschenk von Marc“ bzw. „🎁 Geschenk“. */
   giftLine: (from: string | null) => (from ? `🎁 Geschenk von ${e(from)}` : "🎁 Geschenk"),
-  regularPrice: "Und was kostet er normalerweise?",
-  regularPriceRetry: "Was kostet er normalerweise? Bitte einen Betrag über 0, z. B. <i>29.90</i> – oder tippe einen Knopf.",
+  /** Frage b: Normalpreis pro Flasche (→ regular_price). */
+  regularPrice: (random?: () => number) =>
+    pick(["Und was kostet eine Flasche normalerweise?", "Und was kostet eine Flasche sonst, also normalerweise?", "Weisst du auch, was eine Flasche normalerweise kostet?"], random),
+  regularPriceRetry: "Was kostet eine Flasche normalerweise? Bitte einen Betrag über 0, z. B. <i>29.90</i> – oder tippe einen Knopf.",
   /** Kaufpreis „0“: dafür gibt es „🎁 Geschenk“ (Varianten). */
   priceZero: (random?: () => number) => say("priceZero", random),
   vendorAsk: (hasVendors: boolean) => (hasVendors ? "Wo hast du ihn gekauft?" : "Wo hast du ihn gekauft? Schreib mir den Namen – oder tippe „Überspringen“."),

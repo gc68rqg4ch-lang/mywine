@@ -116,7 +116,7 @@ test("„✏️ Andere Zahl“ + 24 → 24 gespeichert; 0, -3, zwei, 2.5 → fre
   await say("24");
   assert.deepEqual([state().step, state().quantity], ["price", 24]);
   await press("Überspringen");
-  await press("Überspringen");
+  await press("🤷 Weiss ich nicht");
   await press("Überspringen");
   await confirmAndSave();
   assert.equal(item().quantity, 24);

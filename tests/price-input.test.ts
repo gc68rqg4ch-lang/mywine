@@ -111,7 +111,7 @@ test("Kaufpreis: 38, 34.80, 34,80 gültig; 0 → Hinweis auf „🎁 Geschenk“
   for (const bad of ["-5", "keine Ahnung"]) {
     await say(bad);
     assert.deepEqual([state().step, state().price], ["price", undefined], bad);
-    assert.match(lastText(), /Was hast du pro Flasche bezahlt\?/);
+    assert.match(lastText(), /Was habt ihr pro Flasche bezahlt\?/);
   }
   // Knöpfe wie bisher
   await press("Überspringen");
@@ -134,8 +134,8 @@ test("Normalpreis: 38, 34.80, 34,80 gültig; 0, -5, keine Ahnung → nochmals fr
   for (const bad of ["0", "-5", "keine Ahnung"]) {
     await say(bad);
     assert.deepEqual([state().step, state().regular_price], ["regular_price", undefined], bad);
-    assert.match(lastText(), /Was kostet er normalerweise\? Bitte einen Betrag über 0/);
-    assert.deepEqual(buttons().map((b) => b.text), ["Gleich wie bezahlt", "Überspringen", "✖️ Abbrechen"]);
+    assert.match(lastText(), /Was kostet eine Flasche normalerweise\? Bitte einen Betrag über 0/);
+    assert.deepEqual(buttons().map((b) => b.text), ["Gleich wie bezahlt", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
   }
   await press("Gleich wie bezahlt");
   assert.equal(state().regular_price, 30);
