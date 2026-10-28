@@ -1357,6 +1357,32 @@ input[inputmode="decimal"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Beträge (Karte „Bestand“): je eine Zeile, umbrechen statt abschneiden. */
+.tile-amounts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  container-type: inline-size;
+}
+.tile-line.tile-amount {
+  overflow: visible;
+  white-space: normal;
+  font-variant-numeric: tabular-nums;
+}
+.tile-amount .amount {
+  white-space: nowrap;
+}
+.amount-short {
+  display: none;
+}
+@container (max-width: 165px) {
+  .amount-long {
+    display: none;
+  }
+  .amount-short {
+    display: inline;
+  }
+}
 .tile-open {
   display: flex;
   align-items: center;

@@ -7,6 +7,7 @@ import { ListView } from "@/components/cellar/list-view";
 import { readListState } from "@/lib/cellar/list-params";
 import { loadRatingsByWine } from "@/lib/cellar/load";
 import { BottleCount, WineCard } from "@/components/cellar/wine-card";
+import { StockValue } from "@/components/cellar/stock-value";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
 import {
@@ -126,10 +127,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/">) {
           <p className="tile-line">
             {totals.wines} Weine · {totals.vintages} Jahrgänge
           </p>
-          <p className="tile-line muted">
-            {formatMoney(valuePaid, "CHF", { whole: true })} bezahlt
-            {valueRegular !== valuePaid ? ` · ${formatMoney(valueRegular, "CHF", { whole: true })} normal` : ""}
-          </p>
+          <StockValue paid={valuePaid} regular={valueRegular} />
         </div>
 
         <Link href="/offen" className="tile tile-link">
