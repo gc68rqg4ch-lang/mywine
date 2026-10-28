@@ -1,6 +1,3 @@
-// Generiert aus dem Supabase-Projekt "mywine" (supabase gen types typescript).
-// Nicht von Hand bearbeiten – nach Schemaänderungen neu generieren.
-
 export type Json =
   | string
   | number
@@ -105,6 +102,13 @@ export type Database = {
             columns: ["matched_wine_id"]
             isOneToOne: false
             referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "ingest_jobs_matched_wine_id_fkey"
+            columns: ["matched_wine_id"]
+            isOneToOne: false
+            referencedRelation: "tasted_wines"
             referencedColumns: ["wine_id"]
           },
           {
@@ -227,6 +231,13 @@ export type Database = {
             foreignKeyName: "inventory_events_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "inventory_events_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
@@ -337,6 +348,13 @@ export type Database = {
             foreignKeyName: "inventory_items_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "inventory_items_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
@@ -413,24 +431,30 @@ export type Database = {
       }
       places: {
         Row: {
+          city: string | null
           created_at: string
           description: string | null
           id: string
           is_home: boolean
+          kind: string | null
           name: string
         }
         Insert: {
+          city?: string | null
           created_at?: string
           description?: string | null
           id?: string
           is_home?: boolean
+          kind?: string | null
           name: string
         }
         Update: {
+          city?: string | null
           created_at?: string
           description?: string | null
           id?: string
           is_home?: boolean
+          kind?: string | null
           name?: string
         }
         Relationships: []
@@ -495,6 +519,13 @@ export type Database = {
             columns: ["wine_id"]
             isOneToOne: false
             referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "research_suggestions_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "tasted_wines"
             referencedColumns: ["wine_id"]
           },
           {
@@ -596,6 +627,13 @@ export type Database = {
             foreignKeyName: "tasting_notes_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "tasting_notes_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
@@ -649,6 +687,103 @@ export type Database = {
         }
         Relationships: []
       }
+      wine_encounters: {
+        Row: {
+          companions: string | null
+          created_at: string
+          currency: string
+          id: string
+          note: string | null
+          occasion: string | null
+          person_id: string | null
+          place_id: string | null
+          price: number | null
+          price_unit: string | null
+          source: string
+          tasted_on: string
+          updated_at: string
+          vintage_year: number | null
+          wine_id: string
+        }
+        Insert: {
+          companions?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          note?: string | null
+          occasion?: string | null
+          person_id?: string | null
+          place_id?: string | null
+          price?: number | null
+          price_unit?: string | null
+          source?: string
+          tasted_on?: string
+          updated_at?: string
+          vintage_year?: number | null
+          wine_id: string
+        }
+        Update: {
+          companions?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          note?: string | null
+          occasion?: string | null
+          person_id?: string | null
+          place_id?: string | null
+          price?: number | null
+          price_unit?: string | null
+          source?: string
+          tasted_on?: string
+          updated_at?: string
+          vintage_year?: number | null
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wine_encounters_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "persons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wine_encounters_place_id_fkey"
+            columns: ["place_id"]
+            isOneToOne: false
+            referencedRelation: "places"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wine_encounters_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_encounters_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_encounters_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_encounters_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wine_grape_shares: {
         Row: {
           created_at: string
@@ -696,6 +831,13 @@ export type Database = {
             columns: ["wine_id"]
             isOneToOne: false
             referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_grape_shares_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "tasted_wines"
             referencedColumns: ["wine_id"]
           },
           {
@@ -783,6 +925,13 @@ export type Database = {
             foreignKeyName: "wine_media_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_media_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
@@ -791,6 +940,7 @@ export type Database = {
       wine_ratings: {
         Row: {
           created_at: string
+          encounter_id: string | null
           id: string
           inventory_item_id: string | null
           note: string | null
@@ -804,6 +954,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          encounter_id?: string | null
           id?: string
           inventory_item_id?: string | null
           note?: string | null
@@ -817,6 +968,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          encounter_id?: string | null
           id?: string
           inventory_item_id?: string | null
           note?: string | null
@@ -829,6 +981,13 @@ export type Database = {
           wine_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "wine_ratings_encounter_id_fkey"
+            columns: ["encounter_id"]
+            isOneToOne: false
+            referencedRelation: "wine_encounters"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "wine_ratings_inventory_item_id_fkey"
             columns: ["inventory_item_id"]
@@ -862,6 +1021,13 @@ export type Database = {
             columns: ["wine_id"]
             isOneToOne: false
             referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_ratings_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "tasted_wines"
             referencedColumns: ["wine_id"]
           },
           {
@@ -915,6 +1081,105 @@ export type Database = {
             foreignKeyName: "wine_tags_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_tags_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wine_taste_profiles: {
+        Row: {
+          acidity: string | null
+          alcohol: string | null
+          aromas: Json
+          body: string | null
+          created_at: string
+          finish: string | null
+          flavour_intensity: string | null
+          food_pairing: string[]
+          id: string
+          researched_at: string | null
+          source: string
+          source_note: string | null
+          style_summary: string | null
+          sweetness: string | null
+          tannin: string | null
+          updated_at: string
+          vintage_year: number | null
+          wine_id: string
+        }
+        Insert: {
+          acidity?: string | null
+          alcohol?: string | null
+          aromas?: Json
+          body?: string | null
+          created_at?: string
+          finish?: string | null
+          flavour_intensity?: string | null
+          food_pairing?: string[]
+          id?: string
+          researched_at?: string | null
+          source?: string
+          source_note?: string | null
+          style_summary?: string | null
+          sweetness?: string | null
+          tannin?: string | null
+          updated_at?: string
+          vintage_year?: number | null
+          wine_id: string
+        }
+        Update: {
+          acidity?: string | null
+          alcohol?: string | null
+          aromas?: Json
+          body?: string | null
+          created_at?: string
+          finish?: string | null
+          flavour_intensity?: string | null
+          food_pairing?: string[]
+          id?: string
+          researched_at?: string | null
+          source?: string
+          source_note?: string | null
+          style_summary?: string | null
+          sweetness?: string | null
+          tannin?: string | null
+          updated_at?: string
+          vintage_year?: number | null
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wine_taste_profiles_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_taste_profiles_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_taste_profiles_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_taste_profiles_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
@@ -923,6 +1188,7 @@ export type Database = {
       wine_tastings: {
         Row: {
           created_at: string
+          encounter_id: string | null
           id: string
           inventory_item_id: string | null
           notes: string | null
@@ -942,6 +1208,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          encounter_id?: string | null
           id?: string
           inventory_item_id?: string | null
           notes?: string | null
@@ -961,6 +1228,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          encounter_id?: string | null
           id?: string
           inventory_item_id?: string | null
           notes?: string | null
@@ -979,6 +1247,13 @@ export type Database = {
           wine_style?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "wine_tastings_encounter_id_fkey"
+            columns: ["encounter_id"]
+            isOneToOne: false
+            referencedRelation: "wine_encounters"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "wine_tastings_inventory_item_id_fkey"
             columns: ["inventory_item_id"]
@@ -1019,6 +1294,13 @@ export type Database = {
             columns: ["wine_id"]
             isOneToOne: false
             referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_tastings_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "tasted_wines"
             referencedColumns: ["wine_id"]
           },
           {
@@ -1086,6 +1368,13 @@ export type Database = {
             foreignKeyName: "wine_vintages_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_vintages_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
@@ -1104,6 +1393,7 @@ export type Database = {
           region: string | null
           researched_at: string | null
           type: Database["public"]["Enums"]["wine_type"] | null
+          want_to_buy: boolean
         }
         Insert: {
           alcohol_content?: number | null
@@ -1117,6 +1407,7 @@ export type Database = {
           region?: string | null
           researched_at?: string | null
           type?: Database["public"]["Enums"]["wine_type"] | null
+          want_to_buy?: boolean
         }
         Update: {
           alcohol_content?: number | null
@@ -1130,6 +1421,7 @@ export type Database = {
           region?: string | null
           researched_at?: string | null
           type?: Database["public"]["Enums"]["wine_type"] | null
+          want_to_buy?: boolean
         }
         Relationships: []
       }
@@ -1246,6 +1538,13 @@ export type Database = {
             foreignKeyName: "inventory_items_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "inventory_items_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
@@ -1287,6 +1586,13 @@ export type Database = {
             foreignKeyName: "wine_ratings_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "wine_ratings_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
@@ -1298,6 +1604,17 @@ export type Database = {
           sealed_bottles: number | null
           storage_house: string | null
           storage_room: string | null
+        }
+        Relationships: []
+      }
+      tasted_wines: {
+        Row: {
+          bottles_in_stock: number | null
+          encounter_count: number | null
+          last_place_name: string | null
+          last_tasted_on: string | null
+          want_to_buy: boolean | null
+          wine_id: string | null
         }
         Relationships: []
       }
