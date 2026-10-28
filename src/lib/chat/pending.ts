@@ -2,7 +2,7 @@ import "server-only";
 
 // Offene Abläufe im Bot (Rückfragen in ingest_jobs: Kauf-Erfassung per Foto/Text, „Neuer Wein“,
 // Verkostet, WSET-Verkostung, Foto zuordnen, Chat-Vorschläge mit Ja/Nein). Bei jeder
-// eingehenden Nachricht zuerst: Rückfragen ohne Antwort seit 30 Minuten verwerfen und kurz
+// eingehenden Nachricht zuerst: Rückfragen ohne Antwort seit 10 Minuten verwerfen und kurz
 // melden; ein neues Anliegen (Foto, Menü, Befehl, neuer Wein im Text) verwirft den alten
 // Ablauf. Der DB-Job expire-stale-ingest-jobs ist nur das Sicherheitsnetz.
 
@@ -12,8 +12,8 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import { sendMessage } from "@/lib/telegram/api";
 import { announcesTasting, tastedIntent } from "./tasted-text";
 
-export const PENDING_TTL_MS = 30 * 60 * 1000;
-export const EXPIRED_ERROR = "abgelaufen: 30 Min. ohne Antwort";
+export { EXPIRED_ERROR, PENDING_TTL_MS } from "./ttl";
+import { EXPIRED_ERROR, PENDING_TTL_MS } from "./ttl";
 
 type Job = Pick<Tables<"ingest_jobs">, "id" | "source" | "status" | "extracted" | "created_at" | "updated_at">;
 type Extracted = {
@@ -72,7 +72,7 @@ async function close(db: AdminClient, job: Job, error: string | null) {
 }
 
 /**
- * Rückfragen ohne Antwort seit 30 Minuten (updated_at – jede Antwort setzt die Zeit neu)
+ * Rückfragen ohne Antwort seit 10 Minuten (updated_at – jede Antwort setzt die Zeit neu)
  * verwerfen und kurz melden. Laufende Arbeit (received/processing) verfällt still.
  */
 export async function expireStale(db: AdminClient, chatId: number, now = Date.now()) {
@@ -126,7 +126,20 @@ export async function cancelAll(db: AdminClient, chatId: number) {
   return closed.map(flowSubject);
 }
 
-/** Antwort auf eine Rückfrage: die 30 Minuten laufen ab jetzt neu (Trigger setzt updated_at). */
+/**
+ * Eine offene Erfassung dieses Chats weglassen (Chat: „lösch das“, „vergiss den“). Ohne
+ * Rückfrage – es geht nichts verloren. „saved“: Verkostet war schon gespeichert (nur noch
+ * freiwillige Ergänzungen offen) – der Eintrag bleibt, die Ergänzungen fallen weg.
+ */
+export async function cancelFlow(db: AdminClient, chatId: number, jobId: string) {
+  const job = (await openFlows(db, chatId)).find((j) => j.id === jobId);
+  if (!job) return { status: "gone" as const };
+  const subject = flowSubject(job);
+  const done = await close(db, job, null);
+  return { status: done ? ("cancelled" as const) : ("saved" as const), subject };
+}
+
+/** Antwort auf eine Rückfrage: die 10 Minuten laufen ab jetzt neu (Trigger setzt updated_at). */
 export async function touchFlow(db: AdminClient, jobId: string) {
   await db.from("ingest_jobs").update({ status: "needs_review" }).eq("id", jobId).eq("status", "needs_review");
 }

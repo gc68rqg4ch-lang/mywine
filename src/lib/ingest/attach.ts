@@ -1,5 +1,6 @@
 import "server-only";
 
+import { PENDING_TTL_MS } from "@/lib/chat/ttl";
 import { T } from "@/lib/bot/texts";
 // „📷 Foto“ im Wein-Menü des Bots: Vorder-/Rückseite zu einem bestehenden Wein und
 // Jahrgang nachreichen – als wine_media mit Vorschaubild, ohne neue Charge.
@@ -21,7 +22,7 @@ import { ALBUM_QUIET_MS, PHOTO_BUCKET, deleteJobPhotos, listJobPhotos, type Inge
 
 export const ATTACH_SOURCE = "telegram_attach";
 /** So lange wartet „📷 Foto“ auf die Bilder; danach gehen Fotos wieder an die normale Erfassung. */
-export const ATTACH_WINDOW_MS = 30 * 60 * 1000;
+export const ATTACH_WINDOW_MS = PENDING_TTL_MS;
 /** Mehr als Vorder-, Rückseite und ein paar weitere braucht es nicht. */
 const MAX_PHOTOS = 4;
 
@@ -148,7 +149,7 @@ export async function discardAttach(db: AdminClient, chatId: number) {
   await deleteJobPhotos(db, (data ?? []).flatMap((j) => j.photo_paths));
 }
 
-/** Job, der gerade auf Fotos wartet (höchstens 30 Minuten alt). */
+/** Job, der gerade auf Fotos wartet (höchstens 10 Minuten alt). */
 export async function findAttachJob(db: AdminClient, chatId: number) {
   const { data, error } = await db
     .from("ingest_jobs")

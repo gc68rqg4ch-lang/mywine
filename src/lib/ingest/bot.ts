@@ -141,7 +141,7 @@ export async function handleUpdate(update: TgUpdate) {
 }
 
 /**
- * Vor jeder Nachricht und jedem Knopf: Rückfragen ohne Antwort seit 30 Minuten verwerfen
+ * Vor jeder Nachricht und jedem Knopf: Rückfragen ohne Antwort seit 10 Minuten verwerfen
  * (mit kurzer Meldung) und eine neue Menüleiste einmal mitschicken.
  */
 async function preflight(chatId: number) {

@@ -26,6 +26,8 @@ export type TgMessage = {
   from?: TgUser;
   chat: TgChat;
   date: number;
+  /** Zuletzt bearbeitet (z. B. Menü, das an Ort und Stelle weiterblättert). */
+  edit_date?: number;
   media_group_id?: string;
   text?: string;
   caption?: string;

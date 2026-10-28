@@ -265,7 +265,7 @@ Datenbank noch API-Schlüssel und legen nichts in der Produktions-DB an:
 Abgedeckt: Bot-Zugang und `/id` (`access`), Bewerten (`rating`), Wein-Menü (`wine-menu`), Details (`details`),
 Erfassung per Foto, Text, Nachkauf und Jahrgang-Pflicht (`photo-ingest`, `text-ingest`, `ingest-helpers`),
 Verkostet im Bot – Absicht, Schnellablauf, Freitext, Abgleich ohne Produzent, alles oder nichts, leerer Wein (`tasted-bot`),
-offene Rückfragen – Ablauf nach 30 Min., neues Anliegen, Abbrechen, Bildtext, Menüleiste (`bot-pending`),
+offene Rückfragen – Ablauf nach 10 Min., neues Anliegen, Abbrechen, Bildtext, Menüleiste (`bot-pending`),
 Sprache – keine technischen Texte, Varianten, Ort-Regel, Wein löschen ohne Namen (`bot-texts`),
 Fotos nachreichen (`photo-attach`, `media-*`), Bearbeiten-Modul inkl. `move_bottles` und `change_vintage`
 (`edit`), Weinseite mit Bearbeiten in der Karte, Büroklammer und Reihenfolge (`wine-units`), unwiderruflich löschen – Flaschen und ganzer Wein samt Dateien (`delete`), Weinseite (`wine-page`), Übersicht, Typ-Filter und Gruppierungen inkl. Trinkreife (`overview`,
@@ -362,7 +362,7 @@ Das Journal (`inventory_events`) schreibt die DB per Trigger – der Bot schreib
 Im Wein-Menü (Jahrgang bzw. offene Flasche) **📷 Foto** → Vorder- und Rückseite als Album schicken (Vorderseite
 zuerst). Ablauf in `src/lib/ingest/attach.ts`, `ingest_jobs.source = 'telegram_attach'`, Knöpfe `A:<aktion>:<job>`:
 - Die Fotos gehen an den gewählten Wein und Jahrgang (bei einer offenen Flasche auch an sie) als `wine_media` mit
-  Vorschaubild – keine neue Charge. Fotos innerhalb von 30 Minuten nach dem Tipp gehören dazu, danach wieder zur
+  Vorschaubild – keine neue Charge. Fotos innerhalb von 10 Minuten nach dem Tipp gehören dazu, danach wieder zur
   normalen Erfassung.
 - Album: erstes Foto Vorderseite, zweites Rückseite. Einzelfoto: Frage [Vorderseite] [Rückseite].
 - Gibt es die Seite für den Jahrgang schon: Rückfrage [🔁 Ersetzen] [✖️ Abbrechen]. Ersetzen speichert erst die
@@ -377,7 +377,7 @@ im Vorschlag bzw. in der Zusammenfassung.
 ### Erfassung per Text (ohne Foto)
 
 Freitext wie „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“ – im Chat (Claude erkennt den Kauf
-und ruft `start_wine_entry` auf) oder nach „📷 Neuer Wein“ (die nächste Textnachricht innerhalb von 30 Minuten).
+und ruft `start_wine_entry` auf) oder nach „📷 Neuer Wein“ (die nächste Textnachricht innerhalb von 10 Minuten).
 Ablauf in `src/lib/ingest/flow.ts`, `ingest_jobs.source = 'text'`:
 - Erkennen (`parseTextEntry`, Haiku/Sonnet, Schema `TextEntrySchema` mit Kaufangaben), dann wie bei Fotos: Abgleich
   mit bestehenden Weinen (ohne Produzent über einen eindeutigen Namen), sonst Websuche (Produzent, Herkunft, Typ,
@@ -395,7 +395,7 @@ Eintrag, Bewertungen; bei einem Fehler wird Angelegtes zurückgenommen und ich m
 - **Absicht zuerst** (`src/lib/chat/tasted-text.ts`): Bildtext wie „verkostet“, „probiert“, „im Restaurant“,
   „trinken gerade“ → Verkostet; „gekauft“, „6 Flaschen“, „Weinkeller“ → Kauf. Ohne klaren Hinweis (Foto, Text nach
   „📷 Neuer Wein“, Chat mit `start_wine_entry` intent `unclear`) frage ich mit „🛒 Gekauft“ / „🍷 Nur verkostet“ –
-  nie ungefragt einbuchen. „Wir verkosten (gerade) einen Wein“ gilt 30 Minuten für das nächste Foto bzw. die
+  nie ungefragt einbuchen. „Wir verkosten (gerade) einen Wein“ gilt 10 Minuten für das nächste Foto bzw. die
   nächste Nachricht.
 - **Schnellablauf:** Etikett lesen (Name, Jahrgang, Produzent falls erkennbar) → Wein abgleichen (wie in der App:
   mit Produzent über Name + Produzent, ohne nur über den Namen; mehrere Treffer → Auswahl oder „➕ Neuer Wein“) →
@@ -435,12 +435,14 @@ höchstens die Art und fragt beim 📍 Ort gezielt nach („In welchem Restauran
 ### Offene Rückfragen (alle Abläufe im Bot)
 
 `src/lib/chat/pending.ts` – gilt für Kauf-Erfassung (Foto/Text, „📷 Neuer Wein“), Verkostet, WSET-Verkostung,
-Foto zuordnen und Chat-Vorschläge mit Ja/Nein:
-- **Vor jeder Nachricht und jedem Knopf** prüfe ich offene Rückfragen: ohne Antwort seit 30 Minuten (`updated_at`)
-  → verworfen und kurz gemeldet („⏱ Die angefangene Erfassung von Pintia 2019 (11:27) ist abgelaufen.“), dann wird
-  die neue Nachricht normal verarbeitet. Jede Antwort setzt die Zeit neu (30 Min. ab der letzten Antwort). Schnelle
-  Chat-Vorschläge (Öffnen, Füllstand, Sterne im Knopf) laufen nach 30 Minuten ab der Nachricht ab. Der DB-Job
-  `expire-stale-ingest-jobs` (pg_cron, alle 5 Min., `public.expire_stale_ingest_jobs()`) ist nur das Sicherheitsnetz.
+Foto zuordnen, Chat-Vorschläge mit Ja/Nein und Blättern im Menü:
+- **Zeitgrenze 10 Minuten** (`src/lib/chat/ttl.ts`), gemessen ab der letzten Antwort. **Vor jeder Nachricht und
+  jedem Knopf** prüfe ich offene Rückfragen: ohne Antwort seit 10 Minuten (`updated_at`) → verworfen und kurz
+  gemeldet („Den angefangenen Pintia 2019 lasse ich mal beiseite.“), dann wird die neue Nachricht normal
+  verarbeitet. Jede Antwort setzt die Zeit neu. Schnelle Chat-Vorschläge (Öffnen, Füllstand, Sterne im Knopf) und
+  Menüs laufen 10 Minuten nach dem letzten Senden bzw. Weiterblättern ab (`date`/`edit_date` der Nachricht). Der
+  DB-Job `expire-stale-ingest-jobs` (pg_cron, alle 2 Min., Ablauf nach 10 Min.) ist nur das Sicherheitsnetz;
+  `cleanup-cron-run-details` löscht Cron-Protokolle älter als 7 Tage.
 - **Neues Anliegen verwirft den alten Ablauf:** neues Foto, Menü-Knopf, Befehl oder ein Text, der nicht als Antwort
   passt und nach einem neuen Wein aussieht („Ich habe die angefangene Erfassung von … verworfen.“). Ein schon
   gespeicherter Verkostet-Eintrag (nur noch Ergänzungen offen) wird still abgeschlossen.
@@ -505,9 +507,21 @@ Antwort nochmals mit `claude-sonnet-5-5`.
   oder Chargen, fragt Antoine nach. Jahrgänge in den Tools: 0 = ohne Jahrgang (keine nullable-Felder).
 - **✏️ Bearbeiten im Wein-Menü:** fragt nach dem Bereich (Wein, Jahrgang & Trinkfenster, Chargen & Lagerort,
   Rebsorten, Bewertungen, Verkostungen), zeigt den aktuellen Stand und erwartet die Änderung als Text.
-- **Ich-Form:** Der Bot heisst Antoine, spricht in der Ich-Form und duzt („Ich habe 2 Flaschen verschoben“).
-- **Verlauf:** die letzten 10 Nachrichten pro Chat in `telegram_chat_messages` (nur Text); `/reset` löscht ihn.
-  Ohne diese Tabelle läuft der Chat ohne Gedächtnis.
+- **Persona** (System-Prompt in `src/lib/bot/chat-prompt.ts`): Antoine ist der persönliche Sommelier von Michel
+  und Sara – kurz, warm, Ich-Form, du, Schweizer Schreibweise; nie Technik („Erfassungsvorgang“, „Datenbank“,
+  „Tool“). Smalltalk und Abschied kurz, ohne ungefragt alte Themen; Fehler in einem Satz eingestehen.
+- **Wahrheit nur aus der Datenbank:** Aussagen über Weine, Flaschen, Bewertungen, Verkostet oder offene
+  Erfassungen nur nach einem Werkzeug-Aufruf im selben Zug. Der Verlauf ist nur Gesprächskontext. Im Code
+  erzwungen (`agent.ts`): Behauptet eine Antwort Status (`claimsStatus`), ohne dass in diesem Zug nachgeschaut
+  wurde, wird sie nicht gesendet – zweiter Versuch mit Sonnet und ausdrücklichem Hinweis, sonst eine ehrliche
+  Kurzantwort („Da schaue ich lieber zuerst nach …“). Anlass: Antoine meldete einen Pintia als „vorgemerkt“,
+  obwohl nur alte Testnachrichten im Gedächtnis standen.
+- **Offene Erfassungen:** `list_open_entries` und `cancel_open_entry` (`flow-tools.ts`; `ingest_jobs` des Chats mit
+  status received/processing/needs_review → discarded). Weglassen ohne Ja/Nein-Rückfrage, danach kurz „Gut, den
+  Pintia lasse ich weg.“ „Lösch das“, „vergiss den“, „brauchen wir nicht“ meinen die offene Erfassung bzw. den
+  zuletzt besprochenen Wein.
+- **Verlauf:** `telegram_chat_messages`; in den Prompt gehen nur die letzten 12 Stunden, höchstens 20 Nachrichten.
+  Ältere bleiben gespeichert. `/reset` löscht den Verlauf. Ohne diese Tabelle läuft der Chat ohne Gedächtnis.
 
 | Variable (Vercel) | Zweck |
 | --- | --- |

@@ -523,7 +523,7 @@ export async function processTastedText(jobId: string, chatId: number, text: str
 // ---------------------------------------------------------------------------
 // „Wir verkosten einen Wein“
 
-/** Ankündigung erkannt → für 30 Min. gilt das nächste Foto bzw. die nächste Nachricht als verkostet. */
+/** Ankündigung erkannt → für 10 Min. gilt das nächste Foto bzw. die nächste Nachricht als verkostet. */
 export async function maybeArmTasting(db: AdminClient, chatId: number, text: string) {
   if (!announcesTasting(text)) return false;
   // Neues Anliegen: angefangene Rückfragen verwerfen.
@@ -545,7 +545,7 @@ async function disarm(db: AdminClient, chatId: number) {
     .eq("extracted->>step", "t_armed");
 }
 
-/** Wartet eine Ankündigung (innert 30 Min.)? Dann wird sie für dieses Foto verbraucht. */
+/** Wartet eine Ankündigung (innert 10 Min.)? Dann wird sie für dieses Foto verbraucht. */
 export async function armedForTasting(db: AdminClient, chatId: number) {
   const since = new Date(Date.now() - TASTED_WINDOW_MS).toISOString();
   const { data, error } = await db
@@ -561,7 +561,7 @@ export async function armedForTasting(db: AdminClient, chatId: number) {
   return (data?.length ?? 0) > 0;
 }
 
-/** Jüngster Verkostet-Eintrag, der auf eine Textantwort wartet (älter als 30 Min. verfällt). */
+/** Jüngster Verkostet-Eintrag, der auf eine Textantwort wartet (älter als 10 Min. verfällt). */
 export async function findTastedAwaitingText(db: AdminClient, chatId: number) {
   const { data, error } = await db
     .from("ingest_jobs")

@@ -1,11 +1,12 @@
 // „Verkostet“ im Bot – reine Hilfen ohne DB: Absicht erkennen (gekauft oder nur verkostet),
 // Ankündigung („wir verkosten einen Wein“), Preis aus einer Antwort lesen.
 
+import { PENDING_TTL_MS } from "./ttl";
 import { parsePrice } from "@/lib/format";
 import type { Currency, PriceUnit } from "@/lib/edit/types";
 
 /** So lange gilt „wir verkosten gleich einen Wein“ für das nächste Foto bzw. die nächste Nachricht. */
-export const TASTED_WINDOW_MS = 30 * 60 * 1000;
+export const TASTED_WINDOW_MS = PENDING_TTL_MS;
 
 const norm = (text: string) =>
   text
@@ -37,7 +38,7 @@ export function tastedIntent(text: string | null | undefined): "tasted" | "bough
 
 /**
  * „Wir verkosten einen Wein“, „ich probiere gleich einen“: Ankündigung ohne den Wein selbst.
- * Das nächste Foto bzw. die nächste Nachricht (innert 30 Min.) gilt dann als verkostet.
+ * Das nächste Foto bzw. die nächste Nachricht (innert 10 Min.) gilt dann als verkostet.
  */
 export function announcesTasting(text: string) {
   const t = norm(text).replace(/[\s.!?…😀-🙏🍷🥂]+$/u, "");

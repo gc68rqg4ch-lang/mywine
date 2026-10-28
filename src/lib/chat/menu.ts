@@ -1,5 +1,6 @@
 import "server-only";
 
+import { staleMessage } from "./ttl";
 import { tasteLine } from "@/lib/taste/profile";
 import { loadTasteProfile } from "@/lib/taste/store";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -888,6 +889,12 @@ export async function handleMenuCallback(cb: TgCallbackQuery, actor: MenuActor) 
   const action = decodeMenu(cb.data);
   if (chatId == null || messageId == null || !action) {
     await answerCallback(cb.id, "Dieser Knopf ist nicht mehr gültig.");
+    return;
+  }
+  // Blättern: ein Menü, das seit 10 Minuten niemand angefasst hat, gilt als abgelaufen.
+  if (staleMessage(cb.message)) {
+    await answerCallback(cb.id, T.menuExpiredToast);
+    await editMessage(chatId, messageId, T.menuExpired).catch(() => undefined);
     return;
   }
   if (CLAIMED_OPS.has(action.op) && !(await claim(chatId, messageId))) {

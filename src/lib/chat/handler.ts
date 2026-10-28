@@ -1,7 +1,7 @@
 import "server-only";
 
-import { after } from "next/server";
 import { apiProblemForBot } from "@/lib/ai/api-errors";
+import { later } from "@/lib/later";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { answerCallback, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
 import type { Actor } from "@/lib/telegram/actor";
@@ -10,7 +10,8 @@ import type { TgCallbackQuery } from "@/lib/telegram/types";
 import { startTextIngest } from "@/lib/ingest/flow";
 import { T, say } from "@/lib/bot/texts";
 import { askTextIntent, startTastedText } from "./tasted";
-import { PENDING_TTL_MS, supersede } from "./pending";
+import { supersede } from "./pending";
+import { staleMessage } from "./ttl";
 import { answerChat } from "./agent";
 import { executeProposal } from "./execute";
 import { appendHistory, clearHistory, loadHistory } from "./history";
@@ -24,7 +25,7 @@ const MAX_INPUT = 2000;
 
 /** Freie Textnachricht: Antwort per Claude mit Werkzeugen, läuft nach der Webhook-Antwort. */
 export async function handleChatMessage(chatId: number, text: string, actor: Actor) {
-  after(() => replyToChat(chatId, text.slice(0, MAX_INPUT), actor));
+  later(() => replyToChat(chatId, text.slice(0, MAX_INPUT), actor));
 }
 
 export async function resetChat(chatId: number) {
@@ -37,7 +38,7 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
   await tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => undefined);
   try {
     const history = await loadHistory(db, chatId);
-    const reply = await answerChat(db, history, text, actor);
+    const reply = await answerChat(db, history, text, actor, chatId);
 
     // Neuer Wein per Text: Kauf → Erfassung (wie nach „Neuer Wein“), verkostet → Schnellablauf
     // „Verkostet“, unklar → erst fragen. Antwort nur kurz.
@@ -134,8 +135,8 @@ export async function handleChatCallback(cb: TgCallbackQuery) {
 
   const question = cb.message?.text?.replace(/^❓\s*/, "").replace(/\?$/, "") ?? "Vorschlag";
 
-  // Schnelle Vorschläge (Öffnen, Füllstand, Sterne) stecken im Knopf: nach 30 Minuten abgelaufen.
-  if (cb.message?.date && cb.message.date * 1000 < Date.now() - PENDING_TTL_MS) {
+  // Schnelle Vorschläge (Öffnen, Füllstand, Sterne) stecken im Knopf: nach 10 Minuten abgelaufen.
+  if (staleMessage(cb.message)) {
     await answerCallback(cb.id, T.proposalExpiredToast);
     await sendMessage(chatId, T.proposalExpired(question));
     return;

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { PENDING_TTL_MS } from "@/lib/chat/ttl";
 import { createHash } from "node:crypto";
 import type { Json, Tables } from "@/lib/database.types";
 import type { AdminClient } from "@/lib/supabase/admin";
@@ -133,7 +134,7 @@ export async function loadJob(db: AdminClient, jobId: string, chatId: number) {
 }
 
 /** So lange wartet „Neuer Wein“ auf eine Beschreibung; danach geht Text wieder an den Chat. */
-export const DESCRIBE_WINDOW_MS = 30 * 60 * 1000;
+export const DESCRIBE_WINDOW_MS = PENDING_TTL_MS;
 
 /** Jüngster Job, der gerade auf eine Textantwort wartet. */
 export async function findJobAwaitingText(db: AdminClient, chatId: number) {

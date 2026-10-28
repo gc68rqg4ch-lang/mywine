@@ -2,8 +2,13 @@ import "server-only";
 
 import type { AdminClient } from "@/lib/supabase/admin";
 
-/** So viele Nachrichten (Nutzer + Bot) pro Chat gehen als Verlauf mit. */
-export const HISTORY_LIMIT = 10;
+/**
+ * Chat-Gedächtnis im Prompt: nur die letzten 12 Stunden, höchstens 20 Nachrichten (Nutzer +
+ * Bot) pro Chat. Ältere bleiben gespeichert, gehen aber nicht mit. Der Verlauf ist nur
+ * Gesprächskontext – Bestand und Status kommen immer aus den Werkzeugen.
+ */
+export const HISTORY_LIMIT = 20;
+export const HISTORY_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -12,11 +17,12 @@ function isMissingTable(error: { code?: string } | null) {
   return error?.code === "42P01" || error?.code === "PGRST205";
 }
 
-export async function loadHistory(db: AdminClient, chatId: number): Promise<ChatTurn[]> {
+export async function loadHistory(db: AdminClient, chatId: number, now = Date.now()): Promise<ChatTurn[]> {
   const { data, error } = await db
     .from("telegram_chat_messages")
     .select("role, content")
     .eq("chat_id", chatId)
+    .gte("created_at", new Date(now - HISTORY_WINDOW_MS).toISOString())
     .order("id", { ascending: false })
     .limit(HISTORY_LIMIT);
   if (error) {
@@ -34,21 +40,7 @@ export async function appendHistory(db: AdminClient, chatId: number, turns: Chat
     .filter((r) => r.content);
   if (!rows.length) return;
   const { error } = await db.from("telegram_chat_messages").insert(rows);
-  if (error) {
-    if (!isMissingTable(error)) console.error("append chat history failed", error);
-    return;
-  }
-  // Ältere Nachrichten aufräumen – es zählt nur der kurze Verlauf.
-  const { data: keep } = await db
-    .from("telegram_chat_messages")
-    .select("id")
-    .eq("chat_id", chatId)
-    .order("id", { ascending: false })
-    .range(HISTORY_LIMIT - 1, HISTORY_LIMIT - 1);
-  const oldestKept = keep?.[0]?.id;
-  if (oldestKept != null) {
-    await db.from("telegram_chat_messages").delete().eq("chat_id", chatId).lt("id", oldestKept);
-  }
+  if (error && !isMissingTable(error)) console.error("append chat history failed", error);
 }
 
 export async function clearHistory(db: AdminClient, chatId: number) {

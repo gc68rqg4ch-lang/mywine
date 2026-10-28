@@ -1,4 +1,4 @@
-// Offene Rückfragen im Bot: Ablauf nach 30 Minuten (ab der letzten Antwort), neues Anliegen
+// Offene Rückfragen im Bot: Ablauf nach 10 Minuten (ab der letzten Antwort), neues Anliegen
 // verwirft den alten Ablauf, Abbrechen (Knopf und /abbrechen), Werte aus dem Bildtext werden
 // nicht nochmals gefragt, Jahrgang vom Etikett wartet auf die Antwort, Ergänzungs-Knöpfe nach
 // dem Speichern, neue Menüleiste einmal pro Chat. Supabase, Telegram, Claude per fetch-Stub.
@@ -97,7 +97,7 @@ async function photoAlbum(key: string, caption: string) {
   await processJob(id, 111);
 }
 
-test("Abgelaufene Rückfrage (älter als 30 Min.): verworfen, gemeldet, neue Nachricht normal verarbeitet", async () => {
+test("Abgelaufene Rückfrage (älter als 10 Min.): verworfen, gemeldet, neue Nachricht normal verarbeitet", async () => {
   reset([purchaseJob(95, "quantity", 99)]);
   await say("Wir verkosten gerade einen Wein");
   assert.equal(job().status, "discarded");
@@ -109,9 +109,9 @@ test("Abgelaufene Rückfrage (älter als 30 Min.): verworfen, gemeldet, neue Nac
   assert.equal((tasted().extracted as { step: string }).step, "t_armed");
 });
 
-test("Die 30 Minuten laufen ab der letzten Antwort, nicht ab dem Start", async () => {
-  // Vor 2 Stunden begonnen, letzte Antwort vor 20 Minuten: noch offen.
-  reset([purchaseJob(20, "quantity", 120)]);
+test("Die 10 Minuten laufen ab der letzten Antwort, nicht ab dem Start", async () => {
+  // Vor 2 Stunden begonnen, letzte Antwort vor 8 Minuten: noch offen.
+  reset([purchaseJob(8, "quantity", 120)]);
   await say("6");
   assert.equal(job().status, "needs_review");
   assert.equal((job().extracted as { step: string; quantity: number }).quantity, 6);
@@ -119,7 +119,7 @@ test("Die 30 Minuten laufen ab der letzten Antwort, nicht ab dem Start", async (
   assert.ok(Date.parse(String(job().updated_at)) > Date.now() - 60_000, "updated_at neu gesetzt");
   assert.ok(!texts().some((t) => t.includes("abgelaufen")));
   // Auch eine unpassende kurze Antwort zählt als Antwort (Rückfrage, Zeit neu).
-  job().updated_at = minutesAgo(25);
+  job().updated_at = minutesAgo(9);
   await say("teuer");
   assert.match(lastText(), /Was hast du pro Flasche bezahlt\?/);
   assert.ok(Date.parse(String(job().updated_at)) > Date.now() - 60_000);
@@ -230,13 +230,13 @@ test("Neue Menüleiste: einmal pro Chat mitschicken, Version gemerkt", async () 
   assert.ok(!texts().some((t) => t.includes("Menüleiste")), "nur einmal");
 });
 
-test("Schnelle Chat-Vorschläge (Ja/Nein im Knopf) laufen nach 30 Minuten ab", async () => {
+test("Schnelle Chat-Vorschläge (Ja/Nein im Knopf) laufen nach 10 Minuten ab", async () => {
   reset();
   await handleUpdate({
     update_id: 1,
     callback_query: {
       id: "cb", from: { id: 111, is_bot: false, first_name: "M" }, data: "co:22222222-2222-4222-8222-222222222222",
-      message: { message_id: 9, chat: { id: 111, type: "private" }, date: Math.floor(Date.now() / 1000) - 45 * 60, text: "❓ Pintia öffnen?" },
+      message: { message_id: 9, chat: { id: 111, type: "private" }, date: Math.floor(Date.now() / 1000) - 11 * 60, text: "❓ Pintia öffnen?" },
     },
   } as never);
   assert.equal(lastText(), "Meinen Vorschlag „Pintia öffnen“ lasse ich mal beiseite – frag mich einfach nochmals.");

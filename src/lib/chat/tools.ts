@@ -17,6 +17,7 @@ import { isValidRating } from "@/lib/ratings";
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { Edit, EditPreview } from "@/lib/edit/types";
 import { editTools, resolvePerson } from "./edit-tools";
+import { flowTools } from "./flow-tools";
 import type { WineRef } from "./menu";
 import { daysLabel, openBottleLine, typeEmoji } from "./menu-view";
 import { personKey, type Proposal } from "./proposals";
@@ -123,6 +124,8 @@ export function chatTools(
   newEntries: NewEntry[] = [],
   /** Weine, die nach der Antwort recherchiert werden sollen (research_wine). */
   researchRequests: { wineId: string; year: number | null }[] = [],
+  /** Chat für die offenen Erfassungen (list_open_entries, cancel_open_entry). */
+  chatId: number | null = null,
 ) {
   const propose = (proposal: Proposal, text: string) => {
     if (pending.length >= 3) return "Zu viele Vorschläge auf einmal – bitte erst die offenen bestätigen lassen.";
@@ -451,6 +454,7 @@ export function chatTools(
       },
     }),
     ...editTools(db, pending, actor),
+    ...flowTools(db, chatId),
 
     betaZodTool({
       name: "research_wine",

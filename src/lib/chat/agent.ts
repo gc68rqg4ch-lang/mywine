@@ -8,34 +8,13 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import type { Actor } from "@/lib/telegram/actor";
 import type { ChatTurn } from "./history";
 import type { WineRef } from "./menu";
+import { CHAT_STRICT_NOTE, CHAT_SYSTEM, NON_LOOKUP_TOOLS, claimsStatus } from "@/lib/bot/chat-prompt";
+import { T } from "@/lib/bot/texts";
 import { chatTools, type NewEntry, type PendingProposal } from "./tools";
 
 const MAX_ITERATIONS = 8;
 
-const SYSTEM = `Du bist Antoine, der Sommelier von MyWine, der privaten Weinsammlung von Michel und Sara in der Schweiz. Du schreibst im Telegram-Chat mit einer der beiden Personen (siehe unten).
 
-Du sprichst immer in der Ich-Form und duzt die Person: „Ich schaue nach“, „Ich habe 2 Flaschen verschoben“, „Ich schlage dir vor …“. Nie von dir in der dritten Person („der Bot“, „Antoine“, „das System“).
-
-Antworte kurz und auf Deutsch in Schweizer Schreibweise (immer „ss“, nie „ß“). Reiner Text ohne Markdown. Preise in CHF.
-
-Format für Weine: pro Wein eine Zeile, vorne das Emoji des Weintyps statt eines Wortes (🍷 Rot, 🥂 Weiss, 🌸 Rosé, 🍾 Schaumwein, 🍯 Süsswein, 🥃 Likörwein), dann Name und Jahrgang, Details mit „·“ getrennt – z. B. „🍷 Palermo 2022 · 50 % · seit 216 T.“ oder „🥂 Chardonnay 2023 · 11 Fl.“. Bei offenen Flaschen kannst du das Feld line aus list_open_bottles direkt übernehmen. Den Produzenten nur, wenn der Name allein nicht eindeutig ist. Den Lagerort nur nennen, wenn danach gefragt wird oder er zur Unterscheidung nötig ist. Nennt deine Antwort konkrete Weine, ruf zusätzlich attach_wine_buttons mit genau diesen Weinen auf.
-
-Fakten zum Bestand holst du ausschliesslich mit den Werkzeugen – erfinde keine Weine, Mengen oder Bewertungen. Was die Werkzeuge nicht liefern, sagst du offen.
-
-Änderungen machst du nur über die propose_*-Werkzeuge. Sie ändern noch nichts: Die Person bestätigt jeden Vorschlag mit [Ja] oder [Nein]; der Vorschlag zeigt dabei vorher → nachher. Sag deshalb nie, dass etwas erledigt sei, sondern höchstens kurz, dass du es vorschlägst.
-- Bearbeiten geht für alles, was auch die App kann: Stammdaten des Weins (propose_wine_edit), Jahrgang korrigieren – ganzer Jahrgang oder nur eine Charge (propose_vintage_change), Trinkfenster (propose_drink_window), Charge: Anzahl, Flaschengrösse, Kaufdatum, Händler, Geschenk, Preise (propose_batch_edit), Lagerort ganz oder teilweise (propose_move), Flaschen löschen, ganz oder teilweise – falsch erfasst, nicht getrunken (propose_delete_bottles), ganzen Wein mit allem löschen nur auf ausdrücklichen Wunsch (propose_delete_wine), offene Flasche: Füllstand, Gläser, geöffnet am (propose_open_bottle_edit), getrunkene Flasche: getrunken am oder zurück auf offen (propose_drunk_bottle_edit), Rebsorten mit % (propose_grapes), Bewertungen ändern (propose_rating) oder löschen (propose_delete_rating), Verkostungen ändern oder löschen (propose_tasting_edit, propose_delete_tasting).
-- Vor dem Bearbeiten holst du den aktuellen Stand: get_wine_details für Wein, Jahrgänge, Bewertungen, Verkostungen; list_batches für Chargen und Flaschen. IDs nimmst du nur aus diesen Werkzeugen.
-- Passen mehrere Weine, Jahrgänge, Chargen, Lagerorte oder offene Flaschen, frag nach statt zu raten – nenne die Möglichkeiten kurz (z. B. „6 Fl. im Weinkeller, gekauft März 2026“ oder „2 Fl. im Wohnzimmer“).
-- Jahrgänge in den Werkzeugen: 0 = ohne Jahrgang (NV).
-- Meldet ein Werkzeug „Nicht möglich“, erklär es kurz in deinen Worten.
-- Ein Glas sind etwa 150 ml; für „ich habe zwei Gläser getrunken“ nutze propose_open_bottle_edit mit glasses.
-- Bewertungen gibt es für Michel und Sara getrennt (0–5 Sterne, halbe Schritte). Sie gehen an die Person, die schreibt – an jemand anderen nur, wenn ausdrücklich genannt (dann person setzen).
-- Lagerorte sind Weinkeller und Wohnzimmer. „Keller“ meint nur den Lagerort Weinkeller; für alle Flaschen sagst du „Bestand“.
-- „Recherchier mal …“, „stimmen die Angaben?“: research_wine. Ich ergänze dann Leeres und frage bei Abweichungen einzeln nach – überschreib nie etwas über propose_*, nur weil das Web anderes sagt.
-- Steht im Verlauf „[Bearbeiten: …]“, hat die Person im Menü „✏️ Bearbeiten“ gewählt; die folgende Nachricht bezieht sich auf diesen Wein und Jahrgang.
-- Beschreibt die Person einen Kauf bzw. einen neuen Wein für den Bestand (z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“ oder „Habe 3 Flaschen Rioja gekauft“), ruf start_wine_entry mit intent bought auf und antworte höchstens mit einem kurzen Satz. Fragen zu Weinen, die schon im Bestand sind, sind keine Erfassung – Nachkäufe zu einem bestehenden Wein aber schon.
-- Erzählt die Person von einem Wein, den sie irgendwo probiert hat (Restaurant, Bar, bei Freunden – z. B. „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne“), ist das „Verkostet“ und nicht der Bestand: start_wine_entry mit intent tasted. Nennt sie nur einen Wein ohne klaren Hinweis, ob gekauft oder verkostet: intent unclear – ich frage dann mit Knöpfen nach. Nie ungefragt in den Bestand buchen.
-- Einträge „Verkostet“ (alle Weine, auch ohne Flaschen): list_encounters zum Nachschauen (mit encounter_id), propose_add_encounter für einen Eintrag zu einem bekannten Wein, propose_encounter_edit zum Ändern (Ort, Preis, Anlass, Begleitung, Notiz, Sterne), propose_delete_encounter zum Löschen, propose_want_to_buy für den Merker „Kaufen?“.`;
 
 export type ChatReply = {
   text: string;
@@ -49,6 +28,10 @@ export type ChatReply = {
 };
 
 class EscalateError extends Error {}
+class UnverifiedError extends EscalateError {}
+
+/** Wie runWith aufgerufen wird: Chat für offene Erfassungen, strict = zweiter Versuch nach einer Status-Behauptung ohne Nachschauen. */
+type RunOptions = { chatId: number | null; strict: boolean };
 
 function toMessages(history: ChatTurn[], text: string): Anthropic.Beta.BetaMessageParam[] {
   const turns = [...history, { role: "user" as const, content: text }];
@@ -60,16 +43,39 @@ function actorNote(actor: Actor) {
   return `Du schreibst gerade mit ${actor.name}. Sprich ${actor.name} gelegentlich mit Namen an (nicht in jedem Satz). Schreibt ${actor.name} „ich“, „mir“ oder „wir haben“, ist ${actor.name} gemeint.`;
 }
 
-async function runWith(model: string, db: AdminClient, history: ChatTurn[], text: string, actor: Actor): Promise<ChatReply> {
+/** Werkzeuge mit Zähler: meldet jeden Aufruf (Name) vor dem Ausführen. */
+function countCalls<T extends { name: string; run: (...args: never[]) => unknown }>(tools: T[], onCall: (name: string) => void): T[] {
+  return tools.map((tool) => ({
+    ...tool,
+    run: (...args: never[]) => {
+      onCall(tool.name);
+      return tool.run(...args);
+    },
+  }));
+}
+
+async function runWith(
+  model: string,
+  db: AdminClient,
+  history: ChatTurn[],
+  text: string,
+  actor: Actor,
+  options: RunOptions,
+): Promise<ChatReply> {
   const proposals: PendingProposal[] = [];
   const wines: WineRef[] = [];
   const newEntries: NewEntry[] = [];
   const research: { wineId: string; year: number | null }[] = [];
+  // Wahrheit nur aus der Datenbank: zählen, ob in diesem Zug nachgeschaut wurde.
+  let lookups = 0;
+  const tools = countCalls(chatTools(db, proposals, wines, actor, newEntries, research, options.chatId), (name) => {
+    if (!NON_LOOKUP_TOOLS.has(name)) lookups++;
+  });
   const runner = anthropic().beta.messages.toolRunner({
     model,
     max_tokens: 8000,
-    system: `${SYSTEM}\n\n${actorNote(actor)}\nHeute ist ${todayIso()}.`,
-    tools: chatTools(db, proposals, wines, actor, newEntries, research),
+    system: `${CHAT_SYSTEM}\n\n${actorNote(actor)}\nHeute ist ${todayIso()}.${options.strict ? `\n\n${CHAT_STRICT_NOTE}` : ""}`,
+    tools,
     messages: toMessages(history, text),
     max_iterations: MAX_ITERATIONS,
     output_config: { effort: "medium" },
@@ -89,19 +95,35 @@ async function runWith(model: string, db: AdminClient, history: ChatTurn[], text
   if (!reply && !proposals.length && !wines.length && !newEntries.length && !research.length) {
     throw new EscalateError(`${model}: keine Antwort`);
   }
+  // Status behauptet, ohne nachzuschauen (z. B. „Der Pintia ist vorgemerkt“ aus dem Verlauf):
+  // nicht senden – nochmals mit Hinweis; im zweiten Versuch eine ehrliche Kurzantwort.
+  if (lookups === 0 && claimsStatus(reply)) {
+    if (!options.strict) throw new UnverifiedError(`${model}: Status ohne Werkzeug`);
+    console.warn("chat: status claim without lookup dropped", model);
+    return { text: T.chatLookFirst, proposals: [], wines: [], newEntry: null, research: null, model };
+  }
   return { text: reply, proposals, wines, newEntry: newEntries[0] ?? null, research: research[0] ?? null, model };
 }
 
-/** Beantwortet eine Chat-Nachricht: zuerst mit Haiku, bei Bedarf mit Sonnet. */
-export async function answerChat(db: AdminClient, history: ChatTurn[], text: string, actor: Actor): Promise<ChatReply> {
+/**
+ * Beantwortet eine Chat-Nachricht: zuerst mit Haiku, bei Bedarf mit Sonnet. Hat Haiku Status
+ * behauptet, ohne nachzuschauen, versucht es Sonnet mit ausdrücklichem Hinweis (strict).
+ */
+export async function answerChat(
+  db: AdminClient,
+  history: ChatTurn[],
+  text: string,
+  actor: Actor,
+  chatId: number | null = null,
+): Promise<ChatReply> {
   try {
-    return await runWith(RECOGNITION_MODEL, db, history, text, actor);
+    return await runWith(RECOGNITION_MODEL, db, history, text, actor, { chatId, strict: false });
   } catch (error) {
     // Fehlender/ungültiger API-Key: Sonnet hilft nicht weiter.
     if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) throw error;
     // Nutzungslimit gilt für alle Modelle – ein zweiter Versuch mit Sonnet bringt nichts.
     if (usageLimit(error)) throw error;
     console.warn("chat: escalating to", FALLBACK_MODEL, error instanceof Error ? error.message : error);
-    return await runWith(FALLBACK_MODEL, db, history, text, actor);
+    return await runWith(FALLBACK_MODEL, db, history, text, actor, { chatId, strict: error instanceof UnverifiedError });
   }
 }

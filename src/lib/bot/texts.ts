@@ -36,7 +36,7 @@ export const say = (key: VariantKey, random?: () => number) => pick(VARIANTS[key
 export const ERROR = "Da ist mir leider etwas schiefgegangen – ich habe nichts gespeichert. Versuchst du es nochmals?";
 export const ERROR_NOTHING_CHANGED = "Da ist mir leider etwas schiefgegangen – ich habe nichts geändert. Versuchst du es nochmals?";
 
-/** Ein angefangener Ablauf (für „lasse ich beiseite“). */
+/** Ein angefangener Ablauf (für „lasse ich beiseite“, „den Pintia lasse ich weg“). */
 export type FlowSubject =
   | { kind: "wine"; wine: string }
   | { kind: "newWine" }
@@ -45,7 +45,7 @@ export type FlowSubject =
   | { kind: "photos" }
   | { kind: "proposal"; text: string };
 
-function subjectText(s: FlowSubject) {
+export function subjectText(s: FlowSubject) {
   switch (s.kind) {
     case "wine":
       return `den angefangenen ${e(s.wine)}`;
@@ -71,6 +71,7 @@ export const T = {
   hello: (name: string, help: string) => `Hallo ${e(name)}!\n\n${help}`,
   newMenu: "Unten in der Menüleiste gibt es jetzt auch <b>🍽 Verkostet</b>.",
   chatForgotten: "Gut, ich habe unser bisheriges Gespräch vergessen.",
+  chatLookFirst: "Da schaue ich lieber zuerst nach, bevor ich etwas Falsches sage – frag mich bitte nochmals.",
   alreadyDone: "Das ist schon erledigt.",
   error: ERROR,
   errorNothingChanged: ERROR_NOTHING_CHANGED,
@@ -86,6 +87,8 @@ export const T = {
     subjects.length ? `Gut, ${subjects.map(subjectText).join(", ")} lasse ich bleiben.` : "Es ist gerade nichts offen.",
   proposalExpired: (text: string) => `Meinen Vorschlag „${e(text)}“ lasse ich mal beiseite – frag mich einfach nochmals.`,
   proposalExpiredToast: "Das ist schon eine Weile her – frag mich bitte nochmals.",
+  menuExpired: "Dieses Menü ist schon eine Weile offen – tipp einfach unten auf die Menüleiste, dann zeige ich dir alles frisch.",
+  menuExpiredToast: "Das Menü ist schon etwas älter.",
   proposalInvalid: "Das kann ich leider nicht mehr ausführen.",
 
   // --- Fotos
