@@ -66,7 +66,7 @@ test("Album erkennen: Vorschlag mit Recherche, unsicherer Jahrgang wird vermerkt
   assert.equal(state().step, "intent");
   assert.match(lastText(), /Pintia[\s\S]*2019\nHast du ihn gekauft \(Bestand\) oder nur verkostet\?/);
   const intentButtons = (net.telegram.at(-1)!.body.reply_markup as { inline_keyboard: { text: string }[][] }).inline_keyboard.flat().map((b) => b.text);
-  assert.deepEqual(intentButtons, ["🛒 Gekauft", "🍷 Nur verkostet"]);
+  assert.deepEqual(intentButtons, ["🛒 Gekauft", "🍷 Nur verkostet", "✖️ Abbrechen"]);
   assert.equal(net.tables.inventory_items.length, 0);
 
   await handleUpdate(cb(tastedData(JOB, "buy")) as never);

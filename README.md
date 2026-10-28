@@ -237,6 +237,7 @@ Datenbank noch API-Schlüssel und legen nichts in der Produktions-DB an:
 Abgedeckt: Bot-Zugang und `/id` (`access`), Bewerten (`rating`), Wein-Menü (`wine-menu`), Details (`details`),
 Erfassung per Foto, Text, Nachkauf und Jahrgang-Pflicht (`photo-ingest`, `text-ingest`, `ingest-helpers`),
 Verkostet im Bot – Absicht, Schnellablauf, Freitext, Abgleich ohne Produzent, alles oder nichts, leerer Wein (`tasted-bot`),
+offene Rückfragen – Ablauf nach 30 Min., neues Anliegen, Abbrechen, Bildtext, Menüleiste (`bot-pending`),
 Fotos nachreichen (`photo-attach`, `media-*`), Bearbeiten-Modul inkl. `move_bottles` und `change_vintage`
 (`edit`), Weinseite mit Bearbeiten in der Karte, Büroklammer und Reihenfolge (`wine-units`), unwiderruflich löschen – Flaschen und ganzer Wein samt Dateien (`delete`), Weinseite (`wine-page`), Übersicht, Typ-Filter und Gruppierungen inkl. Trinkreife (`overview`,
 `lists`, `drink-status`), Verkostung (`tasting`), Recherche mit Lücken, Vorschlägen und Limit-Stopp
@@ -369,8 +370,10 @@ Eintrag, Bewertungen; bei einem Fehler wird Angelegtes zurückgenommen und ich m
   nächste Nachricht.
 - **Schnellablauf:** Etikett lesen (Name, Jahrgang, Produzent falls erkennbar) → Wein abgleichen (wie in der App:
   mit Produzent über Name + Produzent, ohne nur über den Namen; mehrere Treffer → Auswahl oder „➕ Neuer Wein“) →
-  Jahrgang bestätigen (✅ stimmt / Zahl / NV) → ⭐ der Person, die schreibt → gespeichert. Danach freiwillig per
-  Knopf: 📍 Ort, 💰 Preis (z. B. „14 Glas“, „90 EUR“, „65 AED“), 🎉 Anlass, 👥 Begleitung, 🛒 Kaufen?, ⭐ für die
+  Jahrgang bestätigen (✅ stimmt / Zahl / NV) → ⭐ der Person, die schreibt → gespeichert. Was im Bildtext bzw. Text
+  steht (z. B. „Vier von fünf Sternen“, Ort, Preis), frage ich nicht nochmals; der Jahrgang nur vom Etikett wird
+  bestätigt, und ich warte auf die Antwort. Danach freiwillig per
+  Knopf: 📍 Ort (mit den letzten Orten zur Auswahl), 💰 Preis (z. B. „14 Glas“, „90 EUR“, „65 AED“), 🎉 Anlass, 👥 Begleitung, 🛒 Kaufen?, ⭐ für die
   andere Person, 📝 Notiz, ✅ Fertig. Keine Fragen zu Lagerort, Anzahl oder Händler.
 - **Websuche danach:** erst speichern und bewerten, dann ergänzt die Recherche leere Angaben des Weins (Stammdaten,
   Rebsorten mit %, Trinkfenster; nie überschreiben). Etikett-Fotos eines neuen Weins kommen als `wine_media` dazu.
@@ -385,6 +388,22 @@ Eintrag, Bewertungen; bei einem Fehler wird Angelegtes zurückgenommen und ich m
   WSET-Verkostungen (`wouldLeaveEmptyWine`), frage ich zusätzlich „Der Wein bleibt sonst leer zurück. Auch den Wein
   löschen?“ → „Nur Eintrag“ / „Eintrag und Wein“ / „Abbrechen“. Die App fragt beim Löschen eines Verkostet-Eintrags
   genauso.
+
+### Offene Rückfragen (alle Abläufe im Bot)
+
+`src/lib/chat/pending.ts` – gilt für Kauf-Erfassung (Foto/Text, „📷 Neuer Wein“), Verkostet, WSET-Verkostung,
+Foto zuordnen und Chat-Vorschläge mit Ja/Nein:
+- **Vor jeder Nachricht und jedem Knopf** prüfe ich offene Rückfragen: ohne Antwort seit 30 Minuten (`updated_at`)
+  → verworfen und kurz gemeldet („⏱ Die angefangene Erfassung von Pintia 2019 (11:27) ist abgelaufen.“), dann wird
+  die neue Nachricht normal verarbeitet. Jede Antwort setzt die Zeit neu (30 Min. ab der letzten Antwort). Schnelle
+  Chat-Vorschläge (Öffnen, Füllstand, Sterne im Knopf) laufen nach 30 Minuten ab der Nachricht ab. Der DB-Job
+  `expire-stale-ingest-jobs` (pg_cron, alle 5 Min., `public.expire_stale_ingest_jobs()`) ist nur das Sicherheitsnetz.
+- **Neues Anliegen verwirft den alten Ablauf:** neues Foto, Menü-Knopf, Befehl oder ein Text, der nicht als Antwort
+  passt und nach einem neuen Wein aussieht („Ich habe die angefangene Erfassung von … verworfen.“). Ein schon
+  gespeicherter Verkostet-Eintrag (nur noch Ergänzungen offen) wird still abgeschlossen.
+- **Abbrechen:** unter jeder Rückfrage „✖️ Abbrechen“, dazu der Befehl `/abbrechen`.
+- **Neue Menüleiste:** ändert sie sich (`MENU_VERSION` in `src/lib/chat/menu-view.ts`), schicke ich sie jedem Chat
+  bei der nächsten Antwort einmal mit (Merker in `ingest_jobs`, `source = 'telegram_menu'`).
 
 ### Menüs (Knöpfe)
 

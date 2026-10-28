@@ -116,6 +116,9 @@ export function reviewKeyboard(jobId: string): TgInlineKeyboard {
   };
 }
 
+/** „✖️ Abbrechen“ unter jeder Rückfrage. */
+const cancelRow = (jobId: string) => [{ text: "✖️ Abbrechen", callback_data: callbackData("drop", jobId) }];
+
 export function locationKeyboard(jobId: string): TgInlineKeyboard {
   return {
     inline_keyboard: [
@@ -123,6 +126,7 @@ export function locationKeyboard(jobId: string): TgInlineKeyboard {
         { text: "Weinkeller", callback_data: callbackData("loc", jobId, "keller") },
         { text: "Wohnzimmer", callback_data: callbackData("loc", jobId, "wohnzimmer") },
       ],
+      cancelRow(jobId),
     ],
   };
 }
@@ -134,13 +138,14 @@ export function quantityKeyboard(jobId: string): TgInlineKeyboard {
         text: String(n),
         callback_data: callbackData("qty", jobId, String(n)),
       })),
+      cancelRow(jobId),
     ],
   };
 }
 
 export function priceKeyboard(jobId: string): TgInlineKeyboard {
   return {
-    inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipprice", jobId) }]],
+    inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipprice", jobId) }], cancelRow(jobId)],
   };
 }
 
@@ -149,7 +154,7 @@ export function regularPriceKeyboard(jobId: string, paid: number | null): TgInli
   if (paid != null) {
     row.unshift({ text: "Gleich wie bezahlt", callback_data: callbackData("sameprice", jobId) });
   }
-  return { inline_keyboard: [row] };
+  return { inline_keyboard: [row, cancelRow(jobId)] };
 }
 
 /** Händler als Buttons (je zwei pro Zeile), dazu „Neuer Händler“ und „Überspringen“. */
@@ -164,11 +169,12 @@ export function vendorKeyboard(jobId: string, vendors: { name: string }[]): TgIn
     { text: "➕ Neuer Händler", callback_data: callbackData("newvendor", jobId) },
     { text: "Überspringen", callback_data: callbackData("skipvendor", jobId) },
   ]);
+  rows.push(cancelRow(jobId));
   return { inline_keyboard: rows };
 }
 
 export function skipVendorKeyboard(jobId: string): TgInlineKeyboard {
-  return { inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipvendor", jobId) }]] };
+  return { inline_keyboard: [[{ text: "Überspringen", callback_data: callbackData("skipvendor", jobId) }], cancelRow(jobId)] };
 }
 
 export const HELP_TEXT = [

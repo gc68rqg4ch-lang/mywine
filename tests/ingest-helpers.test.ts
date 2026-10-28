@@ -109,10 +109,11 @@ test("Normalpreis-Knöpfe: „Gleich wie bezahlt“ nur mit bezahltem Preis", ()
   assert.deepEqual(regularPriceKeyboard(id, null).inline_keyboard[0].map((b) => b.text), ["Überspringen"]);
 });
 
-test("Händler-Knöpfe: zwei pro Zeile, höchstens 12, plus Neu/Überspringen", () => {
+test("Händler-Knöpfe: zwei pro Zeile, höchstens 12, plus Neu/Überspringen und Abbrechen", () => {
   const names = Array.from({ length: 12 }, (_, i) => ({ name: `Händler ${i + 1} mit langem Namen` }));
   const kb = vendorKeyboard(id, names).inline_keyboard;
-  assert.equal(kb.length, 7);
+  assert.equal(kb.length, 8);
+  assert.deepEqual(kb[7].map((b) => b.text), ["✖️ Abbrechen"]);
   assert.deepEqual(kb[0].map((b) => b.text), ["Händler 1 mit langem Namen", "Händler 2 mit langem Namen"]);
   assert.deepEqual(kb[6].map((b) => b.text), ["➕ Neuer Händler", "Überspringen"]);
   for (const b of kb.flat()) {
@@ -120,7 +121,7 @@ test("Händler-Knöpfe: zwei pro Zeile, höchstens 12, plus Neu/Überspringen", 
     assert.ok(parseCallbackData(cbd(b)), cbd(b));
   }
   assert.deepEqual(parseCallbackData(cbd(kb[5][1])), { action: "vendor", jobId: id, value: "11" });
-  assert.equal(vendorKeyboard(id, []).inline_keyboard.length, 1);
+  assert.equal(vendorKeyboard(id, []).inline_keyboard.length, 2);
   assert.equal(vendorKeyboard(id, [{ name: "A" }]).inline_keyboard[0].length, 1);
   assert.equal(parseCallbackData(cbd(skipVendorKeyboard(id).inline_keyboard[0][0]))?.action, "skipvendor");
 });

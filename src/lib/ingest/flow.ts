@@ -19,6 +19,7 @@ import { labelKinds } from "@/lib/media/pick";
 import { saveWineMedia } from "@/lib/media/store";
 import { PHOTO_BUCKET, advanceJob, jobState, toJson, type IngestJob } from "./jobs";
 import {
+  cancelKeyboard,
   confirmKeyboard,
   locationKeyboard,
   proposalMessage,
@@ -602,7 +603,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
         restockKeyboard(jobId),
       );
     } else if (step === "producer") {
-      await sendMessage(chatId, "Von welchem Produzenten ist der Wein?");
+      await sendMessage(chatId, "Von welchem Produzenten ist der Wein?", cancelKeyboard(jobId));
     } else {
       await askFor(job, chatId, vendors);
     }
@@ -632,7 +633,7 @@ export async function setVintage(db: AdminClient, job: IngestJob, chatId: number
     }
     if (!state.proposal.producer) {
       const next = await advanceJob(db, job, "vintage", { ...patch, step: "producer" });
-      if (next) await sendMessage(chatId, "Von welchem Produzenten ist der Wein?");
+      if (next) await sendMessage(chatId, "Von welchem Produzenten ist der Wein?", cancelKeyboard(job.id));
       return;
     }
   }

@@ -20,7 +20,7 @@ import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery, TgInlineButton, TgInlineKeyboard } from "@/lib/telegram/types";
 import { wineHref } from "@/lib/cellar/wine-page";
 import type { Json } from "@/lib/database.types";
-import { parseVintageAnswer, type IngestState, type WineProposal } from "@/lib/ingest/schema";
+import { parseVintageAnswer, type IngestState, type TastedText, type WineProposal } from "@/lib/ingest/schema";
 import { parseTastedText, type RecognitionResult, enrichFromWeb } from "@/lib/ingest/recognize";
 import { jobState, toJson, type IngestJob } from "@/lib/ingest/jobs";
 import {
@@ -34,6 +34,7 @@ import {
 } from "@/lib/ingest/flow";
 import { RATING_STEPS } from "./menu-view";
 import { TASTED_WINDOW_MS, announcesTasting, parseEncounterPrice } from "./tasted-text";
+import { looksLikeNewConcern, strongNewConcern, supersede } from "./pending";
 
 export const TASTED_SOURCE = "telegram_tasted";
 
@@ -94,6 +95,8 @@ export type TastedState = {
   encounterId?: string;
   savedWineId?: string;
   awaiting?: ExtraField;
+  /** Letzte Orte als Knöpfe beim 📍 Ort. */
+  placeOptions?: string[];
   otherPersonId?: string;
   imageSides?: ("front" | "back" | "other")[] | null;
 };
@@ -196,8 +199,15 @@ const button = (text: string, jobId: string, action: string, ...values: (string 
   callback_data: tastedData(jobId, action, ...values),
 });
 
+/** Nur „✖️ Abbrechen“ (drop = verwerfen; back = nach dem Speichern zurück zu den Knöpfen). */
+const cancelKeyboard = (jobId: string, action: "drop" | "back"): TgInlineKeyboard => ({
+  inline_keyboard: [[button("✖️ Abbrechen", jobId, action)]],
+});
+
 export function intentKeyboard(jobId: string): TgInlineKeyboard {
-  return { inline_keyboard: [[button("🛒 Gekauft", jobId, "buy"), button("🍷 Nur verkostet", jobId, "tas")]] };
+  return {
+    inline_keyboard: [[button("🛒 Gekauft", jobId, "buy"), button("🍷 Nur verkostet", jobId, "tas")], [button("✖️ Abbrechen", jobId, "drop")]],
+  };
 }
 
 function ratingButtons(jobId: string, action: string, extra: (string | number)[] = []) {
@@ -336,12 +346,47 @@ async function step(db: AdminClient, job: IngestJob, chatId: number, from: Taste
 // ---------------------------------------------------------------------------
 // Start
 
+/** Angaben aus Text bzw. Bildtext: Was dort steht, wird nicht nochmals gefragt (z. B. die Sterne). */
+export function fromTasting(t: TastedText["tasting"]): Pick<TastedState, "set" | "wantToBuy"> & { rating?: number } {
+  return {
+    set: {
+      ...(/^\d{4}-\d{2}-\d{2}$/.test(t.tasted_on) && t.tasted_on <= todayIso() ? { tastedOn: t.tasted_on } : {}),
+      ...(t.place.trim() ? { place: t.place.trim().slice(0, 120) } : {}),
+      ...(t.price > 0 ? { price: Math.round(t.price * 100) / 100, priceUnit: t.price_unit || "bottle", currency: t.currency || "CHF" } : {}),
+      ...(t.occasion.trim() ? { occasion: t.occasion.trim() } : {}),
+      ...(t.companions.trim() ? { companions: t.companions.trim() } : {}),
+      ...(t.note.trim() ? { note: t.note.trim() } : {}),
+    },
+    ...(t.rating >= 0 && isValidRating(t.rating) ? { rating: t.rating } : {}),
+    wantToBuy: t.want_to_buy,
+  };
+}
+
 /** Foto(s) als „verkostet“: Erkennung übernehmen, abgleichen, dann der Schnellablauf. */
-export async function startTastedFromPhoto(db: AdminClient, photoJobId: string, chatId: number, recognition: RecognitionResult) {
+export async function startTastedFromPhoto(
+  db: AdminClient,
+  photoJobId: string,
+  chatId: number,
+  recognition: RecognitionResult,
+  caption?: string | null,
+) {
   const { data: photoJob } = await db.from("ingest_jobs").select("photo_paths").eq("id", photoJobId).maybeSingle();
   // Der Foto-Eintrag ist damit erledigt; weiter geht es als „verkostet“ (eigener Eintrag).
   await db.from("ingest_jobs").update({ status: "confirmed", extracted: toJson({ step: "done", intent: "tasted" } as unknown as IngestState) }).eq("id", photoJobId);
-  if (!recognition.proposal.name) {
+
+  // Bildtext lesen („Vier von fünf Sternen“, „im Kronenhalle“ …): was dort steht, frage ich nicht.
+  const fromCaption = caption?.trim() ? await parseTastedText(caption.trim().slice(0, 1000), todayIso()).catch((error) => {
+    console.error("caption parse failed", error);
+    return null;
+  }) : null;
+  const proposal: WineProposal = {
+    ...recognition.proposal,
+    name: recognition.proposal.name ?? fromCaption?.proposal.name ?? null,
+    producer: recognition.proposal.producer ?? fromCaption?.proposal.producer ?? null,
+    // Jahrgang im Bildtext genannt: gilt; sonst der vom Etikett – der wird bestätigt.
+    vintage_year: fromCaption?.proposal.vintage_year ?? recognition.proposal.vintage_year,
+  };
+  if (!proposal.name) {
     await sendMessage(chatId, "Ich konnte den Namen auf dem Etikett nicht lesen. Schreib mir den Wein bitte, z. B. <i>Pintia 2019 probiert, 4 Sterne</i>.");
     return;
   }
@@ -350,20 +395,23 @@ export async function startTastedFromPhoto(db: AdminClient, photoJobId: string, 
     flow: "tasted",
     step: "t_reading",
     origin: "photo",
-    proposal: recognition.proposal,
+    proposal,
     ...person,
     set: {},
     imageSides: recognition.imageSides,
+    ...(fromCaption ? fromTasting(fromCaption.tasting) : {}),
+    ...(fromCaption?.proposal.vintage_year != null ? { vintageConfirmed: true } : {}),
   };
-  const matched = { ...base, ...(await matchPatch(db, recognition.proposal)) };
+  const matched = { ...base, ...(await matchPatch(db, proposal)) };
   const job = await createTastedJob(db, chatId, { ...matched, step: nextTastedStep(matched) }, photoJob?.photo_paths ?? []);
   await ask(db, job, chatId);
 }
 
 /** Foto ohne klaren Hinweis: erst fragen – gekauft oder nur verkostet? */
-export async function askPhotoIntent(db: AdminClient, jobId: string, chatId: number, recognition: RecognitionResult) {
+export async function askPhotoIntent(db: AdminClient, jobId: string, chatId: number, recognition: RecognitionResult, caption?: string | null) {
   const state = {
     step: "intent",
+    ...(caption ? { caption } : {}),
     proposal: recognition.proposal,
     pending_recognition: recognition,
     recognition: { model: recognition.model, confidence: recognition.confidence, notes: recognition.notes, enriched_fields: [], sources: [] },
@@ -442,22 +490,12 @@ export async function processTastedText(jobId: string, chatId: number, text: str
     }
     const { data: job } = await db.from("ingest_jobs").select("*").eq("id", jobId).single();
     const current = stateOf(job!)!;
-    const set: TastedSet = {
-      ...(/^\d{4}-\d{2}-\d{2}$/.test(t.tasted_on) && t.tasted_on <= todayIso() ? { tastedOn: t.tasted_on } : {}),
-      ...(t.place.trim() ? { place: t.place.trim().slice(0, 120) } : {}),
-      ...(t.price > 0 ? { price: Math.round(t.price * 100) / 100, priceUnit: t.price_unit || "bottle", currency: t.currency || "CHF" } : {}),
-      ...(t.occasion.trim() ? { occasion: t.occasion.trim() } : {}),
-      ...(t.companions.trim() ? { companions: t.companions.trim() } : {}),
-      ...(t.note.trim() ? { note: t.note.trim() } : {}),
-    };
     const base: TastedState = {
       ...current,
       proposal,
-      set,
       // Im Text genannter Jahrgang gilt als bestätigt; sonst nachfragen.
       vintageConfirmed: proposal.vintage_year != null,
-      ...(t.rating >= 0 && isValidRating(t.rating) ? { rating: t.rating } : {}),
-      wantToBuy: t.want_to_buy,
+      ...fromTasting(t),
     };
     const matched = { ...base, ...(await matchPatch(db, proposal)) };
     const next: TastedState = { ...matched, step: nextTastedStep(matched) };
@@ -482,6 +520,8 @@ export async function processTastedText(jobId: string, chatId: number, text: str
 /** Ankündigung erkannt → für 30 Min. gilt das nächste Foto bzw. die nächste Nachricht als verkostet. */
 export async function maybeArmTasting(db: AdminClient, chatId: number, text: string) {
   if (!announcesTasting(text)) return false;
+  // Neues Anliegen: angefangene Rückfragen verwerfen.
+  await supersede(db, chatId, "text");
   await disarm(db, chatId);
   const person = await personFor(db, chatId);
   await createTastedJob(db, chatId, { flow: "tasted", step: "t_armed", origin: "text", proposal: emptyProposal(), ...person, set: {} });
@@ -539,6 +579,32 @@ export async function findTastedAwaitingText(db: AdminClient, chatId: number) {
 // ---------------------------------------------------------------------------
 // Textantworten
 
+/** Sterne als Antwort: „4“, „4,5“, „4.5 Sterne“. */
+export function parseRatingAnswer(text: string) {
+  const rating = Number(text.trim().replace(",", ".").replace(/\s*(sterne?|★)$/i, ""));
+  return text.trim() !== "" && isValidRating(rating) ? rating : null;
+}
+
+/**
+ * Passt der Text als Antwort auf die offene Rückfrage? „new“ = sieht nach einem neuen Anliegen
+ * aus (der Ablauf wird verworfen), sonst Antwort bzw. erneute Rückfrage.
+ */
+export function tastedAnswerFit(job: Pick<IngestJob, "extracted">, text: string): "answer" | "new" {
+  const s = stateOf(job);
+  switch (s?.step) {
+    case "t_vintage":
+      return parseVintageAnswer(text) !== undefined ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
+    case "t_rate":
+      return parseRatingAnswer(text) != null ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
+    case "t_input":
+      if (s.awaiting === "note") return "answer";
+      if (s.awaiting === "price") return !strongNewConcern(text) && parseEncounterPrice(text) ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
+      return strongNewConcern(text) ? "new" : "answer";
+    default:
+      return "answer";
+  }
+}
+
 export async function handleTastedText(db: AdminClient, job: IngestJob, chatId: number, text: string) {
   const s = stateOf(job)!;
   switch (s.step) {
@@ -548,16 +614,16 @@ export async function handleTastedText(db: AdminClient, job: IngestJob, chatId: 
     case "t_vintage": {
       const year = parseVintageAnswer(text);
       if (year === undefined) {
-        await sendMessage(chatId, "Schreib mir bitte nur die Jahreszahl (z. B. <i>2019</i>) – oder tippe „Ohne Jahrgang (NV)“.");
+        await sendMessage(chatId, "Schreib mir bitte nur die Jahreszahl (z. B. <i>2019</i>) – oder tippe „Ohne Jahrgang (NV)“.", cancelKeyboard(job.id, "drop"));
         return;
       }
       await step(db, job, chatId, "t_vintage", { proposal: { ...s.proposal, vintage_year: year }, vintageConfirmed: true });
       return;
     }
     case "t_rate": {
-      const rating = Number(text.trim().replace(",", ".").replace(/\s*(sterne?|★)$/i, ""));
-      if (!isValidRating(rating)) {
-        await sendMessage(chatId, "Tippe bitte die Sterne an oder schreib eine Zahl von 0 bis 5 (halbe Schritte, z. B. <i>4,5</i>).");
+      const rating = parseRatingAnswer(text);
+      if (rating == null) {
+        await sendMessage(chatId, "Tippe bitte die Sterne an oder schreib eine Zahl von 0 bis 5 (halbe Schritte, z. B. <i>4,5</i>).", cancelKeyboard(job.id, "drop"));
         return;
       }
       await step(db, job, chatId, "t_rate", { rating });
@@ -570,13 +636,13 @@ export async function handleTastedText(db: AdminClient, job: IngestJob, chatId: 
       if (field === "price") {
         const price = parseEncounterPrice(value);
         if (!price) {
-          await sendMessage(chatId, EXTRA_QUESTIONS.price);
+          await sendMessage(chatId, EXTRA_QUESTIONS.price, cancelKeyboard(job.id, "back"));
           return;
         }
         set = { price: price.price, priceUnit: price.unit, currency: price.currency };
       } else {
         if (!value || value.length > (field === "place" ? 120 : 500)) {
-          await sendMessage(chatId, EXTRA_QUESTIONS[field]);
+          await sendMessage(chatId, EXTRA_QUESTIONS[field], cancelKeyboard(job.id, "back"));
           return;
         }
         set = { [field]: value };
@@ -663,6 +729,20 @@ async function completeAfterSave(jobId: string, wineId: string, s: TastedState, 
   }
 }
 
+const RECENT_PLACES = 6;
+
+/** Die zuletzt verwendeten Orte (aus Verkostet-Einträgen), ohne Doppelte. */
+async function recentPlaces(db: AdminClient) {
+  const { data } = await db
+    .from("wine_encounters")
+    .select("tasted_on, place:places(name)")
+    .order("tasted_on", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(30);
+  const names = (data ?? []).map((e) => e.place?.name).filter((n): n is string => Boolean(n));
+  return [...new Set(names)].slice(0, RECENT_PLACES);
+}
+
 /** Freiwillige Angabe speichern (bestehender Eintrag über das gemeinsame Modul), zurück zu den Knöpfen. */
 async function saveExtra(db: AdminClient, job: IngestJob, chatId: number, from: TastedStep, set: TastedSet) {
   const s = stateOf(job)!;
@@ -683,7 +763,7 @@ async function saveExtra(db: AdminClient, job: IngestJob, chatId: number, from: 
     await sendMessage(chatId, `⚠️ ${e(result.error)}`);
     return;
   }
-  const next = await advance(db, job, from, { step: "t_extras", awaiting: undefined, set: { ...s.set, ...set } });
+  const next = await advance(db, job, from, { step: "t_extras", awaiting: undefined, placeOptions: undefined, set: { ...s.set, ...set } });
   if (!next) return;
   const state = stateOf(next)!;
   await sendMessage(chatId, savedText(state, false), extrasKeyboard(job.id, state, await otherPersons(db, s.personId)));
@@ -711,8 +791,20 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
   // Foto ohne Hinweis (Kauf-Eintrag im Schritt „intent“): gekauft oder verkostet?
   const purchase = jobState(job);
   if (job.source !== TASTED_SOURCE) {
-    if (purchase?.step !== "intent" || !purchase.pending_recognition || (parsed.action !== "buy" && parsed.action !== "tas")) {
+    if (purchase?.step !== "intent" || !purchase.pending_recognition || !["buy", "tas", "drop"].includes(parsed.action)) {
       await answerCallback(cb.id);
+      return;
+    }
+    if (parsed.action === "drop") {
+      const { data: dropped } = await db
+        .from("ingest_jobs")
+        .update({ status: "discarded", extracted: toJson({ ...purchase, step: "done" }) })
+        .eq("id", job.id)
+        .eq("extracted->>step", "intent")
+        .select("id");
+      await answerCallback(cb.id, dropped?.length ? "Abgebrochen" : undefined);
+      await clearKeyboard(chatId, messageId).catch(() => undefined);
+      if (dropped?.length) await sendMessage(chatId, "✖️ Abgebrochen – ich habe nichts gespeichert.");
       return;
     }
     const { data: claimed } = await db
@@ -729,7 +821,7 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
       await sendMessage(chatId, "🛒 Gekauft – ich ergänze die Angaben …");
       later(() => continuePhotoPurchase(createAdminClient(), job.id, chatId, recognition));
     } else {
-      await startTastedFromPhoto(db, job.id, chatId, recognition);
+      await startTastedFromPhoto(db, job.id, chatId, recognition, purchase.caption);
     }
     return;
   }
@@ -796,9 +888,25 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
     case "x": {
       const field = parsed.value as ExtraField;
       if (!(field in EXTRA_QUESTIONS)) return answerCallback(cb.id);
-      const next = await advance(db, job, ["t_extras", "t_input", "t_other"], { step: "t_input", awaiting: field });
+      // Ort: die letzten Orte zur Auswahl („im Restaurant“ ohne Namen).
+      const places = field === "place" ? await recentPlaces(db) : [];
+      const next = await advance(db, job, ["t_extras", "t_input", "t_other"], { step: "t_input", awaiting: field, placeOptions: places });
       await done();
-      if (next) await sendMessage(chatId, EXTRA_QUESTIONS[field]);
+      if (next) {
+        await sendMessage(chatId, places.length ? `${EXTRA_QUESTIONS.place} Tippe einen der letzten Orte an oder schreib den Namen.` : EXTRA_QUESTIONS[field], {
+          inline_keyboard: [
+            ...places.map((name, i) => [button(`📍 ${name}`, job.id, "plc", i)]),
+            [button("✖️ Abbrechen", job.id, "back")],
+          ],
+        });
+      }
+      return;
+    }
+    case "plc": {
+      const name = s.placeOptions?.[Number(parsed.value)];
+      if (s.step !== "t_input" || s.awaiting !== "place" || !name) return answerCallback(cb.id);
+      await done();
+      await saveExtra(db, job, chatId, "t_input", { place: name });
       return;
     }
     case "buyflag": {

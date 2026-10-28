@@ -9,6 +9,7 @@ import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery } from "@/lib/telegram/types";
 import { startTextIngest } from "@/lib/ingest/flow";
 import { askTextIntent, startTastedText } from "./tasted";
+import { PENDING_TTL_MS, supersede } from "./pending";
 import { answerChat } from "./agent";
 import { executeProposal } from "./execute";
 import { appendHistory, clearHistory, loadHistory } from "./history";
@@ -41,6 +42,8 @@ async function replyToChat(chatId: number, text: string, actor: Actor) {
     // „Verkostet“, unklar → erst fragen. Antwort nur kurz.
     if (reply.newEntry) {
       const entry = reply.newEntry;
+      // Neues Anliegen: angefangene Rückfragen verwerfen.
+      await supersede(db, chatId, "text");
       if (reply.text) await sendMessage(chatId, escapeHtml(reply.text));
       if (entry.intent === "bought") await startTextIngest(chatId, entry.description);
       else if (entry.intent === "tasted") await startTastedText(chatId, entry.description);
@@ -129,6 +132,13 @@ export async function handleChatCallback(cb: TgCallbackQuery) {
   }
 
   const question = cb.message?.text?.replace(/^❓\s*/, "").replace(/\?$/, "") ?? "Vorschlag";
+
+  // Schnelle Vorschläge (Öffnen, Füllstand, Sterne) stecken im Knopf: nach 30 Minuten abgelaufen.
+  if (cb.message?.date && cb.message.date * 1000 < Date.now() - PENDING_TTL_MS) {
+    await answerCallback(cb.id, "Dieser Vorschlag ist abgelaufen.");
+    await sendMessage(chatId, `⏱ Der Vorschlag „${escapeHtml(question)}“ ist abgelaufen – frag mich bitte nochmals.`);
+    return;
+  }
 
   if (cb.data === REJECT_DATA) {
     await answerCallback(cb.id, "Okay, ich lasse alles, wie es ist.");

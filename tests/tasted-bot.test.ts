@@ -65,6 +65,11 @@ function reset() {
   net.telegram.length = 0;
   net.fail = undefined;
   net.storage = new Map();
+  // Bildtext ohne weitere Angaben (nur „probiert“)
+  tastedReply = {
+    name: null, producer: null, vintage_year: null, type: null, country: null, region: null,
+    tasting: { tasted_on: "", place: "", price: 0, price_unit: "", currency: "", occasion: "", companions: "", note: "", rating: -1, want_to_buy: false },
+  };
   recognized = {
     name: "Pintia", producer: "Vega Sicilia", vintage_year: 2019, country: "Spanien", region: null, appellation: null, type: "red",
     grape_shares: [], alcohol_content: null, bottle_size_ml: 750, confidence: 0.95, uncertain_notes: null, vintage_certain: true, image_sides: ["front"],
@@ -129,7 +134,7 @@ test("Foto ohne Hinweis: zuerst Frage „Gekauft“ / „Nur verkostet“ – ni
   reset();
   await photoAlbum("ohne", null);
   assert.match(lastText(), /Hast du ihn gekauft \(Bestand\) oder nur verkostet\?/);
-  assert.deepEqual(lastButtons().map((b) => b.text), ["🛒 Gekauft", "🍷 Nur verkostet"]);
+  assert.deepEqual(lastButtons().map((b) => b.text), ["🛒 Gekauft", "🍷 Nur verkostet", "✖️ Abbrechen"]);
   assert.equal(net.tables.inventory_items.length + net.tables.wine_encounters.length, 0);
   await press("🍷 Nur verkostet");
   assert.equal(step(), "t_vintage", "weiter im Schnellablauf");

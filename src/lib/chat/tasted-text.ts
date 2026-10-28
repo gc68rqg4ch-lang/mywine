@@ -17,7 +17,7 @@ const norm = (text: string) =>
 
 /** Hinweise auf „nur verkostet“ (Restaurant, Bar, probiert, trinken gerade …). */
 const TASTED_HINTS =
-  /verkost|probier|degust|im restaurant|in der bar|in einer bar|im glas|glas(weise)?\b|beim essen|bei freunden|zum (znacht|zmittag|essen|apero)|trinken (gerade|grad|jetzt)|trinke (gerade|grad|jetzt)|wir trinken|getrunken (im|in|bei)|weinkarte|offen ausgeschenkt/;
+  /verkost|probier|degust|im restaurant|in der bar|in einer bar|im glas|glasweise|beim essen|bei freunden|zum (znacht|zmittag|essen|apero)|trinken (gerade|grad|jetzt)|trinke (gerade|grad|jetzt)|wir trinken|getrunken (im|in|bei)|weinkarte|offen ausgeschenkt/;
 /** Hinweise auf einen Kauf (Bestand). */
 const BOUGHT_HINTS =
   /gekauft|nachgekauft|eingekauft|bestellt|einbuchen|\bkaufte\b|\d+\s*(fl\b|fl\.|flaschen)|weinkeller|wohnzimmer|in den (keller|bestand)|haendler|handler|mövenpick|movenpick/;

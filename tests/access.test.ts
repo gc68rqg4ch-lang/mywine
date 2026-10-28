@@ -47,11 +47,13 @@ test("Unbekannte: nur die eigene ID, in Gruppen nichts, Knöpfe abgewiesen", asy
 });
 
 test("/id nennt ID und Person, /start begrüsst mit Menüleiste", async () => {
+  // Hinweis auf die neue Menüleiste (hier ohne gespeicherten Merker jedes Mal) überspringen.
+  const replies = () => calls.filter((c) => c.method === "sendMessage" && !String(c.body.text).startsWith("🆕"));
   calls.length = 0;
   await handleUpdate(msg(222, "/id") as never);
-  assert.match(String(calls[0].body.text), /Deine Telegram-ID ist <code>222<\/code> \(Sara\)/);
+  assert.match(String(replies()[0].body.text), /Deine Telegram-ID ist <code>222<\/code> \(Sara\)/);
   calls.length = 0;
   await handleUpdate(msg(111, "/start") as never);
-  assert.match(String(calls[0].body.text), /^Hallo Michel!/);
-  assert.ok((calls[0].body.reply_markup as { keyboard?: unknown }).keyboard, "Menüleiste");
+  assert.match(String(replies()[0].body.text), /^Hallo Michel!/);
+  assert.ok((replies()[0].body.reply_markup as { keyboard?: unknown }).keyboard, "Menüleiste");
 });

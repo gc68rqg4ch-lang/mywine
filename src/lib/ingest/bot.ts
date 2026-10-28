@@ -31,6 +31,7 @@ import {
 } from "./jobs";
 import {
   HELP_TEXT,
+  cancelKeyboard,
   parseCallbackData,
   parsePrice,
   parseQuantity,
@@ -46,6 +47,16 @@ import {
 } from "./recognize";
 import { tastedIntent } from "@/lib/chat/tasted-text";
 import {
+  cancelAll,
+  expireStale,
+  looksLikeNewConcern,
+  menuVersionSeen,
+  rememberMenuVersion,
+  strongNewConcern,
+  supersede,
+  touchFlow,
+} from "@/lib/chat/pending";
+import {
   armedForTasting,
   askPhotoIntent,
   askTextIntent,
@@ -56,6 +67,7 @@ import {
   isTastedCallback,
   maybeArmTasting,
   startTastedFromPhoto,
+  tastedAnswerFit,
 } from "@/lib/chat/tasted";
 import { parseVintageAnswer, type IngestState, type StorageRoom, type WineProposal } from "./schema";
 import { handleChatCallback, handleChatMessage, resetChat } from "@/lib/chat/handler";
@@ -68,7 +80,7 @@ import {
   handleTastingText,
   isTastingCallback,
 } from "@/lib/chat/tasting";
-import { MAIN_KEYBOARD, isMenuCallback, menuKeyFor } from "@/lib/chat/menu-view";
+import { MAIN_KEYBOARD, MENU_VERSION, isMenuCallback, menuKeyFor } from "@/lib/chat/menu-view";
 import { findWine, mergeWithKnownWine, resolveVendor } from "./wines";
 import { findAttachJob, handleAttachCallback, isAttachCallback, noteAttachPhoto } from "./attach";
 import {
@@ -76,7 +88,6 @@ import {
   advanceTo,
   confirmAndSave,
   continuePhotoPurchase,
-  discardDescribe,
   failJob,
   resolveGrapes,
   setProducer,
@@ -106,6 +117,7 @@ export async function handleUpdate(update: TgUpdate) {
       await answerCallback(cb.id, `Ich kenne dich noch nicht – deine Telegram-ID ist ${from.id}.`);
       return;
     }
+    if (cb.message) await preflight(cb.message.chat.id);
     await handleCallback(cb, actor);
     return;
   }
@@ -119,11 +131,31 @@ export async function handleUpdate(update: TgUpdate) {
     }
     return;
   }
+  await preflight(msg.chat.id);
 
   if (msg.photo?.length || msg.document) {
     await handlePhoto(msg);
   } else if (msg.text) {
     await handleText(msg, actor);
+  }
+}
+
+/**
+ * Vor jeder Nachricht und jedem Knopf: Rückfragen ohne Antwort seit 30 Minuten verwerfen
+ * (mit kurzer Meldung) und eine neue Menüleiste einmal mitschicken.
+ */
+async function preflight(chatId: number) {
+  const db = createAdminClient();
+  try {
+    await expireStale(db, chatId);
+    const seen = await menuVersionSeen(db, chatId);
+    if (seen.version < MENU_VERSION) {
+      await sendMessage(chatId, "🆕 Die Menüleiste unten ist neu – mit <b>🍽 Verkostet</b>.", MAIN_KEYBOARD);
+      await rememberMenuVersion(db, chatId, MENU_VERSION, seen.id);
+    }
+  } catch (error) {
+    // Nie die eigentliche Nachricht blockieren.
+    console.error("bot preflight failed", error);
   }
 }
 
@@ -155,9 +187,10 @@ async function handlePhoto(msg: TgMessage) {
     return;
   }
 
-  // Statt einer Beschreibung kommen Fotos: die wartende Text-Erfassung verfällt.
-  await discardDescribe(db, chatId);
+  // Neues Foto = neues Anliegen: angefangene Rückfragen (auch „Neuer Wein“) werden verworfen –
+  // ausser dem eigenen Album (weitere Fotos davon).
   const jobId = jobIdFor(chatId, msg.media_group_id ?? `m${msg.message_id}`);
+  await supersede(db, chatId, "photo", [jobId]);
   await ensureJob(db, jobId, chatId);
   await noteIntent(db, jobId, chatId, msg.caption);
 
@@ -251,11 +284,11 @@ export async function processJob(jobId: string, chatId: number) {
     const before = jobState(job);
     const intent = before?.intent ?? tastedIntent(before?.caption);
     if (intent === "tasted") {
-      await startTastedFromPhoto(db, jobId, chatId, recognition);
+      await startTastedFromPhoto(db, jobId, chatId, recognition, before?.caption);
       return;
     }
     if (intent == null) {
-      await askPhotoIntent(db, jobId, chatId, recognition);
+      await askPhotoIntent(db, jobId, chatId, recognition, before?.caption);
       return;
     }
     await continuePhotoPurchase(db, jobId, chatId, recognition);
@@ -344,6 +377,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       await sendMessage(
         chatId,
         "Was soll ich korrigieren? Antworte mit Freitext, z. B. <i>„Jahrgang 2019, Region Rioja, 14 %“</i>.",
+        cancelKeyboard(job.id),
       );
       return;
     }
@@ -477,13 +511,26 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
 async function handleText(msg: TgMessage, actor: Actor) {
   const chatId = msg.chat.id;
   const text = msg.text!.trim();
+  const db = createAdminClient();
 
-  // Feste Menüleiste unten geht immer vor (auch wenn ein Foto-Eintrag auf Text wartet).
+  // Feste Menüleiste unten und Befehle gehen immer vor – ein neues Anliegen verwirft
+  // angefangene Rückfragen.
   const menuKey = menuKeyFor(text);
   if (menuKey) {
+    await supersede(db, chatId, "menu");
     await sendMainMenu(chatId, menuKey);
     return;
   }
+  if (/^\/abbrechen\b/i.test(text)) {
+    const labels = await cancelAll(db, chatId);
+    await sendMessage(
+      chatId,
+      labels.length ? `✖️ Abgebrochen – ich habe ${labels.map(escapeHtml).join(", ")} verworfen.` : "Es ist nichts offen – ich habe nichts abgebrochen.",
+      MAIN_KEYBOARD,
+    );
+    return;
+  }
+  if (text.startsWith("/")) await supersede(db, chatId, "command");
   if (/^\/(reset|vergessen)\b/i.test(text)) {
     await resetChat(chatId);
     return;
@@ -498,26 +545,32 @@ async function handleText(msg: TgMessage, actor: Actor) {
   }
 
   // Wartet eine Verkostung oder ein Foto-Eintrag auf eine Eingabe (Eindrücke, Anzahl,
-  // Preis, …), geht der Text dorthin; sonst ist es eine Frage an den Chat-Modus.
-  const db = createAdminClient();
+  // Preis, …), geht der Text dorthin – passt er nicht und sieht nach einem neuen Anliegen
+  // aus, wird der alte Ablauf verworfen und der Text normal verarbeitet.
   const tasting = await findTastingAwaitingText(db, chatId);
   if (tasting) {
+    await touchFlow(db, tasting.id);
     await handleTastingText(tasting.id, tasting.draft, chatId, text);
     return;
   }
-  // Verkostet: wartet eine Antwort (Jahrgang, Sterne, Ort …) oder eine Ankündigung?
   const tasted = await findTastedAwaitingText(db, chatId);
   if (tasted) {
-    await handleTastedText(db, tasted, chatId, text);
-    return;
+    if (tastedAnswerFit(tasted, text) !== "new") {
+      await touchFlow(db, tasted.id);
+      await handleTastedText(db, tasted, chatId, text);
+      return;
+    }
+    await supersede(db, chatId, "text");
   }
   const job = await findJobAwaitingText(db, chatId);
   const state = job ? jobState(job) : null;
-  if (!job || !state) {
+  if (job && state && purchaseAnswerFit(state.step, text) === "new") await supersede(db, chatId, "text");
+  if (!job || !state || purchaseAnswerFit(state.step, text) === "new") {
     if (await maybeArmTasting(db, chatId, text)) return;
     await handleChatMessage(chatId, text, actor);
     return;
   }
+  await touchFlow(db, job.id);
 
   switch (state.step) {
     case "describe": {
@@ -535,7 +588,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "vintage": {
       const year = parseVintageAnswer(text);
       if (year === undefined) {
-        await sendMessage(chatId, "Schreib mir bitte nur die Jahreszahl (z. B. <i>2019</i>) – oder tippe „Ohne Jahrgang (NV)“.");
+        await sendMessage(chatId, "Schreib mir bitte nur die Jahreszahl (z. B. <i>2019</i>) – oder tippe „Ohne Jahrgang (NV)“.", cancelKeyboard(job.id));
         return;
       }
       await setVintage(db, job, chatId, year);
@@ -544,7 +597,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "producer": {
       const producer = text.replace(/\s+/g, " ").trim();
       if (producer.length < 2 || producer.length > 120) {
-        await sendMessage(chatId, "Schreib mir bitte den Namen des Produzenten.");
+        await sendMessage(chatId, "Schreib mir bitte den Namen des Produzenten.", cancelKeyboard(job.id));
         return;
       }
       await setProducer(db, job, chatId, producer);
@@ -558,7 +611,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "quantity": {
       const quantity = parseQuantity(text);
       if (!quantity) {
-        await sendMessage(chatId, "Schreib mir bitte eine Anzahl zwischen 1 und 999.");
+        await sendMessage(chatId, "Schreib mir bitte eine Anzahl zwischen 1 und 999.", cancelKeyboard(job.id));
         return;
       }
       await advanceTo(db, job, chatId, "quantity", { quantity });
@@ -567,7 +620,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "price": {
       const price = parsePrice(text);
       if (price == null) {
-        await sendMessage(chatId, "Schreib mir bitte einen Preis wie <i>24.50</i> – oder tippe „Überspringen“.");
+        await sendMessage(chatId, "Schreib mir bitte einen Preis wie <i>24.50</i> – oder tippe „Überspringen“.", cancelKeyboard(job.id));
         return;
       }
       await advanceTo(db, job, chatId, "price", { price });
@@ -576,7 +629,7 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "regular_price": {
       const regularPrice = parsePrice(text);
       if (regularPrice == null) {
-        await sendMessage(chatId, "Schreib mir bitte einen Preis wie <i>29.90</i> – oder tippe einen Knopf.");
+        await sendMessage(chatId, "Schreib mir bitte einen Preis wie <i>29.90</i> – oder tippe einen Knopf.", cancelKeyboard(job.id));
         return;
       }
       await advanceTo(db, job, chatId, "regular_price", { regular_price: regularPrice });
@@ -586,13 +639,38 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "vendor_new": {
       const name = text.replace(/\s+/g, " ").trim();
       if (name.length < 2 || name.length > 80) {
-        await sendMessage(chatId, "Schreib mir bitte den Namen des Händlers (2–80 Zeichen) – oder tippe „Überspringen“.");
+        await sendMessage(chatId, "Schreib mir bitte den Namen des Händlers (2–80 Zeichen) – oder tippe „Überspringen“.", cancelKeyboard(job.id));
         return;
       }
       const vendor = await resolveVendor(db, name);
       await advanceTo(db, job, chatId, ["vendor", "vendor_new"], { vendor_id: vendor.id, vendor_name: vendor.name });
       return;
     }
+  }
+}
+
+/**
+ * Passt der Text als Antwort auf die offene Rückfrage der Erfassung? „new“ = neues Anliegen
+ * (alter Ablauf wird verworfen), „answer“ = Antwort (bzw. erneute Rückfrage bei Unklarem).
+ */
+export function purchaseAnswerFit(step: IngestState["step"], text: string): "answer" | "new" {
+  switch (step) {
+    case "describe":
+    case "correcting":
+      return "answer";
+    case "producer":
+    case "vendor":
+    case "vendor_new":
+      return strongNewConcern(text) ? "new" : "answer";
+    case "vintage":
+      return parseVintageAnswer(text) !== undefined ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
+    case "quantity":
+      return !strongNewConcern(text) && parseQuantity(text) ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
+    case "price":
+    case "regular_price":
+      return !strongNewConcern(text) && parsePrice(text) != null ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
+    default:
+      return "answer";
   }
 }
 

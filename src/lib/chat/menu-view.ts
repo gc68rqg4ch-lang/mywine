@@ -431,6 +431,9 @@ export const MENU_TEXT = {
   newWine: "📷 Neuer Wein",
 } as const;
 
+/** Version der Menüleiste: erhöhen, wenn sie sich ändert – jeder Chat bekommt sie einmal neu. */
+export const MENU_VERSION = 2;
+
 export const MAIN_KEYBOARD: TgReplyKeyboard = {
   keyboard: [
     [{ text: MENU_TEXT.open }, { text: MENU_TEXT.stock }, { text: MENU_TEXT.ready }],
