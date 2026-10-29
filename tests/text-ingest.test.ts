@@ -48,7 +48,7 @@ import { processTextJob, saveJob, nextPurchaseStep } from "@/lib/ingest/flow";
 
 const empty = (purchase: Record<string, unknown>, wine: Record<string, unknown>) => ({
   name: null, producer: null, vintage_year: null, country: null, region: null, appellation: null, type: null,
-  grape_shares: [], alcohol_content: null, bottle_size_ml: 750, ...wine,
+  grape_shares: [], alcohol_content: null, bottle_size_ml: null, ...wine,
   purchase: { quantity: 0, storage_room: "", price: 0, regular_price: 0, vendor: "", gift: false, gift_from: "", ...purchase },
 });
 const job = (id: string) => net.tables.ingest_jobs.find((j) => j.id === id)!;
@@ -63,8 +63,10 @@ let st: IngestState;
 test("Reine Schrittfolge: nur Fehlendes, am Ende Zusammenfassung (Text) bzw. Speichern (Foto)", async () => {
   const s0 = { source: "text", proposal: { vintage_year: 2019, bottle_size_ml: 750 } } as IngestState;
   assert.equal(nextPurchaseStep(s0), "location");
-  // Grösse weder im Text noch auf dem Etikett: Rückfrage (keine Standardgrösse)
-  assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: 2019, bottle_size_ml: null } } as IngestState), "size");
+  // Grösse weder im Text noch auf dem Etikett: Wein ohne Frage (75 cl beim Speichern), Spirituose → Rückfrage
+  assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: 2019, bottle_size_ml: null } } as IngestState), "location");
+  assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: 2019, type: "red", bottle_size_ml: null } } as IngestState), "location");
+  assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: null, type: "spirit", bottle_size_ml: null } } as IngestState), "size");
 
   // Jahrgang ist Pflicht: fehlt er oder ist er unsicher, kommt er zuerst – ausser schon bestätigt (auch NV)
   assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: null } } as IngestState), "vintage");
@@ -105,6 +107,8 @@ test("A) Neuer Wein: Produzent, Herkunft, Trinkreife und Rebsorten per Recherche
   assert.equal(net.tables.vendors[0]?.name, "Mövenpick", "Händler erst beim Speichern angelegt");
   const item = net.tables.inventory_items[0];
   assert.deepEqual([item.quantity, item.purchase_price, item.regular_price, item.storage_room, item.vendor_id, item.vintage_year], [6, 66, 72, "Weinkeller", net.tables.vendors[0].id, 2019]);
+  assert.equal(item.bottle_size_ml, 750, "Wein-Text ohne Grösse: 75 cl, ohne Rückfrage");
+  assert.ok(!net.telegram.some((t) => /Wie gross ist die Flasche/.test(String(t.body.text))), "keine Grössenfrage bei Wein");
   assert.deepEqual([net.tables.wine_vintages[0]?.drink_from_year, net.tables.wine_vintages[0]?.drink_until_year], [2024, 2032]);
   assert.equal(rpcCalls.length, 1, "Rebsorten gespeichert");
   assert.equal(job("aaaaaaaa-0000-4000-8000-00000000000a").status, "confirmed");

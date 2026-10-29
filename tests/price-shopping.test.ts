@@ -655,3 +655,12 @@ test("Suchbegriffe: Marke schon im Namen → nicht nochmals voranstellen", () =>
   const noSize = googleQueries({ name: "Galliano Vanilla", producer: "Galliano", sizeMl: null });
   assert.deepEqual(noSize, { shopping: ["Galliano Vanilla"], search: ["Galliano Vanilla site:.ch"], brand: null });
 });
+
+test("Wein ohne Grösse: 75 cl gilt als bekannt (hartes Kriterium), Treffer direkt – keine Grössen-Rückfrage", async () => {
+  reset();
+  answers.set("Pintia 2019 75cl", [g("Pintia 2019 Vega Sicilia 75cl", "galaxus.ch", 64), g("Pintia 2019 Magnum 150cl", "coop.ch", 140)]);
+  judge = { Pintia: { v: "yes", vintage: 2019 } };
+  const { finding, diagnostics } = await researchPrice({ name: "Pintia", producer: "Vega Sicilia", type: "red", country: "Spanien", region: "Toro", appellation: null }, 2019, null, null, { db, ...keys("serper") });
+  assert.ok(finding.kind === "exact" && finding.amount === 64 && finding.sizeMl === 750, JSON.stringify(finding));
+  assert.equal(diagnostics.shopping!.candidates.find((c) => c.price === 140)?.verdict, "variant", "Magnum: andere Grösse");
+});

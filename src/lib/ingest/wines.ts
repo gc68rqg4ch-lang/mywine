@@ -3,7 +3,7 @@ import "server-only";
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { Tables } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
-import { grapeNames, type StorageRoom, type WineProposal } from "./schema";
+import { bottleSizeOf, grapeNames, type StorageRoom, type WineProposal } from "./schema";
 import { similarWines } from "./wine-names";
 
 type Wine = Tables<"wines">;
@@ -120,7 +120,7 @@ export async function createInventoryItem(
     .insert({
       wine_id: input.wineId,
       vintage_year: input.proposal.vintage_year,
-      bottle_size_ml: input.proposal.bottle_size_ml,
+      bottle_size_ml: bottleSizeOf(input.proposal),
       quantity: input.quantity,
       purchase_price: input.price,
       regular_price: input.regularPrice,

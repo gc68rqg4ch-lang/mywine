@@ -256,8 +256,8 @@ export function nextPurchaseStep(state: IngestState): IngestStep {
   if (state.kind_unsure) return "kind";
   if (state.proposal.type === "spirit" && state.spirit && !state.spirit.done) return "category_main";
   if (needsVintage(state)) return "vintage";
-  // Grösse nicht vom Etikett bzw. aus dem Text: fragen (keine Standardgrösse).
-  if (state.proposal.bottle_size_ml == null) return "size";
+  // Spirituose: Grösse nicht vom Etikett bzw. aus dem Text → fragen (keine Standardgrösse). Wein: 75 cl.
+  if (state.proposal.type === "spirit" && state.proposal.bottle_size_ml == null) return "size";
   if (state.storage_room === undefined) return "location";
   if (state.quantity === undefined) return "quantity";
   // Geschenk: nur noch „Von wem?“ (falls nicht schon bekannt) – kein Preis, Händler oder Kaufdatum.

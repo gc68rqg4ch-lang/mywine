@@ -358,11 +358,11 @@ export async function researchPrice(
     return null;
   });
   const result = shopping ?? (await researchPriceLegacy(wine, year, sizeMl, vendor, options));
-  return sizeMl == null ? { ...result, finding: sizeUnknownFinding(result.finding) } : result;
+  return sizeMl == null && wine.type === "spirit" ? { ...result, finding: sizeUnknownFinding(result.finding) } : result;
 }
 
 /**
- * Grösse der Flasche unbekannt (rein): ein Treffer wird nicht direkt gespeichert, sondern als
+ * Grösse der Spirituose unbekannt (rein): ein Treffer wird nicht direkt gespeichert, sondern als
  * Rückfrage mit der Grösse des Angebots („Gefunden: CHF 124.00 für 50 cl – stimmt die Grösse?“).
  */
 export function sizeUnknownFinding(f: PriceFinding): PriceFinding {
@@ -681,8 +681,9 @@ export async function researchPriceShopping(
 ): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics } | null> {
   const providers = await shoppingProviders(options);
   if (!providers.length) return null;
-  // Grösse unbekannt: kein hartes Kriterium; die Grösse des Angebots kommt als Rückfrage (researchPrice).
-  const size = sizeMl;
+  // Wein ohne Grösse: 75 cl (hartes Kriterium). Spirituose ohne Grösse: kein hartes Kriterium; die
+  // Grösse des Angebots kommt als Rückfrage (researchPrice).
+  const size = sizeMl ?? (wine.type === "spirit" ? null : standardSize(wine.type));
   const q = googleQueries({ name: wine.name, producer: wine.producer, year, sizeMl: size });
   const want = { name: wine.name, producer: wine.producer, year };
   const known = await loadMerchants(options.db);

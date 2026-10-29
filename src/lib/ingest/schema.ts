@@ -318,8 +318,9 @@ export function normalizeProposal(p: WineProposal, options: { spiritPossible?: b
     // Spirituosen (bzw. noch unklar, ob Spirituose) bis 100 % vol, Wein höchstens 25 %.
     alcohol_content:
       alcohol != null && alcohol > 0 && alcohol <= (p.type === "spirit" || options.spiritPossible ? 100 : 25) ? Math.round(alcohol * 10) / 10 : null,
-    // Keine Standardgrösse: nur was auf dem Etikett bzw. im Text steht (sonst Rückfrage).
-    bottle_size_ml: size != null && size >= 20 && size <= 30000 ? Math.round(size) : null,
+    // Grösse vom Etikett bzw. aus dem Text; sonst Wein 75 cl (der Normalfall), Spirituose bzw.
+    // unbekannte Art keine Annahme (Spirituose: Rückfrage).
+    bottle_size_ml: size != null && size >= 20 && size <= 30000 ? Math.round(size) : p.type && p.type !== "spirit" ? WINE_SIZE_ML : null,
   };
 }
 
@@ -333,6 +334,12 @@ export function needsVintage(state: Pick<IngestState, "proposal" | "vintage_unce
   if (state.proposal.type === "spirit") return false;
   return !state.vintage_confirmed && (state.proposal.vintage_year == null || state.vintage_uncertain === true);
 }
+
+/** Wein ohne lesbare bzw. genannte Grösse: 75 cl. */
+export const WINE_SIZE_ML = 750;
+
+/** Grösse zum Speichern: angegeben, sonst Wein 75 cl; Spirituose ohne Angabe null (wird erfragt). */
+export const bottleSizeOf = (p: Pick<WineProposal, "type" | "bottle_size_ml">) => p.bottle_size_ml ?? (p.type === "spirit" ? null : WINE_SIZE_ML);
 
 /**
  * Antwort auf die Grössenfrage: „50 cl“, „500 ml“, „0,5 l“, „0,7“, „1.5 Liter“; eine Zahl allein bis

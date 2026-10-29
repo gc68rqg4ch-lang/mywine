@@ -16,7 +16,11 @@ test("Keine Standardgrösse: Spirituose ohne lesbare Grösse bleibt ohne (Rückf
   const holz = normalizeProposal(p({ name: "Pflaumenbrand Holzfass", producer: "Urs Hecht", type: "spirit" }));
   assert.deepEqual([holz.name, holz.bottle_size_ml], ["Pflaumenbrand Holzfass", null]);
   assert.equal(normalizeProposal(p({ name: "Williamsbrand Liqueur", producer: "Urs Hecht", type: "spirit" })).name, "Williamsbrand Liqueur");
-  assert.equal(normalizeProposal(p({ name: "Pintia", producer: "Vega Sicilia", type: "red" })).bottle_size_ml, null, "auch Wein: keine 0,75 l");
+  // Wein ohne lesbare Grösse: 75 cl; mit «150 cl» auf dem Etikett: 1,5 l
+  assert.equal(normalizeProposal(p({ name: "Pintia", producer: "Vega Sicilia", type: "red" })).bottle_size_ml, 750);
+  assert.equal(normalizeProposal(p({ name: "Pintia", producer: "Vega Sicilia", type: "red", bottle_size_ml: 1500 })).bottle_size_ml, 1500);
+  for (const type of ["sparkling", "fortified", "sweet", "white", "rose"] as const) assert.equal(normalizeProposal(p({ name: "X", type })).bottle_size_ml, 750, type);
+  assert.equal(normalizeProposal(p({ name: "X", type: null })).bottle_size_ml, null, "Art unbekannt: keine Annahme");
   assert.equal(normalizeProposal(p({ name: "X", type: "spirit", bottle_size_ml: 500 })).bottle_size_ml, 500);
   // Alkohol nur vom Etikett: 0 = nicht lesbar → leer
   assert.equal(normalizeProposal(p({ name: "X", type: "spirit", alcohol_content: 0 })).alcohol_content, null);
