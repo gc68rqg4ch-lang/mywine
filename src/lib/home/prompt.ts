@@ -55,7 +55,7 @@ Stil:
 - Trinkvorschläge neutral formulieren, z. B. „für einen der nächsten Abende“ oder „wenn du Lust hast“, nicht „heute Abend“.
 
 Inhalt:
-- Nimm Bezug auf Wochentag oder Jahreszeit und auf den Keller: was über dem Höhepunkt ist oder jetzt getrunken werden sollte, was zuletzt dazukam, was diesen Monat getrunken wurde, lange offene Flaschen, Likörweine, die offen bald über der Zeit sind („offen gut bis …“, „bald trinken“, „über der Zeit“), offene Vorschläge zum Prüfen – wähle aus, was heute passt, nicht alles.
+- Nimm Bezug auf Wochentag oder Jahreszeit und auf den Keller: was über dem Höhepunkt ist oder jetzt getrunken werden sollte, was zuletzt dazukam, was diesen Monat getrunken wurde, lange offene Flaschen, Likörweine und Liköre, die offen bald über der Zeit sind („offen gut bis …“, „bald trinken“, „über der Zeit“), offene Vorschläge zum Prüfen – wähle aus, was heute passt, nicht alles.
 - Mach 1–3 konkrete Trinkvorschläge, passend zu den Vorlieben der Person (ihre Bewertungen, Stil hoch bewerteter Weine) und zur Jahreszeit.
 
 Ehrlichkeit:

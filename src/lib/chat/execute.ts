@@ -24,11 +24,11 @@ async function openItem(db: AdminClient, itemId: string) {
 const label = (r: { producer: string | null; name: string | null; vintage_year: number | null }) =>
   [r.producer, r.name, r.vintage_year].filter(Boolean).join(" ");
 
-/** Spirituose leer: Meldung mit Restbestand bzw. „letzte Flasche“. */
+/** Spirituose leer: Meldung mit Restbestand (keine Flasche rückt nach) bzw. „letzte Flasche“. */
 async function spiritEmpty(db: AdminClient, wineId: string, itemId?: string | null): Promise<ExecuteResult> {
   const result = await emptySpiritBottle(db, wineId, itemId);
   if (!result.ok) return { ok: false, text: result.error };
-  return { ok: true, text: plain(T.spiritEmptied(result.name, result.remaining)), itemId: result.nextId ?? undefined };
+  return { ok: true, text: plain(T.spiritEmptied(result.name, result.sealed, result.open)) };
 }
 
 /** Texte aus texts.ts sind HTML-sicher (escaped) – hier wieder als reiner Text (wird beim Senden escaped). */
@@ -46,7 +46,7 @@ export async function executeProposal(db: AdminClient, p: Proposal): Promise<Exe
     case "spiritEmpty":
       return spiritEmpty(db, p.wineId);
     case "fill": {
-      // Spirituose: 0 % = leer (nächste Flasche wird aktuell).
+      // Spirituose: 0 % = leer (getrunken, keine rückt nach).
       if (p.percent === 0) {
         const item = await openItem(db, p.itemId);
         if (item?.type === "spirit" && item.wine_id) return spiritEmpty(db, item.wine_id, p.itemId);
@@ -56,7 +56,7 @@ export async function executeProposal(db: AdminClient, p: Proposal): Promise<Exe
     }
     case "drunk": {
       const item = await openItem(db, p.itemId);
-      // Spirituose: leer – die nächste volle Flasche wird aktuell.
+      // Spirituose: leer – mit Restbestand in der Antwort.
       if (item?.type === "spirit" && item.wine_id) return spiritEmpty(db, item.wine_id, p.itemId);
       const { data, error } = await db
         .from("inventory_items")
@@ -70,10 +70,8 @@ export async function executeProposal(db: AdminClient, p: Proposal): Promise<Exe
       return { ok: true, text: `Ich habe ${label(item)} als ausgetrunken markiert. Zum Wohl!`, itemId: p.itemId };
     }
     case "open": {
-      // Spirituosen: kein „öffnen“ – es gibt immer eine aktuelle Flasche.
       const { data: batch } = await db.from("inventory_items").select("wine_id, wine:wines(type)").eq("id", p.itemId).maybeSingle();
       const type = (batch?.wine as { type?: string } | null)?.type;
-      if (type === "spirit") return { ok: false, text: plain(T.spiritNoOpen) };
       const { data: openId, error } = await db.rpc("open_bottle", {
         p_item_id: p.itemId,
         p_fill_level_percent: 100,
@@ -87,8 +85,8 @@ export async function executeProposal(db: AdminClient, p: Proposal): Promise<Exe
         throw error;
       }
       const item = openId ? await openItem(db, openId) : null;
-      // Likörwein: „offen gut bis 25.11.“ (Haltbarkeit fehlt noch → Schätzung nach Stil, Recherche ersetzt sie).
-      const until = type === "fortified" && batch?.wine_id ? keepUntil(todayIso(), await keepOnOpen(db, batch.wine_id)) : null;
+      // Likörwein bzw. Likör: „offen gut bis 25.11.“ (Haltbarkeit fehlt noch → Schätzung nach Stil, Recherche ersetzt sie).
+      const until = (type === "fortified" || type === "spirit") && batch?.wine_id ? keepUntil(todayIso(), await keepOnOpen(db, batch.wine_id)) : null;
       return { ok: true, text: `Ich habe ${item ? label(item) : "die Flasche"} geöffnet${until ? ` – offen gut bis ${shortDate(until)}` : ""}.`, itemId: openId ?? undefined };
     }
     case "rate": {

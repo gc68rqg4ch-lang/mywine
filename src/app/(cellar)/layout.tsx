@@ -9,7 +9,7 @@ import { getLocationFilter, withLocation } from "@/lib/location";
 export default async function CellarLayout({ children }: LayoutProps<"/">) {
   const [{ supabase, email, person }, location] = await Promise.all([getMemberSession(), getLocationFilter()]);
   const { count: openCount } = await withLocation(
-    // Offene Flaschen ohne Spirituosen (die haben nur eine aktuelle Flasche im Bestand).
+    // Offene Flaschen ohne Spirituosen (offene Spirituosen bleiben im Bestand).
     supabase.from("cellar_overview").select("inventory_item_id", { count: "exact", head: true }).eq("status", "open").or("type.is.null,type.neq.spirit"),
     location.filter,
   );

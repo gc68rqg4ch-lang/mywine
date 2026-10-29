@@ -180,8 +180,8 @@ export async function researchAndFillWine(
     filled.push(...spirit.filled);
     suggested += spirit.suggested;
   }
-  // Likörwein: Haltbarkeit offen (fehlt bzw. nur geschätzt → Quelle suchen; von Hand bleibt).
-  if (wine.type === "fortified") {
+  // Likörwein bzw. Likör: Haltbarkeit offen (fehlt bzw. nur geschätzt → Quelle suchen; von Hand bleibt).
+  if (wine.type === "fortified" || wine.type === "spirit") {
     const keep = await findAndStoreOpenKeep(db, wineId, { onlyIfEmpty: false });
     if (keep.result === "set" && keep.keep) filled.push(openKeepFilled(keep.keep));
   }

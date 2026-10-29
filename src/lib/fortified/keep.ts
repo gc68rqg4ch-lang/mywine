@@ -1,4 +1,6 @@
-// Likörweine (type fortified): wie lange eine offene Flasche gut bleibt (Kühlschrank, verschlossen).
+// Likörweine (type fortified) und Liköre (Spirituosen der Hauptkategorie Likör, auch deren
+// Unterkategorien): wie lange eine offene Flasche gut bleibt (verschlossen; Likörwein und
+// Sahnelikör im Kühlschrank). Andere Spirituosen (Whisky, Gin, Obstbrand …) haben keins.
 // wines.open_keep_days mit Herkunft open_keep_source (research / estimate / manual) und Notiz.
 // „Gut bis“ wird nie gespeichert: immer Öffnungsdatum + Tage. Rein, ohne DB.
 // Rangfolge wie beim Trinkfenster: manual nie automatisch überschreiben, research ersetzt
@@ -25,9 +27,38 @@ export const KEEP_STYLES = {
   vermouth: { label: "Wermut", days: 60 },
   vdn: { label: "Vin Doux Naturel/Banyuls/Maury", days: 30 },
   unknown: { label: "Stil unbekannt", days: 30 },
+  // Liköre (Spirituosen, Kategorie Likör)
+  liqueur_cream: { label: "Sahnelikör", days: 180 },
+  liqueur_fruit: { label: "Fruchtlikör", days: 365 },
+  liqueur_coffee: { label: "Kaffeelikör", days: 365 },
+  liqueur_nut: { label: "Nusslikör", days: 730 },
+  liqueur_herb: { label: "Kräuterlikör", days: 730 },
+  liqueur: { label: "Likör", days: 365 },
 } as const;
 export type KeepStyle = keyof typeof KEEP_STYLES;
 export const KEEP_STYLE_KEYS = Object.keys(KEEP_STYLES) as KeepStyle[];
+
+/** Stile der Likörweine bzw. der Liköre (für die Recherche). */
+export const WINE_KEEP_STYLES = KEEP_STYLE_KEYS.filter((k) => !k.startsWith("liqueur"));
+export const LIQUEUR_KEEP_STYLES = KEEP_STYLE_KEYS.filter((k) => k.startsWith("liqueur"));
+
+const fold = (s: string | null | undefined) => (s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+/** Likör (Hauptkategorie „Likör“)? Dann der Stil nach Unterkategorie; sonst null (kein „gut bis“). */
+export function liqueurStyle(mainCategory: string | null | undefined, subCategory?: string | null): KeepStyle | null {
+  if (!/^liko?e?r/.test(fold(mainCategory))) return null;
+  const sub = fold(subCategory);
+  if (/sahne|cream/.test(sub)) return "liqueur_cream";
+  if (/frucht|fruit/.test(sub)) return "liqueur_fruit";
+  if (/kaffee|coffee/.test(sub)) return "liqueur_coffee";
+  if (/nuss|nut/.test(sub)) return "liqueur_nut";
+  if (/krauter|herb/.test(sub)) return "liqueur_herb";
+  return "liqueur";
+}
+
+/** Gilt „offen gut bis“? Likörweine immer, Spirituosen nur in der Kategorie Likör. */
+export const keepApplies = (type: string | null | undefined, mainCategory?: string | null) =>
+  type === "fortified" || (type === "spirit" && liqueurStyle(mainCategory) != null);
 
 export type FoundKeep = { days: number; source: "research" | "estimate"; note: string | null };
 export type StoredKeep = { days: number | null; source: KeepSource | null };

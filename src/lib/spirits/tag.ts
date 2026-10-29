@@ -83,21 +83,42 @@ export function spiritMeta(e: { type: string | null; spirit?: SpiritTag | null }
   return [e.spirit.label, age ? `${age} ${age === 1 ? "Jahr" : "Jahre"}` : null];
 }
 
-/** Spirituose: Füllstand der aktuellen Flasche je Wein (aus offenen Zeilen; die niedrigste zählt). */
-export function currentFills(rows: { wine_id: string | null; status: string | null; type: string | null; fill_level_percent?: number | null }[]) {
-  const fills = new Map<string, number>();
+/** Offene Flaschen einer Spirituose je Wein: Anzahl, niedrigster Füllstand, früheste Öffnung. */
+export type OpenSpiritInfo = { open: number; fill: number | null; dateOpened: string | null };
+
+export function openSpiritInfo(rows: { wine_id: string | null; status: string | null; type: string | null; fill_level_percent?: number | null; date_opened?: string | null }[]) {
+  const info = new Map<string, OpenSpiritInfo>();
   for (const r of rows) {
-    if (r.type !== "spirit" || r.status !== "open" || !r.wine_id || r.fill_level_percent == null) continue;
-    fills.set(r.wine_id, Math.min(fills.get(r.wine_id) ?? 100, r.fill_level_percent));
+    if (r.type !== "spirit" || r.status !== "open" || !r.wine_id) continue;
+    const prev = info.get(r.wine_id) ?? { open: 0, fill: null, dateOpened: null };
+    const fill = r.fill_level_percent == null ? prev.fill : Math.min(prev.fill ?? 100, r.fill_level_percent);
+    const dateOpened = r.date_opened && (!prev.dateOpened || r.date_opened < prev.dateOpened) ? r.date_opened : prev.dateOpened;
+    info.set(r.wine_id, { open: prev.open + 1, fill, dateOpened });
   }
-  return fills;
+  return info;
 }
 
-/** „aktuelle ~40 %“ – bei 100 % (bzw. unbekannt) nichts. */
-export const currentFillNote = (fill: number | null | undefined) => (fill == null || fill >= 100 ? null : `aktuelle ~${fill} %`);
+/**
+ * Kartenzeile neben der Flaschenzahl: „1 offen ~40 %“ (2 Flaschen, eine offen) bzw. „offen ~40 %“
+ * (nur offene); bei 100 % ohne Füllstand; ohne offene nichts.
+ */
+export function spiritOpenNote(total: number, info: OpenSpiritInfo | undefined) {
+  if (!info?.open) return null;
+  const fill = info.fill != null && info.fill < 100 ? ` ~${info.fill} %` : "";
+  return `${info.open >= total ? "offen" : `${info.open} offen`}${fill}`;
+}
 
-/** Zählt eine Zeile zum Bestand (voll, bzw. aktuelle Flasche einer Spirituose)? */
+/** Zählt eine Zeile zum Bestand (voll, bzw. offene Flasche einer Spirituose)? */
 export const inStockRow = (r: { status: string | null; type: string | null }) => r.status === "sealed" || (r.status === "open" && r.type === "spirit");
 
 /** Offene Flasche im Sinn von „Offen“ (Reiter, Kachel): nur Wein, keine Spirituosen. */
 export const openWineRow = (r: { status: string | null; type: string | null }) => r.status === "open" && r.type !== "spirit";
+
+/** Nach „leer“: „als getrunken gebucht – noch 1 Flasche (zu).“ bzw. „… das war die letzte Flasche …“. */
+export function emptiedRest(sealed: number, open: number) {
+  const left = sealed + open;
+  if (!left) return "als getrunken gebucht – das war die letzte Flasche, nicht mehr im Bestand.";
+  const bottles = left === 1 ? "1 Flasche" : `${left} Flaschen`;
+  const state = !open ? "zu" : open === left ? "offen" : `${open} offen`;
+  return `als getrunken gebucht – noch ${bottles} (${state}).`;
+}

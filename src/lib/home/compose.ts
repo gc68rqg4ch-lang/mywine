@@ -1,7 +1,7 @@
 // Startseite (rein): aus den geladenen Daten die Teile für Kacheln, Ersatztext und Prompt.
 
-import { keepLine } from "@/lib/fortified/keep";
-import { sameZurichMonth, zurichParts } from "./dates";
+import { keepLine, keepStatus } from "@/lib/fortified/keep";
+import { sameZurichMonth, zurichDay, zurichParts } from "./dates";
 import type { FallbackInput } from "./fallback";
 import { buildRefs, plainNote, type WineRef } from "./note";
 import { recentNotes, type NoteRow, type PromptInput } from "./prompt";
@@ -13,7 +13,12 @@ export type NoteContext = { fallback: FallbackInput; prompt: Omit<PromptInput, "
 export function noteContext(data: HomeInput, person: string | null, now: Date | number): NoteContext {
   const p = zurichParts(now);
   // Trinkreife und Trinkvorschläge (auch im Tagestext) nur Wein – Spirituosen zählen nur im Bestand.
-  const wineStock = data.stock.filter((s) => s.type !== "spirit");
+  // Ausnahme: offene Liköre, die bald (bzw. schon) über der Zeit sind – die darf Antoine erwähnen.
+  const dueLiqueurs = data.stock
+    .filter((s) => s.type === "spirit" && s.spiritOpen && s.keepDays != null)
+    .filter((s) => (keepStatus(s.dateOpened ? zurichDay(s.dateOpened) : null, s.keepDays, p.date)?.status ?? "ok") !== "ok")
+    .map((s) => ({ ...s, status: "open" as const }));
+  const wineStock = [...data.stock.filter((s) => s.type !== "spirit"), ...dueLiqueurs];
   const units = stockUnits(wineStock, p.year);
   const totals = stockTotals(data.stock);
   // Likörweine: „offen gut bis …“ (mit „bald trinken“ bzw. „über der Zeit“).

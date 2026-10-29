@@ -126,7 +126,7 @@ export function BatchResearch({
         {skipped
           ? `Nichts zu tun – ${skipped === 1 ? "1 Wein wurde" : `${skipped} Weine wurden`} in den letzten 12 Monaten schon recherchiert.`
           : mode === "keep"
-            ? "Alle Likörweine im Bestand haben eine Haltbarkeit offen. 🎉"
+            ? "Alle Likörweine und Liköre im Bestand haben eine Haltbarkeit offen. 🎉"
             : mode === "window"
             ? "Alle Jahrgänge im Bestand haben ein Trinkfenster. 🎉"
             : taste === "only"

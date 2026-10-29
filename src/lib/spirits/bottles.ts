@@ -1,107 +1,106 @@
 import "server-only";
 
-// Spirituosen kennen kein „offen“ wie Wein: Im Bestand ist je Spirituose (und Flaschengrösse)
-// genau eine Flasche die „aktuelle“ (status open + Füllstand), die übrigen sind voll (sealed);
-// leer = drunk. Nach dem Einbuchen wird eine volle aktuell (100 %), eine vorhandene bleibt.
-// „Leer“ (auch Füllstand 0 %) bucht die aktuelle als getrunken und macht die nächste volle zur
-// aktuellen – atomar über die DB-Funktion spirit_bottle_empty; ohne Migration Schritt für Schritt.
+// Spirituosen öffnet man von Hand (open_bottle wie bei Wein): Alle Flaschen bleiben zu, bis man
+// eine öffnet. Eine offene Spirituose hat Öffnungsdatum und Füllstand, bleibt im Bestand und
+// erscheint nie unter „Offen“. „Leer“ (auch Füllstand 0 %) bucht sie als getrunken – es rückt
+// keine nächste Flasche nach (DB-Funktion spirit_bottle_empty; ohne sie Schritt für Schritt).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { applyEdit } from "@/lib/edit/edit";
 import { NOTHING } from "@/lib/edit/helpers";
-import { todayIso } from "@/lib/format";
 
 type Db = SupabaseClient<Database>;
 
-/** DB-Funktion fehlt (Migration noch nicht eingespielt). */
+/** DB-Funktion fehlt? */
 const missingFunction = (error: { code?: string; message?: string } | null) =>
   !!error && (["PGRST202", "42883"].includes(error.code ?? "") || /Could not find the function/i.test(error.message ?? ""));
 
-export type CurrentBottle = { itemId: string; fill: number | null; sizeMl: number | null };
+export type OpenSpiritBottle = { itemId: string; fill: number | null; sizeMl: number | null; dateOpened: string | null };
 
-/** Aktuelle Flasche(n) einer Spirituose (älteste zuerst). */
-export async function currentBottles(db: Db, wineId: string): Promise<CurrentBottle[]> {
+/** Offene Flaschen einer Spirituose (zuerst geöffnete zuerst). */
+export async function openSpiritBottles(db: Db, wineId: string): Promise<OpenSpiritBottle[]> {
   const { data, error } = await db
     .from("cellar_overview")
-    .select("inventory_item_id, fill_level_percent, bottle_size_ml")
+    .select("inventory_item_id, fill_level_percent, bottle_size_ml, date_opened")
     .eq("wine_id", wineId)
     .eq("status", "open")
     .order("date_opened", { ascending: true, nullsFirst: false });
   if (error) throw error;
-  return (data ?? []).flatMap((r) => (r.inventory_item_id ? [{ itemId: r.inventory_item_id, fill: r.fill_level_percent, sizeMl: r.bottle_size_ml }] : []));
+  return (data ?? []).flatMap((r) =>
+    r.inventory_item_id ? [{ itemId: r.inventory_item_id, fill: r.fill_level_percent, sizeMl: r.bottle_size_ml, dateOpened: r.date_opened }] : [],
+  );
 }
 
-/** Bestand einer Spirituose: volle plus aktuelle Flaschen. */
-async function remainingBottles(db: Db, wineId: string) {
+/** Bestand einer Spirituose: volle und offene Flaschen. */
+export async function spiritStock(db: Db, wineId: string) {
   const { data, error } = await db.from("inventory_items").select("status, quantity").eq("wine_id", wineId).in("status", ["sealed", "open"]);
   if (error) throw error;
-  return (data ?? []).reduce((n, r) => n + (r.status === "sealed" ? r.quantity : 1), 0);
+  const rows = data ?? [];
+  return {
+    sealed: rows.filter((r) => r.status === "sealed").reduce((n, r) => n + r.quantity, 0),
+    open: rows.filter((r) => r.status === "open").length,
+  };
 }
 
-/**
- * Sicherstellen, dass es eine aktuelle Flasche gibt (z. B. nach dem Einbuchen); gibt ihre ID zurück
- * (null = keine Spirituose bzw. keine Flasche). Eine vorhandene aktuelle bleibt unverändert.
- */
-export async function ensureSpiritCurrent(db: Db, wineId: string, sizeMl?: number | null): Promise<string | null> {
-  const { data, error } = await db.rpc("ensure_spirit_current", { p_wine_id: wineId, ...(sizeMl != null ? { p_bottle_size_ml: sizeMl } : {}) });
-  if (!error) return (data as string | null) ?? null;
-  if (!missingFunction(error)) throw error;
-  // Ohne Migration: gleiche Regeln, Schritt für Schritt.
-  const { data: wine, error: wineError } = await db.from("wines").select("type").eq("id", wineId).maybeSingle();
-  if (wineError) throw wineError;
-  if (wine?.type !== "spirit") return null;
-  const current = (await currentBottles(db, wineId)).find((b) => sizeMl == null || b.sizeMl === sizeMl);
-  if (current) return current.itemId;
-  let q = db.from("inventory_items").select("id, bottle_size_ml").eq("wine_id", wineId).eq("status", "sealed").gt("quantity", 0);
-  if (sizeMl != null) q = q.eq("bottle_size_ml", sizeMl);
-  const { data: batches, error: batchError } = await q.order("purchased_at", { ascending: true, nullsFirst: true }).limit(1);
-  if (batchError) throw batchError;
-  if (!batches?.length) return null;
-  const { data: openId, error: openError } = await db.rpc("open_bottle", { p_item_id: batches[0].id, p_fill_level_percent: 100, p_date_opened: todayIso() });
-  if (openError) throw openError;
-  return openId ?? null;
+export type EmptyResult =
+  | { ok: true; name: string; sealed: number; open: number }
+  | { ok: false; error: string; /** Mehrere offene Flaschen: welche? */ choices?: OpenSpiritBottle[] };
+
+/** Welche offene Flasche? Angegeben, sonst die einzige offene. */
+async function pickOpen(db: Db, wineId: string, name: string, itemId?: string | null): Promise<{ id: string } | { ok: false; error: string; choices?: OpenSpiritBottle[] }> {
+  if (itemId) return { id: itemId };
+  const open = await openSpiritBottles(db, wineId);
+  if (open.length === 1) return { id: open[0].itemId };
+  if (!open.length) return { ok: false, error: `Von ${name} ist gerade keine Flasche offen – nichts geändert.` };
+  return { ok: false, error: `Von ${name} sind ${open.length} Flaschen offen – welche meinst du?`, choices: open };
 }
 
-export type EmptyResult = { ok: true; name: string; remaining: number; nextId: string | null } | { ok: false; error: string };
-
-/** Aktuelle Flasche leer: getrunken, die nächste volle wird aktuell (100 %). */
+/** Offene Flasche leer: getrunken (Füllstand 0). Keine nächste Flasche rückt nach. */
 export async function emptySpiritBottle(db: Db, wineId: string, itemId?: string | null): Promise<EmptyResult> {
   const { data: wine, error: wineError } = await db.from("wines").select("name, type").eq("id", wineId).maybeSingle();
   if (wineError) throw wineError;
   if (!wine || wine.type !== "spirit") return { ok: false, error: "Das ist keine Spirituose – nichts geändert." };
-  const id = itemId ?? (await ensureSpiritCurrent(db, wineId));
-  if (!id) return { ok: false, error: "Von dieser Spirituose ist keine Flasche mehr im Bestand – nichts geändert." };
+  const picked = await pickOpen(db, wineId, wine.name, itemId);
+  if (!("id" in picked)) return picked;
 
-  const { data, error } = await db.rpc("spirit_bottle_empty", { p_item_id: id });
+  const { data, error } = await db.rpc("spirit_bottle_empty", { p_item_id: picked.id });
   if (!error) {
-    const r = (data ?? {}) as { next_id?: string | null; remaining?: number };
-    return { ok: true, name: wine.name, remaining: Number(r.remaining ?? 0), nextId: r.next_id ?? null };
+    // Alte DB-Funktion (vor der Migration) öffnet die nächste Flasche gleich mit – wieder schliessen.
+    const next = (data as { next_id?: string | null } | null)?.next_id;
+    if (next) await closeAgain(db, next);
+    return { ok: true, name: wine.name, ...(await spiritStock(db, wineId)) };
   }
-  if (error.code === "22023" || error.code === "P0002") return { ok: false, error: "Diese Flasche ist nicht mehr die aktuelle – nichts geändert." };
+  if (error.code === "22023" || error.code === "P0002") return { ok: false, error: "Diese Flasche ist nicht mehr offen – nichts geändert." };
   if (!missingFunction(error)) throw error;
-  // Ohne Migration: leer buchen, dann die nächste aktuell.
-  const { data: size } = await db.from("inventory_items").select("bottle_size_ml").eq("id", id).maybeSingle();
-  const { data: updated, error: updateError } = await db.from("inventory_items").update({ status: "drunk" }).eq("id", id).eq("status", "open").select("id");
+  const { data: updated, error: updateError } = await db.from("inventory_items").update({ status: "drunk" }).eq("id", picked.id).eq("status", "open").select("id");
   if (updateError) throw updateError;
-  if (!updated?.length) return { ok: false, error: "Diese Flasche ist nicht mehr die aktuelle – nichts geändert." };
-  await db.from("open_bottle_details").update({ fill_level_percent: 0 }).eq("inventory_item_id", id);
-  const nextId = await ensureSpiritCurrent(db, wineId, size?.bottle_size_ml ?? null);
-  return { ok: true, name: wine.name, remaining: await remainingBottles(db, wineId), nextId };
+  if (!updated?.length) return { ok: false, error: "Diese Flasche ist nicht mehr offen – nichts geändert." };
+  await db.from("open_bottle_details").update({ fill_level_percent: 0 }).eq("inventory_item_id", picked.id);
+  return { ok: true, name: wine.name, ...(await spiritStock(db, wineId)) };
 }
 
-export type FillResult = { ok: true; fill: number; emptied?: EmptyResult & { ok: true } } | { ok: false; error: string };
+/** Von der alten DB-Funktion automatisch geöffnete Flasche wieder zu (bleibt als eigene Charge). */
+async function closeAgain(db: Db, itemId: string) {
+  const { error } = await db.from("inventory_items").update({ status: "sealed" }).eq("id", itemId).eq("status", "open");
+  if (error) throw error;
+  await db.from("open_bottle_details").delete().eq("inventory_item_id", itemId);
+}
 
-/** Füllstand der aktuellen Flasche setzen (0 % = leer). */
+export type FillResult = { ok: true; fill: number; emptied?: EmptyResult & { ok: true } } | { ok: false; error: string; choices?: OpenSpiritBottle[] };
+
+/** Füllstand einer offenen Flasche setzen (0 % = leer). */
 export async function setSpiritFill(db: Db, wineId: string, percent: number, itemId?: string | null): Promise<FillResult> {
   if (!Number.isInteger(percent) || percent < 0 || percent > 100) return { ok: false, error: "Füllstand bitte zwischen 0 und 100 %." };
   if (percent === 0) {
     const emptied = await emptySpiritBottle(db, wineId, itemId);
     return emptied.ok ? { ok: true, fill: 0, emptied } : emptied;
   }
-  const id = itemId ?? (await ensureSpiritCurrent(db, wineId));
-  if (!id) return { ok: false, error: "Von dieser Spirituose ist keine Flasche mehr im Bestand – nichts geändert." };
-  const result = await applyEdit(db, { kind: "openBottle", itemId: id, fill: percent });
+  const { data: wine, error } = await db.from("wines").select("name").eq("id", wineId).maybeSingle();
+  if (error) throw error;
+  const picked = await pickOpen(db, wineId, wine?.name ?? "dieser Spirituose", itemId);
+  if (!("id" in picked)) return picked;
+  const result = await applyEdit(db, { kind: "openBottle", itemId: picked.id, fill: percent });
   // „Nichts zu ändern“ (gleicher Wert) gilt als erledigt.
   if (!result.ok && result.error !== NOTHING) return { ok: false, error: result.error };
   return { ok: true, fill: percent };

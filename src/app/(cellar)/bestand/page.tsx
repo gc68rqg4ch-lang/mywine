@@ -33,7 +33,10 @@ import { getLocationFilter, withLocation } from "@/lib/location";
 import { newestVintage } from "@/lib/media/pick";
 import { loadLabelPhotos } from "@/lib/media/store";
 import { loadSpirits } from "@/lib/spirits/load";
-import { currentFillNote, currentFills, inStockRow, openWineRow, spiritMeta, withSpiritTags } from "@/lib/spirits/tag";
+import { inStockRow, openSpiritInfo, openWineRow, spiritMeta, spiritOpenNote, withSpiritTags } from "@/lib/spirits/tag";
+import { KeepBadge } from "@/components/keep-badge";
+import { keepStatus } from "@/lib/fortified/keep";
+import { loadOpenKeep } from "@/lib/fortified/store";
 
 export const metadata: Metadata = { title: "Bestand" };
 
@@ -105,12 +108,15 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
 
   const totals = cellarTotals(wines);
   const drink = drinkCounts(wines);
-  // Bestandswert: die aktuelle Flasche einer Spirituose zählt wie eine volle.
+  // Bestandswert: eine offene Spirituose zählt wie eine volle.
   const sealedItems = (items.data ?? []).filter(inStockRow);
-  const fills = currentFills(items.data ?? []);
+  const openSpirits = openSpiritInfo(items.data ?? []);
+  // Liköre mit offener Flasche: „offen gut bis“.
+  const keep = await loadOpenKeep(supabase, [...openSpirits.keys()]);
+  const today = todayIso();
   const valuePaid = sealedItems.reduce((s, i) => s + (i.stock_value ?? 0), 0);
   const valueRegular = sealedItems.reduce((s, i) => s + (i.stock_value_regular ?? 0), 0);
-  // Offen: nur Wein (Spirituosen haben eine aktuelle Flasche, kein „offen“).
+  // Offen: nur Wein (offene Spirituosen bleiben im Bestand).
   const openItems = (items.data ?? [])
     .filter(openWineRow)
     .sort((a, b) => (a.date_opened ?? "9999").localeCompare(b.date_opened ?? "9999"));
@@ -201,12 +207,17 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
             meta={[...spiritMeta(wine), formatVintages(vintages), originLabel(wine)]}
             photo={photo(wine.wine_id, newestVintage(vintages))}
             drink={drinkBadges(wine, vintages, thisYear)}
+            extra={
+              wine.type === "spirit" && keep.has(wine.wine_id) ? (
+                <KeepBadge status={keepStatus(openSpirits.get(wine.wine_id)?.dateOpened, keep.get(wine.wine_id)?.days, today)} />
+              ) : undefined
+            }
             aside={
               <BottleCount
                 bottles={bottles}
                 note={
                   wine.type === "spirit"
-                    ? currentFillNote(fills.get(wine.wine_id))
+                    ? spiritOpenNote(bottles, openSpirits.get(wine.wine_id))
                     : wine.open > 0 && ["typ", "land", "rebsorte"].includes(state.groupBy)
                       ? `+${wine.open} offen`
                       : null

@@ -22,8 +22,10 @@ export type StockItem = {
   purchasedAt: string | null;
   drinkFrom: number | null;
   drinkUntil: number | null;
-  /** Likörwein: Haltbarkeit offen in Tagen (gut bis = Öffnungsdatum + Tage). */
+  /** Likörwein bzw. Likör: Haltbarkeit offen in Tagen (gut bis = Öffnungsdatum + Tage). */
   keepDays?: number | null;
+  /** Spirituose, eigentlich offen (zählt im Bestand wie eine volle, status „sealed“). */
+  spiritOpen?: boolean;
   /** Lagerort (für den gewählten Lagerort in den Kacheln). */
   house?: string | null;
   room?: string | null;
@@ -155,7 +157,7 @@ export function openBottles(stock: StockItem[], today: string) {
     .map((s) => ({
       ...s,
       days: s.dateOpened ? Math.max(0, Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${zurichDay(s.dateOpened)}T12:00:00Z`)) / 86_400_000)) : null,
-      keep: s.type === "fortified" ? keepStatus(s.dateOpened ? zurichDay(s.dateOpened) : null, s.keepDays, today) : null,
+      keep: s.keepDays != null ? keepStatus(s.dateOpened ? zurichDay(s.dateOpened) : null, s.keepDays, today) : null,
     }))
     .sort((a, b) => (a.dateOpened ?? "9999").localeCompare(b.dateOpened ?? "9999"));
 }

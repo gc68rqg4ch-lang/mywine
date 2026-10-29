@@ -11,9 +11,9 @@ export type Proposal =
   | { kind: "open"; itemId: string }
   | { kind: "drunk"; itemId: string }
   | { kind: "rate"; wineId: string; vintageYear: number | null; personKey: string; rating: number }
-  /** Spirituose: Füllstand der aktuellen Flasche (0 = leer). */
+  /** Spirituose: Füllstand der (einzigen) offenen Flasche (0 = leer); Knöpfe älterer Nachrichten. */
   | { kind: "spiritFill"; wineId: string; percent: number }
-  /** Spirituose: aktuelle Flasche leer, die nächste wird aktuell. */
+  /** Spirituose: die (einzige) offene Flasche leer; Knöpfe älterer Nachrichten. */
   | { kind: "spiritEmpty"; wineId: string };
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";

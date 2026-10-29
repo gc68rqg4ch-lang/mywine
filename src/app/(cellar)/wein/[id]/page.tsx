@@ -38,10 +38,11 @@ import { EditUnit, EditUnits } from "@/components/edit-unit";
 import { SPIRIT_DETAIL_FIELDS, WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, giftLabel, grapeLine, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
 import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
-import { SpiritBottle } from "./spirit-bottle";
+import { SpiritBottle, SpiritOpen } from "./spirit-bottle";
+import { spiritOpenNote } from "@/lib/spirits/tag";
 import { KeepEdit } from "./keep-edit";
 import { KeepBadge } from "@/components/keep-badge";
-import { KEEP_SOURCE_LABELS, asKeepSource, keepStatus, keepText } from "@/lib/fortified/keep";
+import { KEEP_SOURCE_LABELS, asKeepSource, keepApplies, keepStatus, keepText } from "@/lib/fortified/keep";
 import { DocumentClip } from "./documents";
 import { BatchForm, WineCardForm, type EditBatch } from "./edit-sections";
 import { NotesField } from "./notes-field";
@@ -217,9 +218,10 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   // Spirituose: Kategorie (Haupt › Unter) und eigene Angaben; ohne Rebsorten, Trinkreife, WSET.
   const spirit = wine.type === "spirit";
   const spiritFields = toSpiritFields(wine as unknown as Record<string, unknown>);
-  const spiritCategory = spirit ? categoryLabel(categoryPath(await loadSpiritCategories(supabase), spiritFields.categoryId)) : null;
-  // Likörwein: Haltbarkeit offen (vor der Migration fehlen die Spalten – dann keine).
-  const fortified = wine.type === "fortified";
+  const spiritPath = spirit ? categoryPath(await loadSpiritCategories(supabase), spiritFields.categoryId) : null;
+  const spiritCategory = spiritPath ? categoryLabel(spiritPath) : null;
+  // Likörwein bzw. Likör (Spirituose der Kategorie Likör): Haltbarkeit offen.
+  const fortified = keepApplies(wine.type, spiritPath?.main?.name);
   const keepRow = wine as { open_keep_days?: number | null; open_keep_source?: string | null; open_keep_note?: string | null };
   const keepDays = fortified ? (keepRow.open_keep_days ?? null) : null;
   const keepSource = asKeepSource(keepRow.open_keep_source);
@@ -239,8 +241,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     .filter((i) => i.status === "drunk")
     .sort((a, b) => (b.drunk_at ?? "").localeCompare(a.drunk_at ?? ""));
   const sealedCount = sealed.reduce((s, i) => s + i.quantity, 0);
-  // Spirituose: die aktuelle Flasche zählt wie eine volle.
-  const current = spirit ? open[0] : undefined;
+  // Spirituose: offene Flaschen bleiben im Bestand und zählen wie volle.
   const bottleCount = spirit ? sealedCount + open.length : sealedCount;
   const place = (i: { storage_room: string | null }) => i.storage_room ?? "ohne Lagerort";
   const priceOf = (i: (typeof inVintage)[number]): PriceInfo => ({
@@ -275,11 +276,25 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   // Spalte 1: offene Flaschen, Bestand (Chargen), Flasche öffnen, getrunkene – je mit ✏️.
   const openColumn = (
     <div className="wine-col wine-col-open">
-      {/* Spirituose: keine „offenen“ Flaschen, sondern eine aktuelle mit Füllstand. */}
-      {spirit && current && (
-        <EditUnit id={`item:${current.inventory_item_id}`} label={`Aktuelle Flasche (${place(current)})`} className="bottle-unit" form={batchForm(current)}>
-          <SpiritBottle key={current.inventory_item_id} wineId={wine.id} fill={current.fill_level_percent} bottles={bottleCount} />
-        </EditUnit>
+      {/* Spirituose: je offene Flasche eine Karte (Füllstand, leer); sonst bzw. dazu „Flasche öffnen“. */}
+      {spirit &&
+        open.map((o) => (
+          <EditUnit key={o.inventory_item_id} id={`item:${o.inventory_item_id}`} label={`Offene Flasche (${place(o)})`} className="bottle-unit" form={batchForm(o)}>
+            <SpiritBottle
+              key={`${o.inventory_item_id}:${o.fill_level_percent}`}
+              wineId={wine.id}
+              itemId={o.inventory_item_id}
+              fill={o.fill_level_percent}
+              openedOn={[o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)}` : null, place(o)].filter(Boolean).join(" · ") || null}
+              keep={fortified && keepStatus(o.date_opened, keepDays, today) ? <KeepBadge status={keepStatus(o.date_opened, keepDays, today)} /> : undefined}
+            />
+          </EditUnit>
+        ))}
+      {spirit && charges.length > 0 && (
+        <SpiritOpen
+          charges={charges.map((c) => ({ itemId: c.itemId, label: c.label }))}
+          openFill={open.length ? Math.min(...open.map((o) => o.fill_level_percent ?? 100)) : undefined}
+        />
       )}
       {/* Offene Flaschen zuerst – die trinkt man als Nächstes. */}
       {!spirit && open.length > 0 && (
@@ -595,7 +610,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
               <span className="tile-big">
                 {bottleCount} <span>Fl.</span>
               </span>
-              {!spirit && open.length > 0 && <span className="muted">+{open.length} offen</span>}
+              {open.length > 0 && <span className="muted">{spirit ? spiritOpenNote(bottleCount, { open: open.length, fill: null, dateOpened: null }) : `+${open.length} offen`}</span>}
               <DocumentClip key={`${year}:${documents.length}`} docs={documents} wineId={wine.id} vintageYear={year} />
             </div>
           </div>

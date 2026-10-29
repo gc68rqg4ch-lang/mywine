@@ -54,6 +54,7 @@ test("Schätzung nach Stil (Tabelle), auch unbekannt; Stil aus dem Namen", () =>
   assert.deepEqual(days, {
     fino_manzanilla: 7, amontillado: 21, oloroso_cream_px: 60, port_white_ruby_reserve: 28, port_lbv: 21, port_tawny: 42,
     port_tawny_aged: 60, port_vintage: 3, madeira: 365, marsala: 90, vermouth: 60, vdn: 30, unknown: 30,
+    liqueur_cream: 180, liqueur_fruit: 365, liqueur_coffee: 365, liqueur_nut: 730, liqueur_herb: 730, liqueur: 365,
   });
   assert.deepEqual(estimateKeep("port_tawny"), { days: 42, source: "estimate", note: "Schätzung nach Stil: Tawny" });
   assert.deepEqual(estimateKeep(null), { days: 30, source: "estimate", note: "Schätzung nach Stil: Stil unbekannt" });
@@ -205,7 +206,7 @@ test("Startseite und Tagestext: offene Likörweine mit „gut bis“; Bot-Liste 
   const ctx = noteContext({ stock, drunk: [], purchases: [], tastedThisMonth: 0, ratings: [], pendingSuggestions: 0, notes: null } as never, "Michel", new Date("2026-10-29T06:00:00Z"));
   const prompt = dailyPrompt({ ...ctx.prompt, person: "Michel", previous: [], refs: ctx.refs });
   assert.match(prompt, /Fine White.*offen seit 28 Tagen \(offen gut bis 29\.10\. · bald trinken\)/);
-  assert.match(DAILY_SYSTEM, /Likörweine, die offen bald über der Zeit sind/);
+  assert.match(DAILY_SYSTEM, /Likörweine und Liköre, die offen bald über der Zeit sind/);
   assert.match(
     openBottleLine({ itemId: "i1", wineId: PORT, producer: null, name: "", year: null, type: "fortified", fill: 80, days: 28, room: null, keep: "offen gut bis 29.10. · bald trinken" }, "Fine White"),
     /Fine White · 80 % · .*28.* · offen gut bis 29\.10\. · bald trinken$/,

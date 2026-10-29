@@ -87,7 +87,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
   const noWindow = inScope("cellar").filter((g) => windowTargets(g, data).length > 0);
   const windowYearCount = noWindow.reduce((s, g) => s + windowTargets(g, data).length, 0);
   // Haltbarkeit offen fehlt: nur Likörweine im Bestand.
-  const keep = await loadOpenKeep(supabase, data.wines.filter((w) => w.type === "fortified").map((w) => w.id));
+  const keep = await loadOpenKeep(supabase, data.wines.filter((w) => w.type === "fortified" || w.type === "spirit").map((w) => w.id));
   const noKeep = inScope("cellar").filter((g) => keepMissing(g, keep));
   const chosen = keepMode ? noKeep : windowMode ? noWindow : profile ? noProfile(scope) : complete ? inScope(scope) : scope === "all" ? all : cellar;
   // In den letzten 12 Monaten recherchiert: beim Profil je Jahrgang (alle fehlenden kürzlich gesucht), sonst der Wein.
@@ -173,7 +173,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
               <td>–</td>
             </tr>
             <tr>
-              <th scope="row">Haltbarkeit offen fehlt (Likörweine)</th>
+              <th scope="row">Haltbarkeit offen fehlt (Likörweine, Liköre)</th>
               <td>{noKeep.length}</td>
               <td>–</td>
             </tr>
@@ -210,8 +210,8 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
           <span className="muted small">
             {" "}
             – {keepMode
-              ? `ich suche nur, wie lange ${noKeep.length === 1 ? "der Likörwein" : `die ${noKeep.length} Likörweine`} offen gut ${noKeep.length === 1 ? "bleibt" : "bleiben"} (Quelle, sonst Schätzung nach Stil)`
-              : "nur Likörweine im Bestand: wie lange eine offene Flasche gut bleibt"}
+              ? `ich suche nur, wie lange ${noKeep.length === 1 ? "eine offene Flasche" : `offene Flaschen der ${noKeep.length} Likörweine und Liköre`} gut ${noKeep.length === 1 ? "bleibt" : "bleiben"} (Quelle, sonst Schätzung nach Stil)`
+              : "nur Likörweine und Liköre im Bestand: wie lange eine offene Flasche gut bleibt"}
           </span>
         </span>
       </Link>

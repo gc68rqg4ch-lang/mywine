@@ -75,8 +75,8 @@ export async function loadHomeData(db: Db, personId: string | null, now: Date | 
     personId ? loadNotes(db, personId, p.date) : Promise.resolve(null),
   ]);
   for (const r of [stock, drunk, purchases, ratings]) if (r.error) throw r.error;
-  // Likörweine: Haltbarkeit offen („offen gut bis“).
-  const keep = await loadOpenKeep(db, (stock.data ?? []).filter((s) => s.status === "open" && s.type === "fortified").flatMap((s) => (s.wine_id ? [s.wine_id] : [])));
+  // Likörweine und Liköre: Haltbarkeit offen („offen gut bis“).
+  const keep = await loadOpenKeep(db, (stock.data ?? []).filter((s) => s.status === "open" && (s.type === "fortified" || s.type === "spirit")).flatMap((s) => (s.wine_id ? [s.wine_id] : [])));
 
   const stockItems: StockItem[] = (stock.data ?? []).flatMap((s) =>
     s.wine_id && s.inventory_item_id && (s.status === "sealed" || s.status === "open")
@@ -88,13 +88,14 @@ export async function loadHomeData(db: Db, personId: string | null, now: Date | 
             producer: s.producer,
             type: asWineType(s.type),
             year: s.vintage_year,
-            // Spirituose: die aktuelle Flasche zählt wie eine volle (Bestand, Wert); kein „offen“.
+            // Spirituose: eine offene Flasche zählt wie eine volle (Bestand, Wert); nie unter „Offen“.
             status: s.status === "open" && s.type === "spirit" ? "sealed" : s.status,
+            ...(s.status === "open" && s.type === "spirit" ? { spiritOpen: true } : {}),
             quantity: s.quantity ?? 1,
             paid: s.stock_value,
             regular: s.stock_value_regular,
             dateOpened: s.date_opened,
-            ...(s.type === "fortified" ? { keepDays: keep.get(s.wine_id)?.days ?? null } : {}),
+            ...(keep.has(s.wine_id ?? "") ? { keepDays: keep.get(s.wine_id ?? "")?.days ?? null } : {}),
             purchasedAt: s.purchased_at,
             drinkFrom: s.drink_from_year,
             drinkUntil: s.drink_until_year,

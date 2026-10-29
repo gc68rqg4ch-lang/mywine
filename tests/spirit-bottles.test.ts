@@ -1,31 +1,38 @@
-// Spirituosen: „aktuelle Flasche“ mit Füllstand statt „offen“. Erste Flasche wird aktuell (100 %),
-// Nachkauf ändert sie nicht, „leer“ (auch 0 %) bucht sie als getrunken und macht die nächste
-// aktuell, die letzte verschwindet aus dem Bestand. Bestand, Offen und Bot (Füllstand/leer).
-// Supabase per fetch-Stub mit kleiner Nachbildung der Views; die DB-Funktionen fehlen hier
-// (Weg ohne Migration) bzw. werden für den Weg mit Migration nachgebildet. Ausführen: npm test
+// Spirituosen öffnet man von Hand: Einbuchen lässt alle Flaschen zu; Öffnen setzt Datum (heute)
+// und 100 %, eine zweite fragt erst nach; „leer“ (auch 0 %) bucht getrunken, ohne dass eine nächste
+// nachrückt; die letzte verschwindet aus dem Bestand. Offene bleiben im Bestand, nie unter „Offen“.
+// Liköre (Kategorie Likör) bekommen „offen gut bis“, andere Spirituosen nicht.
+// Supabase per fetch-Stub mit kleiner Nachbildung der Views. Ausführen: npm test
 import "./env";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { installNet, type Net } from "./stub-net";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { currentBottles, emptySpiritBottle, ensureSpiritCurrent, setSpiritFill } from "@/lib/spirits/bottles";
+import { emptySpiritBottle, openSpiritBottles, setSpiritFill } from "@/lib/spirits/bottles";
 import { buildCellarWines, cellarTotals, toSummaryWine, toVintageRow } from "@/lib/cellar/overview";
-import { currentFillNote, currentFills, inStockRow, openWineRow } from "@/lib/spirits/tag";
-import { chatTools, loadCellar, type PendingProposal } from "@/lib/chat/tools";
+import { emptiedRest, inStockRow, openSpiritInfo, openWineRow, spiritOpenNote } from "@/lib/spirits/tag";
+import { chatTools, type PendingProposal } from "@/lib/chat/tools";
 import { executeProposal } from "@/lib/chat/execute";
 import { decodeProposal, encodeProposal, isChatCallback } from "@/lib/chat/proposals";
 import { stockTotals } from "@/lib/home/summary";
 import { loadHomeData } from "@/lib/home/data";
+import { ensureOpenKeep, loadOpenKeep } from "@/lib/fortified/store";
+import { estimateKeep, keepApplies, keepStatus, keepUntil, liqueurStyle } from "@/lib/fortified/keep";
+import { runLater } from "@/lib/later";
 
 type Row = Record<string, unknown>;
 const LAGA = "11111111-1111-4111-8111-111111111111";
 const TALI = "22222222-2222-4222-8222-222222222222";
 const WINE = "33333333-3333-4333-8333-333333333333";
-const missing = () => ({ __status: 404, body: { code: "PGRST202", message: "Could not find the function" } });
+const BAILEYS = "55555555-5555-4555-8555-555555555555";
+const CAT_LIQUEUR = "c-likoer";
+const CAT_CREAM = "c-sahne";
+const CAT_WHISKY = "c-whisky";
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date());
 
 let seq = 0;
 const newId = () => `aaaaaaaa-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
-let rpcCalls: string[] = [];
 
 /** open_bottle wie in der DB: von einer Charge mit mehreren Flaschen eine abspalten. */
 function openBottle(tables: Record<string, Row[]>, args: Row) {
@@ -73,6 +80,7 @@ function withViews(tables: Record<string, Row[]>) {
         const open = items.filter((i) => i.status === "open").length;
         return {
           wine_id: w.id, vintage_year: null, bottle_size_ml: 700, avg_price: 80, price_class: null, drink_from_year: null, drink_until_year: null,
+          sealed_bottles: sealed, open_bottles: open,
           locations: [{ storage_house: null, storage_room: "Keller", sealed, open }],
         };
       }),
@@ -80,206 +88,247 @@ function withViews(tables: Record<string, Row[]>) {
   return tables;
 }
 
-function reset({ withFunctions = false } = {}) {
-  rpcCalls = [];
+/** rpc: spirit_bottle_empty wie die neue DB-Funktion („new“), wie die alte („old“, öffnet die nächste) oder fehlt („missing“). */
+function reset(fn: "new" | "old" | "missing" = "new") {
   net.tables = withViews({
     wines: [
-      { id: LAGA, name: "Lagavulin 16", producer: "Lagavulin", type: "spirit", notes: "Islay, rauchig" },
-      { id: TALI, name: "Talisker 10", producer: "Talisker", type: "spirit", notes: "Islay-Nachbar, Skye" },
-      { id: WINE, name: "Pintia", producer: "Vega Sicilia", type: "red", notes: null },
+      { id: LAGA, name: "Lagavulin 16", producer: "Lagavulin", type: "spirit", notes: "Islay, rauchig", spirit_category_id: CAT_WHISKY, open_keep_days: null, open_keep_source: null, open_keep_note: null },
+      { id: TALI, name: "Talisker 10", producer: "Talisker", type: "spirit", notes: "Islay-Nachbar, Skye", spirit_category_id: CAT_WHISKY, open_keep_days: null, open_keep_source: null, open_keep_note: null },
+      { id: WINE, name: "Pintia", producer: "Vega Sicilia", type: "red", notes: null, spirit_category_id: null, open_keep_days: null, open_keep_source: null, open_keep_note: null },
+      { id: BAILEYS, name: "Baileys Original", producer: "Baileys", type: "spirit", notes: null, spirit_category_id: CAT_CREAM, open_keep_days: null, open_keep_source: null, open_keep_note: null, country: "Irland", region: null, appellation: null },
+    ],
+    spirit_categories: [
+      { id: CAT_WHISKY, parent_id: null, name: "Whisky", sort_order: 1 },
+      { id: CAT_LIQUEUR, parent_id: null, name: "Likör", sort_order: 2 },
+      { id: CAT_CREAM, parent_id: CAT_LIQUEUR, name: "Sahne", sort_order: 1 },
     ],
     inventory_items: [],
     open_bottle_details: [],
-    spirit_categories: [],
   });
   const t = net.tables;
   net.rpc = {
-    open_bottle: (args) => {
-      rpcCalls.push("open_bottle");
-      return openBottle(t, args);
-    },
-    ensure_spirit_current: withFunctions
-      ? (args) => {
-          rpcCalls.push("ensure_spirit_current");
-          // Nachbildung der DB-Funktion (gleiche Regeln wie der Weg ohne Migration).
-          if (wine(t, args.p_wine_id)?.type !== "spirit") return null;
-          const current = t.inventory_items.find((i) => i.wine_id === args.p_wine_id && i.status === "open");
-          if (current) return current.id;
-          const batch = t.inventory_items.find((i) => i.wine_id === args.p_wine_id && i.status === "sealed" && Number(i.quantity) > 0);
-          return batch ? openBottle(t, { p_item_id: batch.id, p_fill_level_percent: 100, p_date_opened: "2026-10-29" }) : null;
-        }
-      : missing,
-    spirit_bottle_empty: withFunctions
-      ? (args) => {
-          rpcCalls.push("spirit_bottle_empty");
-          const item = t.inventory_items.find((i) => i.id === args.p_item_id && i.status === "open");
-          if (!item) return { __status: 400, body: { code: "22023", message: "not open" } };
-          item.status = "drunk";
-          item.drunk_at = "2026-10-29T12:00:00Z";
-          const nextId = net.rpc.ensure_spirit_current({ p_wine_id: item.wine_id });
-          const left = t.inventory_items.filter((i) => i.wine_id === item.wine_id);
-          return { next_id: nextId, remaining: left.reduce((n, i) => n + (i.status === "sealed" ? Number(i.quantity) : i.status === "open" ? 1 : 0), 0) };
-        }
-      : missing,
+    open_bottle: (args) => openBottle(t, args),
+    spirit_bottle_empty:
+      fn === "missing"
+        ? () => ({ __status: 404, body: { code: "PGRST202", message: "Could not find the function" } })
+        : (args) => {
+            const item = t.inventory_items.find((i) => i.id === args.p_item_id && i.status === "open");
+            if (!item) return { __status: 400, body: { code: "22023", message: "not open" } };
+            item.status = "drunk";
+            const d = t.open_bottle_details.find((o) => o.inventory_item_id === item.id);
+            if (d) d.fill_level_percent = 0;
+            // Alte Funktion: öffnet gleich die nächste volle Flasche (soll die App rückgängig machen).
+            const batch = fn === "old" ? t.inventory_items.find((i) => i.wine_id === item.wine_id && i.status === "sealed" && Number(i.quantity) > 0) : null;
+            const next = batch ? openBottle(t, { p_item_id: batch.id, p_fill_level_percent: 100, p_date_opened: today }) : null;
+            return { next_id: next, remaining: 0 };
+          },
   };
 }
-const wine = (t: Record<string, Row[]>, id: unknown) => t.wines.find((w) => w.id === id);
 
-/** Einbuchen (wie saveJob): Charge anlegen, dann aktuelle Flasche sicherstellen. */
-async function buy(wineId: string, quantity: number) {
-  net.tables.inventory_items.push({ id: newId(), wine_id: wineId, status: "sealed", quantity, bottle_size_ml: 700, purchased_at: `2026-10-${String(10 + seq).padStart(2, "0")}` });
-  return ensureSpiritCurrent(db, wineId, 700);
+/** Einbuchen (wie saveJob): eine Charge, alle Flaschen zu. */
+function buy(wineId: string, quantity: number) {
+  const id = newId();
+  net.tables.inventory_items.push({ id, wine_id: wineId, vintage_year: null, status: "sealed", quantity, bottle_size_ml: 700, purchased_at: `2026-10-${String(10 + (seq % 15)).padStart(2, "0")}` });
+  return id;
 }
 const items = (wineId: string) => net.tables.inventory_items.filter((i) => i.wine_id === wineId);
 const count = (wineId: string, status: string) => items(wineId).filter((i) => i.status === status).reduce((s, i) => s + (status === "sealed" ? Number(i.quantity) : 1), 0);
 const proposals = (pending: PendingProposal[]) => pending.flatMap((p) => ("proposal" in p ? [p.proposal] : []));
-const fillOf = (itemId: string | null) => net.tables.open_bottle_details.find((d) => d.inventory_item_id === itemId)?.fill_level_percent;
+const texts = (pending: PendingProposal[]) => pending.map((p) => p.text);
+/** Bestandskarte wie auf /bestand: „2 Fl.“ und Zusatz. */
+const card = (wineId: string) => {
+  const total = count(wineId, "sealed") + count(wineId, "open");
+  const note = spiritOpenNote(total, openSpiritInfo(net.tables.cellar_overview as never).get(wineId));
+  return [`${total} Fl.`, note].filter(Boolean).join(" · ");
+};
 
 installNet(net);
 const db = createAdminClient();
 
-for (const withFunctions of [false, true]) {
-  const mode = withFunctions ? "mit DB-Funktion" : "ohne Migration";
+test("Einbuchen: alle Flaschen zu; Öffnen setzt heute und 100 %; Karte „2 Fl. · 1 offen“", async () => {
+  reset();
+  const batch = buy(LAGA, 2);
+  assert.deepEqual([count(LAGA, "sealed"), count(LAGA, "open")], [2, 0]);
+  assert.equal(card(LAGA), "2 Fl.");
+  const opened = await executeProposal(db, { kind: "open", itemId: batch });
+  assert.ok(opened.ok, opened.text);
+  assert.match(opened.text, /geöffnet\.$/, "Whisky: kein „offen gut bis“");
+  const [bottle] = await openSpiritBottles(db, LAGA);
+  assert.deepEqual([bottle.fill, bottle.dateOpened], [100, today]);
+  assert.equal(card(LAGA), "2 Fl. · 1 offen");
+  await setSpiritFill(db, LAGA, 40);
+  assert.equal(card(LAGA), "2 Fl. · 1 offen ~40 %");
+});
 
-  test(`Einbuchen (${mode}): erste Flasche wird aktuell mit 100 %, Nachkauf ändert die aktuelle nicht`, async () => {
-    reset({ withFunctions });
-    const first = await buy(LAGA, 3);
-    assert.ok(first);
-    assert.deepEqual([count(LAGA, "open"), count(LAGA, "sealed"), fillOf(first)], [1, 2, 100]);
-    await setSpiritFill(db, LAGA, 40);
-    const again = await buy(LAGA, 2);
-    assert.equal(again, first, "gleiche aktuelle Flasche");
-    assert.deepEqual([count(LAGA, "open"), count(LAGA, "sealed"), fillOf(first)], [1, 4, 40]);
-    // Wein: keine aktuelle Flasche
-    assert.equal(await buy(WINE, 2), null);
-    assert.equal(count(WINE, "open"), 0);
-  });
+test("Zweite öffnen: Rückfrage „Es ist schon eine offen (~40 %). Trotzdem eine weitere öffnen?“", async () => {
+  reset();
+  const batch = buy(LAGA, 2);
+  await executeProposal(db, { kind: "open", itemId: batch });
+  await setSpiritFill(db, LAGA, 40);
+  const pending: PendingProposal[] = [];
+  const tool = chatTools(db, pending).find((t) => t.name === "propose_open_bottle")!;
+  await tool.run({ wine_id: LAGA, vintage_year: null } as never);
+  assert.deepEqual(proposals(pending), [{ kind: "open", itemId: batch }]);
+  assert.match(texts(pending)[0], /Es ist schon eine offen \(~40 %\)\. Trotzdem eine weitere öffnen\?$/);
+  // Ohne offene: keine Rückfrage
+  reset();
+  const fresh = buy(LAGA, 1);
+  const pending2: PendingProposal[] = [];
+  await chatTools(db, pending2).find((t) => t.name === "propose_open_bottle")!.run({ wine_id: LAGA, vintage_year: null } as never);
+  assert.deepEqual(proposals(pending2), [{ kind: "open", itemId: fresh }]);
+  assert.doesNotMatch(texts(pending2)[0], /schon eine offen/);
+});
 
-  test(`Leer (${mode}): aktuelle getrunken, nächste aktuell mit 100 %; letzte → nicht mehr im Bestand`, async () => {
-    reset({ withFunctions });
-    const first = await buy(LAGA, 2);
-    await setSpiritFill(db, LAGA, 30);
+for (const fn of ["new", "old", "missing"] as const) {
+  test(`Leer (DB-Funktion ${fn}): getrunken, keine Flasche rückt nach; letzte → nicht mehr im Bestand`, async () => {
+    reset(fn);
+    const batch = buy(LAGA, 2);
+    await executeProposal(db, { kind: "open", itemId: batch });
     const r1 = await emptySpiritBottle(db, LAGA);
     assert.ok(r1.ok);
-    assert.deepEqual([r1.name, r1.remaining], ["Lagavulin 16", 1]);
-    assert.notEqual(r1.nextId, first);
-    assert.equal(net.tables.inventory_items.find((i) => i.id === first)?.status, "drunk");
-    assert.deepEqual([count(LAGA, "open"), count(LAGA, "sealed"), fillOf(r1.nextId)], [1, 0, 100]);
-    if (withFunctions) assert.ok(rpcCalls.includes("spirit_bottle_empty"), "atomar über die DB-Funktion");
+    assert.deepEqual([r1.sealed, r1.open], [1, 0]);
+    assert.deepEqual([count(LAGA, "drunk"), count(LAGA, "open"), count(LAGA, "sealed")], [1, 0, 1], "nichts automatisch geöffnet");
+    assert.equal(card(LAGA), "1 Fl.");
+    assert.equal(emptiedRest(r1.sealed, r1.open), "als getrunken gebucht – noch 1 Flasche (zu).");
+    assert.equal((await emptySpiritBottle(db, LAGA)).ok, false, "keine offen → nichts geändert");
 
-    const r2 = await emptySpiritBottle(db, LAGA);
-    assert.ok(r2.ok);
-    assert.deepEqual([r2.remaining, r2.nextId], [0, null]);
+    const last = net.tables.inventory_items.find((i) => i.wine_id === LAGA && i.status === "sealed")!;
+    await executeProposal(db, { kind: "open", itemId: String(last.id) });
+    const done = await executeProposal(db, { kind: "drunk", itemId: (await openSpiritBottles(db, LAGA))[0].itemId });
+    assert.equal(done.text, "Lagavulin 16 als getrunken gebucht – das war die letzte Flasche, nicht mehr im Bestand.");
     assert.equal(count(LAGA, "drunk"), 2, "beide unter Getrunken");
-    assert.equal(net.tables.inventory_items.filter((i) => inStockRow({ status: String(i.status), type: "spirit" })).length, 0);
-    const again = await emptySpiritBottle(db, LAGA);
-    assert.equal(again.ok, false, "nichts mehr da");
-  });
-
-  test(`Füllstand 0 % (${mode}) gilt als leer`, async () => {
-    reset({ withFunctions });
-    await buy(LAGA, 2);
-    const r = await setSpiritFill(db, LAGA, 0);
-    assert.ok(r.ok && r.emptied);
-    assert.deepEqual([count(LAGA, "drunk"), count(LAGA, "open"), count(LAGA, "sealed")], [1, 1, 0]);
-    assert.equal((await setSpiritFill(db, LAGA, 101)).ok, false);
+    assert.equal((net.tables.cellar_overview as { wine_id: string; status: string; type: string }[]).filter((r) => r.wine_id === LAGA && inStockRow(r)).length, 0);
   });
 }
 
-test("Bestand: Spirituose mit nur der aktuellen Flasche bleibt drin, zählt wie eine volle; Karte zeigt Füllstand", async () => {
+test("Füllstand 0 % gilt als leer; mehrere offene → welche?", async () => {
   reset();
-  await buy(LAGA, 3);
-  await setSpiritFill(db, LAGA, 40);
-  await buy(TALI, 1);
-  await setSpiritFill(db, TALI, 60);
+  const batch = buy(LAGA, 3);
+  await executeProposal(db, { kind: "open", itemId: batch });
+  const r = await setSpiritFill(db, LAGA, 0);
+  assert.ok(r.ok && r.emptied);
+  assert.deepEqual([count(LAGA, "drunk"), count(LAGA, "open"), count(LAGA, "sealed")], [1, 0, 2]);
+  await executeProposal(db, { kind: "open", itemId: batch });
+  await executeProposal(db, { kind: "open", itemId: batch });
+  const which = await emptySpiritBottle(db, LAGA);
+  assert.equal(which.ok, false);
+  assert.ok(!which.ok && which.choices?.length === 2, "zwei offene zur Auswahl");
+  assert.equal(card(LAGA), "2 Fl. · offen", "nur offene");
+});
+
+test("Bestand: Spirituose bleibt drin (auch nur offene), zählt in Anzahl und Wert wie volle; Offen ohne Spirituosen", async () => {
+  reset();
+  await executeProposal(db, { kind: "open", itemId: buy(TALI, 1) });
+  await setSpiritFill(db, TALI, 40);
+  buy(LAGA, 2);
+  net.tables.inventory_items.push({ id: newId(), wine_id: WINE, status: "open", quantity: 1, bottle_size_ml: 750 });
   const wines = buildCellarWines(
     net.tables.cellar_wine_summary.map((r) => toSummaryWine(r as never)!),
     net.tables.cellar_wines.map((r) => toVintageRow(r as never)!),
     null,
   );
-  const laga = wines.find((w) => w.wine_id === LAGA)!;
-  const tali = wines.find((w) => w.wine_id === TALI)!;
-  assert.deepEqual([laga.sealed, laga.open], [3, 0], "3 Flaschen inkl. aktueller, kein „offen“");
-  assert.deepEqual([tali.sealed, tali.open], [1, 0], "nur die aktuelle – trotzdem im Bestand");
-  assert.equal(cellarTotals(wines).bottles, 4);
-  const fills = currentFills(net.tables.cellar_overview as never);
-  assert.equal(currentFillNote(fills.get(LAGA)), "aktuelle ~40 %");
-  assert.equal(currentFillNote(100), null, "bei 100 % kein Füllstand");
-  // Bestandswert: aktuelle Flasche zählt voll
-  const rows = net.tables.cellar_overview as { status: string; type: string; stock_value: number }[];
-  assert.equal(rows.filter(inStockRow).reduce((s, r) => s + r.stock_value, 0), 4 * 80);
-  // Startseite: aktuelle Flasche zählt wie eine volle, „offen“ ohne Spirituosen
-  const home = stockTotals((await loadHomeData(db, null, new Date("2026-10-29T10:00:00Z"))).stock);
-  assert.deepEqual([home.bottles, home.spiritBottles, home.open, home.paid], [4, 4, 0, 4 * 80]);
-});
-
-test("Offen-Reiter und Bot-Liste „offen“: keine Spirituosen", async () => {
-  reset();
-  await buy(LAGA, 2);
-  net.tables.inventory_items.push({ id: newId(), wine_id: WINE, status: "open", quantity: 1, bottle_size_ml: 750 });
-  const rows = net.tables.cellar_overview as { status: string; type: string; wine_id: string }[];
-  assert.deepEqual(rows.filter(openWineRow).map((r) => r.wine_id), [WINE]);
+  assert.deepEqual(wines.filter((w) => w.sealed > 0).map((w) => w.wine_id).sort(), [LAGA, TALI].sort(), "Pintia (nur offen) nicht im Bestand");
+  assert.equal(cellarTotals(wines).bottles, 3);
+  assert.equal(card(TALI), "1 Fl. · offen ~40 %");
+  const rows = net.tables.cellar_overview as { status: string; type: string; stock_value: number; wine_id: string }[];
+  assert.equal(rows.filter(inStockRow).reduce((s, r) => s + r.stock_value, 0), 3 * 80);
+  assert.deepEqual(rows.filter(openWineRow).map((r) => r.wine_id), [WINE], "Offen: nur Wein");
   const { count: openCount } = await db.from("cellar_overview").select("inventory_item_id", { count: "exact", head: true }).eq("status", "open").or("type.is.null,type.neq.spirit");
-  assert.equal(openCount, 1, "Zähler wie im Reiter");
-  const tool = chatTools(db, []).find((t) => t.name === "list_open_bottles")!;
-  const out = String(await tool.run({} as never));
+  assert.equal(openCount, 1);
+  const out = String(await chatTools(db, []).find((t) => t.name === "list_open_bottles")!.run({} as never));
   assert.match(out, /Pintia/);
-  assert.doesNotMatch(out, /Lagavulin/);
+  assert.doesNotMatch(out, /Talisker/);
+  const home = stockTotals((await loadHomeData(db, null, new Date())).stock);
+  assert.deepEqual([home.bottles, home.spiritBottles, home.open], [3, 3, 1], "offen: nur der Pintia");
 });
 
-test("Bot: „Lagavulin noch 30 %“ und „Lagavulin leer“ – Vorschlag, Ausführung, Antwort", async () => {
+test("Bot: „noch 30 %“ und „leer“ für die offene Flasche; mehrere offene → je ein Vorschlag (welche?)", async () => {
   reset();
-  await buy(LAGA, 3);
+  const batch = buy(LAGA, 3);
   const pending: PendingProposal[] = [];
   const tool = chatTools(db, pending).find((t) => t.name === "propose_spirit_bottle")!;
+  assert.match(String(await tool.run({ query: "Lagavulin", action: "empty" } as never)), /keine Flasche offen/);
+  assert.equal(pending.length, 0);
+
+  await executeProposal(db, { kind: "open", itemId: batch });
+  const [open] = await openSpiritBottles(db, LAGA);
   await tool.run({ query: "Lagavulin", action: "fill", percent: 30 } as never);
-  assert.deepEqual(proposals(pending), [{ kind: "spiritFill", wineId: LAGA, percent: 30 }]);
-  assert.deepEqual(await executeProposal(db, proposals(pending)[0]), { ok: true, text: "Aktuelle Flasche Lagavulin 16: noch 30 %." });
-  assert.equal(currentFills(net.tables.cellar_overview as never).get(LAGA), 30);
-  // Bestandsfrage: Anzahl und Füllstand
-  const lagaInfo = (await loadCellar(db, null)).find((w) => w.wine_id === LAGA)!;
-  assert.deepEqual([lagaInfo.sealed, (lagaInfo as { currentFill?: number }).currentFill], [3, 30]);
+  assert.deepEqual(proposals(pending), [{ kind: "fill", itemId: open.itemId, percent: 30 }]);
+  assert.ok((await executeProposal(db, proposals(pending)[0])).ok);
+  assert.equal((await openSpiritBottles(db, LAGA))[0].fill, 30);
 
   pending.length = 0;
   await tool.run({ query: "Lagavulin", action: "empty" } as never);
-  assert.deepEqual(proposals(pending), [{ kind: "spiritEmpty", wineId: LAGA }]);
-  const done = await executeProposal(db, proposals(pending)[0]);
-  assert.deepEqual(done.text, "Lagavulin 16 als getrunken gebucht – noch 2 Flaschen, neue aktuelle Flasche 100 %.");
-  assert.equal((await currentBottles(db, LAGA))[0].fill, 100);
-  await executeProposal(db, { kind: "spiritEmpty", wineId: LAGA });
-  const last = await executeProposal(db, { kind: "spiritEmpty", wineId: LAGA });
-  assert.equal(last.text, "Lagavulin 16 als getrunken gebucht – das war die letzte Flasche, nicht mehr im Bestand.");
-  // Danach nicht mehr im Bestand – der Bot findet sie nicht mehr
+  assert.deepEqual(proposals(pending), [{ kind: "drunk", itemId: open.itemId }]);
+  assert.equal((await executeProposal(db, proposals(pending)[0])).text, "Lagavulin 16 als getrunken gebucht – noch 2 Flaschen (zu).");
+
+  // Zwei offen: je ein Vorschlag, mit Öffnungsdatum und Füllstand zur Unterscheidung
+  await executeProposal(db, { kind: "open", itemId: batch });
+  await executeProposal(db, { kind: "open", itemId: batch });
   pending.length = 0;
-  assert.match(String(await tool.run({ query: "Lagavulin", action: "empty" } as never)), /Keine Spirituose im Bestand/);
-  assert.equal(pending.length, 0);
+  const many = String(await tool.run({ query: "Lagavulin", action: "fill", percent: 0 } as never));
+  assert.match(many, /Mehrere offene Flaschen/);
+  assert.equal(pending.length, 2);
+  assert.ok(proposals(pending).every((p) => p.kind === "drunk"));
+  assert.ok(texts(pending).every((t) => /geöffnet am \d\d\.\d\d\., ~100 %/.test(t)), texts(pending).join(" | "));
 });
 
-test("Bot: mehrere passende Spirituosen → je ein Vorschlag mit Knöpfen; 0 % = leer", async () => {
+test("Bot: mehrere passende Spirituosen mit offener Flasche → je ein Vorschlag", async () => {
   reset();
-  await buy(LAGA, 1);
-  await buy(TALI, 2);
+  await executeProposal(db, { kind: "open", itemId: buy(LAGA, 1) });
+  await executeProposal(db, { kind: "open", itemId: buy(TALI, 2) });
   const pending: PendingProposal[] = [];
-  const tool = chatTools(db, pending).find((t) => t.name === "propose_spirit_bottle")!;
-  const out = String(await tool.run({ query: "Islay", action: "fill", percent: 0 } as never));
-  assert.match(out, /Mehrere passen/);
-  assert.deepEqual(
-    proposals(pending).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-    [{ kind: "spiritEmpty", wineId: LAGA }, { kind: "spiritEmpty", wineId: TALI }],
-  );
-  // „geöffnet“ bei einer Spirituose: kurze Erklärung statt Vorschlag
-  const charge = net.tables.inventory_items.find((i) => i.wine_id === TALI && i.status === "sealed")!;
-  const opened = await executeProposal(db, { kind: "open", itemId: String(charge.id) });
-  assert.equal(opened.ok, false);
-  assert.match(opened.text, /immer eine Flasche als aktuelle/);
+  await chatTools(db, pending).find((t) => t.name === "propose_spirit_bottle")!.run({ query: "Islay", action: "empty" } as never);
+  assert.equal(pending.length, 2);
+  assert.deepEqual(texts(pending).map((t) => t.split(" ")[0]).sort(), ["Lagavulin", "Talisker"]);
 });
 
-test("Vorschläge: Kodierung für Telegram-Knöpfe", () => {
+test("Likör: Schätzung nach Unterkategorie, „offen gut bis“ beim Öffnen; Whisky ohne", async () => {
+  assert.deepEqual(
+    [["Likör", "Sahne"], ["Likör", "Frucht"], ["Likör", "Kaffee"], ["Likör", "Nuss"], ["Likör", "Kräuter"], ["Likör", null], ["Likoer", "Sahne"], ["Whisky", "Bourbon"], ["Kräuterschnaps / Bitter", null], [null, null]].map(
+      ([main, sub]) => {
+        const style = liqueurStyle(main, sub);
+        return style ? estimateKeep(style).days : null;
+      },
+    ),
+    [180, 365, 365, 730, 730, 365, 180, null, null, null],
+  );
+  assert.equal(keepApplies("spirit", "Likör"), true);
+  assert.equal(keepApplies("spirit", "Whisky"), false);
+  assert.equal(keepApplies("fortified", null), true);
+  assert.equal(keepApplies("red", "Likör"), false);
+
+  reset();
+  const keep = await loadOpenKeep(db, [LAGA, BAILEYS, WINE]);
+  assert.deepEqual([...keep.keys()], [BAILEYS], "nur der Likör");
+  assert.equal(await ensureOpenKeep(db, LAGA), null, "Whisky: kein „gut bis“");
+  const opened = await executeProposal(db, { kind: "open", itemId: buy(BAILEYS, 1) });
+  const until = keepUntil(today, 180)!;
+  assert.ok(opened.text.endsWith(`geöffnet – offen gut bis ${until.slice(8, 10)}.${until.slice(5, 7)}..`), opened.text);
+  const baileys = net.tables.wines.find((w) => w.id === BAILEYS)!;
+  assert.deepEqual([baileys.open_keep_days, baileys.open_keep_source, baileys.open_keep_note], [180, "estimate", "Schätzung nach Stil: Sahnelikör"]);
+  await runLater().catch(() => undefined); // Recherche im Hintergrund (Stub ohne Claude: Fehler nur im Log)
+  assert.equal(keepStatus("2026-01-01", 180, "2026-06-25")?.hint, "bald trinken");
+  // Bestandsfrage: Anzahl, offen, Füllstand und „gut bis“
+  const cellar = JSON.parse(String(await chatTools(db, []).find((t) => t.name === "search_cellar")!.run({ query: "Baileys" } as never)));
+  const b = cellar.wines[0];
+  assert.deepEqual([b.bottles_total, b.bottles_open, b.open_fill_percent], [1, 1, 100]);
+  assert.match(b.open_good_until, /^offen gut bis \d\d\.\d\d\./);
+});
+
+test("Migration: Haltbarkeit auch bei Spirituosen, Trigger leert bei Wechsel zu Wein; kein Nachrücken", () => {
+  const sql = readFileSync(new URL("../supabase/migrations/20261029170000_spirit_open_by_hand.sql", import.meta.url), "utf8");
+  assert.match(sql, /type::text in \('fortified', 'spirit'\) or \(open_keep_days is null/);
+  assert.match(sql, /if new\.type is null or new\.type::text not in \('fortified', 'spirit'\) then\s+new\.open_keep_days := null;/);
+  assert.match(sql, /drop function if exists public\.ensure_spirit_current/);
+  assert.doesNotMatch(sql.slice(sql.indexOf("spirit_bottle_empty"), sql.indexOf("drop function")), /open_bottle\(|ensure_spirit_current\(/);
+});
+
+test("Vorschläge: Kodierung für Telegram-Knöpfe (ältere Nachrichten)", () => {
   for (const p of [{ kind: "spiritFill", wineId: LAGA, percent: 30 }, { kind: "spiritEmpty", wineId: LAGA }] as const) {
     const data = encodeProposal(p);
     assert.ok(data.length <= 64);
     assert.ok(isChatCallback(data));
     assert.deepEqual(decodeProposal(data), p);
   }
-  assert.equal(decodeProposal(`cs:${LAGA}:101`), null);
 });

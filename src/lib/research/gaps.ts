@@ -178,11 +178,12 @@ export function windowTargets(g: WineGaps, data: { vintages: GapVintage[] }): (n
 }
 
 /**
- * „Haltbarkeit offen fehlt“ (nur Likörweine): keine Haltbarkeit gespeichert bzw. nur geschätzt
- * (eine Quelle ersetzt die Schätzung; von Hand bleibt). keep = Haltbarkeit je Wein.
+ * „Haltbarkeit offen fehlt“ (Likörweine und Liköre): keine Haltbarkeit gespeichert bzw. nur geschätzt
+ * (eine Quelle ersetzt die Schätzung; von Hand bleibt). keep = Haltbarkeit je Wein – enthält genau
+ * die Likörweine und Liköre (andere Spirituosen nicht).
  */
 export function keepMissing(g: WineGaps, keep: Map<string, { days: number | null; source: string | null }>) {
-  if (g.wine.type !== "fortified") return false;
+  if (g.wine.type !== "fortified" && !(g.wine.type === "spirit" && keep.has(g.wine.id))) return false;
   const k = keep.get(g.wine.id);
   return k?.days == null || k.source === "estimate";
 }

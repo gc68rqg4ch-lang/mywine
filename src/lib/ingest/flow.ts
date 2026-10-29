@@ -53,7 +53,6 @@ import {
 } from "./messages";
 import { enrichFromWeb, parseTextEntry, type RecognitionResult } from "./recognize";
 import { mainOptions, spiritStart, storeSpiritFields } from "./spirit-flow";
-import { ensureSpiritCurrent } from "@/lib/spirits/bottles";
 import { scheduleSpiritResearch } from "@/lib/research/spirit-auto";
 import { scheduleOpenKeep } from "@/lib/research/open-keep-auto";
 import type { SpiritCategory } from "@/lib/spirits/categories";
@@ -495,10 +494,6 @@ export async function saveJob(job: IngestJob, chatId: number) {
       photoPaths: job.photo_paths,
     });
     await storeJobMedia(db, job.photo_paths, state, { wineId, itemId });
-    // Spirituose: ohne aktuelle Flasche wird eine volle aktuell (100 %); eine vorhandene bleibt.
-    if (state.proposal.type === "spirit") {
-      await ensureSpiritCurrent(db, wineId, state.proposal.bottle_size_ml).catch((error) => console.error("ensure spirit current failed", error));
-    }
 
     await advanceJob(
       db,
@@ -532,8 +527,8 @@ export async function saveJob(job: IngestJob, chatId: number) {
     // Spirituosen: kein Trinkfenster, dafür die fehlenden Angaben recherchieren.
     if (state.proposal.type === "spirit") scheduleSpiritResearch(wineId);
     else scheduleDrinkWindow(wineId, state.proposal.vintage_year ?? null);
-    // Likörwein: wie lange eine offene Flasche gut bleibt.
-    if (state.proposal.type === "fortified") scheduleOpenKeep(wineId);
+    // Likörwein bzw. Likör (Spirituose der Kategorie Likör): wie lange eine offene Flasche gut bleibt.
+    if (state.proposal.type === "fortified" || state.proposal.type === "spirit") scheduleOpenKeep(wineId);
   } catch (error) {
     await failJob(db, job.id, chatId, "Das Speichern ist mir nicht gelungen", error, state.source === "text");
   }

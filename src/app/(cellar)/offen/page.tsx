@@ -48,7 +48,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
   ]);
   if (error) throw error;
 
-  // Spirituosen haben kein „offen“ (nur eine aktuelle Flasche im Bestand) – hier nur Wein.
+  // Offene Spirituosen bleiben im Bestand – hier nur Wein.
   const rows = (data ?? []).flatMap((r) =>
     r.inventory_item_id && r.wine_id && r.name && r.producer && r.type !== "spirit"
       ? [{ ...r, inventory_item_id: r.inventory_item_id, wine_id: r.wine_id, name: r.name, producer: r.producer, type: asWineType(r.type) }]

@@ -10,6 +10,7 @@ import { NOTHING } from "@/lib/edit/helpers";
 import { cleanNotes } from "@/lib/edit/notes";
 import { todayIso } from "@/lib/format";
 import { emptySpiritBottle, setSpiritFill } from "@/lib/spirits/bottles";
+import { emptiedRest } from "@/lib/spirits/tag";
 import { saveManualKeep } from "@/lib/fortified/store";
 import { keepOnOpen } from "@/lib/research/open-keep-auto";
 
@@ -62,8 +63,8 @@ export async function openBottle(_prev: ActionState, formData: FormData): Promis
     .select("wine_id, vintage_year, wine:wines(type)")
     .eq("id", openId)
     .single();
-  // Likörwein: Haltbarkeit offen sicherstellen („offen gut bis“).
-  if (opened && (opened.wine as { type?: string } | null)?.type === "fortified") await keepOnOpen(session.supabase, opened.wine_id);
+  // Likörwein bzw. Likör: Haltbarkeit offen sicherstellen („offen gut bis“).
+  if (opened && ["fortified", "spirit"].includes((opened.wine as { type?: string } | null)?.type ?? "")) await keepOnOpen(session.supabase, opened.wine_id);
 
   revalidatePath("/", "layout");
   redirect(opened ? wineHref(opened.wine_id, opened.vintage_year, { geoeffnet: "1" }) : "/offen");
@@ -138,15 +139,15 @@ export async function saveWineNotes(wineId: string, text: string): Promise<{ ok:
 }
 
 /**
- * Spirituose: Füllstand der aktuellen Flasche speichern (Regler auf der Weinseite, speichert
- * selbst wie die Notizen). 0 % ist „leer“ – dafür emptySpiritAction (mit Bestätigung).
+ * Spirituose: Füllstand der offenen Flasche speichern (Regler auf der Weinseite, speichert selbst
+ * wie die Notizen). 0 % ist „leer“ – dafür emptySpiritAction (mit Bestätigung).
  */
-export async function saveSpiritFill(wineId: string, percent: number): Promise<{ ok: true; fill: number } | { ok: false; error: string }> {
+export async function saveSpiritFill(wineId: string, itemId: string, percent: number): Promise<{ ok: true; fill: number } | { ok: false; error: string }> {
   const session = await memberSession();
   if (!session) return { ok: false, error: "Kein Zugriff." };
-  if (!UUID_RE.test(wineId)) return { ok: false, error: "Ungültiger Wein." };
+  if (!UUID_RE.test(wineId) || !UUID_RE.test(itemId)) return { ok: false, error: "Ungültige Flasche." };
   if (!Number.isInteger(percent) || percent < 1 || percent > 100) return { ok: false, error: "Füllstand bitte zwischen 10 und 100 %." };
-  const result = await setSpiritFill(session.supabase, wineId, percent);
+  const result = await setSpiritFill(session.supabase, wineId, percent, itemId);
   if (!result.ok) return result;
   return { ok: true, fill: result.fill };
 }
@@ -170,20 +171,14 @@ export async function saveOpenKeepAction(wineId: string, days: number | null): P
   return { ok: true };
 }
 
-/** Spirituose: aktuelle Flasche leer – getrunken, die nächste volle wird aktuell (100 %). */
-export async function emptySpiritAction(wineId: string): Promise<{ ok: true; message: string; remaining: number } | { ok: false; error: string }> {
+/** Spirituose: offene Flasche leer – getrunken; es rückt keine Flasche nach. */
+export async function emptySpiritAction(wineId: string, itemId: string): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
   const session = await memberSession();
   if (!session) return { ok: false, error: "Kein Zugriff." };
-  if (!UUID_RE.test(wineId)) return { ok: false, error: "Ungültiger Wein." };
-  const result = await emptySpiritBottle(session.supabase, wineId);
-  if (!result.ok) return result;
+  if (!UUID_RE.test(wineId) || !UUID_RE.test(itemId)) return { ok: false, error: "Ungültige Flasche." };
+  const result = await emptySpiritBottle(session.supabase, wineId, itemId);
+  if (!result.ok) return { ok: false, error: result.error };
   revalidatePath("/", "layout");
-  return {
-    ok: true,
-    remaining: result.remaining,
-    message:
-      result.remaining > 0
-        ? `Als getrunken gebucht – noch ${result.remaining === 1 ? "1 Flasche" : `${result.remaining} Flaschen`}, neue aktuelle Flasche 100 %.`
-        : "Als getrunken gebucht – das war die letzte Flasche, nicht mehr im Bestand.",
-  };
+  const rest = emptiedRest(result.sealed, result.open);
+  return { ok: true, message: rest.charAt(0).toUpperCase() + rest.slice(1) };
 }

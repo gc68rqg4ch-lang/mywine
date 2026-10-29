@@ -15,9 +15,10 @@ import {
 } from "@/lib/cellar/overview";
 import { loadSpirits } from "@/lib/spirits/load";
 import { T } from "@/lib/bot/texts";
-import { currentFills, withSpiritTags } from "@/lib/spirits/tag";
+import { openSpiritInfo, withSpiritTags, type OpenSpiritInfo } from "@/lib/spirits/tag";
+import { openSpiritBottles } from "@/lib/spirits/bottles";
 import { WINE_TYPES, daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
-import { keepLine, keepStatus } from "@/lib/fortified/keep";
+import { keepLine, keepStatus, shortDate } from "@/lib/fortified/keep";
 import { loadOpenKeep } from "@/lib/fortified/store";
 import { isValidRating } from "@/lib/ratings";
 import type { AdminClient } from "@/lib/supabase/admin";
@@ -75,18 +76,25 @@ async function findWineIds(db: AdminClient, query: string) {
   return (data ?? []).map((w) => w.id);
 }
 
+/** „geöffnet am 12.08., ~40 %“ – unterscheidet mehrere offene Flaschen. */
+const openedLabel = (b: { dateOpened: string | null; fill: number | null }) =>
+  [b.dateOpened ? `geöffnet am ${shortDate(b.dateOpened)}` : "offen", b.fill != null ? `~${b.fill} %` : null].filter(Boolean).join(", ");
+
 export async function loadCellar(db: AdminClient, room: string | null) {
   const [summary, rows, spirits, open] = await Promise.all([
     db.from("cellar_wine_summary").select("wine_id, name, producer, country, region, type, grapes"),
     db.from("cellar_wines").select("*"),
     // Spirituosen: Kategorie, Alter, Fass (vor der Migration leer).
     loadSpirits(db, null),
-    // Spirituosen: Füllstand der aktuellen Flasche.
-    db.from("cellar_overview").select("wine_id, status, type, fill_level_percent").eq("status", "open").eq("type", "spirit"),
+    // Spirituosen: offene Flaschen (Anzahl, Füllstand, Öffnungsdatum).
+    db.from("cellar_overview").select("wine_id, status, type, fill_level_percent, date_opened").eq("status", "open").eq("type", "spirit"),
   ]);
   if (summary.error) throw summary.error;
   if (rows.error) throw rows.error;
-  const fills = currentFills(open.data ?? []);
+  const opened = openSpiritInfo(open.data ?? []);
+  // Liköre: „offen gut bis“ der offenen Flasche.
+  const keep = await loadOpenKeep(db, [...opened.keys()]);
+  const today = todayIso();
   return withSpiritTags(
     buildCellarWines(
       (summary.data ?? []).map(toSummaryWine).filter(nonNull),
@@ -95,10 +103,14 @@ export async function loadCellar(db: AdminClient, room: string | null) {
     ),
     (w) => w.wine_id,
     spirits,
-  ).map((w) => (w.type === "spirit" ? { ...w, currentFill: fills.get(w.wine_id) ?? null } : w));
+  ).map((w) => {
+    if (w.type !== "spirit") return w;
+    const o = opened.get(w.wine_id);
+    return { ...w, openInfo: o ?? null, openKeep: o ? keepLine(keepStatus(o.dateOpened, keep.get(w.wine_id)?.days, today)) : null };
+  });
 }
 
-function describeWine(w: CellarWine & { currentFill?: number | null }) {
+function describeWine(w: CellarWine & { openInfo?: OpenSpiritInfo | null; openKeep?: string | null }) {
   // Spirituose: Art „Spirituose“ mit Kategorie, Alter und Fass; ohne Rebsorten und Trinkreife.
   const spirit = w.type === "spirit";
   return {
@@ -113,9 +125,11 @@ function describeWine(w: CellarWine & { currentFill?: number | null }) {
           category: w.spirit?.label ?? null,
           age_years: w.spirit?.ageYears ?? null,
           cask: w.spirit?.cask ?? null,
-          // Alle Flaschen inkl. der aktuellen (angebrochenen); deren Füllstand.
-          bottles_incl_current: w.sealed,
-          current_bottle_fill_percent: w.currentFill ?? 100,
+          // Alle Flaschen (zu und offen); davon offen, Füllstand der offenen, bei Likören „offen gut bis“.
+          bottles_total: w.sealed,
+          bottles_open: w.openInfo?.open ?? 0,
+          ...(w.openInfo ? { open_fill_percent: w.openInfo.fill ?? 100, opened_on: w.openInfo.dateOpened } : {}),
+          ...(w.openKeep ? { open_good_until: w.openKeep } : {}),
         }
       : {}),
     origin: [w.region, w.country].filter(Boolean).join(", ") || null,
@@ -195,14 +209,14 @@ export function chatTools(
     betaZodTool({
       name: "list_open_bottles",
       description:
-        "Alle offenen Weinflaschen mit inventory_item_id, Füllstand in %, Flaschengrösse, Tagen seit dem Öffnen und Lagerort; Likörweine zusätzlich „offen gut bis“ (open_good_until, mit „bald trinken“ bzw. „über der Zeit“). Spirituosen sind nicht dabei (sie haben eine aktuelle Flasche – siehe search_cellar, propose_spirit_bottle).",
+        "Alle offenen Weinflaschen mit inventory_item_id, Füllstand in %, Flaschengrösse, Tagen seit dem Öffnen und Lagerort; Likörweine zusätzlich „offen gut bis“ (open_good_until, mit „bald trinken“ bzw. „über der Zeit“). Spirituosen sind nicht dabei (offene bleiben im Bestand – siehe search_cellar, propose_spirit_bottle).",
       inputSchema: z.object({}),
       run: async () => {
         const { data, error } = await db
           .from("cellar_overview")
           .select("inventory_item_id, wine_id, producer, name, vintage_year, type, bottle_size_ml, fill_level_percent, date_opened, storage_room")
           .eq("status", "open")
-          // Spirituosen haben kein „offen“ (aktuelle Flasche steht in search_cellar).
+          // Offene Spirituosen stehen in search_cellar (bleiben im Bestand).
           .or("type.is.null,type.neq.spirit")
           .order("date_opened", { ascending: true, nullsFirst: false });
         if (error) throw error;
@@ -447,11 +461,13 @@ export function chatTools(
         }
         const batch = batches[0];
         const wine = batch.wine;
-        if ((wine as { type?: string | null } | null)?.type === "spirit") return `Hinweis für den Nutzer (nichts vorschlagen): ${T.spiritNoOpen}`;
-        return propose(
-          { kind: "open", itemId: batch.id },
-          `${title({ ...wine, vintage_year })} öffnen (aus ${place(batch)}, ${formatBottleSize(batch.bottle_size_ml) ?? "75 cl"})`,
-        );
+        const label = `${title({ ...wine, vintage_year })} öffnen (aus ${place(batch)}, ${formatBottleSize(batch.bottle_size_ml) ?? "75 cl"})`;
+        // Spirituose: ist schon eine offen, fragt der Vorschlag nach („Trotzdem eine weitere öffnen?“).
+        if ((wine as { type?: string | null } | null)?.type === "spirit") {
+          const open = await openSpiritBottles(db, wine_id);
+          if (open.length) return propose({ kind: "open", itemId: batch.id }, `${label} – ${T.spiritAlreadyOpen(open[0].fill)}`);
+        }
+        return propose({ kind: "open", itemId: batch.id }, label);
       },
     }),
 
@@ -474,7 +490,7 @@ export function chatTools(
     betaZodTool({
       name: "propose_spirit_bottle",
       description:
-        "Spirituosen (Whisky, Grappa, Likör …): Füllstand der aktuellen Flasche setzen („Lagavulin noch 30 %“ → action fill, percent 30) oder die aktuelle Flasche leer buchen („Lagavulin leer“ → action empty; die nächste volle wird automatisch aktuell mit 100 %). 0 % gilt als leer. Passen mehrere Spirituosen im Bestand, bekommt jede einen eigenen Vorschlag mit [Ja] [Nein] (höchstens 3) – sonst eine Rückfrage. Ändert noch nichts.",
+        "Spirituosen (Whisky, Grappa, Likör …): Füllstand einer offenen Flasche setzen („Lagavulin noch 30 %“ → action fill, percent 30) oder sie leer buchen („Lagavulin leer“ → action empty; getrunken, es rückt keine Flasche nach). 0 % gilt als leer. Je offene Flasche ein Vorschlag mit [Ja] [Nein] (höchstens 3) – sind mehrere offen, fragt der Vorschlag so nach, welche. Öffnen: propose_open_bottle. Ändert noch nichts.",
       inputSchema: z.object({
         query: z.string().min(1).max(200).describe("Wie die Person die Spirituose nennt, z. B. „Lagavulin“"),
         action: z.enum(["fill", "empty"]),
@@ -486,17 +502,22 @@ export function chatTools(
         const notes = await loadWineNotes(db, spirits.map((w) => w.wine_id));
         const hits = spirits.filter((w) => matchesQuery(w, query, notes.get(w.wine_id)));
         if (!hits.length) return `Fehler: Keine Spirituose im Bestand passt zu „${query}“. Prüfe search_cellar (type spirit).`;
-        if (hits.length > 3) {
-          return `Rückfrage nötig: Mehrere Spirituosen passen (${hits.map((w) => title(w)).join("; ")}). Frag den Nutzer, welche.`;
+        const withOpen = await Promise.all(hits.map(async (w) => ({ w, open: await openSpiritBottles(db, w.wine_id) })));
+        const bottles = withOpen.flatMap(({ w, open }) => open.map((b) => ({ w, b, many: open.length > 1 })));
+        if (!bottles.length) {
+          return `Hinweis für den Nutzer (nichts vorschlagen): Von ${hits.map((w) => title(w)).join(", ")} ist gerade keine Flasche offen. Zum Öffnen: propose_open_bottle.`;
+        }
+        if (bottles.length > 3) {
+          return `Rückfrage nötig: Mehrere offene Flaschen passen (${bottles.map(({ w, b }) => `${title(w)}, ${openedLabel(b)}`).join("; ")}). Frag den Nutzer, welche.`;
         }
         const empty = action === "empty" || percent === 0;
-        const out = hits.map((w) => {
-          const name = title(w);
+        const out = bottles.map(({ w, b, many }) => {
+          const name = `${title(w)}${many ? ` (${openedLabel(b)})` : ""}`;
           return empty
-            ? propose({ kind: "spiritEmpty", wineId: w.wine_id }, `${name}: aktuelle Flasche leer buchen (noch ${w.sealed} Fl. inkl. aktueller)`)
-            : propose({ kind: "spiritFill", wineId: w.wine_id, percent: percent! }, `${name}: aktuelle Flasche noch ${percent} %`);
+            ? propose({ kind: "drunk", itemId: b.itemId }, `${name}: offene Flasche leer buchen`)
+            : propose({ kind: "fill", itemId: b.itemId, percent: percent! }, `${name}: offene Flasche noch ${percent} %`);
         });
-        return hits.length > 1 ? `Mehrere passen – je ein Vorschlag mit Knöpfen: ${out.join(" ")}` : out[0];
+        return bottles.length > 1 ? `Mehrere offene Flaschen – je ein Vorschlag mit Knöpfen (welche?): ${out.join(" ")}` : out[0];
       },
     }),
 
