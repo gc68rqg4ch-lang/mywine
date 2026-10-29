@@ -444,7 +444,7 @@ test("Worker gibt eine wartende Frage frei, sobald die andere Erfassung verfalle
 
 test("DB-Aufräumjob lässt zurückgehaltene Fragen bis 25 Stunden aus (Migration)", async () => {
   const { readFileSync } = await import("node:fs");
-  const sql = readFileSync(new URL("../supabase/migrations/20261029190000_keep_held_price_questions.sql", import.meta.url), "utf8");
+  const sql = readFileSync(new URL("../supabase/migrations/20261029163044_keep_held_price_questions.sql", import.meta.url), "utf8");
   assert.match(sql, /extracted->>'step' = 'price_held'/);
   assert.match(sql, /held_at/);
   assert.match(sql, /interval '25 hours'/);
