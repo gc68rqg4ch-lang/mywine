@@ -1,6 +1,6 @@
 // Preissuche über Google Shopping Schweiz (SerpApi bzw. Serper) + Haiku-Abgleich: Kandidaten nur in CHF ohne
-// Marktplätze, Urteil yes/variant/no, Grösse und Jahrgang hart geprüft, Preiswahl, direkte Shops
-// nur als Ergänzung, Kontingent (230/250), ohne Schlüssel Rückfall. Nachgebildete SerpApi- und
+// Marktplätze und nur von Schweizer Händlern, Urteil yes/variant/no, Grösse, Jahrgang und Produzent hart geprüft, Preiswahl, direkte Shops
+// immer dazu, Kontingent (230/250), ohne Schlüssel Rückfall. Nachgebildete SerpApi- und
 // Claude-Antworten – ohne DB, API-Schlüssel und Netz.
 import "./env";
 import assert from "node:assert/strict";
@@ -9,13 +9,19 @@ import { claudeTool, installNet, type Net } from "./stub-net";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { MAX_CANDIDATES, shoppingCandidates, shoppingUrl } from "@/lib/research/serpapi";
 import { SERPER_URL, parsePriceText, serperCandidates } from "@/lib/research/serper";
-import { hardCheck, judgePrompt } from "@/lib/research/price-judge";
+import { hardCheck, judgePrompt, producerCheck } from "@/lib/research/price-judge";
+import { merchantOf, merchantUrl } from "@/lib/research/merchant";
 import { researchPrice, serpQueriesAllowed, type PriceWine } from "@/lib/research/price";
 import { costUsd } from "@/lib/ai/cost";
 
+/** Händlername → Domain fürs Nachbilden: ohne Punkt als Schweizer .ch-Shop („Coop“ → coop.ch). */
+const domainFor = (source: string) => {
+  const d = source.toLowerCase().replace(/[^a-z0-9.]/g, "");
+  return d.includes(".") ? d : `${d}.ch`;
+};
 type Result = { title: string; source: string; price: string; extracted_price: number; extracted_old_price?: number; link?: string };
 const r = (title: string, source: string, chf: number, extra: Partial<Result> = {}): Result => ({
-  title, source, price: `CHF ${chf.toFixed(2)}`, extracted_price: chf, link: `https://www.${source.toLowerCase().replace(/[^a-z0-9.]/g, "")}/p/${encodeURIComponent(title)}`, ...extra,
+  title, source, price: `CHF ${chf.toFixed(2)}`, extracted_price: chf, link: `https://www.${domainFor(source)}/p/${encodeURIComponent(title)}`, ...extra,
 });
 
 test("Kandidaten: nur CHF, ohne Marktplätze und Doppelte, alter Preis = Normalpreis, höchstens 30", () => {
@@ -48,7 +54,7 @@ test("Harte Prüfung: Grösse und Jahrgang müssen passen, sonst höchstens vari
   assert.equal(hardCheck(b, { same_product: "no", reason: "andere Marke", size_ml: 750, vintage: 2019 }).verdict, "no");
   assert.equal(hardCheck(b, { same_product: "variant", reason: "Riserva", size_ml: 750, vintage: 2019 }).verdict, "variant");
   // Prompt nennt Flasche und nummerierte Kandidaten
-  const p = judgePrompt({ name: "Noah's Mill", producer: "Willett Distillery", type: "spirit", category: "Bourbon", year: null, sizeMl: 700, alcohol: 57.2 }, [{ title: "Noah's Mill Bourbon 70cl", source: "drinks.ch", price: 86.9, regular: null, url: "" }]);
+  const p = judgePrompt({ name: "Noah's Mill", producer: "Willett Distillery", type: "spirit", category: "Bourbon", year: null, sizeMl: 700, alcohol: 57.2 }, [{ title: "Noah's Mill Bourbon 70cl", source: "drinks.ch", price: 86.9 }]);
   assert.match(p, /"name":"Noah's Mill".*"kategorie":"Bourbon".*"alkohol":57\.2/);
   assert.match(p, /0\. Noah's Mill Bourbon 70cl – drinks\.ch – CHF 86\.90/);
 });
@@ -81,8 +87,12 @@ test("Serper: Preis-Text → Zahl und Währung; ohne Währung bzw. nicht CHF ver
 
 // --- Ablauf mit Stub: Antworten je Suchbegriff, ausgeliefert im Format des jeweiligen Anbieters
 
-type Offer = { title: string; source: string; chf: number; old?: number };
+type Offer = { title: string; source: string; chf: number; old?: number; link?: string };
 const o = (title: string, source: string, chf: number, old?: number): Offer => ({ title, source, chf, ...(old ? { old } : {}) });
+/** Wie Serper: nur eine Google-Suchseite als Link, kein Händlerlink. */
+const g = (title: string, source: string, chf: number): Offer => ({ title, source, chf, link: `https://www.google.com/search?ibp=oshop&q=${encodeURIComponent(title)}&prds=catalogid:1&gl=ch` });
+/** Seiten der direkten Shop-Suchen: Adressanfang → Antwort. */
+const shopPages = new Map<string, string>();
 /** Angebote je Suchbegriff; „error“ = Anbieterfehler (z. B. kein Guthaben). */
 const answers = new Map<string, Offer[]>();
 const broken = new Set<Provider>();
@@ -92,7 +102,7 @@ let judge: Record<string, { v: "yes" | "variant" | "no"; reason?: string; size?:
 let judgeCalls = 0;
 let sonnetCalls = 0;
 const NOTHING = { found: false, same_wine: false, product_title: "", merchant: "", url: "", currency: "", price: 0, regular_price: 0, vintage: 0, size_ml: 0, quote: "", candidate_urls: [], reason: "" };
-const link = (x: Offer) => `https://www.${x.source.toLowerCase().replace(/[^a-z0-9.]/g, "")}/p/${encodeURIComponent(x.title)}`;
+const link = (x: Offer) => x.link ?? `https://www.${domainFor(x.source)}/p/${encodeURIComponent(x.title)}`;
 const net: Net = {
   tables: {}, telegram: [], rpc: {},
   claude: (body) => {
@@ -127,6 +137,7 @@ const net: Net = {
       // Serper: Preis als Text in wechselnden Schreibweisen
       return { body: JSON.stringify({ shopping: (answers.get(req.q) ?? []).map((x, i) => ({ title: x.title, source: x.source, price: i % 2 ? `${x.chf.toFixed(2).replace(".", ",")} CHF` : `CHF ${x.chf.toFixed(2)}`, link: link(x), position: i + 1 })) }), type: "application/json" };
     }
+    for (const [prefix, body] of shopPages) if (url.startsWith(prefix)) return { body, type: prefix.includes(".js") ? "application/json" : "text/html" };
     return null;
   },
 };
@@ -137,6 +148,7 @@ const keys = (p: Provider) => (p === "serpapi" ? { serpApiKey: "serpapi-key", se
 function reset() {
   answers.clear();
   broken.clear();
+  shopPages.clear();
   calls.length = 0;
   judge = {};
   judgeCalls = 0;
@@ -166,7 +178,7 @@ for (const provider of ["serpapi", "serper"] as const) {
     const s = diagnostics.shopping!;
     assert.equal(s.provider, provider);
     assert.ok(!s.candidates.some((c) => c.source === "eBay"));
-    assert.deepEqual(s.candidates.find((c) => c.source === "Coop"), { title: "Lazzaroni Amaretto 1 l", price: 39.9, source: "Coop", verdict: "variant", reason: "andere Grösse (100 cl)" });
+    assert.deepEqual(s.candidates.find((c) => c.source === "Coop"), { title: "Lazzaroni Amaretto 1 l", price: 39.9, source: "Coop", link: "https://www.coop.ch/p/Lazzaroni%20Amaretto%201%20l", domain: "coop.ch", swiss: true, verdict: "variant", reason: "andere Grösse (100 cl)" });
     assert.equal(s.candidates.find((c) => c.source === "Globus")?.verdict, "no");
     assert.deepEqual(s.chosen, { amount: 30, merchant: "casadeltequila.ch", merchants: 3 });
     assert.equal(diagnostics.verdict, "exact:shopping");
@@ -293,4 +305,111 @@ test("Fehler beim einen Anbieter → der andere; beide fehlerhaft → bisherige 
   await researchPrice(noah, null, 700, null, { db, serpApiKey: "a", serperApiKey: "b" });
   assert.deepEqual(calls.map((c) => c.provider), ["serpapi", "serper"]);
   assert.equal(sonnetCalls, 1, "beide fehlerhaft: bisherige Preissuche");
+});
+
+// --- Nur Schweizer Händler, direkte Shops immer dazu (nachgebildet nach dem Testlauf vom 29.10.)
+
+test("Händler-Domain: Google-Weiterleitung, Händlername mit .ch, bekannte Schweizer Händler, sonst nicht zugelassen", () => {
+  assert.equal(merchantUrl("https://www.google.com/url?url=https://www.drinks.ch/de/noah-s-mill.html&rct=j&sa=t"), "https://www.drinks.ch/de/noah-s-mill.html");
+  assert.equal(merchantUrl("https://www.googleadservices.com/pagead/aclk?sa=L&adurl=https%3A%2F%2Fwww.bringts.ch%2Fproducts%2Fnoahs-mill"), "https://www.bringts.ch/products/noahs-mill");
+  assert.equal(merchantUrl("https://www.google.com/search?ibp=oshop&q=Noah%27s+Mill&prds=catalogid:1"), null, "Google-Suchseite (Serper): kein Händlerlink");
+  const google = "https://www.google.com/search?ibp=oshop&q=x";
+  assert.deepEqual(merchantOf("Drinks.ch", "https://www.google.ch/url?q=https://www.drinks.ch/de/x.html"), { url: "https://www.drinks.ch/de/x.html", domain: "drinks.ch", swiss: true });
+  assert.deepEqual(merchantOf("Korkenknaller.ch", google), { url: null, domain: "korkenknaller.ch", swiss: true });
+  assert.deepEqual(merchantOf("Korkenknaller.ch", ""), { url: null, domain: "korkenknaller.ch", swiss: true }, "ohne Link zugelassen");
+  assert.deepEqual(merchantOf("Whisky.de", google), { url: null, domain: "whisky.de", swiss: false });
+  assert.equal(merchantOf("by Vinello.ch", google).domain, "vinello.ch");
+  assert.equal(merchantOf("Amazon.it - Seller", google).swiss, false);
+  assert.deepEqual(merchantOf("Casa Poli", google), { url: null, domain: "casapoli.ch", swiss: true });
+  assert.equal(merchantOf("Mövenpick Wein", google).domain, "moevenpick-wein.com");
+  assert.equal(merchantOf("Mövenpick Wein", google).swiss, true);
+  assert.deepEqual(merchantOf("McGrocer", google), { url: null, domain: null, swiss: false }, "ohne Domain: nicht zugelassen");
+  assert.equal(merchantOf("Drinks.ch", "https://www.whisky.de/p/x").swiss, false, "Link geht vor dem Namen");
+  assert.equal(merchantOf("Feldschlösschen Getränke Shop", google).swiss, true);
+  // Kandidaten tragen Domain und swiss
+  const c = serperCandidates({ shopping: [
+    { title: "Noah's Mill 70cl", source: "Whisky.de", price: "CHF 84.90", link: google },
+    { title: "Noah's Mill 70cl", source: "Korkenknaller.ch", price: "CHF 88.00", link: google },
+  ] });
+  assert.deepEqual(c.map((x) => [x.source, x.domain, x.swiss]), [["Whisky.de", "whisky.de", false], ["Korkenknaller.ch", "korkenknaller.ch", true]]);
+});
+
+test("Produzent hart: Gattungsname (Pflaumenbrand) mit anderem Produzenten → no; eigenständiger Name unberührt", () => {
+  const yes = { verdict: "yes" as const, reason: "gleiches Produkt", sizeMl: 500, year: null };
+  const hecht = { name: "Pflaumenbrand Liqueur", producer: "Urs Hecht" };
+  assert.equal(producerCheck(hecht, { title: "Pflaumenbrand Liqueur 50cl", source: "Schubi Weine" }, yes).verdict, "no");
+  assert.equal(producerCheck(hecht, { title: "Pflaumen-Liqueur 50 cl", source: "schuewo.ch" }, yes).verdict, "no");
+  assert.equal(producerCheck(hecht, { title: "Urs Hecht Pflaumenbrand Liqueur 50cl", source: "regionseetal.ch" }, yes).verdict, "yes");
+  assert.equal(producerCheck({ name: "Noah's Mill", producer: "Willett Distillery" }, { title: "Noah's Mill 70cl", source: "drinks.ch" }, yes).verdict, "yes");
+  assert.match(judgePrompt({ name: "Pflaumenbrand Liqueur", producer: "Urs Hecht", type: "spirit", year: null, sizeMl: 500 }, []), /"gattungsname":true/);
+});
+
+const drinksNoah = "https://www.drinks.ch/de/noah-s-mill-bourbon-70cl.html";
+function noahShops() {
+  shopPages.set("https://www.drinks.ch/de/search", `<a href="${drinksNoah}">Noah's Mill</a>`);
+  shopPages.set(drinksNoah, `<script type="application/ld+json">{"@type":"Product","name":"Noah's Mill Kentucky Straight Bourbon 70cl","offers":{"price":"86.90","priceCurrency":"CHF"}}</script>`);
+  shopPages.set("https://www.bringts.ch/search/suggest.json", JSON.stringify({ resources: { results: { products: [{ title: "Noahs Mill Small Batch Bourbon", url: "/products/noahs-mill-small-batch?_pos=1" }] } } }));
+  shopPages.set("https://www.bringts.ch/products/noahs-mill-small-batch.js", JSON.stringify({ title: "Noahs Mill Small Batch Bourbon - 700ml", vendor: "Willett", variants: [{ title: "Default Title", price: 8525, available: true }] }));
+}
+
+for (const provider of ["serpapi", "serper"] as const) {
+  test(`${provider}: Noah's Mill – Auslandshändler raus, drinks.ch/bringts.ch direkt dazu → 86.90`, async () => {
+    reset();
+    noahShops();
+    answers.set("Noah's Mill 70cl", [
+      g("Noah's Mill Bourbon 70cl", "vinecatas", 79),
+      g("Noah's Mill Kentucky Straight Bourbon 0,7l", "Whisky.de", 84.9),
+      g("Noah's Mill 57,15% 70cl", "Versus Vins & Spiritueux", 95),
+      g("Noah's Mill Bourbon 70cl", "Bourbon Blackpool", 72),
+    ]);
+    judge = { oah: { v: "yes", size: 700 } };
+    const { finding, diagnostics } = await researchPrice(spirit("Noah's Mill", "Willett Distillery"), null, 700, null, { db, ...keys(provider) });
+    assert.ok(finding.kind === "exact" && finding.amount === 86.9 && finding.merchants === 2, JSON.stringify(finding));
+    assert.ok(finding.kind === "exact" && /drinks\.ch/.test(finding.url));
+    const s = diagnostics.shopping!;
+    assert.deepEqual(s.candidates.filter((c) => c.direct).map((c) => [c.domain, c.price, c.verdict]), [["drinks.ch", 86.9, "yes"], ["bringts.ch", 85.25, "yes"]]);
+    assert.deepEqual(s.candidates.filter((c) => !c.swiss).map((c) => [c.source, c.verdict]), [["vinecatas", "foreign"], ["Whisky.de", "foreign"], ["Versus Vins & Spiritueux", "foreign"], ["Bourbon Blackpool", "foreign"]]);
+    assert.ok(s.candidates.every((c) => typeof c.link === "string" && "domain" in c));
+    assert.deepEqual(qs(), ["Noah's Mill 70cl", "Noah's Mill"], "keine Schweizer Google-Treffer: zweite Abfrage");
+  });
+}
+
+test("Lazzaroni, Blanton's, Hennessy: ohne Auslandshändler keine Rückfrage «Preise uneinheitlich»", async () => {
+  const cases: { wine: PriceWine; q: string; offers: Offer[]; key: string; min: number; max: number }[] = [
+    {
+      wine: spirit("Amaretto", "Paolo Lazzaroni & Figli"), q: "Lazzaroni Amaretto 70cl", key: "Lazzaroni", min: 29.9, max: 31,
+      offers: [g("Amaretto Lazzaroni 70cl", "Macandrew's Liquors & Spirits", 18), g("Lazzaroni Amaretto 700ml", "McGrocer", 45), g("Lazzaroni Amaretto 70cl", "Drinks.ch", 29.9), g("Lazzaroni Amaretto Originale 70cl", "Casa Poli", 31)],
+    },
+    {
+      wine: spirit("Blanton's Original", "Buffalo Trace Distillery"), q: "Blanton's Original 70cl", key: "Blanton", min: 89, max: 95,
+      offers: [g("Blanton's Original Single Barrel 700ml", "McGrocer", 65), g("Blanton's Original 70cl", "Hedonism Wines", 150), g("Blanton's Original 70cl", "Master of Malt", 130), g("Blanton's Original Single Barrel", "Whisky.de", 70), g("Blanton’s Original, Buffalo Trace Distillery, 70 cl", "Korkenknaller.ch", 89), g("Blanton's Original Single Barrel 70cl", "galaxus.ch", 92), g("Blanton's Original 70cl", "Schnapsdealer.ch", 95)],
+    },
+    {
+      wine: spirit("Hennessy VS", "Jas Hennessy & Co."), q: "Hennessy VS 70cl", key: "Hennessy", min: 39.95, max: 42.9,
+      offers: [g("Hennessy Very Special Cognac 70cl", "jahrhundertweine.de", 25), g("Hennessy VS 70cl", "Amazon.it", 30), g("Hennessy VS Cognac 70cl", "coop.ch", 39.95), g("Hennessy VS 70cl", "galaxus.ch", 41), g("Hennessy V.S. 70 cl", "Manor", 42.9)],
+    },
+  ];
+  for (const c of cases) {
+    reset();
+    answers.set(c.q, c.offers);
+    judge = { [c.key]: { v: "yes", size: 700 } };
+    const { finding, diagnostics } = await researchPrice(c.wine, null, 700, null, { db, ...keys("serper") });
+    assert.ok(finding.kind === "exact" && finding.amount >= c.min && finding.amount <= c.max, `${c.key}: ${JSON.stringify(finding)}`);
+    assert.ok(diagnostics.shopping!.candidates.filter((x) => x.verdict === "foreign").length >= 2, c.key);
+  }
+});
+
+test("Pflaumenbrand Liqueur (Urs Hecht, 50 cl): andere Produzenten → no, auch wenn Haiku yes sagt", async () => {
+  reset();
+  answers.set("Urs Hecht Pflaumenbrand Liqueur 50cl", [
+    g("Pflaumenbrand Liqueur 50cl", "Schubi Weine", 119),
+    g("Pflaumen Liqueur 50 cl", "schuewo.ch", 52),
+    g("Pflaumenbrand Liqueur Urs Hecht 50cl", "regionseetal.ch", 34),
+  ]);
+  judge = { Pflaumen: { v: "yes", size: 500 } };
+  const { finding, diagnostics } = await researchPrice(spirit("Pflaumenbrand Liqueur", "Urs Hecht"), null, 500, null, { db, ...keys("serper") });
+  assert.ok(finding.kind === "exact" && finding.amount === 34, JSON.stringify(finding));
+  const s = diagnostics.shopping!;
+  assert.equal(s.candidates.find((c) => c.source === "schuewo.ch")?.verdict, "no");
+  assert.equal(s.candidates.find((c) => c.source === "Schubi Weine")?.verdict, "foreign");
 });

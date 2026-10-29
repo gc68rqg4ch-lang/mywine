@@ -2,11 +2,15 @@
 // der Preissuche – Anbieter 1 (zweiter: Serper, serper.ts). Rein bis auf searchShopping (Netz).
 // Schlüssel in SERPAPI_API_KEY; Kontingent 250 Abfragen pro Monat (Gratis-Plan).
 
+import { merchantOf } from "./merchant";
+
 /** Gratis-Plan: 250 Abfragen pro Monat. Ab SOFT nur noch eine Abfrage pro Flasche, ab HARD keine. */
 export const SERPAPI_MONTHLY_LIMIT = 250;
 export const SERPAPI_SOFT_LIMIT = 230;
-/** Höchstens so viele Kandidaten gehen an den Abgleich. */
+/** Höchstens so viele (Schweizer) Kandidaten gehen an den Abgleich. */
 export const MAX_CANDIDATES = 30;
+/** Ausländische Kandidaten: höchstens so viele fürs Protokoll. */
+const MAX_FOREIGN = 20;
 
 export type ShoppingCandidate = {
   title: string;
@@ -15,7 +19,16 @@ export type ShoppingCandidate = {
   price: number;
   /** Normalpreis, falls Google einen alten Preis zeigt („statt“) */
   regular: number | null;
+  /** Händlerseite, falls bekannt, sonst der Link des Anbieters (Google) */
   url: string;
+  /** Link laut Anbieter (unverändert) */
+  link?: string;
+  /** Händler-Domain (aus Link bzw. Händlername) und ob Schweizer Händler */
+  domain?: string | null;
+  swiss?: boolean;
+  /** Aus der direkten Shop-Suche (eigene Seitenprüfung) statt aus Google */
+  direct?: boolean;
+  soldOut?: boolean;
 };
 
 type RawResult = {
@@ -39,10 +52,16 @@ const chfText = (s: string) => /\bCHF\b|\bFr\.|SFr/i.test(s);
 /** Rohes Angebot eines Anbieters (SerpApi, Serper), schon in Zahl und Währung zerlegt. */
 export type RawOffer = { title: string; source: string; price: number; currency: string; regular?: number | null; url: string; used?: boolean };
 
-/** Gemeinsamer Filter: nur CHF, ohne Marktplätze/Auktionen und Gebrauchtware, ohne Doppelte, höchstens max. */
+/**
+ * Gemeinsamer Filter: nur CHF, ohne Marktplätze/Auktionen und Gebrauchtware, ohne Doppelte; je
+ * Kandidat Händler-Domain und swiss. Höchstens max Schweizer (dazu ausländische fürs Protokoll –
+ * die gehen nicht in den Abgleich).
+ */
 export function filterCandidates(offers: RawOffer[], max = MAX_CANDIDATES): ShoppingCandidate[] {
   const out: ShoppingCandidate[] = [];
   const seen = new Set<string>();
+  let swiss = 0;
+  let foreign = 0;
   for (const o of offers) {
     const title = o.title.trim();
     const source = o.source.trim();
@@ -51,8 +70,12 @@ export function filterCandidates(offers: RawOffer[], max = MAX_CANDIDATES): Shop
     const key = `${source.toLowerCase()}|${title.toLowerCase()}|${o.price}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ title, source, price: o.price, regular: o.regular != null && o.regular > o.price ? o.regular : null, url: o.url });
-    if (out.length >= max) break;
+    const m = merchantOf(source, o.url);
+    if (m.swiss ? swiss >= max : foreign >= MAX_FOREIGN) continue;
+    if (m.swiss) swiss++;
+    else foreign++;
+    out.push({ title, source, price: o.price, regular: o.regular != null && o.regular > o.price ? o.regular : null, url: m.url ?? o.url, link: o.url, domain: m.domain, swiss: m.swiss });
+    if (swiss >= max) break;
   }
   return out;
 }

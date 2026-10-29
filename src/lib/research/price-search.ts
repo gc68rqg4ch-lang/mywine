@@ -304,7 +304,20 @@ export const compactSearches = (searches: SearchLog[]) =>
  * source „model“: Preis nur laut Antwort des Modells (Seite selbst nicht lesbar, z. B. Bot-Sperre) –
  * zählt nie vor einem selbst geprüften Treffer. soldOut: ausverkauft (Preis gilt, Vermerk im price_note).
  */
-export type Found = { kind: "exact" | "other"; amount: number; merchant: string; url: string; year: number | null; sizeMl: number; why?: string; reason?: string; soldOut?: boolean; source?: "model" };
+export type Found = {
+  kind: "exact" | "other";
+  amount: number;
+  merchant: string;
+  url: string;
+  year: number | null;
+  sizeMl: number;
+  why?: string;
+  reason?: string;
+  soldOut?: boolean;
+  source?: "model";
+  /** Händler-Domain, falls die URL keine Händlerseite ist (Google-Link) – für „je Händler ein Angebot“. */
+  domain?: string | null;
+};
 
 /** Höchstens so weit (×1.25) dürfen exakte Preise auseinanderliegen, um als gleich zu gelten. */
 export const PRICE_SPREAD = 1.25;
@@ -326,7 +339,10 @@ export function pickBest(found: Found[]): (Found & { merchants: number }) | null
   }
   // Je Händler (Host) nur ein Angebot.
   const byHost = new Map<string, Found>();
-  for (const f of verified) if (!byHost.has(hostOf(f.url) ?? f.url)) byHost.set(hostOf(f.url) ?? f.url, f);
+  for (const f of verified) {
+    const key = f.domain ?? hostOf(f.url) ?? f.url;
+    if (!byHost.has(key)) byHost.set(key, f);
+  }
   const list = [...byHost.values()].sort((a, b) => a.amount - b.amount);
   if (list.length === 1) return { ...list[0], merchants: 1 };
   // Grösste Gruppe, deren Preise höchstens 25 % auseinanderliegen.

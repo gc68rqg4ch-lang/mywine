@@ -3,13 +3,14 @@ import "server-only";
 // Preissuche – Abgleich „gleiches Produkt?“ mit einem einzigen Haiku-Aufruf (strukturierte
 // Ausgabe) statt Wortregeln: je Google-Shopping-Kandidat yes / variant / no mit Grund sowie
 // erkannter Grösse und Jahrgang. Danach im Code hart: Grösse und Jahrgang müssen passen, sonst
-// höchstens variant. Die Preiswahl nimmt nur yes-Kandidaten (siehe pickBest).
+// höchstens variant; bei Gattungsnamen muss der Produzent passen, sonst no. Die Preiswahl nimmt nur yes-Kandidaten (siehe pickBest).
 
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { anthropic, RECOGNITION_MODEL } from "@/lib/ingest/recognize";
 import { withUsage } from "@/lib/ai/usage";
 import type { ShoppingCandidate } from "./serpapi";
+import { brandFromProducer, brandInName, genericName } from "./price-match";
 
 export const JUDGE_MODEL = RECOGNITION_MODEL;
 
@@ -42,14 +43,16 @@ export const JUDGE_SYSTEM = `Du prüfst für eine private Weinsammlung in der Sc
 Je Kandidat same_product:
 - yes: dasselbe Produkt. Werbewörter („Top-Angebot“, „Aktion“), Schreibweisen, Apostrophe, Gross-/Kleinschreibung, Reihenfolge von Marke und Name und zusätzliche Beschreibungen (Kategorie, Herkunft, Alkohol) sind egal. Fehlt die Firma (z. B. Destillerie) im Titel, ist das egal, solange Marke bzw. Name stimmen.
 - variant: dasselbe Produkt in anderer Ausführung – Riserva/Reserva/Reservado statt normal (oder umgekehrt), anderes Alter bzw. andere Reifezeit, Cask Strength, Single Cask, XO/VSOP/VS, Sonderedition, anderer Jahrgang, andere Grösse, Geschenkset/mit Gläsern, Mehrfachpackung.
-- no: andere Marke bzw. anderes Produkt (auch gleiche Gattung wie „Amaretto“ einer anderen Marke), Zubehör, Gutscheine.
+- no: anderer Produzent bzw. andere Marke oder anderes Produkt (auch gleiche Gattung wie „Amaretto“ einer anderen Marke), Zubehör, Gutscheine.
+Bei Gattungsnamen (gattungsname: true – z. B. Pflaumenbrand, Amaretto, Grappa, Kirsch) muss der Produzent bzw. die Marke im Titel oder beim Händler stehen, sonst no.
 Gib size_ml und vintage so an, wie sie im Titel stehen (0 = nicht genannt). Bewerte jeden Kandidaten genau einmal, mit seiner Nummer.`;
 
 /** Prompt mit Flasche und nummerierten Kandidaten (rein). */
-export function judgePrompt(bottle: JudgeBottle, candidates: ShoppingCandidate[]) {
+export function judgePrompt(bottle: JudgeBottle, candidates: Pick<ShoppingCandidate, "title" | "source" | "price">[]) {
   const b = {
     name: bottle.name,
     produzent: bottle.producer,
+    ...(genericName(bottle.name) ? { gattungsname: true } : {}),
     art: bottle.type === "spirit" ? "Spirituose" : bottle.type ? `Wein (${bottle.type})` : null,
     kategorie: bottle.category ?? null,
     jahrgang: bottle.year ?? "ohne Jahrgang",
@@ -81,6 +84,17 @@ export function hardCheck(bottle: Pick<JudgeBottle, "year" | "sizeMl">, j: Pick<
   return { verdict: j.same_product, reason: j.reason, ...base };
 }
 
+/**
+ * Produzent hart (rein): bei Gattungsnamen („Pflaumenbrand“, „Amaretto“) muss die Marke laut
+ * Produzent im Titel oder im Händlernamen stehen, sonst no.
+ */
+export function producerCheck(bottle: Pick<JudgeBottle, "name" | "producer">, c: Pick<ShoppingCandidate, "title" | "source">, v: CandidateVerdict): CandidateVerdict {
+  if (v.verdict === "no" || !genericName(bottle.name)) return v;
+  const brand = brandFromProducer(bottle.producer);
+  if (!brand || brandInName(brand, `${c.title} ${c.source}`)) return v;
+  return { ...v, verdict: "no", reason: `anderer bzw. kein Produzent (nicht ${brand})` };
+}
+
 /** Haiku urteilt über alle Kandidaten in einem Aufruf; fehlende Urteile gelten als no. */
 export async function judgeCandidates(bottle: JudgeBottle, candidates: ShoppingCandidate[]): Promise<CandidateVerdict[]> {
   if (!candidates.length) return [];
@@ -96,6 +110,6 @@ export async function judgeCandidates(bottle: JudgeBottle, candidates: ShoppingC
   const judged = response.parsed_output?.candidates ?? [];
   return candidates.map((_, i) => {
     const j = judged.find((x) => x.index === i);
-    return j ? hardCheck(bottle, j) : { verdict: "no", reason: "nicht bewertet", sizeMl: null, year: null };
+    return j ? producerCheck(bottle, candidates[i], hardCheck(bottle, j)) : { verdict: "no", reason: "nicht bewertet", sizeMl: null, year: null };
   });
 }

@@ -475,17 +475,41 @@ export type ShoppingDiagnostics = {
   failed?: { provider: ShoppingProvider; error: string }[];
   queries: string[];
   used_this_month: number;
-  candidates: { title: string; price: number; source: string; verdict: string; reason: string }[];
+  /** Je Kandidat: Link laut Anbieter, Händler-Domain, Schweizer Händler, aus direkter Shop-Suche. */
+  candidates: { title: string; price: number; source: string; link: string; domain: string | null; swiss: boolean; direct?: true; verdict: string; reason: string }[];
   chosen: { amount: number; merchant: string; merchants: number } | null;
 };
 
+/** Gefundene Seiten der direkten Shop-Suche lesen → Kandidaten für den Abgleich (CHF, Schweizer Händler). */
+async function directCandidates(urls: string[], get: Get, log: PriceDiagnostics["pages"]): Promise<ShoppingCandidate[]> {
+  const results = await Promise.all(
+    urls.map(async (url): Promise<{ result: string; c?: ShoppingCandidate }> => {
+      const read = await readPage(url, get).catch((): PageRead => ({ kind: "none" }));
+      if (read.kind === "listing") return { result: `listing:${read.reason}` };
+      if (read.kind === "none") return { result: "no_price" };
+      const offer = read.offer;
+      if (offer.currency !== "CHF") return { result: "not_chf" };
+      if (!swissMerchantUrl(url) && !offer.swiss) return { result: "not_swiss" };
+      if (offer.soldOut && offer.sizeMl == null) return { result: "sold_out_no_size" };
+      // Grösse von der Seite in den Titel, damit der Abgleich sie sieht.
+      const title = offer.sizeMl != null && sizeFromText(offer.title) == null ? `${offer.title} ${offer.sizeMl / 10} cl` : offer.title;
+      const c: ShoppingCandidate = { title, source: merchantFromUrl(url), price: offer.price, regular: offer.regular ?? null, url, link: url, domain: hostOf(url), swiss: true, direct: true, ...(offer.soldOut ? { soldOut: true } : {}) };
+      return { result: offer.soldOut ? "candidate:sold_out" : "candidate", c };
+    }),
+  );
+  results.forEach((r, i) => log.push({ url: urls[i], result: r.result }));
+  return results.flatMap((r) => (r.c ? [r.c] : []));
+}
+
 /**
- * Preis über Google Shopping Schweiz (SerpApi) und einen Haiku-Abgleich: höchstens 2 Abfragen
- * („<Name> <Grösse>“, bei wenig Treffern ohne Grösse), Kandidaten in CHF ohne Marktplätze, je
- * Kandidat yes/variant/no, danach Grösse/Jahrgang hart geprüft. Preiswahl aus den yes-Kandidaten
- * (Ausreisser weg, häufigster/mittlerer, bei zwei ähnlichen der höhere); nur variant → Rückfrage.
- * Ohne yes: die direkten Shop-Suchen als Ergänzung. null = nicht verfügbar (Schlüssel, Kontingent,
- * Fehler der ersten Abfrage) – dann übernimmt die bisherige Suche.
+ * Preis über Google Shopping Schweiz (SerpApi bzw. Serper) und einen Haiku-Abgleich: höchstens 2
+ * Abfragen („<Name> <Grösse>“, bei wenig Treffern ohne Grösse), Kandidaten in CHF ohne
+ * Marktplätze und nur von Schweizer Händlern (Domain .ch bzw. bekannte Schweizer Händler). Die
+ * direkten Schweizer Shop-Suchen laufen immer parallel (kostenlos); ihre Produktseiten gehen als
+ * Kandidaten in denselben Abgleich. Je Kandidat yes/variant/no, danach Grösse/Jahrgang und bei
+ * Gattungsnamen der Produzent hart geprüft. Preiswahl aus den yes-Kandidaten (Ausreisser weg,
+ * häufigster/mittlerer, bei zwei ähnlichen der höhere); nur variant → Rückfrage. null = nicht
+ * verfügbar (Schlüssel, Kontingent, Fehler der ersten Abfrage) – dann übernimmt die bisherige Suche.
  */
 export async function researchPriceShopping(
   wine: PriceWine,
@@ -498,6 +522,9 @@ export async function researchPriceShopping(
   const size = sizeMl ?? standardSize(wine.type);
   const term = `${productTerm(wine)}${year != null ? ` ${year}` : ""}`;
   const queries = [`${term} ${clTerm(size)}`, term];
+  // Direkte Shop-Suchen parallel zu Google (wirft nie).
+  const get = options.get ?? createGetter({ maxRequests: 60, timeoutMs: DIRECT_TIMEOUT_MS });
+  const directSearch = searchShops({ name: wine.name, producer: wine.producer, year, sizeMl: size, type: wine.type }, get);
   const failed: { provider: ShoppingProvider; error: string }[] = [];
   let shop: ShoppingDiagnostics | null = null;
   let candidates: ShoppingCandidate[] = [];
@@ -521,8 +548,8 @@ export async function researchPriceShopping(
       }
       run.queries.push(q);
       for (const c of hits) if (!found.some((x) => x.source === c.source && x.title === c.title && x.price === c.price)) found.push(c);
-      // Genug Treffer: keine zweite Abfrage.
-      if (found.length >= 5) break;
+      // Genug Schweizer Treffer: keine zweite Abfrage.
+      if (found.filter((c) => c.swiss).length >= 5) break;
     }
     if (!ok) continue;
     shop = run;
@@ -531,40 +558,54 @@ export async function researchPriceShopping(
   }
   if (!shop) {
     console.error("shopping price search unavailable", failed.map((f) => `${f.provider}: ${f.error}`).join("; "));
+    // Die bisherige Suche macht die direkten Shop-Suchen selbst noch einmal; diese hier verwerfen.
+    void directSearch.catch(() => undefined);
     return null;
   }
   if (failed.length) shop.failed = failed;
-  candidates = candidates.slice(0, MAX_CANDIDATES);
+  const diagnostics: PriceDiagnostics = { raw: null, verdict: "none", pages: [], shopping: shop };
+  const direct = await directSearch;
+  diagnostics.direct = direct.map((d) => ({ ...d, ...(d.urls ? { urls: d.urls.map(shortUrl) } : {}), ...(d.brandPage ? { brandPage: shortUrl(d.brandPage) } : {}) }));
+  const directUrls = [...new Set(direct.flatMap((d) => d.urls ?? []))];
+  const fromShops = directUrls.length ? await directCandidates(directUrls, get, diagnostics.pages) : [];
+  // Nur Schweizer Händler in den Abgleich; direkte Shops zuerst (werden nicht abgeschnitten).
+  const swiss = [...fromShops, ...candidates.filter((c) => c.swiss)].slice(0, MAX_CANDIDATES);
+  const foreign = candidates.filter((c) => !c.swiss);
   const category = wine.spirit_category_id && options.db ? await spiritCategoryName(options.db, wine.spirit_category_id) : null;
   const verdicts = await judgeCandidates(
     { name: wine.name, producer: wine.producer, type: wine.type, category, year, sizeMl: size, alcohol: wine.alcohol_content ?? null, age: wine.age_years ?? null, cask: wine.cask ?? null },
-    candidates,
+    swiss,
   );
-  shop.candidates = candidates.map((c, i) => ({ title: c.title.slice(0, 160), price: c.price, source: c.source.slice(0, 60), verdict: verdicts[i]?.verdict ?? "no", reason: (verdicts[i]?.reason ?? "").slice(0, 120) }));
-  const found: Found[] = candidates.flatMap((c, i): Found[] => {
+  const logged = (c: ShoppingCandidate, verdict: string, reason: string): ShoppingDiagnostics["candidates"][number] => ({
+    title: c.title.slice(0, 160),
+    price: c.price,
+    source: c.source.slice(0, 60),
+    link: (c.link ?? c.url).slice(0, 200),
+    domain: c.domain ?? null,
+    swiss: c.swiss === true,
+    ...(c.direct ? { direct: true as const } : {}),
+    verdict,
+    reason: reason.slice(0, 120),
+  });
+  shop.candidates = [
+    ...swiss.map((c, i) => logged(c, verdicts[i]?.verdict ?? "no", verdicts[i]?.reason ?? "")),
+    ...foreign.map((c) => logged(c, "foreign", "kein Schweizer Händler")),
+  ];
+  const found: Found[] = swiss.flatMap((c, i): Found[] => {
     const v = verdicts[i];
     if (!v || v.verdict === "no") return [];
     // Zeigt Google einen alten Preis („statt“), gilt der Normalpreis.
     const amount = Math.round((c.regular ?? c.price) * 100) / 100;
-    const base = { amount, merchant: c.source || hostOf(c.url) || "Google Shopping", url: c.url, year: v.year ?? year, sizeMl: v.sizeMl ?? size };
+    const base = { amount, merchant: c.source || c.domain || hostOf(c.url) || "Google Shopping", url: c.url, domain: c.domain ?? null, year: v.year ?? year, sizeMl: v.sizeMl ?? size, ...(c.soldOut ? { soldOut: true } : {}) };
     return v.verdict === "yes" ? [{ kind: "exact", ...base }] : [{ kind: "other", ...base, why: v.reason, reason: "variant" }];
   });
-  const diagnostics: PriceDiagnostics = { raw: null, verdict: "none", pages: [], shopping: shop };
-  // Kein yes: die direkten Shop-Suchen als Ergänzung (mit eigener Seitenprüfung).
-  if (!found.some((f) => f.kind === "exact")) {
-    const get = options.get ?? createGetter({ maxRequests: 60, timeoutMs: DIRECT_TIMEOUT_MS });
-    const want: PriceWant & { name: string } = { year, sizeMl: size, type: wine.type, name: wine.name, producer: wine.producer };
-    const direct = await searchShops({ name: wine.name, producer: wine.producer, year, sizeMl: size, type: wine.type }, get);
-    diagnostics.direct = direct.map((d) => ({ ...d, ...(d.urls ? { urls: d.urls.map(shortUrl) } : {}), ...(d.brandPage ? { brandPage: shortUrl(d.brandPage) } : {}) }));
-    const urls = [...new Set(direct.flatMap((d) => d.urls ?? []))];
-    if (urls.length) found.push(...(await verifyPages(urls, want, get, diagnostics.pages)));
-  }
   const best = pickBest(found);
   if (!best) {
     diagnostics.verdict = "not_found:shopping";
     return { finding: { kind: "none", reason: "not_found" }, diagnostics };
   }
-  const { merchants, ...offer } = best;
+  const { merchants, domain: _domain, ...offer } = best;
+  void _domain;
   const finding: PriceFinding = best.kind === "exact" && merchants > 1 ? { ...offer, kind: "exact", merchants } : offer;
   if (best.kind === "exact") {
     diagnostics.merchants = merchants;
