@@ -4,7 +4,12 @@
 
 import type { TgInlineKeyboard } from "@/lib/telegram/types";
 
-export const GLASS_ML = 150;
+/** Glasgrösse nach Art: Spirituose 5 cl, Likörwein 7 cl, alle anderen Weine 15 cl. */
+export function glassMl(type: string | null | undefined) {
+  if (type === "spirit") return 50;
+  if (type === "fortified") return 70;
+  return 150;
+}
 
 export type Proposal =
   | { kind: "fill"; itemId: string; percent: number }
@@ -111,11 +116,11 @@ export function confirmKeyboard(p: Proposal): TgInlineKeyboard {
 }
 
 /**
- * Neuer Füllstand in Prozent nach `glasses` Gläsern (≈ 150 ml) bei gegebener
+ * Neuer Füllstand in Prozent nach `glasses` Gläsern (Grösse nach Art, glassMl) bei gegebener
  * Flaschengrösse; gerundet auf ganze Prozent, nie unter 0.
  */
-export function fillAfterGlasses(currentPercent: number, glasses: number, bottleSizeMl: number) {
+export function fillAfterGlasses(currentPercent: number, glasses: number, bottleSizeMl: number, type?: string | null) {
   const size = bottleSizeMl > 0 ? bottleSizeMl : 750;
-  const next = currentPercent - (glasses * GLASS_ML * 100) / size;
+  const next = currentPercent - (glasses * glassMl(type) * 100) / size;
   return Math.max(0, Math.min(100, Math.round(next)));
 }

@@ -263,7 +263,7 @@ export function editTools(db: AdminClient, pending: PendingProposal[], actor: Ac
     betaZodTool({
       name: "propose_open_bottle_edit",
       description:
-        "Offene Flasche bearbeiten: Füllstand (percent = neuer Stand oder glasses = getrunkene Gläser à 150 ml) und/oder „Geöffnet am“. Wird sie dabei leer, wird „ausgetrunken“ vorgeschlagen.",
+        "Offene Flasche bearbeiten: Füllstand (percent = neuer Stand oder glasses = getrunkene Gläser; Glasgrösse je nach Art: Wein 150 ml, Likörwein 70 ml, Spirituose 50 ml) und/oder „Geöffnet am“. Wird sie dabei leer, wird „ausgetrunken“ vorgeschlagen.",
       inputSchema: z.object({
         inventory_item_id: z.uuid().describe("Aus list_open_bottles oder list_batches"),
         percent: z.number().int().min(0).max(100).optional(),
@@ -276,12 +276,12 @@ export function editTools(db: AdminClient, pending: PendingProposal[], actor: Ac
         if (glasses != null) {
           const { data: r, error } = await db
             .from("cellar_overview")
-            .select("status, bottle_size_ml, fill_level_percent, producer, name, vintage_year")
+            .select("status, type, bottle_size_ml, fill_level_percent, producer, name, vintage_year")
             .eq("inventory_item_id", inventory_item_id)
             .maybeSingle();
           if (error) throw error;
           if (r?.status !== "open") return "Fehler: Diese Flasche ist nicht offen. Prüfe list_open_bottles.";
-          fill = fillAfterGlasses(r.fill_level_percent ?? 100, glasses, r.bottle_size_ml ?? 750);
+          fill = fillAfterGlasses(r.fill_level_percent ?? 100, glasses, r.bottle_size_ml ?? 750, r.type);
         }
         if (fill === 0) {
           return proposeQuick({ kind: "drunk", itemId: inventory_item_id }, "Die Flasche ist danach leer – als ausgetrunken markieren");

@@ -937,7 +937,7 @@ async function screenForAction(
       const item = await loadItem(db, a.itemId);
       if (item?.status !== "open") return { screen: await itemScreen(db, a.itemId, a.back, "Diese Flasche ist nicht mehr offen.") };
       const before = item.fill_level_percent ?? 100;
-      const next = a.op === "fill" ? a.percent : fillAfterGlasses(before, a.glasses, item.bottle_size_ml ?? 750);
+      const next = a.op === "fill" ? a.percent : fillAfterGlasses(before, a.glasses, item.bottle_size_ml ?? 750, item.type);
       const what = a.op === "glasses" ? (a.glasses === 1 ? "1 Glas" : `${a.glasses} Gläser`) : "Füllstand";
       if (next === 0) {
         return { screen: await drunkAskScreen(db, a.itemId, a.back, a.op === "glasses" ? `Nach ${a.glasses === 1 ? "1 Glas" : `${a.glasses} Gläsern`} ist die Flasche leer.` : undefined) };

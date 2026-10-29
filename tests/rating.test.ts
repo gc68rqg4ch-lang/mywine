@@ -7,7 +7,7 @@ import { fakeDb } from "./fake-db";
 import { screenFor } from "@/lib/chat/menu";
 import { decodeMenu, encodeMenu } from "@/lib/chat/menu-view";
 import {
-  REJECT_DATA, confirmKeyboard, decodeProposal, encodeProposal, fillAfterGlasses, isChatCallback, personKey, type Proposal,
+  REJECT_DATA, confirmKeyboard, decodeProposal, encodeProposal, fillAfterGlasses, glassMl, isChatCallback, personKey, type Proposal,
 } from "@/lib/chat/proposals";
 import { chatTools, type PendingProposal } from "@/lib/chat/tools";
 import { parseCallbackData } from "@/lib/ingest/messages";
@@ -97,6 +97,12 @@ test("Gläser: Füllstand nach 1–2 Gläsern je Flaschengrösse", () => {
   assert.equal(fillAfterGlasses(100, 1, 500), 70);
   assert.equal(fillAfterGlasses(100, 1, 1500), 90);
   assert.equal(fillAfterGlasses(30, 2, 750), 0);
+  // Glasgrösse nach Art: Wein 15 cl, Likörwein 7 cl, Spirituose 5 cl
+  assert.deepEqual([glassMl("red"), glassMl(null), glassMl("fortified"), glassMl("spirit")], [150, 150, 70, 50]);
+  assert.equal(fillAfterGlasses(100, 1, 750, "white"), 80, "0,75 l Wein: −20 %");
+  assert.equal(fillAfterGlasses(100, 1, 700, "spirit"), 93, "0,7 l Spirituose: −7 %");
+  assert.equal(fillAfterGlasses(100, 1, 750, "fortified"), 91, "0,75 l Likörwein: −9 %");
+  assert.equal(fillAfterGlasses(100, 2, 700, "spirit"), 86);
   assert.equal(fillAfterGlasses(100, 1, 0), 80);
 });
 
