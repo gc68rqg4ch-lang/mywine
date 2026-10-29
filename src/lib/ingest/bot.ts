@@ -10,6 +10,7 @@ import {
   answerCallback,
   clearKeyboard,
   downloadFile,
+  escapeHtml,
   sendMessage,
 } from "@/lib/telegram/api";
 import { resolveActor, type Actor } from "@/lib/telegram/actor";
@@ -45,7 +46,10 @@ import {
   regularPriceKeyboard,
   parseCallbackData,
   parseQuantity,
+  similarVendorKeyboard,
   skipVendorKeyboard,
+  vendorKeyboard,
+  VENDORS_PER_PAGE,
   proposalMessage,
   reviewKeyboard,
 } from "./messages";
@@ -91,7 +95,7 @@ import {
   isTastingCallback,
 } from "@/lib/chat/tasting";
 import { MAIN_KEYBOARD, MENU_VERSION, isMenuCallback, menuKeyFor } from "@/lib/chat/menu-view";
-import { findWine, mergeWithKnownWine, resolveVendor } from "./wines";
+import { findVendor, findWine, listAllVendors, mergeWithKnownWine, resolveVendor, similarVendor } from "./wines";
 import { findAttachJob, handleAttachCallback, isAttachCallback, noteAttachPhoto } from "./attach";
 import {
   acceptRestock,
@@ -627,6 +631,38 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       return;
     }
 
+    case "allvendors": {
+      // Alle aktiven Händler alphabetisch, seitenweise; die Knöpfe zeigen auf diese Liste.
+      const page = Math.max(0, Number(parsed.value) || 0);
+      const all = await listAllVendors(db);
+      const pages = Math.max(1, Math.ceil(all.length / VENDORS_PER_PAGE));
+      await answerCallback(cb.id);
+      const next = await advanceJob(db, job, ["vendor", "vendor_new"], { step: "vendor", vendor_options: all.map((v) => v.id) });
+      if (!next) return;
+      await clearKeyboard(chatId, messageId);
+      await sendMessage(chatId, T.vendorAll(Math.min(page, pages - 1), pages), vendorKeyboard(job.id, all, { page: Math.min(page, pages - 1) }));
+      return;
+    }
+
+    case "vendorsim": {
+      await answerCallback(cb.id);
+      const id = state.vendor_suggest;
+      const { data: vendor } = id ? await db.from("vendors").select("id, name").eq("id", id).maybeSingle() : { data: null };
+      if (!vendor) return;
+      await clearKeyboard(chatId, messageId);
+      await advanceTo(db, job, chatId, ["vendor", "vendor_new"], { vendor_id: vendor.id, vendor_name: vendor.name, vendor_typed: undefined, vendor_suggest: undefined });
+      return;
+    }
+
+    case "vendorcreate": {
+      await answerCallback(cb.id);
+      if (!state.vendor_typed) return;
+      const vendor = await resolveVendor(db, state.vendor_typed);
+      await clearKeyboard(chatId, messageId);
+      await advanceTo(db, job, chatId, ["vendor", "vendor_new"], { vendor_id: vendor.id, vendor_name: vendor.name, vendor_typed: undefined, vendor_suggest: undefined });
+      return;
+    }
+
     case "newvendor": {
       const next = await advanceJob(db, job, "vendor", { step: "vendor_new" });
       await answerCallback(cb.id);
@@ -870,7 +906,15 @@ async function handleText(msg: TgMessage, actor: Actor) {
         await sendMessage(chatId, T.vendorRetry, cancelKeyboard(job.id));
         return;
       }
-      const vendor = await resolveVendor(db, name);
+      // Gleicher Name → nehmen; ähnliche Schreibweise („Otto‘s“ für „Otto's“) → „Meinst du …?“; sonst neu.
+      const existing = await findVendor(db, name);
+      const like = existing ? null : similarVendor(await listAllVendors(db), name);
+      if (like) {
+        const next = await advanceJob(db, job, ["vendor", "vendor_new"], { vendor_typed: name, vendor_suggest: like.id });
+        if (next) await sendMessage(chatId, T.vendorSimilar(escapeHtml(like.name), escapeHtml(name)), similarVendorKeyboard(job.id, like.name, name));
+        return;
+      }
+      const vendor = existing ?? (await resolveVendor(db, name));
       await advanceTo(db, job, chatId, ["vendor", "vendor_new"], { vendor_id: vendor.id, vendor_name: vendor.name });
       return;
     }

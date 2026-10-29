@@ -301,7 +301,7 @@ export async function advanceTo(
   return next;
 }
 
-async function askFor(job: IngestJob, chatId: number, vendors: { id: string; name: string }[], mains: SpiritCategory[] = []) {
+async function askFor(job: IngestJob, chatId: number, vendors: { id: string; name: string }[] & { more?: boolean }, mains: SpiritCategory[] = []) {
   const state = jobState(job)!;
   // Preis-Rückfrage zu einer gespeicherten Flasche: jede Frage nennt die Flasche.
   const of = (text: string) => (state.price_followup?.label ? `${state.price_followup.label}\n${text}` : text);
@@ -354,7 +354,7 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
       await sendMessage(
         chatId,
         T.vendorAsk(vendors.length > 0),
-        vendorKeyboard(job.id, vendors),
+        vendorKeyboard(job.id, vendors, { more: vendors.more }),
       );
       return;
     case "confirm":
@@ -495,7 +495,7 @@ export async function saveJob(job: IngestJob, chatId: number) {
     await storeBestBefore(db, wineId, state);
     // Händler aus dem Text erst jetzt anlegen bzw. zuordnen.
     const vendor =
-      state.vendor_id === undefined && state.vendor_name ? await resolveVendor(db, state.vendor_name) : null;
+      state.vendor_id === undefined && state.vendor_name ? await resolveVendor(db, state.vendor_name, { similar: true }) : null;
     const itemId = await createInventoryItem(db, {
       wineId,
       proposal: state.proposal,

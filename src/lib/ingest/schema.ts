@@ -252,6 +252,9 @@ export type IngestState = {
   price_offer?: PriceOffer;
   /** Händler-IDs in der Reihenfolge der Buttons (callback_data enthält nur den Index). */
   vendor_options?: string[];
+  /** „Meinst du …?“: getippter Name und vorgeschlagener bestehender Händler. */
+  vendor_typed?: string;
+  vendor_suggest?: string;
   vendor_id?: string | null;
   vendor_name?: string | null;
   /** Spirituose: Angaben vom Etikett und Kategorie (draft.ts). */

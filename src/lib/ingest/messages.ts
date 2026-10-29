@@ -27,6 +27,11 @@ export type CallbackAction =
   | "vendor"
   | "newvendor"
   | "skipvendor"
+  /** Alle Händler alphabetisch, Seite (0, 1, …) */
+  | "allvendors"
+  /** „Meinst du …?“: ja (vorgeschlagener Händler) bzw. nein (getippten Namen neu anlegen) */
+  | "vendorsim"
+  | "vendorcreate"
   | "restock"
   | "confirm"
   | "vint"
@@ -71,6 +76,9 @@ export function parseCallbackData(data: string | undefined) {
     "vendor",
     "newvendor",
     "skipvendor",
+    "allvendors",
+    "vendorsim",
+    "vendorcreate",
     "restock",
     "confirm",
     "vint",
@@ -247,20 +255,42 @@ export function regularPriceKeyboard(jobId: string, paid: number | null, search 
 /** „–“, „-“, „—“, „leer“, „nichts“: Preis bewusst leer lassen (keine Suche). */
 export const isLeaveEmpty = (text: string) => /^\s*(?:-|–|—|leer|nichts)\s*[.!]?\s*$/i.test(text);
 
-/** Händler als Buttons (je zwei pro Zeile), dazu „Neuer Händler“ und „Überspringen“. */
-export function vendorKeyboard(jobId: string, vendors: { name: string }[]): TgInlineKeyboard {
+/** Alle Händler: so viele je Seite, dann „Weiter“. */
+export const VENDORS_PER_PAGE = 24;
+
+/**
+ * Händler als Buttons (je zwei pro Zeile), dazu „📋 Alle Händler“ (more), „Neuer Händler“ und
+ * „Überspringen“. page: Seite der alphabetischen Liste aller Händler (vendors = alle; Index im
+ * callback_data = Position in der ganzen Liste) mit „Weiter ▶️“, solange es weitere gibt.
+ */
+export function vendorKeyboard(jobId: string, vendors: { name: string }[], options: { more?: boolean; page?: number } = {}): TgInlineKeyboard {
   const rows: TgInlineKeyboard["inline_keyboard"] = [];
-  vendors.forEach((vendor, index) => {
-    const button = { text: vendor.name, callback_data: callbackData("vendor", jobId, String(index)) };
-    if (index % 2 === 0) rows.push([button]);
+  const from = options.page != null ? options.page * VENDORS_PER_PAGE : 0;
+  const shown = options.page != null ? vendors.slice(from, from + VENDORS_PER_PAGE) : vendors;
+  shown.forEach((vendor, i) => {
+    const button = { text: vendor.name, callback_data: callbackData("vendor", jobId, String(from + i)) };
+    if (i % 2 === 0) rows.push([button]);
     else rows[rows.length - 1].push(button);
   });
+  if (options.page == null && options.more) rows.push([{ text: "📋 Alle Händler", callback_data: callbackData("allvendors", jobId, "0") }]);
+  if (options.page != null && from + VENDORS_PER_PAGE < vendors.length) rows.push([{ text: "Weiter ▶️", callback_data: callbackData("allvendors", jobId, String(options.page + 1)) }]);
   rows.push([
     { text: "➕ Neuer Händler", callback_data: callbackData("newvendor", jobId) },
     { text: "Überspringen", callback_data: callbackData("skipvendor", jobId) },
   ]);
   rows.push(cancelRow(jobId));
   return { inline_keyboard: rows };
+}
+
+/** „Meinst du «Otto's»?“: Ja (bestehender Händler) bzw. den getippten Namen neu anlegen. */
+export function similarVendorKeyboard(jobId: string, existing: string, typed: string): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      [{ text: `✅ Ja, ${existing}`, callback_data: callbackData("vendorsim", jobId) }],
+      [{ text: `➕ Nein, «${typed}» neu anlegen`, callback_data: callbackData("vendorcreate", jobId) }],
+      cancelRow(jobId),
+    ],
+  };
 }
 
 export function skipVendorKeyboard(jobId: string): TgInlineKeyboard {

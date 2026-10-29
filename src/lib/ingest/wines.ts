@@ -140,38 +140,101 @@ export async function createInventoryItem(
   return data.id;
 }
 
-/** Händler für die Buttons: aktive, alphabetisch (höchstens zwölf). */
-export async function listVendors(db: AdminClient) {
-  const { data, error } = await db
-    .from("vendors")
-    .select("id, name")
-    .eq("archived", false)
-    .order("name")
-    .limit(12);
-  if (error) throw error;
-  return data ?? [];
+/** So viele meistgenutzte Händler als Knöpfe; dazu „📋 Alle Händler“. */
+export const TOP_VENDORS = 8;
+
+type VendorRow = { id: string; name: string };
+type VendorUse = { vendor_id: string | null; purchased_at: string | null; created_at: string };
+
+/**
+ * Meistgenutzte Händler zuerst (rein): Anzahl Chargen, bei Gleichstand zuletzt benutzt, dann
+ * alphabetisch. Unbenutzte kommen nach den benutzten (alphabetisch).
+ */
+export function rankVendors(vendors: VendorRow[], uses: VendorUse[], max = TOP_VENDORS): VendorRow[] {
+  const stats = new Map<string, { count: number; last: string }>();
+  for (const u of uses) {
+    if (!u.vendor_id) continue;
+    const s = stats.get(u.vendor_id) ?? { count: 0, last: "" };
+    const at = u.purchased_at ?? u.created_at;
+    stats.set(u.vendor_id, { count: s.count + 1, last: at > s.last ? at : s.last });
+  }
+  return [...vendors]
+    .sort((a, b) => {
+      const x = stats.get(a.id) ?? { count: 0, last: "" };
+      const y = stats.get(b.id) ?? { count: 0, last: "" };
+      return y.count - x.count || (y.last > x.last ? 1 : y.last < x.last ? -1 : 0) || a.name.localeCompare(b.name, "de");
+    })
+    .slice(0, max);
 }
 
-/** Händler per Name finden (ohne Gross-/Kleinschreibung) oder neu anlegen. */
-export async function resolveVendor(db: AdminClient, rawName: string) {
+/** Alle aktiven Händler, alphabetisch. */
+export async function listAllVendors(db: AdminClient): Promise<VendorRow[]> {
+  const { data, error } = await db.from("vendors").select("id, name").eq("archived", false).order("name");
+  if (error) throw error;
+  return [...(data ?? [])].sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+
+/**
+ * Händler für die Knöpfe: die meistgenutzten aktiven (höchstens 8); more = es gibt weitere
+ * (Knopf „📋 Alle Händler“).
+ */
+export async function listVendors(db: AdminClient): Promise<VendorRow[] & { more?: boolean }> {
+  const all = await listAllVendors(db);
+  const { data: uses, error } = await db.from("inventory_items").select("vendor_id, purchased_at, created_at").not("vendor_id", "is", null);
+  if (error) throw error;
+  const top: VendorRow[] & { more?: boolean } = rankVendors(all, uses ?? []);
+  top.more = all.length > top.length;
+  return top;
+}
+
+/**
+ * Vergleichsschlüssel eines Händlernamens (rein): klein, ohne Akzente, Apostrophe und Satzzeichen,
+ * ohne Domain-Endung – „Otto's“ = „Otto‘s“ = „ottos“, „Drinks.ch“ = „Drinks“.
+ */
+export function vendorKey(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .replace(/\.(ch|com|de|swiss|it|fr|at|net|shop)\b/g, "")
+    .replace(/['’‘`´]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+/** Ähnlicher bestehender Händler (gleicher Schlüssel, andere Schreibweise) – für „Meinst du …?“; sonst null. */
+export function similarVendor(vendors: VendorRow[], name: string): VendorRow | null {
+  const key = vendorKey(name);
+  if (!key) return null;
+  const exact = name.trim().toLowerCase();
+  return vendors.find((v) => vendorKey(v.name) === key && v.name.trim().toLowerCase() !== exact) ?? null;
+}
+
+/** Händler mit genau diesem Namen (ohne Gross-/Kleinschreibung); sonst null. */
+export async function findVendor(db: AdminClient, rawName: string) {
   const name = rawName.trim().replace(/\s+/g, " ");
-  const find = async () => {
-    const { data, error } = await db
-      .from("vendors")
-      .select("id, name")
-      .ilike("name", exactILike(name))
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
-  };
-  const existing = await find();
+  const { data, error } = await db.from("vendors").select("id, name").ilike("name", exactILike(name)).limit(1).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Händler per Name finden (ohne Gross-/Kleinschreibung) oder neu anlegen. similar: einen
+ * aktiven Händler mit gleichem Schlüssel (andere Schreibweise) nehmen statt doppelt anzulegen.
+ */
+export async function resolveVendor(db: AdminClient, rawName: string, options: { similar?: boolean } = {}) {
+  const name = rawName.trim().replace(/\s+/g, " ");
+  const existing = await findVendor(db, name);
   if (existing) return existing;
+  if (options.similar) {
+    const like = similarVendor(await listAllVendors(db), name);
+    if (like) return like;
+  }
 
   const { data, error } = await db.from("vendors").insert({ name }).select("id, name").single();
   // Unique-Index vendors_name_uq: parallel angelegt → den vorhandenen nehmen.
   if (error?.code === "23505") {
-    const again = await find();
+    const again = await findVendor(db, name);
     if (again) return again;
   }
   if (error) throw error;
