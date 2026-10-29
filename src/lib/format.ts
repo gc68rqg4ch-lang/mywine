@@ -197,3 +197,6 @@ export function compareWineNames(a: { producer?: string | null; name: string }, 
 export function wineTitle(row: { vintage_year?: number | null; name?: string | null }) {
   return [row.name, row.vintage_year ?? "o. J."].filter(Boolean).join(" ");
 }
+
+/** Prompt-Hinweis für die Erfassung: Länder deutsch, damit countryFlag() eine Flagge findet. */
+export const COUNTRY_HINT = "Land immer als deutscher Ländername, z. B. «Schottland», «Vereinigtes Königreich», «Venezuela», «Elfenbeinküste» – nicht englisch wie «Scotland», «UK», «Ivory Coast»";

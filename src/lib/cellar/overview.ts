@@ -560,25 +560,99 @@ export const emptyDrinkCounts = (): Record<DrinkStatus, number> => ({ overdue: 0
 
 // ---------------------------------------------------------------------------
 // Länderflaggen
+//
+// Alle Länder: deutscher Ländername → ISO-Code, einmal beim Laden aus Intl.DisplayNames('de') über
+// alle Codes AA–ZZ aufgebaut; dazu Aliasse (USA, Grossbritannien, Holland …) und die Landesteile
+// des Vereinigten Königreichs mit eigener Flagge (Schottland, Wales, England – wichtig für Whisky).
+// Vergleich ohne Gross-/Kleinschreibung, Akzente und Satzzeichen.
 
-const COUNTRY_CODES: Record<string, string> = {
-  argentinien: "AR", australien: "AU", brasilien: "BR", bulgarien: "BG", chile: "CL", china: "CN",
-  deutschland: "DE", england: "GB", frankreich: "FR", georgien: "GE", griechenland: "GR",
-  grossbritannien: "GB", "großbritannien": "GB", israel: "IL", italien: "IT", japan: "JP", kanada: "CA",
-  kroatien: "HR", libanon: "LB", luxemburg: "LU", marokko: "MA", mexiko: "MX", moldau: "MD",
-  moldawien: "MD", neuseeland: "NZ", "österreich": "AT", portugal: "PT", "rumänien": "RO",
-  schweiz: "CH", slowakei: "SK", slowenien: "SI", spanien: "ES", "südafrika": "ZA", tschechien: "CZ",
-  "türkei": "TR", ungarn: "HU", uruguay: "UY", usa: "US", "vereinigte staaten": "US", zypern: "CY",
+/** „Côte d’Ivoire“ → „cote divoire“, „Großbritannien“ → „grossbritannien“. */
+export const countryKey = (name: string) =>
+  name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .replace(/['’`´]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/** Keine Länder (Kontinente, Organisationen, Platzhalter). */
+const NOT_COUNTRIES = new Set(["EU", "EZ", "UN", "ZZ", "AA", "QO", "XA", "XB", "XK"]);
+
+/** Namen, die Intl.DisplayNames nicht (so) liefert. */
+const COUNTRY_ALIASES: Record<string, string> = {
+  usa: "US", "vereinigte staaten von amerika": "US", amerika: "US",
+  grossbritannien: "GB", uk: "GB", "great britain": "GB", "united kingdom": "GB", nordirland: "GB",
+  holland: "NL", niederlande: "NL", tschechei: "CZ", "tschechische republik": "CZ",
+  moldau: "MD", moldawien: "MD", elfenbeinkuste: "CI", "cote divoire": "CI",
+  russland: "RU", "russische foderation": "RU", sudkorea: "KR", korea: "KR", nordkorea: "KP",
+  hongkong: "HK", macau: "MO", mazedonien: "MK", nordmazedonien: "MK", kosovo: "XK",
+  weissrussland: "BY", belarus: "BY", burma: "MM", birma: "MM", swasiland: "SZ",
+  "dominikanische republik": "DO", "trinidad tobago": "TT", "trinidad und tobago": "TT", "st lucia": "LC",
+  vatikan: "VA", "bosnien herzegowina": "BA",
 };
 
-/** „🇪🇸 Rioja“ – Flagge plus Region (oder Land) für die Kartenzeile. */
-export function originLabel(w: { country: string | null; region: string | null }) {
-  return [countryFlag(w.country), w.region ?? w.country].filter(Boolean).join(" ") || null;
+/** Landesteile mit eigener Flagge (Unicode-Tag-Sequenz): Schottland, Wales, England. */
+const SUBDIVISIONS: Record<string, string> = { schottland: "gbsct", scotland: "gbsct", wales: "gbwls", england: "gbeng" };
+const subdivisionFlag = (tag: string) => String.fromCodePoint(0x1f3f4, ...[...tag].map((c) => 0xe0000 + c.charCodeAt(0)), 0xe007f);
+
+function buildCountryCodes() {
+  const map = new Map<string, string>();
+  try {
+    const names = new Intl.DisplayNames("de", { type: "region" });
+    for (let a = 65; a <= 90; a++) {
+      for (let b = 65; b <= 90; b++) {
+        const code = String.fromCharCode(a, b);
+        if (NOT_COUNTRIES.has(code)) continue;
+        let name: string | undefined;
+        try {
+          name = names.of(code);
+        } catch {
+          continue;
+        }
+        if (!name || name === code) continue;
+        // Veraltete Codes (UK, DD, SU, YU …) haben keine Flagge – nur die gültigen nehmen.
+        if (Intl.getCanonicalLocales(`und-${code}`)[0] !== `und-${code}`) continue;
+        map.set(countryKey(name), code);
+        // „Sonderverwaltungsregion Hongkong“ → auch „Hongkong“
+        const short = name.replace(/^Sonderverwaltungs(?:region|zone)\s+/i, "");
+        if (short !== name) map.set(countryKey(short), code);
+      }
+    }
+  } catch {
+    // ohne Intl.DisplayNames: nur die Aliasse
+  }
+  for (const [alias, code] of Object.entries(COUNTRY_ALIASES)) map.set(countryKey(alias), code);
+  return map;
 }
 
-/** Flaggen-Emoji für einen (deutschen) Ländernamen, sonst null. */
+let countryCodes: Map<string, string> | null = null;
+
+/** ISO-Code eines (deutschen) Ländernamens, sonst null. */
+export function countryCode(country: string | null | undefined) {
+  if (!country?.trim()) return null;
+  countryCodes ??= buildCountryCodes();
+  return countryCodes.get(countryKey(country)) ?? null;
+}
+
+/**
+ * Kartenzeile: „🇪🇸 Rioja“ – Flagge plus Region (ohne Region das Land). Ohne Flagge Region und Land
+ * ausgeschrieben („Lara, Venezuela“), ohne Region nur das Land.
+ */
+export function originLabel(w: { country: string | null; region: string | null }) {
+  const flag = countryFlag(w.country);
+  const region = w.region?.trim() || null;
+  const country = w.country?.trim() || null;
+  if (flag) return [flag, region ?? country].filter(Boolean).join(" ");
+  return [region, country].filter(Boolean).join(", ") || null;
+}
+
+/** Flaggen-Emoji für einen (deutschen) Ländernamen – auch Schottland, Wales, England –, sonst null. */
 export function countryFlag(country: string | null | undefined) {
-  const code = country ? COUNTRY_CODES[country.trim().toLocaleLowerCase("de-CH")] : undefined;
-  if (!code) return null;
+  const sub = country ? SUBDIVISIONS[countryKey(country)] : undefined;
+  if (sub) return subdivisionFlag(sub);
+  const code = countryCode(country);
+  if (!code || code === "XK") return code === "XK" ? "🇽🇰" : null;
   return String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
 }

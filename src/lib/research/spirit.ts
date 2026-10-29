@@ -16,6 +16,7 @@ import type { Db } from "@/lib/taste/store";
 import { sameValue, type SuggestionField } from "./compare";
 import { recordSuggestion } from "./suggestions";
 import { sourceNote } from "./compare";
+import { COUNTRY_HINT } from "@/lib/format";
 
 const SWISS_SHOPS = "finespirits.ch, moevenpick-wein.com (Spirituosen), ullrich.ch, smithandsmith.ch";
 
@@ -38,7 +39,7 @@ export async function researchAndFillSpirit(
   const raw = await webResearch({
     prompt: `Recherchiere diese Spirituose im Web und melde die Angaben, die die Quellen für genau diese Abfüllung belegen: ${JSON.stringify({ name: wine.name, hersteller: wine.producer, land: wine.country, region: wine.region })}.
 - Zuerst Schweizer Händler (${SWISS_SHOPS}), dann Website des Herstellers bzw. der Destillerie, seriöse Händler oder Fachpresse. Preise nur von Schweizer Händlern beachten (keine anderen).
-- Gesucht: Hersteller/Destillerie, Land (auf Deutsch), Region, Alkohol (% vol), Altersangabe (Jahre), Fass/Reifung/Finish, Jahr der Destillation, Jahr der Abfüllung, passende Kategorie aus der Liste.
+- Gesucht: Hersteller/Destillerie, Land (${COUNTRY_HINT}), Region, Alkohol (% vol), Altersangabe (Jahre), Fass/Reifung/Finish, Jahr der Destillation, Jahr der Abfüllung, passende Kategorie aus der Liste.
 - Nur was die Quellen für genau diese Spirituose belegen; sonst leer bzw. 0. Keine Altersangabe erfinden (NAS = 0).
 - Kategorie nur aus der Liste; passt keine eindeutig: „unbekannt“.${extra.pagesNote ?? ""}`,
     toolName: "report_spirit_details",

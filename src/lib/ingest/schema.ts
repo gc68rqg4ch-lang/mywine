@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { completeWineName } from "./wine-names";
-import { WINE_TYPES } from "@/lib/format";
+import { COUNTRY_HINT, WINE_TYPES } from "@/lib/format";
 import { normalizeGrapeShares, type GrapeSource } from "@/lib/grapes/shares";
 import type { SpiritDraft, SpiritLabel } from "@/lib/spirits/draft";
 
@@ -19,7 +19,7 @@ export const WineProposalSchema = z.object({
   name: z.string().nullable().describe("Name des Weins ohne Produzent und ohne Jahrgang"),
   producer: z.string().nullable().describe("Weingut / Produzent"),
   vintage_year: z.number().int().nullable().describe("Jahrgang, z. B. 2019; null wenn ohne Jahrgang"),
-  country: z.string().nullable().describe("Land auf Deutsch, z. B. Spanien, Frankreich, Schweiz, USA"),
+  country: z.string().nullable().describe(`${COUNTRY_HINT}; z. B. Spanien, Frankreich, Schweiz, USA`),
   region: z.string().nullable().describe("Weinbauregion, z. B. Rioja, Bordeaux, California"),
   appellation: z.string().nullable().describe("Herkunftsbezeichnung/Appellation, z. B. Napa Valley, Priorat DOQ"),
   type: wineType.nullable().describe("red, white, rose, sparkling, sweet, fortified oder spirit (Spirituose: Whisky, Grappa, Likör, Obstbrand …)"),

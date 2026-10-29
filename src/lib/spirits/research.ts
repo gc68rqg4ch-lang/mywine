@@ -3,6 +3,7 @@
 // Liste der bestehenden („Whisky › Bourbon“) – die Recherche legt nie Kategorien an.
 
 import { z } from "zod";
+import { COUNTRY_HINT } from "@/lib/format";
 import { categoryLabel, categoryPath, type SpiritCategory } from "./categories";
 
 export const UNKNOWN_CATEGORY = "unbekannt";
@@ -20,7 +21,7 @@ export function spiritResearchSchema(all: SpiritCategory[]) {
   return z.object({
     matches_spirit: z.boolean().describe("true nur, wenn die Quellen genau diese Spirituose (Name + Hersteller/Destillerie, gleiche Altersangabe) beschreiben"),
     producer: z.string().describe("Destillerie bzw. Hersteller; leer, wenn unbekannt"),
-    country: z.string().describe("Land auf Deutsch; leer, wenn unbekannt"),
+    country: z.string().describe(`${COUNTRY_HINT}; leer, wenn unbekannt`),
     region: z.string().describe("Region (z. B. Islay, Speyside, Kentucky, Cognac); leer, wenn unbekannt"),
     alcohol_content: z.number().describe("Alkohol in % vol; 0 = unbekannt"),
     age_years: z.number().describe("Altersangabe in Jahren (ganze Zahl); 0 = keine Altersangabe"),

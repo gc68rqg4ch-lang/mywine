@@ -3,6 +3,7 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { COUNTRY_HINT } from "@/lib/format";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { usageLimit } from "@/lib/ai/api-errors";
 import type { Purpose } from "@/lib/ai/cost";
@@ -64,7 +65,7 @@ Du bekommst Fotos der Vorder- und meist auch der Rückseite derselben Flasche.
 Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. Land aus "Product of Spain").
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
 - name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist.
-- country: auf Deutsch (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
+- country: ${COUNTRY_HINT} (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira – das ist Wein), spirit (Spirituose: Whisky, Grappa, Likör, Obstbrand, Cognac/Brandy, Rum, Gin, Vodka, Tequila/Mezcal, Kräuterschnaps).
 - bottle_size_ml: aus der Füllmenge (75 cl = 750, 70 cl = 700, 37,5 cl = 375, 1,5 l = 1500).
 - spirit: kind „spirit“ bei einer Spirituose, „wine“ bei Wein, „unsure“, wenn du es nicht sicher erkennst. Bei Spirituosen: name = Name der Abfüllung (z. B. „Lagavulin 16“, „Woodford Reserve“), producer = Destillerie bzw. Hersteller, region z. B. Islay, Speyside, Kentucky, Cognac; alcohol_content in % vol (oft 40–60); grape_shares leer (bei Grappa die Rebsorte nur, wenn sie dasteht). Dazu category/subcategory (Haupt-, Unterkategorie – nur aus den im Schema genannten Kategorien, nie neue Namen erfinden; z. B. „Monovitigno Nosiola“ ist keine Unterkategorie, sondern gehört zu Grappa / Trester ohne Unterkategorie), Altersangabe, Fass/Finish, Destilliert- und Abfülljahr – nur, was auf dem Etikett steht; sonst leer bzw. 0. vintage_year nur, wenn ein Jahrgang ausdrücklich als solcher dasteht (sonst null; Destilliert/Abgefüllt gehören in spirit).
@@ -394,7 +395,7 @@ Melde den Wert aus den Quellen, auch wenn er von unseren Angaben abweicht – wi
 Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech Sheet) des Produzenten, sonst seriöse Händler oder Fachpresse. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null bzw. leere Liste.
 - Für jeden genannten Jahrgang genau einen Eintrag in vintages.
 - Rebsorten: percent nur, wenn eine Quelle den Anteil für genau diesen Jahrgang belegt (Cuvées ändern sich); reinsortig = 100; sonst Rebsorten mit percent null. Internationale Schreibweise (Cabernet Sauvignon, Tempranillo …).
-- Land auf Deutsch.${input.documentsNote ?? ""}${input.pagesNote ?? ""}${input.fetchShops ? (input.fetchNote ?? "") : ""}`,
+- ${COUNTRY_HINT}.${input.documentsNote ?? ""}${input.pagesNote ?? ""}${input.fetchShops ? (input.fetchNote ?? "") : ""}`,
     toolName: "report_wine_details",
     documents: input.documents,
     pages: input.pages,
@@ -466,7 +467,7 @@ const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in 
 Übernimm nur, was in der Nachricht steht oder sich eindeutig daraus ergibt; erfinde nichts.
 - name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500).
-- Land auf Deutsch.
+- ${COUNTRY_HINT}.
 - Spirituosen (Whisky, Grappa, Likör, Obstbrand, Cognac, Rum, Gin …): type spirit, im Block spirit Kategorie, Altersangabe, Fass/Finish, Destilliert/Abgefüllt, wenn genannt; kind unsure, wenn unklar ist, ob Wein oder Spirituose. Bei Wein kind wine.
 - ${BEST_BEFORE_RULE}
 - purchase: Anzahl Flaschen, Lagerort (nur Weinkeller oder Wohnzimmer), bezahlter Preis (price) und Normalpreis (regular_price) pro Flasche in CHF, Händler. Ein einzelner Preis ist der bezahlte (price); regular_price nur, wenn ausdrücklich ein Normal-/Regulärpreis genannt ist (z. B. „49 statt 66“: price 49, regular_price 66). Nicht Genanntes: 0 bzw. leer. Ein Gesamtpreis für mehrere Flaschen wird durch die Anzahl geteilt.`;
@@ -519,7 +520,7 @@ export async function applyCorrection(
     model: RECOGNITION_MODEL,
     max_tokens: 16000,
     system:
-      "Du pflegst Weindaten. Übernimm die Korrektur des Users in die bestehenden Daten und gib den vollständigen, aktualisierten Datensatz zurück. Ändere nur, was die Korrektur betrifft. Land auf Deutsch. best_before (Ablaufdatum) als YYYY-MM-DD bzw. YYYY-MM, leer = keins.",
+      `Du pflegst Weindaten. Übernimm die Korrektur des Users in die bestehenden Daten und gib den vollständigen, aktualisierten Datensatz zurück. Ändere nur, was die Korrektur betrifft. ${COUNTRY_HINT}. best_before (Ablaufdatum) als YYYY-MM-DD bzw. YYYY-MM, leer = keins.`,
     messages: [
       {
         role: "user",
@@ -538,7 +539,7 @@ export async function applyCorrection(
 const TASTED_SYSTEM = (today: string) => `Du erfasst für eine private Weinsammlung in der Schweiz einen Wein, den jemand irgendwo verkostet hat (Restaurant, Bar, bei Freunden), aus einer kurzen Nachricht – z. B. „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne, würd ich kaufen“.
 Übernimm nur, was in der Nachricht steht; erfinde nichts. Heute ist ${today}.
 - name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null). vintage_year nur, wenn genannt (sonst null).
-- type, country, region nur, wenn genannt bzw. eindeutig. Land auf Deutsch.
+- type, country, region nur, wenn genannt bzw. eindeutig. ${COUNTRY_HINT}.
 - tasting: Datum (heute/gestern umrechnen, sonst leer), Ort, Preis mit Einheit (Flasche/Glas) und Währung, Anlass, Begleitung, Notiz, Sterne der schreibenden Person (-1 = nicht genannt), want_to_buy.`;
 
 /** Freitext „verkostet“ → Wein + Angaben zum Eintrag (Haiku, bei Fehler oder Ablehnung Sonnet). */
