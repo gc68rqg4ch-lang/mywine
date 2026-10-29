@@ -1,11 +1,12 @@
 // Adapter je Händler-Shop: search → Kandidaten (Adresse + Titel bzw. Slug), read → Seite
 // { url, title, year, text }. Geprüft am 28.10.2026: napawine.ch und finespirits.ch (Shopify,
-// /products/<handle>.js als JSON), moevenpick-wein.com (Magento, Jahrgang vorne in der Adresse),
-// bauraulacvins.ch (Suche /de/search.html, Seiten /de/p/…-<jahr>-<nummer>.html). Ohne Login lesbar.
-// mondovino.ch (Coop) sperrt Abrufe (403) – nicht dabei.
+// /products/<handle>.js als JSON) und bauraulacvins.ch (Suche /de/search.html, Seiten
+// /de/p/…-<jahr>-<nummer>.html). Ohne Login lesbar. moevenpick-wein.com: kein Such-Adapter mehr
+// (robots.txt sperrt „?“-Adressen), nur die Parser für Seite und Datenblatt. mondovino.ch (Coop)
+// sperrt Abrufe (403) – nicht dabei.
 
 import { pdfText } from "@/lib/research/pdf-text";
-import { clip, decodeEntities, htmlToText, linksWithClass, metaContent } from "./html";
+import { clip, decodeEntities, htmlToText, metaContent } from "./html";
 import { searchTerms, words, yearsIn, type ShopWine } from "./match";
 
 export type ShopId = "napawine" | "moevenpick" | "finespirits" | "bauraulac";
@@ -124,9 +125,8 @@ function shopify(id: ShopId, label: string, origin: string, vendor: RegExp): Sho
 }
 
 // ——— Mövenpick (Magento) ———
-
-const MP = "https://www.moevenpick-wein.com";
-const MP_PRODUCT = /^https:\/\/www\.moevenpick-wein\.com\/de\/((?:19|20)\d\d)-([a-z0-9-]+)\.html$/;
+// Kein Such-Adapter mehr: robots.txt sperrt Adressen mit „?“ (auch die Suche). Seiten und
+// Datenblätter kommen nur noch über die Websuche bzw. web_fetch; die Parser bleiben dafür.
 
 /** Abschnitte der Produktseite: Beschreibung, Aromenprofil, Passt zu, Genussreif, Eckdaten. */
 export function moevenpickPage(html: string, url: string): ShopPage | null {
@@ -181,40 +181,6 @@ export function moevenpickDatasheet(bytes: Uint8Array, url: string, title: strin
   return { shop: "moevenpick", url, title: `${title} – Datenblatt`, year: firstYear(title), text: clip(text, MAX_PAGE_CHARS), ...(drink ? { drink } : {}) };
 }
 
-const moevenpick: ShopAdapter = {
-  id: "moevenpick",
-  label: "Mövenpick",
-  vendor: /m(ö|oe|o)venpick/i,
-  labelHasProducer: true,
-  async search(wine, get) {
-    const res = await get(`${MP}/de/catalogsearch/result/?q=${query(wine)}`);
-    if (!res || res.status !== 200) return [];
-    // Ein einziger Treffer: Mövenpick leitet direkt auf die Produktseite weiter.
-    const urls = MP_PRODUCT.test(res.url) ? [res.url] : linksWithClass(res.text, "product-item-link");
-    return urls.flatMap((url) => {
-      const m = url.match(MP_PRODUCT);
-      if (!m) return [];
-      const slug = m[2].replace(/-/g, " ");
-      return [{ url, label: `${m[1]} ${slug}`, base: baseOf(slug), year: Number(m[1]) }];
-    }).slice(0, 24);
-  },
-  async read(url, get) {
-    const res = await get(url);
-    if (!res || res.status !== 200 || !MP_PRODUCT.test(res.url)) return null;
-    const page = moevenpickPage(res.text, res.url);
-    if (!page) return null;
-    // Datenblatt der Jahrgangsseite dazu (eigene Quelle); fehlt es, bleibt die Seite.
-    const link = datasheetLink(res.text);
-    const sheet = link ? await get(link) : null;
-    const datasheet = sheet?.bytes ? moevenpickDatasheet(sheet.bytes, link!, page.title) : null;
-    return datasheet ? { ...page, datasheet } : page;
-  },
-  withYear(url, year) {
-    const m = url.match(MP_PRODUCT);
-    return m ? `${MP}/de/${year}-${m[2]}.html` : null;
-  },
-};
-
 // ——— Baur au Lac Vins ———
 
 const BAL = "https://www.bauraulacvins.ch";
@@ -266,7 +232,6 @@ const bauraulac: ShopAdapter = {
 /** Alle Shops in der Standardreihenfolge (der Shop des Händlers der Flasche kommt zuerst). */
 export const SHOPS: ShopAdapter[] = [
   shopify("napawine", "Napa Wine", "https://napawine.ch", /napa\s*wine/i),
-  moevenpick,
   shopify("finespirits", "Finespirits", "https://finespirits.ch", /fine\s*spirits/i),
   bauraulac,
 ];

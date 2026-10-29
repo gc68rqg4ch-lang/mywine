@@ -143,14 +143,26 @@ test("Suchergebnisse: Suchbegriffe in Reihenfolge, Adressen je Suche, Fehler; Sc
   assert.deepEqual(urls, ["https://www.drinks.ch/de/lazzaroni-amaretto-70cl.html", "https://www.galaxus.ch/de/s1/product/gozio-amaretto-70cl-123"], "passender Titel zuerst; kein Ausland, keine Suchseite");
 });
 
-test("Bester Treffer: exakt vor „other“; mehrere Händler → häufigster bzw. mittlerer Preis, mit Anzahl", () => {
+test("Bester Treffer: exakt vor „other“; Preise beieinander → häufigster bzw. mittlerer, bei zwei der höhere; Ausreisser weg", () => {
   const f = (amount: number, host: string, kind: Found["kind"] = "exact"): Found => ({ kind, amount, merchant: host, url: `https://www.${host}/x`, year: null, sizeMl: 700 });
   assert.deepEqual(pickBest([f(20, "a.ch", "other"), f(30, "b.ch")]), { ...f(30, "b.ch"), merchants: 1 });
-  assert.equal(pickBest([f(25, "a.ch"), f(29.9, "b.ch"), f(35, "c.ch")])?.amount, 29.9, "Median");
-  assert.equal(pickBest([f(25, "a.ch"), f(29.9, "b.ch"), f(29.9, "c.ch"), f(40, "d.ch")])?.amount, 29.9, "häufigster");
-  assert.equal(pickBest([f(25, "a.ch"), f(35, "b.ch")])?.amount, 25, "gerade Zahl: unterer der beiden mittleren");
-  assert.equal(pickBest([f(25, "a.ch"), f(35, "b.ch")])?.merchants, 2);
+  assert.equal(pickBest([f(26, "a.ch"), f(28.5, "b.ch"), f(30, "c.ch")])?.amount, 28.5, "Median");
+  const group = pickBest([f(22.9, "a.ch"), f(22.9, "b.ch"), f(23.5, "c.ch"), f(24, "d.ch")]);
+  assert.deepEqual([group?.kind, group?.amount, group?.merchants], ["exact", 22.9, 4], "22.90-Bereich (häufigster)");
+  assert.deepEqual([pickBest([f(29.9, "a.ch"), f(31.5, "b.ch")])?.amount, pickBest([f(29.9, "a.ch"), f(31.5, "b.ch")])?.merchants], [31.5, 2], "zwei ähnliche: der höhere");
   assert.equal(pickBest([f(25, "a.ch"), f(27, "a.ch")])?.merchants, 1, "je Händler ein Angebot");
+  // Ausreisser: Mehrheit liegt beieinander → Ausreisser fällt weg
+  const outlier = pickBest([f(15.9, "globus.ch"), f(29.9, "drinks.ch"), f(30, "casadeltequila.ch")]);
+  assert.deepEqual([outlier?.kind, outlier?.amount, outlier?.merchants], ["exact", 30, 2]);
+  // 29.90 vs 15.90: kein stiller Treffer, Rückfrage mit beiden Preisen
+  const spread = pickBest([f(29.9, "drinks.ch"), f(15.9, "globus.ch")])!;
+  assert.equal(spread.kind, "other");
+  assert.equal(spread.reason, "price_spread");
+  assert.equal(spread.amount, 29.9);
+  assert.match(spread.why!.replace(/\u00a0/g, " "), /Preise uneinheitlich, auch CHF 15\.90 \(globus\.ch\)/);
+  // Modell-Treffer nie vor einem geprüften exakten
+  assert.equal(pickBest([{ ...f(20.45, "coop.ch"), source: "model" }, f(22.9, "drinks.ch")])?.url, "https://www.drinks.ch/x");
+  assert.equal(pickBest([{ ...f(29.95, "coop.ch"), source: "model" }])?.source, "model");
   assert.equal(pickBest([]), null);
   const note = priceNote({ merchant: "Drinks", year: null, sizeMl: 700, url: "https://www.drinks.ch/x", merchants: 3 });
   assert.match(note, /^Drinks · ohne Jahrgang · 70 cl · 3 Händler · \d{2}\.\d{2}\.\d{4} · https/);
@@ -201,7 +213,7 @@ test("Eigene Prüfung ohne Modell-Zusage: .ch-Adressen aus den Suchergebnissen w
   const { finding, diagnostics } = await researchPrice(LAZ, null, 700, "Galaxus");
   assert.equal(claudeCalls, 1);
   assert.equal(finding.kind, "exact");
-  assert.ok(finding.kind === "exact" && finding.amount === 29.9 && finding.merchants === 2, "zwei Händler, unterer der mittleren Preise");
+  assert.ok(finding.kind === "exact" && finding.amount === 31.5 && finding.merchants === 2, "zwei ähnliche Preise: der höhere");
   assert.deepEqual(diagnostics.queries, ["Lazzaroni Amaretto 70cl", "Lazzaroni Amaretto kaufen CHF"]);
   assert.equal(diagnostics.searches, 2);
   assert.deepEqual(diagnostics.search_results?.[0].urls, ["https://www.lazzaroni.it/amaretto", DRINKS]);

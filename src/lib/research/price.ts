@@ -27,7 +27,7 @@ import { giftValueKeyboard, priceKeyboard, priceOfferKeyboard, regularPriceKeybo
 import type { IngestState, IngestStep, PriceOffer } from "@/lib/ingest/schema";
 import { createGetter, findShopPages, shopDocuments, shopPagesNote } from "./shops";
 import type { Get } from "./shops/adapters";
-import { offerFromHtml, offerFromShopify, qualifierMismatch, sameProduct, shopifyDataUrl, sizeFromText, swissPage, yearFromText, type Mismatch, type ProductOffer } from "./price-match";
+import { offerFromShopify, productPage, qualifierMismatch, sameProduct, shopifyDataUrl, sizeFromText, swissPage, yearFromText, type Mismatch, type PageRead, type ProductOffer } from "./price-match";
 import {
   compactSearches,
   directShopsFor,
@@ -75,7 +75,20 @@ export type PriceRaw = z.infer<typeof PriceSchema>;
  * why: abweichender Zusatz („Angebot ohne Riserva“) – dann kein exakter Treffer. merchants: so
  * viele Händler mit exaktem Treffer (Preis = häufigster bzw. mittlerer).
  */
-export type PriceOfferFound = { amount: number; merchant: string; url: string; year: number | null; sizeMl: number; why?: string; reason?: string; merchants?: number };
+export type PriceOfferFound = {
+  amount: number;
+  merchant: string;
+  url: string;
+  year: number | null;
+  sizeMl: number;
+  why?: string;
+  reason?: string;
+  merchants?: number;
+  /** Ausverkauft bzw. nicht lieferbar – Preis gilt, Vermerk im price_note. */
+  soldOut?: boolean;
+  /** Nur laut Modell (Seite selbst nicht lesbar). */
+  source?: "model";
+};
 export type PriceFinding =
   | ({ kind: "exact" } & PriceOfferFound)
   | ({ kind: "other" } & PriceOfferFound)
@@ -87,12 +100,12 @@ const standardSize = (type: string | null | undefined) => (type === "spirit" ? 7
 export type PriceWant = { year: number | null; sizeMl: number | null; type?: string | null; name?: string; producer?: string | null };
 
 /** Treffer bzw. anderer Jahrgang/andere Grösse (rein). Aktions- und Normalpreis → der Normalpreis. */
-function finding(want: PriceWant, o: { price: number; regular: number | null; merchant: string; url: string; year: number | null; sizeMl: number | null; mismatch?: Mismatch }): PriceFinding {
+function finding(want: PriceWant, o: { price: number; regular: number | null; merchant: string; url: string; year: number | null; sizeMl: number | null; mismatch?: Mismatch; soldOut?: boolean }): PriceFinding {
   const amount = o.regular != null && o.regular > o.price ? o.regular : o.price;
   if (!(amount > 0 && amount < 100_000)) return { kind: "none", reason: "bad_amount" };
   const size = want.sizeMl ?? standardSize(want.type);
   const offerSize = o.sizeMl && o.sizeMl > 0 ? Math.round(o.sizeMl) : standardSize(want.type);
-  const found = { amount: Math.round(amount * 100) / 100, merchant: o.merchant, url: o.url, year: o.year, sizeMl: offerSize };
+  const found = { amount: Math.round(amount * 100) / 100, merchant: o.merchant, url: o.url, year: o.year, sizeMl: offerSize, ...(o.soldOut ? { soldOut: true } : {}) };
   // Zusatz wie Riserva nur auf einer Seite: oft ein eigenes Produkt – nur mit Rückfrage.
   if (o.mismatch) return { kind: "other", ...found, why: o.mismatch.detail, reason: o.mismatch.reason };
   return o.year === want.year && offerSize === size ? { kind: "exact", ...found } : { kind: "other", ...found };
@@ -135,10 +148,13 @@ const merchantFromUrl = (url: string) => {
 const urlSize = (url: string) => Number(url.match(/[?&]_size=(\d{3,4})\b/)?.[1]) || null;
 const urlYear = (url: string) => Number(url.match(/[?&]_vintage=((?:19|20)\d\d)\b/)?.[1]) || null;
 
-/** Produktseite eines Shops abrufen und den Preis direkt lesen (Shopify-Daten, sonst die Seite). */
-export async function readOffer(url: string, get: Get): Promise<ProductOffer | null> {
+/**
+ * Produktseite eines Shops abrufen und lesen (Shopify-Daten, sonst die Seite): genau ein Produkt mit
+ * Preis, eine Liste (Marken-/Kategorieseite, mehrere Produkte) oder nichts lesbar.
+ */
+export async function readPage(url: string, get: Get): Promise<PageRead> {
   const host = hostOf(url);
-  if (!host) return null;
+  if (!host) return { kind: "none" };
   const data = shopifyDataUrl(url);
   if (data) {
     const res = await get(data);
@@ -147,9 +163,9 @@ export async function readOffer(url: string, get: Get): Promise<ProductOffer | n
         const offer = offerFromShopify(JSON.parse(res.text));
         if (offer) {
           // Shopify-Daten nennen keine Adresse: bei Shops ohne .ch die Seite selbst prüfen.
-          if (swissMerchantUrl(url)) return offer;
+          if (swissMerchantUrl(url)) return { kind: "product", offer };
           const page = await get(url);
-          return { ...offer, swiss: Boolean(page?.text && swissPage(page.text)) };
+          return { kind: "product", offer: { ...offer, swiss: Boolean(page?.text && swissPage(page.text)) } };
         }
       } catch {
         // keine Shopify-Daten – die Seite selbst lesen
@@ -157,8 +173,16 @@ export async function readOffer(url: string, get: Get): Promise<ProductOffer | n
     }
   }
   const page = await get(url);
-  const offer = page?.status === 200 && page.text ? offerFromHtml(page.text) : null;
-  return offer && offer.sizeMl == null ? { ...offer, sizeMl: urlSize(url) ?? sizeFromText(decodeURIComponent(url)) } : offer;
+  if (page?.status !== 200 || !page.text) return { kind: "none" };
+  const read = productPage(page.text);
+  // Grösse aus der Adresse (Flaschenpost „?_size=750“) gilt als Angabe der Seite.
+  return read.kind === "product" && read.offer.sizeMl == null ? { kind: "product", offer: { ...read.offer, sizeMl: urlSize(url) ?? sizeFromText(decodeURIComponent(url)) } } : read;
+}
+
+/** Kurzform: das Angebot einer Produktseite, sonst null. */
+export async function readOffer(url: string, get: Get): Promise<ProductOffer | null> {
+  const read = await readPage(url, get);
+  return read.kind === "product" ? read.offer : null;
 }
 
 export type DirectResult = { shop: string; result: "ok" | "no_hit" | "error"; urls?: string[] };
@@ -181,22 +205,44 @@ export type PriceDiagnostics = {
   finding?: PriceFinding;
 };
 
-/** Gefundene Produktseiten selbst prüfen: CHF, Schweizer Händler, derselbe Wein. Alle, parallel; Protokoll in Reihenfolge. */
+/**
+ * Gefundene Produktseiten selbst prüfen: genau ein Produkt (sonst „listing“), CHF, Schweizer
+ * Händler, derselbe Wein laut dem Produktnamen der Seite. Ausverkauft: nur mit Grösse von der
+ * Seite. Alle, parallel; Protokoll in Reihenfolge.
+ */
 async function verifyPages(urls: string[], want: PriceWant & { name: string }, get: Get, log: PriceDiagnostics["pages"]): Promise<PriceOfferFoundKind[]> {
   const results = await Promise.all(
     urls.map(async (url): Promise<{ result: string; found?: PriceOfferFoundKind }> => {
-      const offer = await readOffer(url, get).catch(() => null);
-      if (!offer) return { result: "no_price" };
+      const read = await readPage(url, get).catch((): PageRead => ({ kind: "none" }));
+      if (read.kind === "listing") return { result: `listing:${read.reason}` };
+      if (read.kind === "none") return { result: "no_price" };
+      const offer = read.offer;
       if (offer.currency !== "CHF") return { result: "not_chf" };
       if (!swissMerchantUrl(url) && !offer.swiss) return { result: "not_swiss" };
       const same = sameProduct({ name: want.name, producer: want.producer, year: want.year }, offer.title, offer.vendor);
       if (!same.same) return { result: `not_same_wine:${same.reason}` };
-      const f = finding(want, { price: offer.price, regular: offer.regular, merchant: merchantFromUrl(url), url, year: yearFromText(offer.title) ?? urlYear(url), sizeMl: offer.sizeMl, mismatch: same.mismatch });
-      return { result: f.kind === "other" && f.reason ? `not_exact:${f.reason}` : f.kind, ...(f.kind === "none" ? {} : { found: f }) };
+      if (offer.soldOut && offer.sizeMl == null) return { result: "sold_out_no_size" };
+      const f = finding(want, { price: offer.price, regular: offer.regular, merchant: merchantFromUrl(url), url, year: yearFromText(offer.title) ?? urlYear(url), sizeMl: offer.sizeMl, mismatch: same.mismatch, soldOut: offer.soldOut });
+      const result = f.kind === "other" && f.reason ? `not_exact:${f.reason}` : f.kind;
+      return { result: offer.soldOut && f.kind !== "none" ? `${result}:sold_out` : result, ...(f.kind === "none" ? {} : { found: f }) };
     }),
   );
   results.forEach((r, i) => log.push({ url: urls[i], result: r.result }));
   return results.flatMap((r) => (r.found ? [r.found] : []));
+}
+
+/**
+ * Modellpreis als Treffer (Quelle „model“), wenn die eigene Prüfung genau diese Seite nicht lesen
+ * konnte (no_price, z. B. Bot-Sperre oder Preis nur per JavaScript): CHF, Schweizer Händler,
+ * wörtliches Zitat und ein Produkttitel, der laut eigenem Namensvergleich passt. Rein.
+ */
+export function modelFinding(raw: PriceRaw | null, want: PriceWant & { name: string }, pages: { url: string; result: string }[]): PriceOfferFoundKind | null {
+  if (!raw?.found || !raw.url) return null;
+  const checked = pages.find((p) => p.url === raw.url);
+  if (checked && checked.result !== "no_price") return null;
+  if (!raw.product_title.trim() || !sameProduct({ name: want.name, producer: want.producer, year: want.year }, raw.product_title).same) return null;
+  const f = evaluatePrice(raw, want);
+  return f.kind === "none" ? null : { ...f, source: "model" };
 }
 type PriceOfferFoundKind = Exclude<PriceFinding, { kind: "none" }>;
 
@@ -297,6 +343,9 @@ export async function researchPrice(
     const fromResults = swissResultUrls(searches, searchTitles(blocks), want, MAX_RESULT_URLS);
     const urls = [...new Set([raw?.url ?? "", ...(raw?.candidate_urls ?? []).slice(0, 4), ...fromResults, ...pages.map((x) => x.url)].filter((u) => hostOf(u) && !checked.has(u)))].slice(0, MAX_RESULT_URLS + 4);
     if (urls.length) found.push(...(await verifyPages(urls, want, get, diagnostics.pages)));
+    // Seite nicht lesbar, Modell nennt Preis mit Zitat und passendem Titel → als Modell-Treffer.
+    const fromModel = modelFinding(raw, want, diagnostics.pages);
+    if (fromModel) found.push(fromModel);
   }
 
   const best = pickBest(found);
@@ -304,7 +353,8 @@ export async function researchPrice(
     const { merchants, ...offer } = best;
     const result: PriceFinding = best.kind === "exact" && merchants > 1 ? { ...offer, kind: "exact", merchants } : offer;
     if (best.kind === "exact") diagnostics.merchants = merchants;
-    diagnostics.verdict = result.kind === "other" && result.reason ? `not_exact:${result.reason}` : `${result.kind}:page`;
+    const via = best.source === "model" ? "model" : "page";
+    diagnostics.verdict = result.kind === "other" && result.reason ? `not_exact:${result.reason}` : `${result.kind}:${via}`;
     return { finding: result, diagnostics };
   }
   const result = evaluatePrice(raw, want);
@@ -376,15 +426,17 @@ export const clSize = (ml: number | null | undefined) => (ml ? `${Math.round(ml 
 
 /** „3 Händler“ – bei mehreren Händlern mit exaktem Treffer (Preis = häufigster bzw. mittlerer). */
 const merchantCount = (o: { merchants?: number }) => (o.merchants && o.merchants > 1 ? `${o.merchants} Händler` : null);
+/** „ausverkauft“ bzw. „laut Suche“ (Preis nur laut Modell). */
+const offerFlags = (o: { soldOut?: boolean; source?: "model" }) => [o.soldOut ? "ausverkauft" : null, o.source === "model" ? "laut Suche" : null];
 
 /** „Mövenpick, 2019, 75 cl“ bzw. „Drinks, ohne Jahrgang, 70 cl, 3 Händler“ */
 export const offerDetails = (o: { merchant: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; merchants?: number }) =>
   [o.merchant, o.year ?? "ohne Jahrgang", clSize(o.sizeMl ?? o.size_ml), merchantCount(o)].filter(Boolean).join(", ");
 
 /** price_note: „Mövenpick · 2019 · 75 cl · 29.10.2026 · https://…“ (mehrere Händler: „· 3 Händler“ vor dem Datum). */
-export const priceNote = (o: { merchant: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; url: string; merchants?: number }) => {
+export const priceNote = (o: { merchant: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; url: string; merchants?: number; soldOut?: boolean; source?: "model" }) => {
   const [y, m, d] = todayIso().split("-");
-  return [o.merchant, o.year ?? "ohne Jahrgang", clSize(o.sizeMl ?? o.size_ml), merchantCount(o), `${d}.${m}.${y}`, o.url].filter(Boolean).join(" · ").slice(0, 500);
+  return [o.merchant, o.year ?? "ohne Jahrgang", clSize(o.sizeMl ?? o.size_ml), merchantCount(o), ...offerFlags(o), `${d}.${m}.${y}`, o.url].filter(Boolean).join(" · ").slice(0, 500);
 };
 
 const money = (v: number) => formatMoney(v, "CHF")!;
@@ -634,7 +686,7 @@ export async function askPriceForItem(db: Db, chatId: number, itemId: string, mo
 }
 
 /** Gefundenen (bzw. übernommenen) Preis in die Charge – nur leere Felder, Herkunft research. */
-export async function storeFoundPrice(db: Db, itemId: string, offer: { amount: number; merchant: string; url: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; merchants?: number }, mode: PriceMode) {
+export async function storeFoundPrice(db: Db, itemId: string, offer: { amount: number; merchant: string; url: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; merchants?: number; soldOut?: boolean; source?: "model" }, mode: PriceMode) {
   const values = mode === "both" ? { purchase_price: offer.amount, regular_price: offer.amount } : { regular_price: offer.amount };
   return updateItemPrices(db, itemId, values, "research", priceNote(offer), true);
 }

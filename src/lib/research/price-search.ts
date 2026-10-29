@@ -2,7 +2,9 @@
 // Schweizer Shops (Adressen und Auswertung), URLs aus den Websuche-Ergebnissen sammeln und den
 // besten Treffer wählen. Netz, Modell und DB kommen in price.ts dazu.
 
-import { sameProduct, sizeFromText, wordsOf } from "./price-match";
+import { formatMoney } from "@/lib/format";
+import { GENERIC_NAMES, brandFromProducer, brandInName, genericName, sameProduct, sizeFromText, wordsOf } from "./price-match";
+export { brandFromProducer, genericName } from "./price-match";
 import { SHOP_DOMAINS } from "./shops/match";
 
 export const hostOf = (url: string) => {
@@ -21,53 +23,6 @@ export function swissMerchantUrl(url: string) {
 }
 
 // ——— Marke und Suchbegriffe ———
-
-/** Familienzusatz am Ende: „& Figli“, „e Figli“, „& Fils“, „& Sons“, „& Söhne“, „Fratelli“ … */
-const FAMILY_RE = /\s*(?:&|\+|\be\b|\bet\b|\bund\b|\band\b|\by\b)\s*(?:figli|figlio|fils|sons?|söhne|soehne|hijos|filhos|nipoti|co\.?|cie\.?|c\.?)\s*\.?$/i;
-/** Rechtsformen (auch mit Punkten: „S.p.A.“, „S.r.l.“). */
-const LEGAL_RE = /(?:^|\s)(?:s\.?\s?p\.?\s?a|s\.?\s?r\.?\s?l|s\.?\s?a\.?\s?s|s\.?\s?a|s\.?\s?a\.?\s?r\.?\s?l|sarl|ag|gmbh|ltd|inc|llc|bv|nv|kg)\.?(?=\s|$|,)/gi;
-/** Betriebswörter – gehören nicht zur Marke („Distilleria“, „Cantina“, „Weingut“, „Bodega“ …). */
-const BUSINESS = new Set(
-  "distilleria distillerie distilleries distillery distilerias destilerias destileria brennerei destillerie weingut weinbau weinkellerei kellerei domaine domaines chateau château cantina cantine bodega bodegas tenuta azienda agricola vinicola vitivinicola fattoria maison winery wines estate estates casa fratelli famiglia family famille cooperativa caves cave vignobles vigneti agriturismo società societa compagnia company".split(" "),
-);
-const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-
-/**
- * Marke aus dem Produzenten: Klammerzusatz (oft die Marke) bzw. der Name ohne Rechtsform,
- * Betriebswörter und Familienzusatz; mit Familienzusatz nur der Familienname.
- * „Paolo Lazzaroni & Figli“ → „Lazzaroni“, „Distilleria Giovannipoli (Casa Grappa)“ → „Casa Grappa“,
- * „Illva Saronno S.p.A.“ → „Illva Saronno“. Leer → null.
- */
-export function brandFromProducer(producer: string | null | undefined): string | null {
-  const p = (producer ?? "").trim();
-  if (!p) return null;
-  const inner = p.match(/\(([^)]+)\)/)?.[1]?.trim();
-  if (inner && inner.length >= 2) return inner;
-  let s = p.replace(/\([^)]*\)/g, " ").replace(LEGAL_RE, " ").replace(/[,;]+/g, " ").replace(/\s+/g, " ").trim();
-  const family = FAMILY_RE.test(s);
-  s = s.replace(FAMILY_RE, "").trim();
-  const words = s.split(/\s+/).filter((w) => w && !BUSINESS.has(fold(w).replace(/[^a-z]/g, "")) && !/^(di|de|del|della|dei|des|du|da|von|van|la|le|el)$/i.test(w));
-  if (!words.length) return s || null;
-  // „Paolo Lazzaroni & Figli“: die Marke ist der Familienname.
-  return family ? words[words.length - 1] : words.join(" ");
-}
-
-/** Gattungsnamen – allein nichtssagend, immer mit Marke suchen. */
-const GENERIC_NAMES = new Set(
-  "amaretto grappa gin rum rhum ron vodka whisky whiskey cognac brandy likor liquor liqueur liquore limoncello sambuca vermouth wermut vermut pisco tequila mezcal calvados armagnac kirsch williams obstbrand pflumli zwetschgen schnaps bitter aperitivo americano port porto sherry madeira marsala chardonnay merlot pinot noir grigio gris blanc bianco blanco rosso rouge rot weiss rose rosato rosado sauvignon cabernet syrah shiraz riesling prosecco champagne cava cremant spumante chianti nebbiolo barbera dolcetto primitivo sangiovese tempranillo malbec zinfandel moscato muscat premium original originale classic classico reserve riserva reserva selection vino wine wein extra dry old fine special superior".split(" "),
-);
-
-/** Name nur aus Gattungswörtern („Amaretto“, „Premium Pisco“, „Grappa Riserva“) bzw. sehr kurz. */
-export function genericName(name: string) {
-  const w = wordsOf(name).filter((x) => !/^\d+$/.test(x));
-  return w.length === 0 || w.every((x) => GENERIC_NAMES.has(x) || x.length <= 2) || name.trim().length <= 4;
-}
-
-/** Ist die Marke schon im Namen? („Disaronno“ enthält „Saronno“ aus „Illva Saronno“.) */
-const brandInName = (brand: string, name: string) => {
-  const nameJoined = wordsOf(name).join("");
-  return wordsOf(brand).some((b) => b.length >= 4 && nameJoined.includes(b));
-};
 
 /**
  * Produkt für die Suche: Marke + Name („Lazzaroni Amaretto“, „Wildhaber Creanza“); steckt die Marke
@@ -276,26 +231,51 @@ export const compactSearches = (searches: SearchLog[]) =>
 
 // ——— Bester Treffer ———
 
-export type Found = { kind: "exact" | "other"; amount: number; merchant: string; url: string; year: number | null; sizeMl: number; why?: string; reason?: string };
+/**
+ * source „model“: Preis nur laut Antwort des Modells (Seite selbst nicht lesbar, z. B. Bot-Sperre) –
+ * zählt nie vor einem selbst geprüften Treffer. soldOut: ausverkauft (Preis gilt, Vermerk im price_note).
+ */
+export type Found = { kind: "exact" | "other"; amount: number; merchant: string; url: string; year: number | null; sizeMl: number; why?: string; reason?: string; soldOut?: boolean; source?: "model" };
+
+/** Höchstens so weit (×1.25) dürfen exakte Preise auseinanderliegen, um als gleich zu gelten. */
+export const PRICE_SPREAD = 1.25;
+
+const chf = (n: number) => formatMoney(n, "CHF")!;
 
 /**
- * Bester Treffer: exakt (Name, Grösse, Jahrgang) vor „other“. Mehrere exakte (verschiedene
- * Händler): der häufigste Preis, bei Gleichstand der mittlere (Median, bei gerader Zahl der untere)
- * – mit der Zahl der Händler (merchants). Null ohne Treffer.
+ * Bester Treffer: selbst geprüfte exakte vor Modell-Treffern, exakt vor „other“. Mehrere exakte
+ * Händler (je Händler ein Angebot): die Preise müssen beieinander liegen (höchstens 25 %
+ * auseinander). Ausreisser fallen weg, wenn die Mehrheit beieinander liegt; sonst „other“ mit
+ * Rückfrage und beiden Preisen (reason price_spread). Innerhalb der Gruppe: bei zwei Händlern der
+ * höhere (eher Normal- als Aktionspreis), sonst der häufigste bzw. mittlere Preis.
  */
 export function pickBest(found: Found[]): (Found & { merchants: number }) | null {
-  const exact = found.filter((f) => f.kind === "exact");
-  if (!exact.length) {
-    const other = found.find((f) => f.kind === "other");
-    return other ? { ...other, merchants: 1 } : null;
+  const verified = found.filter((f) => f.kind === "exact" && f.source !== "model");
+  if (!verified.length) {
+    const fallback = found.find((f) => f.kind === "exact") ?? found.find((f) => f.kind === "other" && f.source !== "model") ?? found.find((f) => f.kind === "other");
+    return fallback ? { ...fallback, merchants: 1 } : null;
   }
   // Je Händler (Host) nur ein Angebot.
   const byHost = new Map<string, Found>();
-  for (const f of exact) if (!byHost.has(hostOf(f.url) ?? f.url)) byHost.set(hostOf(f.url) ?? f.url, f);
+  for (const f of verified) if (!byHost.has(hostOf(f.url) ?? f.url)) byHost.set(hostOf(f.url) ?? f.url, f);
   const list = [...byHost.values()].sort((a, b) => a.amount - b.amount);
+  if (list.length === 1) return { ...list[0], merchants: 1 };
+  // Grösste Gruppe, deren Preise höchstens 25 % auseinanderliegen.
+  let group: Found[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const g = list.filter((f) => f.amount >= list[i].amount && f.amount <= list[i].amount * PRICE_SPREAD);
+    if (g.length > group.length) group = g;
+  }
+  if (group.length * 2 <= list.length) {
+    // Uneindeutig (z. B. 15.90 und 29.90): nachfragen, mit den Preisen der anderen Händler.
+    const top = list[list.length - 1];
+    const others = list.slice(0, -1).map((f) => `${chf(f.amount)} (${f.merchant})`).join(", ");
+    return { ...top, kind: "other", reason: "price_spread", why: `Preise uneinheitlich, auch ${others}`, merchants: list.length };
+  }
+  if (group.length === 2) return { ...group[1], merchants: group.length };
   const counts = new Map<number, number>();
-  for (const f of list) counts.set(f.amount, (counts.get(f.amount) ?? 0) + 1);
-  const top = Math.max(...counts.values());
-  const pick = top > 1 ? list.find((f) => counts.get(f.amount) === top)! : list[Math.floor((list.length - 1) / 2)];
-  return { ...pick, merchants: list.length };
+  for (const f of group) counts.set(f.amount, (counts.get(f.amount) ?? 0) + 1);
+  const most = Math.max(...counts.values());
+  const pick = most > 1 ? group.find((f) => counts.get(f.amount) === most)! : group[Math.floor((group.length - 1) / 2)];
+  return { ...pick, merchants: group.length };
 }

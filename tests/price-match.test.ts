@@ -80,7 +80,7 @@ test("Preise direkt aus Produktseiten: Shopify (.js/.json), schema.org, Magento"
   assert.deepEqual(offerFromHtml(ld), { title: "Pintia 2019", vendor: null, price: 66, regular: null, currency: "CHF", sizeMl: null, swiss: true });
   const eur = `<script type="application/ld+json">{"@type":"Product","name":"Pintia 2019","offers":[{"@type":"Offer","price":59,"priceCurrency":"EUR"}]}</script>`;
   assert.equal(offerFromHtml(eur)?.currency, "EUR");
-  const magento = `<title>Pintia 2019</title><span data-price-amount="49" data-price-type="finalPrice"></span><span data-price-amount="66" data-price-type="oldPrice"></span> CHF`;
+  const magento = `<title>Pintia 2019 | Shop</title><h1 class="page-title"><span class="base">Pintia 2019</span></h1><span data-price-amount="49" data-price-type="finalPrice"></span><span data-price-amount="66" data-price-type="oldPrice"></span> CHF`;
   assert.deepEqual([offerFromHtml(magento)?.price, offerFromHtml(magento)?.regular], [49, 66]);
   assert.equal(offerFromHtml("<p>nichts</p>"), null);
 });

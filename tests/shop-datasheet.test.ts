@@ -11,7 +11,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { researchAndFillWine } from "@/lib/research/wine";
 import { findAndStoreDrinkWindow, shopDrinkWindow } from "@/lib/research/drink-window";
 import { datasheetLink, moevenpickDatasheet, SHOPS } from "@/lib/research/shops/adapters";
-import { findShopPages } from "@/lib/research/shops";
 import { SHOP_DOMAINS, shopSourceAllowed } from "@/lib/research/shops/match";
 import { MAX_SHOP_FETCHES, researchTools } from "@/lib/ingest/recognize";
 import { UNKNOWN } from "@/lib/taste/profile";
@@ -99,20 +98,12 @@ test("Datenblatt-Link auf der Jahrgangsseite; PDF-Text: Trinkreife, Alkohol, Reb
   assert.deepEqual(aperture.drink, { from: null, until: 2035 });
 });
 
-test("Jahrgangsseite vorhanden: Seite und Datenblatt als zwei Quellen; Trinkfenster aus „Trinkreife“", async () => {
-  reset();
-  const pages = await findShopPages({ name: "Cuvée Spéciale", producer: "Tardieu-Laurent", appellation: "Condrieu AOP" }, [2023], { shops: SHOPS.filter((s) => s.id === "moevenpick") });
-  assert.deepEqual(pages.map((p) => [p.url, p.year]), [[MP_2023, 2023], [SHEET_2023, 2023]]);
-  assert.ok(!("datasheet" in pages[0]));
-  // Trinkfenster: Seite ohne „Genussreif“ → das Datenblatt zählt (research)
-  const withoutPage = [{ ...pages[0], drink: undefined }, pages[1]];
-  assert.deepEqual(shopDrinkWindow(withoutPage, 2023, 2026), { from: null, until: 2035, source: "research", note: "moevenpick-wein.com" });
-  // In der Recherche: beide als Quelle, kein web_fetch (der Adapter hat etwas gefunden)
-  await researchAndFillWine(db, W, "all", { taste: "always", year: 2023 });
-  for (const c of calls) {
-    assert.deepEqual(c.pages, [`Händlerseite ${MP_2023}`, `Händlerseite ${SHEET_2023}`], c.tool);
-    assert.equal(webFetch(c), undefined, `${c.tool}: kein web_fetch`);
-  }
+test("Seite und Datenblatt: Trinkfenster aus „Trinkreife“ (Parser bleiben für Seiten aus der Websuche)", () => {
+  const sheet = moevenpickDatasheet(new Uint8Array(fixture("moevenpick-datenblatt-2023-condrieu.pdf")), SHEET_2023, "2023 Condrieu AOP Cuvée spéciale Tardieu-Laurent")!;
+  const page = { shop: "moevenpick" as const, url: MP_2023, title: "2023 Condrieu AOP Cuvée spéciale Tardieu-Laurent", year: 2023, text: "" };
+  assert.deepEqual(shopDrinkWindow([page, { ...sheet, year: 2023 }], 2023, 2026), { from: null, until: 2035, source: "research", note: "moevenpick-wein.com" });
+  // Mövenpick hat keinen Such-Adapter mehr (robots.txt sperrt „?“-Adressen)
+  assert.ok(!SHOPS.some((s) => s.id === "moevenpick"));
 });
 
 test("Falscher Jahrgang wird verworfen (Adresse bzw. Dateiname des Datenblatts)", async () => {
@@ -123,14 +114,6 @@ test("Falscher Jahrgang wird verworfen (Adresse bzw. Dateiname des Datenblatts)"
   assert.equal(shopSourceAllowed(MP_2023, 2022), false, "Seite eines anderen Jahrgangs");
   assert.equal(shopSourceAllowed(MP_2023, 2023), true);
   assert.equal(shopSourceAllowed("https://www.decanter.com/wine-reviews/2019-something", 2023), true, "andere Websites: wie bisher");
-  // Datenblatt-Link mit anderem Jahrgang im Dateinamen → nur die Seite
-  reset();
-  web = (url) => {
-    const page = shopWeb(url);
-    return page && typeof page.body === "string" ? { ...page, body: page.body.replace("/file/2023-condrieu", "/file/2022-condrieu") } : page;
-  };
-  const pages = await findShopPages({ name: "Cuvée Spéciale", producer: "Tardieu-Laurent", appellation: "Condrieu AOP" }, [2023], { shops: SHOPS.filter((s) => s.id === "moevenpick") });
-  assert.deepEqual(pages.map((p) => p.url), [MP_2023]);
   // Profil: Beleg aus einem Datenblatt eines anderen Jahrgangs zählt nicht → kein Profil
   reset(2021);
   web = () => null;

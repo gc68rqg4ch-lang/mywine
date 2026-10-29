@@ -1,5 +1,5 @@
 // Schweizer Händler-Shops als Quelle: Adapter mit gespeicherten Beispielseiten (napawine.ch,
-// moevenpick-wein.com, bauraulacvins.ch), Abgleich Wein/Jahrgang, Reihenfolge (Händler der
+// bauraulacvins.ch; von moevenpick-wein.com nur noch der Seiten-Parser – kein Such-Adapter), Abgleich Wein/Jahrgang, Reihenfolge (Händler der
 // Flasche zuerst), Shop nicht erreichbar → ohne Shop-Quellen weiter, Shop-Seite als Quelle im
 // Recherche-Aufruf. Ohne DB, API-Schlüssel und Netz (fetch-Stub). Ausführen: npm test
 import "./env";
@@ -17,7 +17,6 @@ import { UNKNOWN } from "@/lib/taste/profile";
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/shops/${name}`, import.meta.url), "utf8");
 const MP_2023 = "https://www.moevenpick-wein.com/de/2023-condrieu-aop-cuvee-speciale-tardieu-laurent.html";
-const MP_2024 = "https://www.moevenpick-wein.com/de/2024-condrieu-aop-cuvee-speciale-tardieu-laurent.html";
 const NAPA = "https://napawine.ch/products/arador-syrah-2021";
 
 type Row = Record<string, unknown>;
@@ -32,7 +31,6 @@ let web: (url: string) => ReturnType<NonNullable<Net["web"]>> = () => null;
 const shopWeb = (url: string) => {
   if (url.startsWith("https://napawine.ch/search")) return { body: fixture("napawine-search.html") };
   if (url === `${NAPA}.js`) return { body: fixture("napawine-arador-syrah-2021.json"), type: "application/json" };
-  if (url.startsWith("https://www.moevenpick-wein.com/de/catalogsearch/")) return { body: fixture("moevenpick-search.html") };
   if (url === MP_2023) return { body: fixture("moevenpick-2023-condrieu.html") };
   return null;
 };
@@ -76,11 +74,14 @@ const db = createAdminClient();
 const W = "22222222-2222-4222-8222-222222222222";
 const condrieu: ShopWine = { name: "Cuvée Spéciale", producer: "Tardieu-Laurent", year: 2023, appellation: "Condrieu AOP" };
 
-function reset(vendor: string | null = "Mövenpick", wine: Partial<Row> = {}) {
+/** Arador Syrah 2021 bei Napa Wine (Shopify) – für die Abläufe in Recherche, Profil und Trinkfenster. */
+const ARADOR = { name: "Syrah", producer: "Arador", country: "Chile", region: null, appellation: null, type: "red" };
+
+function reset(vendor: string | null = "Napa Wine", wine: Partial<Row> = ARADOR, year = 2021) {
   net.tables = {
     wines: [{ id: W, name: "Cuvée Spéciale", producer: "Tardieu-Laurent", country: "Frankreich", region: "Rhône", appellation: "Condrieu AOP", type: "white", alcohol_content: null, grapes: [], researched_at: null, ...wine }],
     vendors: vendor ? [{ id: "ven1", name: vendor }] : [],
-    inventory_items: [{ wine_id: W, vintage_year: 2023, status: "sealed", vendor_id: vendor ? "ven1" : null }],
+    inventory_items: [{ wine_id: W, vintage_year: year, status: "sealed", vendor_id: vendor ? "ven1" : null }],
     wine_encounters: [], wine_vintages: [], wine_grape_shares: [], research_suggestions: [], wine_taste_profiles: [], wine_media: [],
   };
   calls.length = 0;
@@ -118,14 +119,8 @@ test("napawine: Suche → Produkt-URL (nur Treffer, gesuchter Jahrgang), JSON �
   assert.deepEqual(pages.map((p) => p.url), [NAPA]);
 });
 
-test("Mövenpick: Suche zeigt 2024 → Adresse mit 2023; Aromenprofil, Genussreif, Alkohol, Rebsorte", async () => {
-  reset();
-  const mp = SHOPS.find((s) => s.id === "moevenpick")!;
-  const candidates = await mp.search(condrieu, createGetter());
-  assert.ok(candidates.some((c) => c.url === MP_2024 && c.year === 2024));
-  assert.ok(candidates.every((c) => !c.url.endsWith("/weissweine.html")), "nur Produktkacheln");
-  assert.equal(mp.withYear!(MP_2024, 2023), MP_2023);
-
+test("Mövenpick-Seite (aus der Websuche): Aromenprofil, Genussreif, Alkohol, Rebsorte; kein Such-Adapter mehr", () => {
+  assert.ok(!SHOPS.some((s) => s.id === "moevenpick"), "robots.txt sperrt „?“-Adressen");
   const page = moevenpickPage(fixture("moevenpick-2023-condrieu.html"), MP_2023)!;
   assert.equal(page.title, "2023 Condrieu AOP Cuvée spéciale Tardieu-Laurent");
   assert.equal(page.year, 2023);
@@ -138,24 +133,6 @@ test("Mövenpick: Suche zeigt 2024 → Adresse mit 2023; Aromenprofil, Genussrei
   assert.deepEqual(page.drink, { from: null, until: 2035 });
   assert.deepEqual(parseDrink("2026 bis 2034"), { from: 2026, until: 2034 });
   assert.equal(parseDrink("2 bis 8 Jahre"), null);
-
-  const pages = await findShopPages(condrieu, [2023], { shops: [mp] });
-  assert.deepEqual(pages.map((p) => p.url), [MP_2023]);
-  assert.ok(!requested.includes(MP_2024), "die Seite 2024 wird gar nicht gelesen");
-  // Gibt es den Jahrgang nicht (404) → keine Seite
-  reset();
-  assert.deepEqual(await findShopPages({ ...condrieu }, [2019], { shops: [mp] }), []);
-  assert.ok(requested.includes(MP_2023.replace("2023", "2019")));
-});
-
-test("Mövenpick: einziger Treffer leitet direkt auf die Produktseite weiter", async () => {
-  reset();
-  web = (url) =>
-    url.includes("/catalogsearch/") ? { body: fixture("moevenpick-2023-condrieu.html"), url: MP_2023 } : null;
-  const pages = await findShopPages(condrieu, [2023], { shops: SHOPS.filter((s) => s.id === "moevenpick") });
-  assert.deepEqual(pages.map((p) => [p.url, p.year]), [[MP_2023, 2023]]);
-  // Seite aus dem Zwischenspeicher, kein zweiter Abruf (danach nur das Datenblatt der Seite).
-  assert.equal(requested.filter((u) => !u.includes("/customization_catalog/")).length, 1);
 });
 
 test("Baur au Lac Vins: Titel mit Produzent aus dem Untertitel, Beschreibung, Genussreife", () => {
@@ -190,22 +167,23 @@ test("Falscher Jahrgang, anderer Wein oder unklar → verworfen", () => {
 });
 
 test("Reihenfolge: zuerst der Shop des Händlers der Flasche, dann die übrigen", async () => {
-  assert.deepEqual(orderShops([]).map((s) => s.id), ["napawine", "moevenpick", "finespirits", "bauraulac"]);
-  assert.deepEqual(orderShops(["Baur au Lac Vins", "Coop", "Mövenpick"]).map((s) => s.id), ["bauraulac", "moevenpick", "napawine", "finespirits"]);
+  assert.deepEqual(orderShops([]).map((s) => s.id), ["napawine", "finespirits", "bauraulac"]);
+  assert.deepEqual(orderShops(["Baur au Lac Vins", "Coop", "Mövenpick"]).map((s) => s.id), ["bauraulac", "napawine", "finespirits"]);
   assert.deepEqual(orderShops(["Finespirits"]).map((s) => s.id)[0], "finespirits");
-  // In der Recherche: Händler aus inventory_items → Mövenpick wird zuerst abgefragt
-  reset("Mövenpick");
-  await researchAndFillWine(db, W, "all", { taste: "only", year: 2023 });
-  assert.match(requested[0], /^https:\/\/www\.moevenpick-wein\.com\//);
+  // In der Recherche: Händler aus inventory_items → Baur au Lac wird zuerst abgefragt
+  reset("Baur au Lac Vins");
+  await researchAndFillWine(db, W, "all", { taste: "only", year: 2021 });
+  assert.match(requested[0], /^https:\/\/www\.bauraulacvins\.ch\//);
   reset("Napa Wine");
-  await researchAndFillWine(db, W, "all", { taste: "only", year: 2023 });
+  await researchAndFillWine(db, W, "all", { taste: "only", year: 2021 });
   assert.match(requested[0], /^https:\/\/napawine\.ch\//);
+  assert.ok(!requested.some((u) => u.includes("moevenpick")), "Mövenpick wird nicht direkt abgefragt");
 });
 
 test("Shop nicht erreichbar bzw. gesperrt → Recherche läuft ohne Shop-Quellen weiter, nur Log", async () => {
   reset();
-  web = (url) => (url.includes("moevenpick") ? { status: 403, body: "Forbidden" } : null);
-  const { result, logged } = await capture(() => researchAndFillWine(db, W, "all", { taste: "always", year: 2023 }));
+  web = (url) => (url.includes("napawine") ? { status: 403, body: "Forbidden" } : null);
+  const { result, logged } = await capture(() => researchAndFillWine(db, W, "all", { taste: "always", year: 2021 }));
   assert.equal(result.status, "nothing");
   assert.equal(result.taste, "none");
   assert.deepEqual(calls.map((c) => [c.tool, c.pages.length]), [["wine", 0], ["taste", 0]]);
@@ -215,7 +193,7 @@ test("Shop nicht erreichbar bzw. gesperrt → Recherche läuft ohne Shop-Quellen
   web = () => {
     throw new Error("Zeitlimit");
   };
-  const second = await capture(() => researchAndFillWine(db, W, "all", { taste: "only", year: 2023 }));
+  const second = await capture(() => researchAndFillWine(db, W, "all", { taste: "only", year: 2021 }));
   assert.equal(second.result.taste, "none");
   assert.equal(calls.length, 1);
   assert.ok(second.logged.some((l) => l.startsWith("shop research failed")));
@@ -228,40 +206,28 @@ test("Shop-Seite landet als Quelle (merchant) im Recherche- und im Profil-Aufruf
   tasteReply = () =>
     claudeTool("report_taste_profile", {
       matches_wine: true, same_vintage: true,
-      sources: [{ url: MP_2023, title: "Mövenpick", kind: "merchant", vintage: 2023 }],
+      sources: [{ url: NAPA, title: "Napa Wine", kind: "merchant", vintage: 2021 }],
       fields: { sweetness: "trocken", acidity: UNKNOWN, tannin: UNKNOWN, alcohol: UNKNOWN, body: "voll", flavour_intensity: UNKNOWN, finish: UNKNOWN },
       aromas: [], contradictions: [], style_summary: "", food_pairing: [],
-      evidence: [{ field: "body", source_url: MP_2023, quote: "Angenehme Gaumenfülle, vollmundig" }, { field: "sweetness", source_url: MP_2023, quote: "trocken" }],
+      evidence: [{ field: "body", source_url: NAPA, quote: "Bouquet von luftgetrocknetem Fleisch" }, { field: "sweetness", source_url: NAPA, quote: "trocken" }],
     });
-  const outcome = await researchAndFillWine(db, W, "all", { taste: "always", year: 2023 });
+  const outcome = await researchAndFillWine(db, W, "all", { taste: "always", year: 2021 });
   for (const tool of ["wine", "taste"]) {
     const call = calls.find((c) => c.tool === tool)!;
-    assert.deepEqual(call.pages.map((p) => [p.title, p.context]), [["2023 Condrieu AOP Cuvée spéciale Tardieu-Laurent", `Händlerseite ${MP_2023}`]], tool);
+    assert.deepEqual(call.pages.map((p) => [p.title, p.context]), [["Arador | Syrah - 2021", `Händlerseite ${NAPA}`]], tool);
     assert.ok(call.pages[0].data.length <= 4002);
-    assert.ok(call.text.includes(`als Quelle mit url "${MP_2023}" und kind "merchant"`), tool);
+    assert.ok(call.text.includes(`als Quelle mit url "${NAPA}" und kind "merchant"`), tool);
   }
   assert.equal(outcome.taste, "saved");
   const p = net.tables.wine_taste_profiles[0];
-  assert.deepEqual(p.sources, [{ url: MP_2023, title: "Mövenpick", kind: "merchant", vintage: 2023 }]);
+  assert.deepEqual(p.sources, [{ url: NAPA, title: "Napa Wine", kind: "merchant", vintage: 2021 }]);
   // Höchstens 3 Seiten pro Wein
   assert.ok(calls.every((c) => c.pages.length <= 3));
 });
 
-test("Trinkfenster: Mövenpick „Genussreif Jetzt bis 2035“ gilt als Quelle (research) – ohne API-Aufruf", async () => {
+test("Trinkfenster: Shop-Seite ohne Angabe → Websuche, die Shop-Seite geht als Quelle mit", async () => {
   reset();
-  const { result, window } = await findAndStoreDrinkWindow(db, W, 2023);
-  assert.equal(result, "set");
-  assert.deepEqual(window, { from: null, until: 2035, source: "research", note: "moevenpick-wein.com" });
-  assert.equal(calls.length, 0);
-  const row = net.tables.wine_vintages.find((r) => r.vintage_year === 2023)!;
-  assert.deepEqual([row.drink_from_year, row.drink_until_year, row.drink_window_source], [null, 2035, "research"]);
-  // Ohne Angabe im Shop: Websuche, die Shop-Seite geht als Quelle mit
-  reset();
-  web = (url) => {
-    const page = shopWeb(url);
-    return url === MP_2023 && page ? { body: page.body.replace(/Jetzt bis 2035/, "–") } : page;
-  };
-  await findAndStoreDrinkWindow(db, W, 2023);
+  await findAndStoreDrinkWindow(db, W, 2021);
   assert.deepEqual(calls.map((c) => [c.tool, c.pages.length]), [["window", 1]]);
-  assert.ok(calls[0].text.includes(`url "${MP_2023}" und kind "merchant"`));
+  assert.ok(calls[0].text.includes(`url "${NAPA}" und kind "merchant"`));
 });
