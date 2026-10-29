@@ -47,7 +47,6 @@ import {
   skipVendorKeyboard,
   proposalMessage,
   reviewKeyboard,
-  categoryKeyboard,
 } from "./messages";
 import {
   applyCorrection,
@@ -109,7 +108,7 @@ import {
   startTextIngest,
 } from "./flow";
 import { askPriceForItem, isPriceCallback, offerDetails, parsePriceCallback, storeFoundPrice } from "@/lib/research/price";
-import { chooseMainCategory, chooseSubCategory, createProposedCategory, kindPatch, mainOptions } from "./spirit-flow";
+import { chooseMainCategory, chooseSubCategory, kindPatch } from "./spirit-flow";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Grenze der Claude API pro Bild
 const IMAGE_TYPES = {
@@ -665,28 +664,6 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       if (!kind || state.step !== "kind") return;
       await clearKeyboard(chatId, messageId);
       await advanceTo(db, job, chatId, "kind", await kindPatch(db, state, kind));
-      return;
-    }
-
-    case "catnew": {
-      // Vorgeschlagene Kategorie anlegen – erst jetzt, nach Bestätigung.
-      await answerCallback(cb.id);
-      if (state.step !== "category") return;
-      await clearKeyboard(chatId, messageId);
-      const created = await createProposedCategory(db, state);
-      if (created.label) await sendMessage(chatId, T.categoryCreated(created.label));
-      await advanceTo(db, job, chatId, "category", created.patch);
-      return;
-    }
-
-    case "catpick": {
-      // „Bestehende wählen“: Hauptkategorien als Knöpfe.
-      await answerCallback(cb.id);
-      if (state.step !== "category") return;
-      await clearKeyboard(chatId, messageId);
-      const mains = await mainOptions(db);
-      const next = await advanceJob(db, job, "category", { step: "category_main", category_options: mains.map((c) => c.id) });
-      if (next) await sendMessage(chatId, T.chooseCategory, categoryKeyboard(job.id, mains.map((c) => c.name), "main"));
       return;
     }
 

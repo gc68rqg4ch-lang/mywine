@@ -440,10 +440,12 @@ export async function askPhotoIntent(db: AdminClient, jobId: string, chatId: num
   const { error } = await db.from("ingest_jobs").update({ status: "needs_review", extracted: toJson(state) }).eq("id", jobId);
   if (error) throw error;
   const p = recognition.proposal;
-  const name = [p.producer, p.name].filter(Boolean).join(" – ") || "diesen Wein";
+  // Symbol der Art wie in der Detailkarte (🥃 bei Spirituosen).
+  const spirit = p.type === "spirit" || recognition.spirit?.kind === "spirit";
+  const name = [p.producer, p.name].filter(Boolean).join(" – ") || (spirit ? "diese Spirituose" : "diesen Wein");
   await sendMessage(
     chatId,
-    `🍷 <b>${e(name)}</b>${p.vintage_year != null ? ` ${p.vintage_year}` : ""}\n${T.boughtOrTasted}`,
+    `${spirit ? "🥃" : "🍷"} <b>${e(name)}</b>${p.vintage_year != null ? ` ${p.vintage_year}` : ""}\n${spirit ? T.boughtOrTastedSpirit : T.boughtOrTasted}`,
     intentKeyboard(jobId),
   );
 }

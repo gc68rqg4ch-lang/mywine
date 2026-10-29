@@ -32,7 +32,6 @@ import {
   categoryKeyboard,
   confirmKeyboard,
   kindKeyboard,
-  newCategoryKeyboard,
   locationKeyboard,
   proposalMessage,
   reviewKeyboard,
@@ -248,7 +247,7 @@ export function nextPurchaseStep(state: IngestState): IngestStep {
   }
   // Zuerst klären: Wein oder Spirituose? Bei Spirituosen die Kategorie (neue erst nach „Anlegen“).
   if (state.kind_unsure) return "kind";
-  if (state.proposal.type === "spirit" && state.spirit && !state.spirit.done) return state.spirit.newCategory ? "category" : "category_main";
+  if (state.proposal.type === "spirit" && state.spirit && !state.spirit.done) return "category_main";
   if (needsVintage(state)) return "vintage";
   if (state.storage_room === undefined) return "location";
   if (state.quantity === undefined) return "quantity";
@@ -302,11 +301,6 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
     case "kind":
       await sendMessage(chatId, T.kindAsk(), kindKeyboard(job.id));
       return;
-    case "category": {
-      const c = state.spirit?.newCategory;
-      if (c) await sendMessage(chatId, T.newCategoryAsk(c.name, c.parentName), newCategoryKeyboard(job.id));
-      return;
-    }
     case "category_main":
       await sendMessage(chatId, T.chooseCategory, categoryKeyboard(job.id, mains.map((c) => c.name), "main"));
       return;

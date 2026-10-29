@@ -134,14 +134,8 @@ export const T = {
   /** Erkennung unsicher: Wein oder Spirituose? */
   kindAsk: (random?: () => number) =>
     pick(["Ist das ein Wein oder eine Spirituose?", "Hilf mir kurz: Wein oder Spirituose?", "Da bin ich nicht ganz sicher – Wein oder Spirituose?"], random),
-  /** Keine passende Kategorie: neue vorschlagen (angelegt erst nach Bestätigung). */
-  newCategoryAsk: (name: string, parent: string | null) =>
-    parent
-      ? `Die Unterkategorie „${e(name)}“ unter ${e(parent)} gibt es bei mir noch nicht. Soll ich sie anlegen?`
-      : `Die Kategorie „${e(name)}“ gibt es bei mir noch nicht. Soll ich sie anlegen?`,
   chooseCategory: "In welche Kategorie gehört sie?",
   chooseSubCategory: (main: string) => `Und genauer – welche Art ${e(main)}?`,
-  categoryCreated: (label: string) => `Gut, ich habe „${e(label)}“ angelegt.`,
   categoryUnavailable: "Die Kategorien kann ich gerade nicht laden – ich speichere die Spirituose vorerst ohne Kategorie.",
   loginCode: (code: string, random?: () => number) =>
     `${pick(["🔑 Dein Code für die Anmeldung in der App:", "🔑 Hier ist dein Code für MyWine:", "🔑 Damit kommst du in die App:"], random)} <b><code>${e(code)}</code></b>\nEr gilt 10 Minuten. Hast du das nicht angefordert? Dann ignoriere die Nachricht.`,
@@ -255,6 +249,7 @@ export const T = {
 
   // --- Verkostet
   boughtOrTasted: "Hast du ihn gekauft oder nur verkostet?",
+  boughtOrTastedSpirit: "Hast du sie gekauft oder nur verkostet?",
   boughtOrTastedText: "Hast du den Wein gekauft oder nur verkostet?",
   armed: "Wie schön! Schick mir ein Foto vom Etikett oder schreib mir den Wein – ich notiere ihn als verkostet.",
   readingTasted: "Wie schön – ich schaue mir den Wein kurz an …",

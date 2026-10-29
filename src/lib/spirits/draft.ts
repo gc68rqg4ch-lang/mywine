@@ -1,5 +1,5 @@
-// Spirituose bei der Erfassung durch Antoine (rein): Angaben vom Etikett, Kategorie bestimmen und
-// – fehlt eine passende – eine neue vorschlagen (angelegt wird erst nach Bestätigung).
+// Spirituose bei der Erfassung durch Antoine (rein): Angaben vom Etikett und Kategorie bestimmen –
+// nur aus den bestehenden Kategorien (Antoine schlägt keine neuen vor; die legt der Chat an).
 
 import { categoryLabel, categoryPath, matchCategory, type SpiritCategory } from "./categories";
 
@@ -14,8 +14,6 @@ export type SpiritLabel = {
   bottled_year: number;
 };
 
-export type NewCategory = { parentId: string | null; parentName: string | null; name: string };
-
 /** Im Zustand der Erfassung (ingest_jobs.extracted.spirit). */
 export type SpiritDraft = {
   /** Erkannte Namen (Haupt-, Unterkategorie). */
@@ -25,10 +23,8 @@ export type SpiritDraft = {
   categoryId: string | null;
   /** „Whisky › Bourbon“ – für Zusammenfassung und Bestätigung. */
   label: string | null;
-  /** Kategorie geklärt (gewählt, angelegt oder keine Kategorien vorhanden). */
+  /** Kategorie geklärt (erkannt, gewählt oder keine Kategorien vorhanden). */
   done: boolean;
-  /** Vorschlag zum Anlegen (Knöpfe „Anlegen“ / „Bestehende wählen“). */
-  newCategory: NewCategory | null;
   ageYears: number | null;
   cask: string | null;
   distilledYear: number | null;
@@ -49,7 +45,6 @@ export function draftFromLabel(label: Partial<SpiritLabel> | null | undefined): 
     categoryId: null,
     label: null,
     done: false,
-    newCategory: null,
     ageYears: age != null && Number.isInteger(age) && age >= 1 && age <= 100 ? age : null,
     cask: text(label?.cask),
     distilledYear: yearOf(label?.distilled_year),
@@ -57,35 +52,36 @@ export function draftFromLabel(label: Partial<SpiritLabel> | null | undefined): 
   };
 }
 
+/** Auffang-Hauptkategorie, wenn gar keine Kategorie erkennbar ist. */
+export const OTHER_CATEGORY = "Andere";
+
 /**
- * Kategorie planen: passende bestehende → fertig; Unterkategorie fehlt unter einer bekannten
- * Hauptkategorie → vorläufig die Hauptkategorie und Vorschlag „Neue Unterkategorie … anlegen?“;
- * unbekannte Hauptkategorie → Vorschlag „Neue Kategorie … anlegen?“; nichts erkannt → auswählen.
- * Gibt es (noch) keine Kategorien, ist nichts zu klären. knownCategoryId: Kategorie eines schon
- * erfassten Weins – gilt.
+ * Kategorie planen – nur bestehende, nie neue: passende Unterkategorie → diese; nur die
+ * Hauptkategorie passt (Unterkategorie unbekannt) → die Hauptkategorie, ohne Rückfrage; erkannte,
+ * aber unbekannte Hauptkategorie → Auswahl der bestehenden Hauptkategorien; gar nichts erkannt →
+ * „Andere“ (gibt es sie nicht: Auswahl). Ohne Kategorien ist nichts zu klären. knownCategoryId:
+ * Kategorie eines schon erfassten Weins – gilt.
  */
 export function planCategory(all: SpiritCategory[], draft: SpiritDraft, knownCategoryId?: string | null): SpiritDraft {
   const labelOf = (id: string) => categoryLabel(categoryPath(all, id));
-  if (knownCategoryId && all.some((c) => c.id === knownCategoryId)) {
-    return { ...draft, categoryId: knownCategoryId, label: labelOf(knownCategoryId), done: true, newCategory: null };
-  }
-  if (!all.length) return { ...draft, done: true, newCategory: null };
+  const pick = (id: string): SpiritDraft => ({ ...draft, categoryId: id, label: labelOf(id), done: true });
+  if (knownCategoryId && all.some((c) => c.id === knownCategoryId)) return pick(knownCategoryId);
+  if (!all.length) return { ...draft, done: true };
   const m = matchCategory(all, draft.main, draft.sub);
-  if (m.category && !m.missingSub) return { ...draft, categoryId: m.category.id, label: labelOf(m.category.id), done: true, newCategory: null };
-  if (m.main && m.missingSub) {
-    return { ...draft, categoryId: m.main.id, label: m.main.name, done: false, newCategory: { parentId: m.main.id, parentName: m.main.name, name: m.missingSub } };
+  if (m.category) return pick(m.category.id);
+  if (!draft.main && !draft.sub) {
+    const other = all.find((c) => c.parentId == null && c.name.trim().toLowerCase() === OTHER_CATEGORY.toLowerCase());
+    if (other) return pick(other.id);
   }
-  if (m.missingMain) return { ...draft, categoryId: null, label: null, done: false, newCategory: { parentId: null, parentName: null, name: m.missingMain } };
-  return { ...draft, categoryId: null, label: null, done: false, newCategory: null };
+  return { ...draft, categoryId: null, label: null, done: false };
 }
 
-/** Gewählt bzw. angelegt: Kategorie steht fest. */
+/** Gewählt: Kategorie steht fest. */
 export const withCategory = (draft: SpiritDraft, all: SpiritCategory[], id: string): SpiritDraft => ({
   ...draft,
   categoryId: id,
   label: categoryLabel(categoryPath(all, id)),
   done: true,
-  newCategory: null,
 });
 
 /** Zeilen für Vorschlag und Bestätigung: Kategorie, Alter, Fass, Destilliert, Abgefüllt (nur Bekanntes). */

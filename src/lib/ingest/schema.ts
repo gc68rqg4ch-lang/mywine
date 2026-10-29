@@ -50,8 +50,16 @@ const BestBeforeField = z
 export const SpiritLabelSchema = z
   .object({
     kind: z.enum(["wine", "spirit", "unsure"]).describe("wine = Wein (auch Port, Sherry, Madeira = fortified), spirit = Spirituose (Whisky, Grappa, Likör, Obstbrand, Cognac, Rum, Gin, Vodka, Tequila …), unsure = nicht sicher"),
-    category: z.string().describe("Bei Spirituosen die Hauptkategorie, z. B. Whisky, Likör, Kräuterschnaps / Bitter, Obstbrand, Grappa / Trester, Cognac / Brandy, Rum, Gin, Vodka, Tequila / Mezcal; sonst leer"),
-    subcategory: z.string().describe("Unterkategorie, z. B. Scotch Single Malt, Bourbon, Rye, Irish, Kirsch, Williams, Armagnac, Kaffee, Sahne; leer, wenn nicht erkennbar"),
+    category: z
+      .string()
+      .describe(
+        "Bei Spirituosen die Hauptkategorie – nur genau einer dieser Namen, nie einen neuen: Whisky, Likör, Kräuterschnaps / Bitter, Obstbrand, Grappa / Trester, Cognac / Brandy, Rum, Gin, Vodka, Tequila / Mezcal, Andere; leer, wenn unklar bzw. bei Wein",
+      ),
+    subcategory: z
+      .string()
+      .describe(
+        "Unterkategorie – nur einer dieser Namen, nie einen neuen (sonst leer): Whisky: Scotch Single Malt, Scotch Blend, Bourbon, Irish, Japanese, Schweizer; Likör: Frucht, Kaffee, Kräuter, Nuss, Sahne; Obstbrand: Apfel / Calvados, Kirsch, Williams, Zwetschge; Cognac / Brandy: Cognac, Armagnac, Brandy",
+      ),
     age_years: z.number().describe("Altersangabe in Jahren (z. B. 12 bei „12 Years Old“); 0 = keine"),
     cask: z.string().describe("Fass, Reifung bzw. Finish (z. B. „Sherry Cask Finish“); leer, wenn keins dasteht"),
     distilled_year: z.number().describe("Jahr der Destillation („Distilled 2008“); 0 = keins"),
@@ -141,7 +149,7 @@ export type IngestStep =
   | "vendor_new"
   /** Wein oder Spirituose? (Erkennung unsicher) */
   | "kind"
-  /** Spirituose: neue Kategorie vorschlagen – „Anlegen“ / „Bestehende wählen“. */
+  /** Früher: neue Kategorie vorschlagen („Anlegen“) – entfallen; nur noch alte Erfassungen. */
   | "category"
   /** Spirituose: Hauptkategorie wählen. */
   | "category_main"

@@ -44,7 +44,8 @@ const matchesPart = (name: string, wanted: string) => same(name, wanted) || name
 /**
  * Bestehende Kategorie zu erkannten Namen (Haupt-, ggf. Unterkategorie). Gibt die genaueste passende
  * zurück: Unterkategorie, wenn sie passt, sonst die Hauptkategorie. missingSub: die Unterkategorie
- * gibt es unter dieser Hauptkategorie noch nicht (Antoine schlägt sie zum Anlegen vor).
+ * gibt es unter dieser Hauptkategorie nicht (dann gilt die Hauptkategorie); missingMain: erkannte
+ * Hauptkategorie gibt es nicht. Neue Kategorien schlägt Antoine nicht vor.
  */
 export function matchCategory(
   all: SpiritCategory[],

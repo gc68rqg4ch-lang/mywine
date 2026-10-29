@@ -34,10 +34,6 @@ export type CallbackAction =
   | "simno"
   /** Wein oder Spirituose? (w | s) */
   | "kind"
-  /** Spirituose: vorgeschlagene neue Kategorie anlegen */
-  | "catnew"
-  /** Spirituose: bestehende Kategorie wählen (Hauptkategorien zeigen) */
-  | "catpick"
   /** Hauptkategorie (Index) */
   | "catmain"
   /** Unterkategorie (Index) bzw. „none“ = ohne */
@@ -79,8 +75,6 @@ export function parseCallbackData(data: string | undefined) {
     "confirm",
     "vint",
     "kind",
-    "catnew",
-    "catpick",
     "catmain",
     "catsub",
     "searchprice",
@@ -485,18 +479,6 @@ export function kindKeyboard(jobId: string): TgInlineKeyboard {
 }
 
 /** Vorschlag neue Kategorie: „Anlegen“ / „Bestehende wählen“. */
-export function newCategoryKeyboard(jobId: string): TgInlineKeyboard {
-  return {
-    inline_keyboard: [
-      [
-        { text: `➕ Anlegen`, callback_data: callbackData("catnew", jobId) },
-        { text: "📋 Bestehende wählen", callback_data: callbackData("catpick", jobId) },
-      ],
-      cancelRow(jobId),
-    ],
-  };
-}
-
 /** Kategorien als Knöpfe (je zwei pro Zeile); Unterkategorien mit „Ohne Unterkategorie“. */
 export function categoryKeyboard(jobId: string, names: string[], level: "main" | "sub", mainName?: string): TgInlineKeyboard {
   const rows: TgInlineKeyboard["inline_keyboard"] = [];

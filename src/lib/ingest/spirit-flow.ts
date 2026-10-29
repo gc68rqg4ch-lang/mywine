@@ -1,13 +1,13 @@
 import "server-only";
 
 // Spirituosen bei der Erfassung durch Antoine: Art bestimmen (bei Unsicherheit „Wein oder
-// Spirituose?“), Kategorie aus den bestehenden – fehlt eine passende, schlägt Antoine eine neue vor
-// („Anlegen“ / „Bestehende wählen“); angelegt wird erst nach Bestätigung. Beim Speichern die
-// Angaben (Kategorie, Alter, Fass, Destilliert, Abgefüllt) in wines – Bestehendes bleibt.
+// Spirituose?“), Kategorie nur aus den bestehenden (passt die Hauptkategorie nicht sicher: Auswahl
+// der bestehenden; neue legt der Chat direkt in der DB an). Beim Speichern die Angaben (Kategorie,
+// Alter, Fass, Destilliert, Abgefüllt) in wines – Bestehendes bleibt.
 
 import type { Database } from "@/lib/database.types";
 import { T } from "@/lib/bot/texts";
-import { findSibling, mainCategories, subCategories, toSpiritFields, type SpiritCategory } from "@/lib/spirits/categories";
+import { mainCategories, subCategories, toSpiritFields, type SpiritCategory } from "@/lib/spirits/categories";
 import { draftFromLabel, planCategory, withCategory, type SpiritLabel } from "@/lib/spirits/draft";
 import { loadSpiritCategories } from "@/lib/spirits/load";
 import type { AdminClient } from "@/lib/supabase/admin";
@@ -77,27 +77,7 @@ export async function kindPatch(db: AdminClient, state: IngestState, kind: "wine
   };
 }
 
-/** „Anlegen“: die vorgeschlagene Kategorie anlegen (gibt es sie schon, die bestehende nehmen). */
-export async function createProposedCategory(db: AdminClient, state: IngestState): Promise<{ patch: Partial<IngestState>; label: string | null }> {
-  const proposed = state.spirit?.newCategory;
-  if (!state.spirit || !proposed) return { patch: {}, label: null };
-  let categories = await loadSpiritCategories(db);
-  let category = findSibling(categories, proposed.parentId, proposed.name);
-  if (!category) {
-    const siblings = categories.filter((c) => c.parentId === proposed.parentId);
-    const sortOrder = Math.min(32000, Math.max(0, ...siblings.map((c) => c.sortOrder)) + 10);
-    const { error } = await db.from("spirit_categories").insert({ parent_id: proposed.parentId, name: proposed.name.trim().slice(0, 60), sort_order: sortOrder });
-    // Gleichzeitig angelegt (unique): die bestehende nehmen.
-    if (error && error.code !== "23505") throw error;
-    categories = await loadSpiritCategories(db);
-    category = findSibling(categories, proposed.parentId, proposed.name);
-  }
-  if (!category) return { patch: {}, label: null };
-  const spirit = withCategory(state.spirit, categories, category.id);
-  return { patch: { spirit }, label: spirit.label };
-}
-
-/** „Bestehende wählen“ bzw. keine Kategorie erkannt: Hauptkategorien als Knöpfe. */
+/** Hauptkategorie nicht sicher erkannt: die bestehenden Hauptkategorien als Knöpfe. */
 export async function mainOptions(db: AdminClient) {
   return mainCategories(await loadSpiritCategories(db));
 }

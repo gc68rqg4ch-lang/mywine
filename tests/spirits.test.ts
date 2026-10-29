@@ -43,6 +43,7 @@ const CATS: SpiritCategory[] = [
   { id: "c-calva", parentId: "c-obst", name: "Apfel / Calvados", sortOrder: 40 },
   { id: "c-rum", parentId: null, name: "Rum", sortOrder: 70 },
   { id: "c-tequila", parentId: null, name: "Tequila / Mezcal", sortOrder: 100 },
+  { id: "c-andere", parentId: null, name: "Andere", sortOrder: 200 },
 ];
 
 const unit = (vintage_year: number | null, count: number, x: Partial<GroupUnit> = {}): GroupUnit => ({ vintage_year, price_class: null, count, ...x });
@@ -154,20 +155,28 @@ test("Kategorien: Pfad, Bezeichnung und Zuordnung erkannter Namen", () => {
   assert.deepEqual(matchCategory(CATS, "Sake", "").missingMain, "Sake");
 });
 
-test("Bot-Plan: bestehende Kategorie direkt, sonst Vorschlag (noch nichts angelegt), sonst Auswahl", () => {
+test("Bot-Plan: nur bestehende Kategorien – Unterkategorie, sonst Hauptkategorie ohne Rückfrage, sonst Auswahl, ganz unklar „Andere“", () => {
   const label = { kind: "spirit" as const, category: "Whisky", subcategory: "Bourbon", age_years: 0, cask: "", distilled_year: 0, bottled_year: 0 };
   const ok = planCategory(CATS, draftFromLabel(label));
-  assert.deepEqual([ok.categoryId, ok.label, ok.done, ok.newCategory], ["c-bourbon", "Whisky › Bourbon", true, null]);
+  assert.deepEqual([ok.categoryId, ok.label, ok.done], ["c-bourbon", "Whisky › Bourbon", true]);
+  // Unbekannte Unterkategorie → Hauptkategorie, fertig (nichts vorgeschlagen)
   const rye = planCategory(CATS, draftFromLabel({ ...label, subcategory: "Rye", age_years: 7 }));
-  assert.deepEqual([rye.done, rye.newCategory, rye.ageYears], [false, { parentId: "c-whisky", parentName: "Whisky", name: "Rye" }, 7]);
+  assert.deepEqual([rye.categoryId, rye.label, rye.done, rye.ageYears], ["c-whisky", "Whisky", true, 7]);
+  assert.ok(!("newCategory" in rye), "kein Vorschlag zum Anlegen");
+  const nosiola = planCategory(CATS, draftFromLabel({ ...label, category: "Obstbrand", subcategory: "Monovitigno Nosiola" }));
+  assert.deepEqual([nosiola.categoryId, nosiola.done], ["c-obst", true]);
+  // Unbekannte Hauptkategorie → Auswahl der bestehenden
   const sake = planCategory(CATS, draftFromLabel({ ...label, category: "Sake", subcategory: "" }));
-  assert.deepEqual(sake.newCategory, { parentId: null, parentName: null, name: "Sake" });
+  assert.deepEqual([sake.categoryId, sake.done], [null, false]);
+  // Gar nichts erkannt → „Andere“ (ohne „Andere“: Auswahl)
   const nothing = planCategory(CATS, draftFromLabel({ ...label, category: "", subcategory: "" }));
-  assert.deepEqual([nothing.done, nothing.newCategory], [false, null]);
+  assert.deepEqual([nothing.categoryId, nothing.label, nothing.done], ["c-andere", "Andere", true]);
+  const withoutOther = planCategory(CATS.filter((c) => c.id !== "c-andere"), draftFromLabel({ ...label, category: "", subcategory: "" }));
+  assert.deepEqual([withoutOther.categoryId, withoutOther.done], [null, false]);
   // Ablauf: Kategorie vor allem anderen; Jahrgang bei Spirituosen freiwillig.
-  const state = { step: "review", proposal: { type: "spirit", vintage_year: null }, spirit: rye } as unknown as IngestState;
-  assert.equal(nextPurchaseStep(state), "category");
-  assert.equal(nextPurchaseStep({ ...state, spirit: nothing }), "category_main");
+  const state = { step: "review", proposal: { type: "spirit", vintage_year: null }, spirit: sake } as unknown as IngestState;
+  assert.equal(nextPurchaseStep(state), "category_main");
+  assert.equal(nextPurchaseStep({ ...state, spirit: rye }), "location");
   assert.equal(nextPurchaseStep({ ...state, spirit: ok }), "location");
   assert.equal(needsVintage(state), false);
   assert.equal(nextPurchaseStep({ ...state, kind_unsure: true }), "kind");
@@ -345,7 +354,7 @@ async function startAlbum(label: Row) {
   await processJob(JOB, 111);
 }
 
-test("Bot: unsicher → „Wein oder Spirituose?“, neue Unterkategorie erst nach „Anlegen“", async () => {
+test("Bot: unsicher → „Wein oder Spirituose?“, unbekannte Unterkategorie → Hauptkategorie ohne Rückfrage", async () => {
   reset();
   await startAlbum({ kind: "unsure", category: "Whisky", subcategory: "Rye", age_years: 0, cask: "", distilled_year: 0, bottled_year: 0 });
   assert.equal(state().step, "review");
@@ -361,18 +370,12 @@ test("Bot: unsicher → „Wein oder Spirituose?“, neue Unterkategorie erst na
   await handleUpdate(cb(callbackData("kind", JOB, "s")) as never);
   assert.equal(state().proposal.type, "spirit");
   assert.equal(state().proposal.bottle_size_ml, 700, "Standard 0,7 l");
-  assert.equal(state().step, "category");
-  assert.match(lastText(), /Die Unterkategorie „Rye“ unter Whisky gibt es bei mir noch nicht\. Soll ich sie anlegen\?/);
-  assert.deepEqual(buttons(), ["➕ Anlegen", "📋 Bestehende wählen", "✖️ Abbrechen"]);
-  assert.equal(net.tables.spirit_categories.length, CATS.length, "noch nichts angelegt");
-
-  await handleUpdate(cb(callbackData("catnew", JOB)) as never);
-  const rye = net.tables.spirit_categories.find((c) => c.name === "Rye")!;
-  assert.deepEqual([rye.parent_id, net.tables.spirit_categories.length], ["c-whisky", CATS.length + 1]);
-  assert.ok(sent().some((m) => /„Whisky › Rye“ angelegt/.test(String(m.body.text))));
-  // Kein Jahrgang nötig: direkt zum Lagerort.
+  // „Rye“ gibt es nicht: Whisky, ohne Rückfrage und ohne „Anlegen“; kein Jahrgang nötig → Lagerort.
   assert.equal(state().step, "location");
-  assert.equal(state().spirit?.categoryId, rye.id);
+  assert.equal(state().spirit?.categoryId, "c-whisky");
+  assert.ok(!sent().some((m) => /anlegen/i.test(String(m.body.text))), "nichts zum Anlegen vorgeschlagen");
+  assert.ok(!buttons().some((b) => /Anlegen/.test(b)));
+  assert.equal(net.tables.spirit_categories.length, CATS.length, "nichts angelegt");
 
   await handleUpdate(cb(callbackData("loc", JOB, "wohnzimmer")) as never);
   await handleUpdate(cb(callbackData("qty", JOB, "1")) as never);
@@ -383,13 +386,13 @@ test("Bot: unsicher → „Wein oder Spirituose?“, neue Unterkategorie erst na
   await saveJob(job() as never, 111);
   assert.equal(job().status, "confirmed");
   const saved = net.tables.wines.find((w) => w.name === "Rye Whiskey")!;
-  assert.deepEqual([saved.type, saved.spirit_category_id, saved.alcohol_content], ["spirit", rye.id, 45.2]);
+  assert.deepEqual([saved.type, saved.spirit_category_id, saved.alcohol_content], ["spirit", "c-whisky", 45.2]);
   assert.equal(net.tables.inventory_items[0].bottle_size_ml, 700);
   assert.equal(net.tables.wine_vintages.filter((v) => v.drink_from_year != null || v.drink_until_year != null).length, 0, "kein Trinkfenster");
   assert.equal(net.tables.inventory_items[0].status, "sealed", "Einbuchen: alle Flaschen zu, nichts automatisch geöffnet");
 });
 
-test("Bot: „Bestehende wählen“ zeigt Haupt-, dann Unterkategorien; Bestätigung ohne Trinkfenster", async () => {
+test("Bot: unsichere Hauptkategorie → nur bestehende als Knöpfe, dann Unterkategorien; Bestätigung ohne Trinkfenster", async () => {
   reset();
   await startAlbum({ kind: "spirit", category: "Sake", subcategory: "", age_years: 7, cask: "Charred Oak", distilled_year: 2015, bottled_year: 2022 });
   assert.equal(state().proposal.type, "spirit");
@@ -400,12 +403,10 @@ test("Bot: „Bestehende wählen“ zeigt Haupt-, dann Unterkategorien; Bestäti
   assert.match(lastText(), /Abgefüllt: 2022/);
   assert.doesNotMatch(lastText(), /Trinkreife|Trauben/);
   await handleUpdate(cb(callbackData("save", JOB)) as never);
-  assert.equal(state().step, "category");
-  assert.match(lastText(), /Die Kategorie „Sake“ gibt es bei mir noch nicht/);
-
-  await handleUpdate(cb(callbackData("catpick", JOB)) as never);
+  // „Sake“ gibt es nicht: Auswahl nur der bestehenden Hauptkategorien – kein „Anlegen“.
   assert.equal(state().step, "category_main");
-  assert.deepEqual(buttons(), ["Whisky", "Likör", "Obstbrand", "Rum", "Tequila / Mezcal", "✖️ Abbrechen"]);
+  assert.match(lastText(), /In welche Kategorie gehört sie\?/);
+  assert.deepEqual(buttons(), ["Whisky", "Likör", "Obstbrand", "Rum", "Tequila / Mezcal", "Andere", "✖️ Abbrechen"]);
   await handleUpdate(cb(callbackData("catmain", JOB, "0")) as never);
   assert.equal(state().step, "category_sub");
   assert.deepEqual(buttons(), ["Scotch Single Malt", "Bourbon", "Nur „Whisky“", "✖️ Abbrechen"]);
@@ -414,4 +415,24 @@ test("Bot: „Bestehende wählen“ zeigt Haupt-, dann Unterkategorien; Bestäti
   assert.equal(state().spirit?.label, "Whisky › Bourbon");
   assert.equal(state().step, "location");
   assert.equal(net.tables.spirit_categories.length, CATS.length, "„Sake“ nicht angelegt");
+});
+
+test("Gekauft oder nur verkostet? – bei Spirituosen mit 🥃, bei Wein 🍷", async () => {
+  const { askPhotoIntent } = await import("@/lib/chat/tasted");
+  const recognitionOf = (type: string | null, kind: "wine" | "spirit") => ({
+    proposal: { name: kind === "spirit" ? "Acquastilla 36 Mesi" : "Pintia", producer: kind === "spirit" ? "Casa Grappa" : "Vega Sicilia", vintage_year: kind === "spirit" ? null : 2019, type, country: null, region: null, appellation: null, grape_shares: [], alcohol_content: null, bottle_size_ml: null },
+    spirit: kind === "spirit" ? { kind, category: "Grappa / Trester", subcategory: "", age_years: 0, cask: "", distilled_year: 0, bottled_year: 0 } : null,
+    model: "x", confidence: 0.9, notes: null, imageSides: null, vintageCertain: true,
+  });
+  for (const [type, kind, icon, question] of [
+    [null, "spirit", "🥃", "Hast du sie gekauft oder nur verkostet?"],
+    ["spirit", "spirit", "🥃", "Hast du sie gekauft oder nur verkostet?"],
+    ["red", "wine", "🍷", "Hast du ihn gekauft oder nur verkostet?"],
+  ] as const) {
+    reset();
+    net.tables.ingest_jobs.push({ id: JOB, source: "telegram", telegram_chat_id: 111, status: "processing", photo_paths: [], extracted: { step: "received" } });
+    await askPhotoIntent(db, JOB, 111, recognitionOf(type, kind) as never);
+    assert.ok(lastText().startsWith(`${icon} <b>`), lastText());
+    assert.ok(lastText().endsWith(question), lastText());
+  }
 });
