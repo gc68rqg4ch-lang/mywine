@@ -1,3 +1,4 @@
+import { BrandLogo } from "@/components/brand-logo";
 import Link from "next/link";
 import { signOut } from "@/app/actions";
 import { LocationSwitcher } from "@/components/location-switcher";
@@ -17,7 +18,8 @@ export default async function CellarLayout({ children }: LayoutProps<"/">) {
       <header className="header">
         <div className="header-inner">
           <Link href="/" className="brand">
-            MyWine
+            <BrandLogo />
+            <span className="brand-name">MyWine</span>
           </Link>
           <NavLinks openCount={openCount ?? 0} />
           <LocationSwitcher

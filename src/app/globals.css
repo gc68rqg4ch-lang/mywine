@@ -157,10 +157,27 @@ code {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
   font-weight: 700;
   font-size: 1.15rem;
   letter-spacing: -0.01em;
   color: var(--accent);
+}
+/* Logo „Traube“ (wie das Favicon), so hoch wie die Schrift; bleibt bei schmaler Breite gleich. */
+.brand-logo {
+  display: block;
+  flex: none;
+  width: 30px;
+  height: 30px;
+}
+@media (max-width: 360px) {
+  .header .brand {
+    gap: 6px;
+    font-size: 1rem;
+  }
 }
 
 .nav {

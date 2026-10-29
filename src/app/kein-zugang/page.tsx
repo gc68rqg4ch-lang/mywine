@@ -1,3 +1,4 @@
+import { BrandLogo } from "@/components/brand-logo";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { signOut } from "@/app/actions";
@@ -13,7 +14,10 @@ export default async function NoAccessPage() {
   return (
     <main className="login">
       <div className="card login-card stack">
-        <h1 className="brand">MyWine</h1>
+        <h1 className="brand">
+          <BrandLogo />
+          <span className="brand-name">MyWine</span>
+        </h1>
         <h2 className="section-title">Kein Zugang</h2>
         <p>
           Du bist als <strong>{email ?? "unbekannt"}</strong> angemeldet, bist aber nicht für diese Weinsammlung

@@ -1,3 +1,4 @@
+import { BrandLogo } from "@/components/brand-logo";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { safeNextPath } from "@/lib/safe-next";
@@ -22,7 +23,10 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <main className="login">
       <div className="card login-card">
-        <h1 className="brand">MyWine</h1>
+        <h1 className="brand">
+          <BrandLogo />
+          <span className="brand-name">MyWine</span>
+        </h1>
         <p className="muted">
           Deine persönliche Weinsammlung.{" "}
           {codeEnabled ? "Melde dich mit einem Code von Antoine (Telegram) oder per Link an." : "Melde dich per Magic Link an."}
