@@ -1,6 +1,6 @@
 import "server-only";
 
-// Preis beim Einbuchen suchen („🔎 Such du“ bei Antoine): Preis pro Flasche in CHF bei Schweizer
+// Preis beim Einbuchen suchen (🤷 (Preis suchen) bei Antoine): Preis pro Flasche in CHF bei Schweizer
 // Händlern – genau dieser Wein bzw. diese Spirituose, gleicher Jahrgang, gleiche Flaschengrösse.
 // Ablauf: direkte Suchen in Schweizer Shops (parallel, DIRECT_SHOPS) → Websuche mit Standort Schweiz
 // und festen Suchbegriffen (Marke + Name, price-search.ts) → eigene Prüfung der Produktseiten aus
@@ -476,7 +476,11 @@ export async function startPriceFollowup(
   return data.id as string;
 }
 
-/** Frage zu einer (freigegebenen) Preis-Rückfrage senden – immer mit der Flasche. */
+/**
+ * Frage zu einer (freigegebenen) Preis-Rückfrage senden – immer mit der Flasche. Nichts gefunden:
+ * nur eine Meldung ohne Knöpfe (ein getippter Betrag wird noch gespeichert). Nach „✏️ Ändern“
+ * startet 🤷 die Suche erneut.
+ */
 async function sendPriceQuestion(chatId: number, jobId: string, state: IngestState) {
   const f = state.price_followup!;
   const label = f.label ?? "";
@@ -490,14 +494,17 @@ async function sendPriceQuestion(chatId: number, jobId: string, state: IngestSta
     await sendMessage(chatId, T.priceOther(label, what, money(o.amount), o.merchant), priceOfferKeyboard(jobId));
     return;
   }
-  if (state.step === "price") {
-    const text = f.ask === "not_found" ? T.priceNotFound(label) : `${label}\n${T.pricePaid(state.quantity === 1 ? "1 Flasche" : `${state.quantity ?? 1} Flaschen`)}`;
-    await sendMessage(chatId, text, priceKeyboard(jobId, false));
+  if (f.ask === "not_found") {
+    await sendMessage(chatId, state.step === "price" ? T.priceNotFound(label) : T.regularNotFound(label));
     return;
   }
-  const keyboard = state.is_gift ? giftValueKeyboard(jobId, false) : regularPriceKeyboard(jobId, null, false);
-  const text = f.ask === "not_found" ? T.regularNotFound(label) : `${label}\n${state.is_gift ? T.giftValueAsk() : T.regularPrice()}`;
-  await sendMessage(chatId, text, keyboard);
+  const search = f.ask === "fix";
+  if (state.step === "price") {
+    await sendMessage(chatId, `${label}\n${T.pricePaid(state.quantity === 1 ? "1 Flasche" : `${state.quantity ?? 1} Flaschen`, undefined, search)}`, priceKeyboard(jobId, search));
+    return;
+  }
+  const keyboard = state.is_gift ? giftValueKeyboard(jobId, search) : regularPriceKeyboard(jobId, null, search);
+  await sendMessage(chatId, `${label}\n${state.is_gift ? T.giftValueAsk(undefined, search) : T.regularPrice(undefined, search)}`, keyboard);
 }
 
 type FlowRow = { id: string; source: string; status: string; extracted: unknown };

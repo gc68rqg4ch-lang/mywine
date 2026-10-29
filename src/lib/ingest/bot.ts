@@ -40,6 +40,7 @@ import {
   HELP_TEXT,
   cancelKeyboard,
   giftValueKeyboard,
+  isLeaveEmpty,
   priceKeyboard,
   regularPriceKeyboard,
   parseCallbackData,
@@ -96,6 +97,7 @@ import {
   acceptRestock,
   chooseSimilar,
   advanceTo,
+  priceSearchAllowed,
   summaryExtras,
   bestBeforeState,
   confirmAndSave,
@@ -532,7 +534,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
     }
 
     case "searchprice": {
-      // „🔎 Such du“ bei „bezahlt?“: bezahlt und Normalpreis werden nach dem Speichern gesucht.
+      // 🤷 bei „bezahlt?“ (früher 🔎): bezahlt und Normalpreis werden nach dem Speichern gesucht.
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
       await advanceTo(db, job, chatId, "price", { price: null, regular_price: null, price_search: "both" });
@@ -540,7 +542,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
     }
 
     case "searchreg": {
-      // „🔎 Such du“ beim Normalpreis bzw. Geschenk-Wert: nur der Normalpreis wird gesucht.
+      // 🤷 beim Normalpreis bzw. Geschenk-Wert (früher 🔎): nur der Normalpreis wird gesucht.
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
       await advanceTo(db, job, chatId, "regular_price", { regular_price: null, price_search: "regular" });
@@ -824,10 +826,16 @@ async function handleText(msg: TgMessage, actor: Actor) {
       return;
     }
     case "price": {
+      // „–“ (bzw. „leer“, „nichts“): beide Preise bewusst leer, ohne Normalpreis-Frage und ohne Suche.
+      if (isLeaveEmpty(text)) {
+        await advanceTo(db, job, chatId, "price", { price: null, regular_price: null });
+        return;
+      }
       // Strenge Prüfung (Betrag über 0); „0“ → Hinweis auf „🎁 Geschenk“ (Knöpfe bleiben).
       const price = parseAmount(text);
       if (price == null) {
-        await sendMessage(chatId, isZeroAmount(text) ? T.priceZero() : T.priceRetry, priceKeyboard(job.id));
+        const search = priceSearchAllowed(state);
+        await sendMessage(chatId, isZeroAmount(text) ? T.priceZero() : T.priceRetry(search), priceKeyboard(job.id, search));
         return;
       }
       await advanceTo(db, job, chatId, "price", { price });
@@ -839,11 +847,17 @@ async function handleText(msg: TgMessage, actor: Actor) {
       return;
     }
     case "regular_price": {
-      // Geschenk: Wert pro Flasche – nur Beträge über 0; „🤷 Weiss ich nicht“ bleibt als Knopf.
+      // „–“: Normalpreis bzw. Geschenk-Wert bewusst leer (keine Suche).
+      if (isLeaveEmpty(text)) {
+        await advanceTo(db, job, chatId, "regular_price", { regular_price: null });
+        return;
+      }
+      // Nur Beträge über 0; 🤷 (Normalpreis suchen) bleibt als Knopf.
       const regularPrice = parseAmount(text);
       if (regularPrice == null) {
-        if (state.is_gift) await sendMessage(chatId, T.giftValueRetry(), giftValueKeyboard(job.id));
-        else await sendMessage(chatId, T.regularPriceRetry, regularPriceKeyboard(job.id, state.price ?? null));
+        const search = priceSearchAllowed(state);
+        if (state.is_gift) await sendMessage(chatId, T.giftValueRetry(undefined, search), giftValueKeyboard(job.id, search));
+        else await sendMessage(chatId, T.regularPriceRetry(search), regularPriceKeyboard(job.id, state.price ?? null, search));
         return;
       }
       await advanceTo(db, job, chatId, "regular_price", { regular_price: regularPrice });
@@ -883,7 +897,7 @@ export function purchaseAnswerFit(step: IngestState["step"], text: string): "ans
       return !strongNewConcern(text) && parseQuantity(text) ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
     case "price":
     case "regular_price":
-      return !strongNewConcern(text) && parseAmount(text) != null ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
+      return isLeaveEmpty(text) || (!strongNewConcern(text) && parseAmount(text) != null) ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
     default:
       return "answer";
   }

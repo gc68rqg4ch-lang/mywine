@@ -228,7 +228,7 @@ export type IngestState = {
   /** Normalpreis pro Flasche (regular_price). */
   regular_price?: number | null;
   /**
-   * „🔎 Such du“: both = bezahlt und Normalpreis suchen (bei der Frage „bezahlt?“), regular = nur
+   * 🤷 (Preis suchen): both = bezahlt und Normalpreis suchen (bei der Frage „bezahlt?“), regular = nur
    * den Normalpreis (bei der Normalpreis- bzw. Geschenk-Wert-Frage). Gesucht wird nach dem Speichern.
    */
   price_search?: "both" | "regular";

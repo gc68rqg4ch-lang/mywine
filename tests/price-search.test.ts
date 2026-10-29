@@ -116,19 +116,19 @@ async function runPriceJob() {
   return runJob(db, row as never);
 }
 
-test("Knöpfe „🔎 Such du“ bei bezahlt, Normalpreis und Geschenk-Wert (callback ≤ 64 Bytes)", () => {
+test("Knöpfe: 🤷 startet die Suche bei bezahlt, Normalpreis und Geschenk-Wert (callback ≤ 64 Bytes); kein 🔎", () => {
   const all = [priceKeyboard(ID), regularPriceKeyboard(ID, 20), regularPriceKeyboard(ID, null), giftValueKeyboard(ID)].map((k) => k.inline_keyboard.flat());
-  const search = all.map((bs) => bs.find((b) => b.text === "🔎"));
-  assert.deepEqual(search.map((b) => parseCallbackData((b as { callback_data: string }).callback_data)?.action), ["searchprice", "searchreg", "searchreg", "searchreg"]);
-  for (const b of search) assert.ok(Buffer.byteLength((b as { callback_data: string }).callback_data) <= 64);
-  // Rückfragen nach der Suche: ohne „Such du“
-  assert.ok(!priceKeyboard(ID, false).inline_keyboard.flat().some((b) => b.text === "🔎"));
+  assert.deepEqual(all.map((bs) => bs.map((b) => b.text)), [["🎁", "🤷", "✖️ Abbrechen"], ["✅ Ja, gleich", "🤷", "✖️ Abbrechen"], ["🤷", "✖️ Abbrechen"], ["🤷", "✖️ Abbrechen"]]);
+  const shrug = all.map((bs) => bs.find((b) => b.text === "🤷"));
+  assert.deepEqual(shrug.map((b) => parseCallbackData((b as { callback_data: string }).callback_data)?.action), ["searchprice", "searchreg", "searchreg", "searchreg"]);
+  for (const b of shrug) assert.ok(Buffer.byteLength((b as { callback_data: string }).callback_data) <= 64);
+  assert.ok(!all.flat().some((b) => b.text === "🔎" || /Anderer Betrag/.test(b.text)));
   assert.equal(parseCallbackData(callbackData("offeryes", ID))?.action, "offeryes");
 });
 
-test("„🔎 Such du“ bei „bezahlt?“: kein Normalpreis, weiter zum Speichern, „Preis: wird gesucht“; Treffer → beide Preise gespeichert", async () => {
+test("🤷 bei „bezahlt?“: kein Normalpreis, weiter zum Speichern, „Preis: wird gesucht“; Treffer → beide Preise gespeichert", async () => {
   await start();
-  await press("🔎");
+  await press("🤷");
   assert.deepEqual([state().price, state().regular_price, state().price_search], [null, null, "both"]);
   assert.match(lastText(), /Zusammenfassung[\s\S]*Preis: wird gesucht … · bei Mövenpick/);
   const booked = await save();
@@ -144,7 +144,7 @@ test("„🔎 Such du“ bei „bezahlt?“: kein Normalpreis, weiter zum Speich
   assert.deepEqual(buttons().map((b) => b.text), ["✏️ Ändern"]);
   assert.match(String(priceNoteHint(String(item().price_note))), /^Preis recherchiert: Mövenpick, \d\d\.\d\d\.\d{4}$/);
 
-  // „✏️ Ändern“ → normale Preisfragen (ohne „Such du“), danach von Hand
+  // „✏️ Ändern“ → normale Preisfragen (🤷 sucht erneut), danach von Hand
   await press("✏️ Ändern");
   assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\?/);
   assert.deepEqual(buttons().map((b) => b.text), ["🎁", "🤷", "✖️ Abbrechen"]);
@@ -156,10 +156,10 @@ test("„🔎 Such du“ bei „bezahlt?“: kein Normalpreis, weiter zum Speich
   assert.equal(lastText(), PINTIA + "✅ Gespeichert: CHF 70.00.");
 });
 
-test("„🔎 Such du“ beim Normalpreis: bezahlt bleibt, nur der Normalpreis wird gesucht (Aktion → Normalpreis)", async () => {
+test("🤷 beim Normalpreis: bezahlt bleibt, nur der Normalpreis wird gesucht (Aktion → Normalpreis)", async () => {
   await start();
   await say("38");
-  await press("🔎");
+  await press("🤷");
   assert.deepEqual([state().price, state().regular_price, state().price_search], [38, null, "regular"]);
   assert.match(await save(), /Bezahlt CHF 38\.00 · Normalpreis: wird gesucht …/);
   priceAnswer = offer({ price: 39, regular_price: 45, quote: "CHF 39.00 statt 45.00" });
@@ -168,12 +168,12 @@ test("„🔎 Such du“ beim Normalpreis: bezahlt bleibt, nur der Normalpreis w
   assert.equal(lastText(), PINTIA + "💰 Normalpreis gefunden: CHF 45.00 pro Flasche (Mövenpick, 2019, 75 cl) – gespeichert.");
 });
 
-test("Geschenk: „🔎 Such du“ beim Wert sucht nur den Normalpreis, bezahlt bleibt 0", async () => {
+test("Geschenk: 🤷 beim Wert sucht nur den Normalpreis, bezahlt bleibt 0", async () => {
   await start();
   await press("🎁");
   await press("Überspringen");
   assert.equal(state().step, "regular_price");
-  await press("🔎");
+  await press("🤷");
   assert.match(lastText(), /🎁 Geschenk · Normalpreis: wird gesucht …/);
   await save();
   await runPriceJob();
@@ -183,7 +183,7 @@ test("Geschenk: „🔎 Such du“ beim Wert sucht nur den Normalpreis, bezahlt 
 test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst eingeben / Leer lassen", async () => {
   for (const choice of ["✅ Übernehmen", "✏️ Selbst eingeben", "Leer lassen"]) {
     await start();
-    await press("🔎");
+    await press("🤷");
     await save();
     priceAnswer = offer({ vintage: 2020, price: 64, url: "https://www.moevenpick-wein.com/de/2020-pintia.html" });
     await runPriceJob();
@@ -200,7 +200,7 @@ test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst
     } else {
       assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\?/);
       await say("50");
-      await press("🤷");
+      await say("–");
       await runLater();
       assert.deepEqual([item().purchase_price, item().regular_price, item().price_source], [50, null, "manual"]);
     }
@@ -208,27 +208,63 @@ test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst
   }
   // Andere Grösse
   await start();
-  await press("🔎");
+  await press("🤷");
   await save();
   priceAnswer = offer({ size_ml: 1500, price: 140 });
   await runPriceJob();
   assert.equal(lastText(), PINTIA + "Nur 150 cl gefunden: CHF 140.00 (Mövenpick). Übernehmen?");
 });
 
-test("Nichts gefunden: Antoine fragt nach dem Preis; ein Betrag läuft wie die normale Preisangabe", async () => {
+test("Nichts gefunden: nur eine Meldung ohne Knöpfe; ein getippter Betrag landet bei dieser Flasche", async () => {
   await start();
-  await press("🔎");
+  await press("🤷");
   await save();
   priceAnswer = NOTHING;
   await runPriceJob();
-  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁", "🤷", "✖️ Abbrechen"]);
+  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden – bleibt leer. Wenn du ihn weisst, schreib mir einfach den Betrag.");
+  assert.deepEqual(buttons(), [], "keine Knöpfe");
   await say("39");
   assert.match(lastText(), /Ist das auch der Normalpreis\?/, "Normalpreis-Frage wie gewohnt");
+  assert.deepEqual(buttons().map((b) => b.text), ["✅ Ja, gleich", "✖️ Abbrechen"], "ohne 🤷 (die Suche fand ja nichts)");
   await say("45");
   await runLater();
   assert.deepEqual([item().purchase_price, item().regular_price, item().price_source], [39, 45, "manual"]);
   assert.equal(items().length, 1);
+  assert.equal(net.tables.research_jobs.filter((j) => j.kind === "price").length, 1, "keine zweite Suche");
+
+  // Keine Antwort: bleibt leer (die Rückfrage verfällt still)
+  await start();
+  await press("🤷");
+  await save();
+  priceAnswer = NOTHING;
+  await runPriceJob();
+  assert.deepEqual([item().purchase_price, item().regular_price], [null, null]);
+});
+
+test("Nach „✏️ Ändern“: 🤷 leert und startet die Suche für diese Flasche erneut; „–“ lässt leer", async () => {
+  await start();
+  await press("🤷");
+  await save();
+  await runPriceJob();
+  assert.deepEqual([item().purchase_price, item().regular_price], [66, 66]);
+  await press("✏️ Ändern");
+  await press("🤷");
+  await runLater();
+  assert.equal(lastText(), PINTIA + "🔎 Preis: wird gesucht …");
+  assert.deepEqual([item().purchase_price, item().regular_price], [null, null], "geleert, damit die Suche füllen darf");
+  const jobs = net.tables.research_jobs.filter((j) => j.kind === "price");
+  assert.equal(jobs.length, 2);
+  assert.deepEqual(jobs[1].params, { item_id: item().id, mode: "both", chat_id: 111 });
+  priceAnswer = offer({ price: 61 });
+  await runJob(db, jobs[1] as never);
+  assert.deepEqual([item().purchase_price, item().regular_price, item().price_source], [61, 61, "research"]);
+  // „✏️ Ändern“ → „–“ → leer, keine Suche
+  await press("✏️ Ändern");
+  await say("–");
+  await runLater();
+  assert.deepEqual([item().purchase_price, item().regular_price, item().price_source], [null, null, "manual"]);
+  assert.equal(net.tables.research_jobs.filter((j) => j.kind === "price").length, 2);
+  assert.equal(lastText(), PINTIA + "✅ Gut, der Preis bleibt leer.");
 });
 
 test("Von Hand eingegebene Preise werden nie überschrieben", async () => {
@@ -282,7 +318,7 @@ test("Suche endet während einer neuen Erfassung: Rückfrage erst danach, mit Fl
   await press("🎁");
   await say("Dad");
   assert.equal(state().step, "regular_price");
-  await press("🔎");
+  await press("🤷");
   await save();
   // Während die Suche läuft: neue Erfassung (Grappa Fass 13) bis zur Preisfrage
   const JOB2 = "aaaaaaaa-0000-4000-8000-0000000000b2";
@@ -316,7 +352,7 @@ test("Suche endet während einer neuen Erfassung: Rückfrage erst danach, mit Fl
   // Grappa speichern → erst jetzt die Rückfrage zum Pintia, mit Flasche und „Geschenk von Dad“
   job2().extracted = { ...(job2().extracted as IngestState), step: "saving" };
   await saveJob(job2() as never, 111);
-  assert.equal(lastText(), "🍷 <b>Vega Sicilia – Pintia</b> 2019, 75 cl (Geschenk von Dad)\nKeinen Normalpreis bei Schweizer Händlern gefunden. Was kostet eine Flasche normalerweise? Schreib mir den Betrag.");
+  assert.equal(lastText(), "🍷 <b>Vega Sicilia – Pintia</b> 2019, 75 cl (Geschenk von Dad)\nKeinen Normalpreis bei Schweizer Händlern gefunden – bleibt leer. Wenn du ihn weisst, schreib mir einfach den Betrag.");
   await say("45");
   await runLater();
   assert.deepEqual([item().purchase_price, item().regular_price, item().is_gift], [0, 45, true]);
@@ -327,7 +363,7 @@ test("Suche endet während einer neuen Erfassung: Rückfrage erst danach, mit Fl
 
 test("Neues Foto während einer offenen Preis-Rückfrage: sie wird zurückgehalten statt verworfen", async () => {
   await start();
-  await press("🔎");
+  await press("🤷");
   await save();
   priceAnswer = NOTHING;
   await runPriceJob();
@@ -341,7 +377,7 @@ test("Neues Foto während einer offenen Preis-Rückfrage: sie wird zurückgehalt
   const { releaseHeldPriceQuestions } = await import("@/lib/research/price");
   await releaseHeldPriceQuestions(db, 111);
   assert.equal((followup.extracted as IngestState).step, "price");
-  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
+  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden – bleibt leer. Wenn du ihn weisst, schreib mir einfach den Betrag.");
 });
 
 test("Flasche in Preis-Meldungen: Symbol der Art, Produzent – Name, Jahrgang bzw. o. J., Grösse, Geschenk", async () => {
@@ -357,7 +393,7 @@ test("Flasche in Preis-Meldungen: Symbol der Art, Produzent – Name, Jahrgang b
 
 test("Riserva nur auf einer Seite: nichts gespeichert, „Übernehmen?“ mit Grund", async () => {
   await start();
-  await press("🔎");
+  await press("🤷");
   await save();
   priceAnswer = offer({ same_wine: true, product_title: "Vega Sicilia Pintia Reserva 2019 75 cl", price: 89 });
   await runPriceJob();
@@ -372,7 +408,7 @@ test("Riserva nur auf einer Seite: nichts gespeichert, „Übernehmen?“ mit Gr
 /** Pintia mit „🔎 Such du“, dann eine neue Erfassung; Suche ohne Fund → Rückfrage zurückgehalten. */
 async function heldWhileOtherFlow() {
   await start();
-  await press("🔎");
+  await press("🤷");
   await save();
   const JOB2 = "aaaaaaaa-0000-4000-8000-0000000000b3";
   net.tables.ingest_jobs.push({ id: JOB2, source: "text", telegram_chat_id: 111, status: "processing", extracted: { step: "researching", source: "text" }, photo_paths: [], created_at: minutesAgo(0), updated_at: minutesAgo(0) });
@@ -405,7 +441,7 @@ test("Zurückgehaltene Frage verfällt nicht: andere Erfassung dauert 15 Minuten
   job2().extracted = { ...(job2().extracted as IngestState), step: "saving" };
   await saveJob(job2() as never, 111);
   // Jetzt gestellt – mit frischer Zeit (die 10 Minuten beginnen erst hier)
-  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
+  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden – bleibt leer. Wenn du ihn weisst, schreib mir einfach den Betrag.");
   assert.equal((held.extracted as IngestState).step, "price");
   assert.ok(Date.parse(String(held.updated_at)) > Date.now() - 60_000, "Frist ab Senden");
 
@@ -439,7 +475,7 @@ test("Worker gibt eine wartende Frage frei, sobald die andere Erfassung verfalle
   job2().status = "discarded"; // z. B. vom Aufräumjob still verworfen
   await tickHeldPriceQuestions(db);
   assert.equal((held.extracted as IngestState).step, "price");
-  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
+  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden – bleibt leer. Wenn du ihn weisst, schreib mir einfach den Betrag.");
 });
 
 test("DB-Aufräumjob lässt zurückgehaltene Fragen bis 25 Stunden aus (Migration)", async () => {

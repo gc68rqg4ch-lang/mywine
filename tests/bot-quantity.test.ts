@@ -115,8 +115,8 @@ test("„✏️ Andere Zahl“ + 24 → 24 gespeichert; 0, -3, zwei, 2.5 → fre
   }
   await say("24");
   assert.deepEqual([state().step, state().quantity], ["price", 24]);
-  await press("🤷");
-  await press("🤷");
+  // „–“: beide Preise leer, ohne Normalpreis-Frage
+  await say("–");
   await press("Überspringen");
   await confirmAndSave();
   assert.equal(item().quantity, 24);

@@ -41,14 +41,14 @@ export const VARIANTS = {
     "Wie viele Flaschen sind es? Bitte eine ganze Zahl ab 1, z. B. <i>24</i>.",
   ],
   giftValue: [
-    "Weisst du ungefähr, was eine Flasche normalerweise kostet? Schreib mir einfach den Betrag, z. B. <i>38</i>.",
-    "Und was ist eine Flasche ungefähr wert? Ein Betrag genügt, z. B. <i>34.80</i>.",
-    "Kennst du den Normalpreis pro Flasche? Z. B. <i>38</i> – sonst tippe 🤷.",
+    "Weisst du ungefähr, was eine Flasche normalerweise kostet?",
+    "Und was ist eine Flasche ungefähr wert?",
+    "Kennst du den Normalpreis pro Flasche?",
   ],
   giftValueRetry: [
-    "Den Betrag verstehe ich nicht ganz – was kostet eine Flasche normalerweise? Z. B. <i>38</i> oder <i>34.80</i>.",
-    "Magst du mir den Normalpreis als Betrag schreiben, z. B. <i>38</i>? Sonst tippe 🤷.",
-    "Bitte einen Betrag über 0, z. B. <i>34.80</i> – oder tippe 🤷.",
+    "Den Betrag verstehe ich nicht ganz – was kostet eine Flasche normalerweise?",
+    "Magst du mir den Normalpreis als Betrag schreiben?",
+    "Bitte einen Betrag über 0.",
   ],
   giftFrom: ["🎁 Wie schön, ein Geschenk! Von wem?", "🎁 Ein Geschenk – schön! Von wem ist er?", "🎁 Wie nett! Von wem hast du ihn bekommen?"],
   done: ["Wunderbar, dann ist alles notiert.", "Schön – alles festgehalten.", "Perfekt, ich habe alles."],
@@ -95,7 +95,9 @@ export function subjectText(s: FlowSubject) {
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Hinweis bei der Frage „bezahlt“: den Betrag eintippen (nicht nur Knöpfe). */
-const PRICE_TYPE_HINT = "Schreib mir einfach den Betrag, z. B. <i>38</i>.";
+/** Antwortmöglichkeiten bei den Preisfragen: Betrag, „–“ für leer, 🤷 sucht (search false: ohne 🤷). */
+const priceHint = (search: boolean, gift = false) =>
+  `Betrag schreiben (z. B. <i>29.90</i>), «–» für leer${gift ? ", 🎁 Geschenk" : ""}${search ? ", 🤷 dann suche ich ihn" : ""}.`;
 
 export const T = {
   // --- Allgemein
@@ -200,28 +202,28 @@ export const T = {
   /** Keine gültige Anzahl (0, -3, „zwei“, 2.5): freundlich nochmals fragen (Varianten). */
   quantityRetry: (random?: () => number) => say("quantityRetry", random),
   /** Frage a: bezahlter Preis pro Flasche (→ purchase_price). */
-  pricePaid: (bottles: string, random?: () => number) =>
-    `${e(bottles)}. ${pick(["Was hast du pro Flasche bezahlt?", "Und was hast du pro Flasche bezahlt?", "Sag mir noch: Was hast du pro Flasche bezahlt?"], random)} ${PRICE_TYPE_HINT}`,
-  priceRetry: `Den Betrag verstehe ich nicht ganz – was hast du pro Flasche bezahlt? ${PRICE_TYPE_HINT} Sonst tippe 🎁 (Geschenk) bzw. 🤷 (weiss ich nicht).`,
+  pricePaid: (bottles: string, random?: () => number, search = true) =>
+    `${e(bottles)}. 💰 ${pick(["Was hast du pro Flasche bezahlt?", "Und was hast du pro Flasche bezahlt?", "Sag mir noch: Was hast du pro Flasche bezahlt?"], random)} ${priceHint(search, true)}`,
+  priceRetry: (search = true) => `Den Betrag verstehe ich nicht ganz – was hast du pro Flasche bezahlt? ${priceHint(search, true)}`,
   /** Geschenk: „Von wem?“ (Varianten). */
   giftFromAsk: (random?: () => number) => say("giftFrom", random),
   /** Geschenk: Normalpreis (Wert) pro Flasche? (Varianten) */
-  giftValueAsk: (random?: () => number) => say("giftValue", random),
+  giftValueAsk: (random?: () => number, search = true) => `${say("giftValue", random)} ${priceHint(search)}`,
   /** Kein gültiger Betrag (0, negativ, kein Betrag): freundlich nochmals fragen (Varianten). */
-  giftValueRetry: (random?: () => number) => say("giftValueRetry", random),
+  giftValueRetry: (random?: () => number, search = true) => `${say("giftValueRetry", random)} ${priceHint(search)}`,
   /** Statt Preis: „🎁 Geschenk von Marc“ bzw. „🎁 Geschenk“. */
   giftLine: (from: string | null) => (from ? `🎁 Geschenk von ${e(from)}` : "🎁 Geschenk"),
   /** Frage b: Normalpreis pro Flasche (→ regular_price). */
-  /** Nach einem bezahlten Betrag: gleich, anderer Betrag oder weiss nicht (Knöpfe). */
-  sameAsRegular: (random?: () => number) =>
-    pick(["Ist das auch der Normalpreis?", "Danke! Ist das auch der Normalpreis?", "Notiert. Ist das auch der Normalpreis?"], random),
+  /** Nach einem bezahlten Betrag: „✅ Ja, gleich“, sonst anderen Betrag tippen, „–“ oder 🤷. */
+  sameAsRegular: (random?: () => number, search = true) =>
+    `${pick(["Ist das auch der Normalpreis?", "Danke! Ist das auch der Normalpreis?", "Notiert. Ist das auch der Normalpreis?"], random)} Sonst ${priceHint(search)}`,
   /** „✏️ Anderer Betrag“: um den Normalpreis bitten. */
   regularOther: "Gerne – was kostet eine Flasche normalerweise? Schreib mir einfach den Betrag, z. B. <i>45</i>.",
-  /** Ohne bezahlten Betrag („🤷 Weiss ich nicht“ bei der ersten Frage). */
-  regularPrice: (random?: () => number) =>
-    pick(["Weisst du, was eine Flasche normalerweise kostet? Schreib mir den Betrag.", "Und weisst du, was eine Flasche normalerweise kostet? Schreib mir einfach den Betrag."], random),
-  regularPriceRetry: "Den Betrag verstehe ich nicht ganz – was kostet eine Flasche normalerweise? Bitte einen Betrag über 0, z. B. <i>29.90</i> – oder tippe einen Knopf.",
-  // --- Preissuche („🔎 Such du“) – label: die Flasche (HTML, aus bottleLabel)
+  /** Ohne bezahlten Betrag (z. B. alter Knopf „skipprice“): nach dem Normalpreis fragen. */
+  regularPrice: (random?: () => number, search = true) =>
+    `${pick(["Weisst du, was eine Flasche normalerweise kostet?", "Und weisst du, was eine Flasche normalerweise kostet?"], random)} ${priceHint(search)}`,
+  regularPriceRetry: (search = true) => `Den Betrag verstehe ich nicht ganz – was kostet eine Flasche normalerweise? ${priceHint(search)}`,
+  // --- Preissuche (🤷 (Preis suchen)) – label: die Flasche (HTML, aus bottleLabel)
   /** Treffer (gleicher Jahrgang, gleiche Grösse) – gespeichert. details: „Mövenpick, 2019, 75 cl“. */
   priceFound: (label: string, money: string, details: string, regularOnly: boolean) =>
     `${label}\n💰 ${regularOnly ? "Normalpreis" : "Preis"} gefunden: ${e(money)} pro Flasche (${e(details)}) – gespeichert.`,
@@ -229,9 +231,11 @@ export const T = {
   priceOther: (label: string, what: string, money: string, merchant: string) => `${label}\nNur ${e(what)} gefunden: ${e(money)} (${e(merchant)}). Übernehmen?`,
   /** Zusatz wie Riserva nur auf einer Seite: „Gefunden: CHF 70.05 (Trinkgenuss) – Angebot ohne Riserva. Übernehmen?“ */
   priceOtherProduct: (label: string, why: string, money: string, merchant: string) => `${label}\nGefunden: ${e(money)} (${e(merchant)}) – ${e(why)}. Übernehmen?`,
-  /** Nichts gefunden: nach dem Preis fragen. */
-  priceNotFound: (label: string) => `${label}\nKeinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?`,
-  regularNotFound: (label: string) => `${label}\nKeinen Normalpreis bei Schweizer Händlern gefunden. Was kostet eine Flasche normalerweise? Schreib mir den Betrag.`,
+  /** Nichts gefunden: nur eine Meldung (ohne Knöpfe) – ein getippter Betrag wird noch gespeichert. */
+  priceNotFound: (label: string) => `${label}\nKeinen Preis bei Schweizer Händlern gefunden – bleibt leer. Wenn du ihn weisst, schreib mir einfach den Betrag.`,
+  regularNotFound: (label: string) => `${label}\nKeinen Normalpreis bei Schweizer Händlern gefunden – bleibt leer. Wenn du ihn weisst, schreib mir einfach den Betrag.`,
+  /** 🤷 bei einer Preis-Rückfrage zu einer gespeicherten Flasche: Suche gestartet. */
+  priceSearching: (label: string, regularOnly: boolean) => `${label}\n🔎 ${regularOnly ? "Normalpreis" : "Preis"}: wird gesucht …`,
   /** Rückfrage beantwortet: Preise der Charge gespeichert. */
   priceSaved: (label: string, line: string | null) => `${label}\n${line ? `✅ Gespeichert: ${e(line)}.` : "✅ Gut, der Preis bleibt leer."}`,
   /** Zurückgehaltene Preis-Rückfrage nach 24 Std. verworfen. */

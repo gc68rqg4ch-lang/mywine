@@ -34,7 +34,7 @@ export type JobParams = {
   skipRecent?: boolean;
   /** „Trinkfenster fehlt“: diese Jahrgänge. */
   years?: (number | null)[];
-  /** Preissuche („🔎 Such du“): Charge, was gesucht wird, Chat für Antoines Meldung. */
+  /** Preissuche (🤷 (Preis suchen)): Charge, was gesucht wird, Chat für Antoines Meldung. */
   item_id?: string;
   mode?: "both" | "regular";
   chat_id?: number;

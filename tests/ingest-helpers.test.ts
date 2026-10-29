@@ -8,7 +8,7 @@ import { parsePrice, priceDiscount } from "@/lib/format";
 import { jobIdFor } from "@/lib/ingest/jobs";
 import {
   callbackData, locationKeyboard, parseCallbackData, parsePrice as botParsePrice, parseQuantity, proposalMessage,
-  regularPriceKeyboard, reviewKeyboard, skipVendorKeyboard, vendorKeyboard,
+  giftValueKeyboard, isLeaveEmpty, priceKeyboard, regularPriceKeyboard, reviewKeyboard, skipVendorKeyboard, vendorKeyboard,
 } from "@/lib/ingest/messages";
 import { missingEnrichableFields, normalizeProposal } from "@/lib/ingest/schema";
 import type { TgInlineButton } from "@/lib/telegram/types";
@@ -101,12 +101,20 @@ test("Vorschlagstext: HTML maskiert, ohne Technik (Modell/Prozent), bekannter We
   assert.ok(!fromLabel.includes("recherchiert") && !fromLabel.includes("kenne ich schon"));
 });
 
-test("Normalpreis-Knöpfe: „✅ Ja, gleich“ und „✏️ Anderer Betrag“ nur mit bezahltem Preis", () => {
-  const withPaid = regularPriceKeyboard(id, 20).inline_keyboard.slice(0, 2).flat();
-  assert.deepEqual(withPaid.map((b) => b.text), ["✅ Ja, gleich", "✏️ Anderer Betrag", "🤷", "🔎"]);
-  assert.deepEqual(withPaid.map((b) => parseCallbackData(cbd(b))?.action), ["sameprice", "regother", "skipregular", "searchreg"]);
+test("Normalpreis-Knöpfe: „✅ Ja, gleich“ nur mit bezahltem Preis, dazu 🤷 (sucht) – kein 🔎, kein „Anderer Betrag“", () => {
+  const withPaid = regularPriceKeyboard(id, 20).inline_keyboard[0];
+  assert.deepEqual(withPaid.map((b) => b.text), ["✅ Ja, gleich", "🤷"]);
+  assert.deepEqual(withPaid.map((b) => parseCallbackData(cbd(b))?.action), ["sameprice", "searchreg"]);
   for (const b of withPaid) assert.ok(Buffer.byteLength(cbd(b)) <= 64);
-  assert.deepEqual(regularPriceKeyboard(id, null).inline_keyboard[0].map((b) => b.text), ["🤷", "🔎"]);
+  assert.deepEqual(regularPriceKeyboard(id, null).inline_keyboard[0].map((b) => b.text), ["🤷"]);
+  const all = [regularPriceKeyboard(id, 20), regularPriceKeyboard(id, null), priceKeyboard(id), giftValueKeyboard(id)].flatMap((k) => k.inline_keyboard.flat().map((b) => b.text));
+  assert.ok(!all.some((t) => t === "🔎" || /Anderer Betrag/.test(t)));
+  // Ohne Suche (nachdem sie nichts fand): kein 🤷
+  assert.deepEqual(regularPriceKeyboard(id, 20, false).inline_keyboard[0].map((b) => b.text), ["✅ Ja, gleich"]);
+  assert.deepEqual(priceKeyboard(id, false).inline_keyboard[0].map((b) => b.text), ["🎁"]);
+  assert.deepEqual(giftValueKeyboard(id, false).inline_keyboard.flat().map((b) => b.text), ["✖️ Abbrechen"]);
+  for (const t of ["–", "-", "—", "leer", "Nichts", " leer. "]) assert.equal(isLeaveEmpty(t), true, t);
+  for (const t of ["29", "keine Ahnung", "leer lassen bitte nicht", "--5"]) assert.equal(isLeaveEmpty(t), false, t);
 });
 
 test("Händler-Knöpfe: zwei pro Zeile, höchstens 12, plus Neu/Überspringen und Abbrechen", () => {

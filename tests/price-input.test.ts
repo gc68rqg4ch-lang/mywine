@@ -107,15 +107,16 @@ test("Kaufpreis: 38, 34.80, 34,80 gültig; 0 → Hinweis auf „🎁 Geschenk“
   await say("0");
   assert.equal(state().step, "price");
   assert.ok(VARIANTS.priceZero.includes(lastText() as never), lastText());
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁", "🤷", "🔎", "✖️ Abbrechen"], "Knöpfe bleiben");
+  assert.deepEqual(buttons().map((b) => b.text), ["🎁", "🤷", "✖️ Abbrechen"], "Knöpfe bleiben");
   for (const bad of ["-5", "keine Ahnung"]) {
     await say(bad);
     assert.deepEqual([state().step, state().price], ["price", undefined], bad);
-    assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\? Schreib mir einfach den Betrag/);
+    assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\? Betrag schreiben .*«–» für leer, 🎁 Geschenk, 🤷 dann suche ich ihn\./);
+    assert.deepEqual(buttons().map((b) => b.text), ["🎁", "🤷", "✖️ Abbrechen"], bad);
   }
-  // „🤷 Weiss ich nicht“ statt „Überspringen“
-  await press("🤷");
-  assert.deepEqual([state().step, state().price], ["regular_price", null]);
+  // „–“: beide Preise bewusst leer (keine Normalpreis-Frage)
+  await say("–");
+  assert.deepEqual([state().price, state().regular_price, state().price_search], [null, null, undefined]);
   await toPrice();
   await say("0");
   await press("🎁");
@@ -134,8 +135,8 @@ test("Normalpreis: 38, 34.80, 34,80 gültig; 0, -5, keine Ahnung → nochmals fr
   for (const bad of ["0", "-5", "keine Ahnung"]) {
     await say(bad);
     assert.deepEqual([state().step, state().regular_price], ["regular_price", undefined], bad);
-    assert.match(lastText(), /was kostet eine Flasche normalerweise\? Bitte einen Betrag über 0/);
-    assert.deepEqual(buttons().map((b) => b.text), ["✅ Ja, gleich", "✏️ Anderer Betrag", "🤷", "🔎", "✖️ Abbrechen"]);
+    assert.match(lastText(), /was kostet eine Flasche normalerweise\? Betrag schreiben .*«–» für leer, 🤷 dann suche ich ihn\./);
+    assert.deepEqual(buttons().map((b) => b.text), ["✅ Ja, gleich", "🤷", "✖️ Abbrechen"]);
   }
   await press("✅ Ja, gleich");
   assert.equal(state().regular_price, 30);
@@ -157,9 +158,11 @@ test("Normalpreis nach „🎁 Geschenk“: 38, 34.80, 34,80 gültig; 0, -5, kei
   for (const bad of ["0", "-5", "keine Ahnung"]) {
     await say(bad);
     assert.equal(state().regular_price, undefined, bad);
-    assert.ok(VARIANTS.giftValueRetry.includes(lastText() as never), `${bad}: ${lastText()}`);
+    assert.ok(VARIANTS.giftValueRetry.some((v) => lastText().startsWith(v)), `${bad}: ${lastText()}`);
+    assert.match(lastText(), /«–» für leer, 🤷 dann suche ich ihn\.$/);
+    assert.deepEqual(buttons().map((b) => b.text), ["🤷", "✖️ Abbrechen"], "Geschenk-Wert: nur 🤷");
   }
-  await press("🤷");
+  await say("–");
   assert.equal(state().regular_price, null);
 });
 

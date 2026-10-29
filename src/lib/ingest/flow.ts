@@ -234,6 +234,12 @@ export function giftPatch(from: string | null | undefined, value?: number | null
   };
 }
 
+/**
+ * Darf 🤷 die Preissuche starten? Beim Einbuchen und nach „✏️ Ändern“ ja; bei einer Rückfrage,
+ * nachdem die Suche nichts bzw. nur ein anderes Angebot fand, nicht (Betrag oder „–“ tippen).
+ */
+export const priceSearchAllowed = (state: Pick<IngestState, "price_followup">) => !state.price_followup || state.price_followup.ask === "fix";
+
 /** Nächster Schritt: die erste noch fehlende Kaufangabe, sonst Zusammenfassung (Text) bzw. Speichern. */
 export function nextPurchaseStep(state: IngestState): IngestStep {
   // Preis-Rückfrage nach der Suche: nur die Preisschritte, danach die Preise der Charge speichern.
@@ -254,7 +260,7 @@ export function nextPurchaseStep(state: IngestState): IngestStep {
   // Geschenk: nur noch „Von wem?“ (falls nicht schon bekannt) – kein Preis, Händler oder Kaufdatum.
   if (state.is_gift) {
     if (state.gift_from === undefined) return "gift_from";
-    // Danach der Normalpreis (Wert der Flasche) – „🤷 Weiss ich nicht“ = null.
+    // Danach der Normalpreis (Wert der Flasche) – „–“ = null, 🤷 = suchen.
     if (state.regular_price === undefined) return "regular_price";
     return state.source === "text" ? "confirm" : "saving";
   }
@@ -328,20 +334,22 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
     case "price":
       await sendMessage(
         chatId,
-        of(T.pricePaid(formatBottles(state.quantity ?? 1))),
-        priceKeyboard(job.id, !state.price_followup),
+        of(T.pricePaid(formatBottles(state.quantity ?? 1), undefined, priceSearchAllowed(state))),
+        priceKeyboard(job.id, priceSearchAllowed(state)),
       );
       return;
     case "gift_from":
       await sendMessage(chatId, of(T.giftFromAsk()), giftFromKeyboard(job.id));
       return;
-    case "regular_price":
-      // Preis-Rückfrage nach der Suche: ohne „🔎 Such du“ (sie hat ja nichts gefunden).
-      if (state.is_gift) await sendMessage(chatId, of(T.giftValueAsk()), giftValueKeyboard(job.id, !state.price_followup));
+    case "regular_price": {
+      // 🤷 sucht – nicht, nachdem die Suche schon nichts fand (priceSearchAllowed).
+      const search = priceSearchAllowed(state);
+      if (state.is_gift) await sendMessage(chatId, of(T.giftValueAsk(undefined, search)), giftValueKeyboard(job.id, search));
       // Nach einem Betrag: „Ist das auch der Normalpreis?“; ohne Betrag: nach dem Normalpreis fragen.
-      else if (state.price != null) await sendMessage(chatId, of(T.sameAsRegular()), regularPriceKeyboard(job.id, state.price, !state.price_followup));
-      else await sendMessage(chatId, of(T.regularPrice()), regularPriceKeyboard(job.id, null, !state.price_followup));
+      else if (state.price != null) await sendMessage(chatId, of(T.sameAsRegular(undefined, search)), regularPriceKeyboard(job.id, state.price, search));
+      else await sendMessage(chatId, of(T.regularPrice(undefined, search)), regularPriceKeyboard(job.id, null, search));
       return;
+    }
     case "vendor":
       await sendMessage(
         chatId,
@@ -539,7 +547,7 @@ export async function saveJob(job: IngestJob, chatId: number) {
     else scheduleDrinkWindow(wineId, state.proposal.vintage_year ?? null);
     // Likörwein bzw. Likör (Spirituose der Kategorie Likör): wie lange eine offene Flasche gut bleibt.
     if (state.proposal.type === "fortified" || state.proposal.type === "spirit") scheduleOpenKeep(wineId);
-    // „🔎 Such du“: Preis bei Schweizer Händlern suchen (Hintergrund); Antoine meldet das Ergebnis.
+    // 🤷 (Preis suchen): Preis bei Schweizer Händlern suchen (Hintergrund); Antoine meldet das Ergebnis.
     if (state.price_search) await schedulePriceSearch(db, { wineId, itemId, chatId, mode: state.price_search, personId: actor?.personId ?? null });
     // Diese Erfassung ist fertig: zurückgehaltene Preis-Rückfragen anderer Flaschen jetzt stellen.
     await releaseHeldPriceQuestions(db, chatId);
@@ -555,13 +563,25 @@ export async function saveJob(job: IngestJob, chatId: number) {
 async function savePriceFollowup(db: AdminClient, job: IngestJob, chatId: number, state: IngestState) {
   try {
     const itemId = state.price_followup!.item_id;
-    const values = {
-      purchase_price: state.is_gift ? 0 : (state.price ?? null),
-      regular_price: state.regular_price ?? null,
-      ...(state.is_gift ? { is_gift: true, gift_from: cleanGiftFrom(state.gift_from) } : {}),
-    };
+    const search = state.price_search;
+    // 🤷 (Preis suchen): was gesucht wird, wird zuerst geleert – die Suche füllt nur leere Felder.
+    const values =
+      search === "both"
+        ? { purchase_price: null, regular_price: null }
+        : {
+            purchase_price: state.is_gift ? 0 : (state.price ?? null),
+            regular_price: state.regular_price ?? null,
+            ...(state.is_gift ? { is_gift: true, gift_from: cleanGiftFrom(state.gift_from) } : {}),
+          };
     await updateItemPrices(db, itemId, values, "manual", null);
     await advanceJob(db, job, "saving", { step: "done" }, { status: "confirmed", inventory_item_id: itemId });
+    if (search) {
+      const label = state.price_followup?.label ?? "";
+      await sendMessage(chatId, T.priceSearching(label, search === "regular"));
+      if (job.matched_wine_id) await schedulePriceSearch(db, { wineId: job.matched_wine_id, itemId, chatId, mode: search, personId: null });
+      await releaseHeldPriceQuestions(db, chatId);
+      return;
+    }
     const line = state.is_gift
       ? [cleanGiftFrom(state.gift_from) ? `Geschenk von ${cleanGiftFrom(state.gift_from)}` : "Geschenk", state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null].filter(Boolean).join(" · ")
       : priceLine(state.price, state.regular_price);

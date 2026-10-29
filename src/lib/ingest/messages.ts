@@ -38,9 +38,9 @@ export type CallbackAction =
   | "catmain"
   /** Unterkategorie (Index) bzw. „none“ = ohne */
   | "catsub"
-  /** „🔎 Such du“ bei „bezahlt?“ (bezahlt und Normalpreis) */
+  /** 🤷 (Preis suchen) bei „bezahlt?“ (bezahlt und Normalpreis) */
   | "searchprice"
-  /** „🔎 Such du“ beim Normalpreis bzw. Geschenk-Wert (nur Normalpreis) */
+  /** 🤷 (Preis suchen) beim Normalpreis bzw. Geschenk-Wert (nur Normalpreis) */
   | "searchreg"
   /** Preissuche: anderen Jahrgang/andere Grösse übernehmen, selbst eingeben, leer lassen */
   | "offeryes"
@@ -202,33 +202,22 @@ export function quantityKeyboard(jobId: string): TgInlineKeyboard {
 }
 
 /**
- * Preis-Knöpfe nur als Emoji (sonst schneidet das iPhone sie ab): 🎁 Geschenk, 🤷 Weiss ich nicht,
- * 🔎 Such du (die Recherche sucht den Preis bei Schweizer Händlern, nach dem Speichern).
+ * Preis-Knöpfe nur als Emoji (sonst schneidet das iPhone sie ab): 🎁 Geschenk, 🤷 weiss ich nicht –
+ * 🤷 startet die Preissuche bei Schweizer Händlern (nach dem Speichern). Betrag bzw. „–“ (leer
+ * lassen) werden getippt. search false (z. B. nachdem die Suche nichts fand): ohne 🤷.
  */
-const searchButton = (jobId: string, action: "searchprice" | "searchreg") => ({ text: "🔎", callback_data: callbackData(action, jobId) });
+const shrugButton = (jobId: string, action: "searchprice" | "searchreg") => ({ text: "🤷", callback_data: callbackData(action, jobId) });
 
-/** Frage „bezahlt?“: Betrag tippen oder 🎁 Geschenk · 🤷 Weiss ich nicht · 🔎 Such du (search false: ohne „Such du“). */
+/** Frage „bezahlt?“: Betrag bzw. „–“ tippen oder 🎁 Geschenk · 🤷 (Preis suchen). */
 export function priceKeyboard(jobId: string, search = true): TgInlineKeyboard {
   return {
-    inline_keyboard: [
-      [
-        { text: "🎁", callback_data: callbackData("gift", jobId) },
-        { text: "🤷", callback_data: callbackData("skipprice", jobId) },
-        ...(search ? [searchButton(jobId, "searchprice")] : []),
-      ],
-      cancelRow(jobId),
-    ],
+    inline_keyboard: [[{ text: "🎁", callback_data: callbackData("gift", jobId) }, ...(search ? [shrugButton(jobId, "searchprice")] : [])], cancelRow(jobId)],
   };
 }
 
-/** Geschenk: Normalpreis (Wert) pro Flasche – Betrag schreiben, „🤷 Weiss ich nicht“ oder „🔎 Such du“. */
+/** Geschenk: Normalpreis (Wert) pro Flasche – Betrag bzw. „–“ tippen oder 🤷 (Normalpreis suchen). */
 export function giftValueKeyboard(jobId: string, search = true): TgInlineKeyboard {
-  return {
-    inline_keyboard: [
-      [{ text: "🤷", callback_data: callbackData("skipregular", jobId) }, ...(search ? [searchButton(jobId, "searchreg")] : [])],
-      cancelRow(jobId),
-    ],
-  };
+  return { inline_keyboard: [...(search ? [[shrugButton(jobId, "searchreg")]] : []), cancelRow(jobId)] };
 }
 
 /** Preissuche fand nur einen anderen Jahrgang bzw. eine andere Grösse: übernehmen? */
@@ -247,23 +236,16 @@ export function giftFromKeyboard(jobId: string): TgInlineKeyboard {
 }
 
 /**
- * Normalpreis: mit bezahltem Betrag „✅ Ja, gleich“, „✏️ Anderer Betrag“, „🤷 Weiss ich nicht“;
- * ohne (bzw. nach „Anderer Betrag“) nur „🤷 Weiss ich nicht“ – der Betrag wird getippt.
+ * Normalpreis: mit bezahltem Betrag „✅ Ja, gleich“ · 🤷 (Normalpreis suchen), ohne nur 🤷. Ein
+ * anderer Betrag bzw. „–“ (leer) wird getippt.
  */
 export function regularPriceKeyboard(jobId: string, paid: number | null, search = true): TgInlineKeyboard {
-  const unknown = [{ text: "🤷", callback_data: callbackData("skipregular", jobId) }, ...(search ? [searchButton(jobId, "searchreg")] : [])];
-  if (paid == null) return { inline_keyboard: [unknown, cancelRow(jobId)] };
-  return {
-    inline_keyboard: [
-      [
-        { text: "✅ Ja, gleich", callback_data: callbackData("sameprice", jobId) },
-        { text: "✏️ Anderer Betrag", callback_data: callbackData("regother", jobId) },
-      ],
-      unknown,
-      cancelRow(jobId),
-    ],
-  };
+  const row = [...(paid != null ? [{ text: "✅ Ja, gleich", callback_data: callbackData("sameprice", jobId) }] : []), ...(search ? [shrugButton(jobId, "searchreg")] : [])];
+  return { inline_keyboard: [...(row.length ? [row] : []), cancelRow(jobId)] };
 }
+
+/** „–“, „-“, „—“, „leer“, „nichts“: Preis bewusst leer lassen (keine Suche). */
+export const isLeaveEmpty = (text: string) => /^\s*(?:-|–|—|leer|nichts)\s*[.!]?\s*$/i.test(text);
 
 /** Händler als Buttons (je zwei pro Zeile), dazu „Neuer Händler“ und „Überspringen“. */
 export function vendorKeyboard(jobId: string, vendors: { name: string }[]): TgInlineKeyboard {
@@ -418,7 +400,7 @@ export function wineSummaryLines(state: IngestState) {
  */
 export function priceLine(paid: number | null | undefined, regular: number | null | undefined, search?: "both" | "regular") {
   const money = (v: number) => formatMoney(v, "CHF");
-  // „🔎 Such du“: Preis bzw. Normalpreis wird nach dem Speichern gesucht.
+  // 🤷 (Preis suchen): Preis bzw. Normalpreis wird nach dem Speichern gesucht.
   if (search === "both") return "Preis: wird gesucht …";
   if (search === "regular") return [paid != null ? `Bezahlt ${money(paid)}` : null, "Normalpreis: wird gesucht …"].filter(Boolean).join(" · ");
   if (paid != null && regular != null) return paid === regular ? money(paid) : `Bezahlt ${money(paid)} · Normalpreis ${money(regular)}`;
