@@ -38,6 +38,8 @@ export type JobParams = {
   item_id?: string;
   mode?: "both" | "regular";
   chat_id?: number;
+  /** Testlauf der Preissuche: nichts speichern, nichts senden, nur result schreiben. */
+  dry_run?: boolean;
 };
 
 export type NewJob = { wineId: string; kind: JobKind; params: JobParams; vintageYear?: number | null };
@@ -171,8 +173,9 @@ export async function runJob(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "par
     if (job.kind === "window") return await researchDrinkWindowYears(db, job.wine_id, p.years ?? []);
     if (job.kind === "keep") return await researchOpenKeepJob(db, job.wine_id);
     if (job.kind === "price") {
-      if (!p.item_id || !p.chat_id) return { status: "nothing", filled: [], suggested: 0, seconds: 0 };
-      return await runPriceSearch(db, { item_id: p.item_id, mode: p.mode === "regular" ? "regular" : "both", chat_id: p.chat_id });
+      // Testlauf (dry_run) braucht keinen Chat: es wird nichts gesendet.
+      if (!p.item_id || (!p.chat_id && p.dry_run !== true)) return { status: "nothing", filled: [], suggested: 0, seconds: 0 };
+      return await runPriceSearch(db, { item_id: p.item_id, mode: p.mode === "regular" ? "regular" : "both", chat_id: p.chat_id ?? 0, ...(p.dry_run === true ? { dry_run: true } : {}) });
     }
     const year = "year" in p ? { year: p.year ?? null } : {};
     if (job.kind === "page") return await researchAndFillWine(db, job.wine_id, "all", { taste: "always", ...year });

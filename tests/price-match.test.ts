@@ -135,8 +135,8 @@ test("Fall Acquastilla: Modell findet nur die Adresse – Shopify-Daten CHF 73.0
   assert.deepEqual(exact.finding, { kind: "exact", amount: 73, merchant: "Casapoli", url: ACQUA_URL, year: null, sizeMl: 700 });
   assert.equal(exact.diagnostics.verdict, "exact:page");
   assert.equal(diagnostics.raw?.reason, "Name passt nicht genau (36 mesi ohne Riserva)");
-  // Suchanfragen: Händler + Name, Name, Name + Produzent-Varianten
-  assert.match(prompt, /„Casa Poli Acquastilla Riserva 36 Mesi“, „Acquastilla Riserva 36 Mesi“, „Acquastilla Riserva 36 Mesi Distilleria Giovannipoli“/);
+  // Feste Suchbegriffe: Marke (Klammerzusatz) + Name mit Grösse, kaufen CHF, site:.ch, Händler, Name allein
+  assert.match(prompt, /„Casa Grappa Acquastilla Riserva 36 Mesi 70cl“, „Casa Grappa Acquastilla Riserva 36 Mesi kaufen CHF“, „Casa Grappa Acquastilla Riserva 36 Mesi site:.ch“, „Casa Poli Casa Grappa Acquastilla Riserva 36 Mesi“, „Acquastilla Riserva 36 Mesi 70cl“/);
   assert.match(prompt, /Casa Grappa/);
 });
 

@@ -2,14 +2,15 @@ import "server-only";
 
 // Preis beim Einbuchen suchen („🔎 Such du“ bei Antoine): Preis pro Flasche in CHF bei Schweizer
 // Händlern – genau dieser Wein bzw. diese Spirituose, gleicher Jahrgang, gleiche Flaschengrösse.
-// Quellen: zuerst der Shop des genannten Händlers, dann die bekannten Schweizer Shops
-// (SHOP_DOMAINS), dann die Websuche eingeschränkt auf Schweizer Händler (.ch, CHF). Zeigt ein Shop
-// Aktions- und Normalpreis, gilt der Normalpreis.
+// Ablauf: direkte Suchen in Schweizer Shops (parallel, DIRECT_SHOPS) → Websuche mit Standort Schweiz
+// und festen Suchbegriffen (Marke + Name, price-search.ts) → eigene Prüfung der Produktseiten aus
+// allen Suchergebnissen, auch ohne Zusage des Modells. Zeigt ein Shop Aktions- und Normalpreis, gilt
+// der Normalpreis; mehrere Händler mit exaktem Treffer → häufigster bzw. mittlerer Preis.
 //   Treffer (Jahrgang und Grösse gleich) → direkt in die Charge (nur leere Felder; price_source
 //     research, price_note), Antoine meldet ihn mit „✏️ Ändern“.
 //   Nur anderer Jahrgang bzw. andere Grösse → nichts speichern, Antoine fragt „Übernehmen?“.
 //   Nichts → Antoine fragt nach dem Preis (wie beim Einbuchen).
-// Läuft im Hintergrund als research_jobs-Auftrag „price“ (ohne Migration direkt nach der Antwort).
+// Läuft im Hintergrund als research_jobs-Auftrag „price“; params.dry_run = Testlauf ohne Speichern/Senden.
 
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -26,10 +27,29 @@ import { giftValueKeyboard, priceKeyboard, priceOfferKeyboard, regularPriceKeybo
 import type { IngestState, IngestStep, PriceOffer } from "@/lib/ingest/schema";
 import { createGetter, findShopPages, shopDocuments, shopPagesNote } from "./shops";
 import type { Get } from "./shops/adapters";
-import { offerFromHtml, offerFromShopify, producerVariants, qualifierMismatch, sameProduct, shopifyDataUrl, swissPage, yearFromText, type Mismatch, type ProductOffer } from "./price-match";
+import { offerFromHtml, offerFromShopify, qualifierMismatch, sameProduct, shopifyDataUrl, sizeFromText, swissPage, yearFromText, type Mismatch, type ProductOffer } from "./price-match";
+import {
+  compactSearches,
+  directShopsFor,
+  hostOf,
+  htmlSearchHits,
+  pickBest,
+  priceQueries,
+  productTerm,
+  rankHits,
+  searchLog,
+  searchTitles,
+  shopifySuggestHits,
+  shortUrl,
+  swissMerchantUrl,
+  swissResultUrls,
+  type DirectShop,
+  type SearchLog,
+} from "./price-search";
 import { SHOP_DOMAINS } from "./shops/match";
 import type { ResearchOutcome } from "./wine";
 export { priceNoteHint } from "./price-note";
+export { swissMerchantUrl } from "./price-search";
 
 type Db = SupabaseClient<Database>;
 export type PriceMode = "both" | "regular";
@@ -51,27 +71,15 @@ export const PriceSchema = z.object({
 });
 export type PriceRaw = z.infer<typeof PriceSchema>;
 
-/** why: abweichender Zusatz („Angebot ohne Riserva“) – dann kein exakter Treffer. */
-export type PriceOfferFound = { amount: number; merchant: string; url: string; year: number | null; sizeMl: number; why?: string; reason?: string };
+/**
+ * why: abweichender Zusatz („Angebot ohne Riserva“) – dann kein exakter Treffer. merchants: so
+ * viele Händler mit exaktem Treffer (Preis = häufigster bzw. mittlerer).
+ */
+export type PriceOfferFound = { amount: number; merchant: string; url: string; year: number | null; sizeMl: number; why?: string; reason?: string; merchants?: number };
 export type PriceFinding =
   | ({ kind: "exact" } & PriceOfferFound)
   | ({ kind: "other" } & PriceOfferFound)
   | { kind: "none"; reason?: string };
-
-const hostOf = (url: string) => {
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" ? u.hostname.replace(/^www\./, "").toLowerCase() : null;
-  } catch {
-    return null;
-  }
-};
-
-/** Schweizer Händler: Domain .ch bzw. einer der bekannten Schweizer Shops (moevenpick-wein.com). */
-export function swissMerchantUrl(url: string) {
-  const host = hostOf(url);
-  return host != null && (host.endsWith(".ch") || SHOP_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`)));
-}
 
 /** Übliche Grösse, wenn das Angebot keine nennt (Wein 75 cl, Spirituose 70 cl). */
 const standardSize = (type: string | null | undefined) => (type === "spirit" ? 700 : 750);
@@ -116,12 +124,16 @@ export function evaluatePrice(raw: PriceRaw | null, want: PriceWant): PriceFindi
   });
 }
 
-/** Händlername aus der Adresse: „casapoli.ch“ → „Casapoli“. */
+/** Händlername aus der Adresse: „casapoli.ch“ → „Casapoli“, „piemont-weine.ch“ → „Piemont-weine“. */
 const merchantFromUrl = (url: string) => {
   const host = hostOf(url) ?? "";
   const base = host.split(".").slice(-2, -1)[0] ?? host;
   return base ? base.charAt(0).toUpperCase() + base.slice(1) : host;
 };
+
+/** Grösse bzw. Jahrgang aus der Adresse (Flaschenpost: „?_size=750&_vintage=2021“). */
+const urlSize = (url: string) => Number(url.match(/[?&]_size=(\d{3,4})\b/)?.[1]) || null;
+const urlYear = (url: string) => Number(url.match(/[?&]_vintage=((?:19|20)\d\d)\b/)?.[1]) || null;
 
 /** Produktseite eines Shops abrufen und den Preis direkt lesen (Shopify-Daten, sonst die Seite). */
 export async function readOffer(url: string, get: Get): Promise<ProductOffer | null> {
@@ -145,48 +157,90 @@ export async function readOffer(url: string, get: Get): Promise<ProductOffer | n
     }
   }
   const page = await get(url);
-  return page?.status === 200 && page.text ? offerFromHtml(page.text) : null;
+  const offer = page?.status === 200 && page.text ? offerFromHtml(page.text) : null;
+  return offer && offer.sizeMl == null ? { ...offer, sizeMl: urlSize(url) ?? sizeFromText(decodeURIComponent(url)) } : offer;
 }
+
+export type DirectResult = { shop: string; result: "ok" | "no_hit" | "error"; urls?: string[] };
 
 export type PriceDiagnostics = {
   raw: Omit<PriceRaw, "quote" | "candidate_urls"> | null;
   verdict: string;
   pages: { url: string; result: string }[];
+  /** Vorgegebene Suchbegriffe (Reihenfolge im Prompt). */
+  planned?: string[];
+  /** Tatsächlich ausgeführte Websuchen, in Reihenfolge, je mit den gefundenen Adressen (gekürzt). */
+  queries?: string[];
+  searches?: number;
+  search_results?: { query: string; urls: string[]; error?: string }[];
+  /** Direkte Shop-Suchen: ok (passender Treffer), no_hit, error. */
+  direct?: DirectResult[];
+  /** Händler mit exaktem Treffer (Preis = häufigster bzw. mittlerer). */
+  merchants?: number;
+  /** Testlauf (dry_run): Ergebnis, ohne zu speichern oder zu senden. */
+  finding?: PriceFinding;
 };
 
-/** Gefundene Produktseiten selbst prüfen: CHF, Schweizer Händler, derselbe Wein. Erster Treffer gewinnt. */
-async function verifyPages(urls: string[], want: PriceWant & { name: string }, get: Get, log: PriceDiagnostics["pages"]): Promise<PriceFinding | null> {
-  let other: PriceFinding | null = null;
-  for (const url of urls) {
-    const offer = await readOffer(url, get).catch(() => null);
-    if (!offer) {
-      log.push({ url, result: "no_price" });
-      continue;
-    }
-    if (offer.currency !== "CHF") {
-      log.push({ url, result: "not_chf" });
-      continue;
-    }
-    if (!swissMerchantUrl(url) && !offer.swiss) {
-      log.push({ url, result: "not_swiss" });
-      continue;
-    }
-    const same = sameProduct({ name: want.name, producer: want.producer, year: want.year }, offer.title, offer.vendor);
-    if (!same.same) {
-      log.push({ url, result: `not_same_wine:${same.reason}` });
-      continue;
-    }
-    const f = finding(want, { price: offer.price, regular: offer.regular, merchant: merchantFromUrl(url), url, year: yearFromText(offer.title), sizeMl: offer.sizeMl, mismatch: same.mismatch });
-    log.push({ url, result: f.kind === "other" && f.reason ? `not_exact:${f.reason}` : f.kind });
-    if (f.kind === "exact") return f;
-    if (f.kind === "other" && !other) other = f;
+/** Gefundene Produktseiten selbst prüfen: CHF, Schweizer Händler, derselbe Wein. Alle, parallel; Protokoll in Reihenfolge. */
+async function verifyPages(urls: string[], want: PriceWant & { name: string }, get: Get, log: PriceDiagnostics["pages"]): Promise<PriceOfferFoundKind[]> {
+  const results = await Promise.all(
+    urls.map(async (url): Promise<{ result: string; found?: PriceOfferFoundKind }> => {
+      const offer = await readOffer(url, get).catch(() => null);
+      if (!offer) return { result: "no_price" };
+      if (offer.currency !== "CHF") return { result: "not_chf" };
+      if (!swissMerchantUrl(url) && !offer.swiss) return { result: "not_swiss" };
+      const same = sameProduct({ name: want.name, producer: want.producer, year: want.year }, offer.title, offer.vendor);
+      if (!same.same) return { result: `not_same_wine:${same.reason}` };
+      const f = finding(want, { price: offer.price, regular: offer.regular, merchant: merchantFromUrl(url), url, year: yearFromText(offer.title) ?? urlYear(url), sizeMl: offer.sizeMl, mismatch: same.mismatch });
+      return { result: f.kind === "other" && f.reason ? `not_exact:${f.reason}` : f.kind, ...(f.kind === "none" ? {} : { found: f }) };
+    }),
+  );
+  results.forEach((r, i) => log.push({ url: urls[i], result: r.result }));
+  return results.flatMap((r) => (r.found ? [r.found] : []));
+}
+type PriceOfferFoundKind = Exclude<PriceFinding, { kind: "none" }>;
+
+/** Zeitlimit je direkter Shop-Suche (alle parallel). */
+export const DIRECT_TIMEOUT_MS = 6000;
+
+/** Eine Shop-Suche: Trefferliste lesen, passende Produkte (höchstens 2). */
+async function searchShop(shop: DirectShop, want: { name: string; producer: string | null; year: number | null; sizeMl: number | null; type: string | null }, get: Get): Promise<DirectResult> {
+  try {
+    const res = await get(shop.search(productTerm(want)));
+    if (!res || res.status !== 200) return { shop: shop.id, result: "error" };
+    let hits;
+    if (shop.kind === "shopify") {
+      try {
+        hits = shopifySuggestHits(JSON.parse(res.text), shop.origin);
+      } catch {
+        return { shop: shop.id, result: "error" };
+      }
+    } else hits = htmlSearchHits(res.text, shop);
+    const urls = rankHits(hits, want).map((h) => h.url);
+    return urls.length ? { shop: shop.id, result: "ok", urls } : { shop: shop.id, result: "no_hit" };
+  } catch {
+    return { shop: shop.id, result: "error" };
   }
-  return other;
+}
+
+/** Direkte Suchen in den Schweizer Shops, parallel mit Zeitlimit. Wirft nie. */
+export async function searchShops(want: { name: string; producer: string | null; year: number | null; sizeMl: number | null; type: string | null }, get: Get): Promise<DirectResult[]> {
+  return Promise.all(directShopsFor(want.type).map((shop) => searchShop(shop, want, get)));
 }
 
 export type PriceWine = { name: string; producer: string | null; type: string | null; country: string | null; region: string | null; appellation: string | null };
 
-/** Shop-Seiten und Websuche. Fehler (auch API-Limit) werden weitergegeben. */
+/** So viele Websuchen darf das Modell für die Preissuche machen. */
+export const PRICE_MAX_SEARCHES = 10;
+/** So viele Adressen aus den Suchergebnissen prüft der Code selbst (dazu die gemeldeten). */
+export const MAX_RESULT_URLS = 8;
+
+/**
+ * Preis suchen: zuerst direkt in Schweizer Shops (parallel), dann die Websuche (Standort Schweiz,
+ * feste Suchbegriffe), dann die eigene Prüfung der gefundenen Adressen – auch wenn das Modell
+ * nichts meldet. Bester Treffer: exakt vor „other“; mehrere exakte → häufigster bzw. mittlerer
+ * Preis. Fehler (auch API-Limit) werden weitergegeben.
+ */
 export async function researchPrice(
   wine: PriceWine,
   year: number | null,
@@ -198,56 +252,91 @@ export async function researchPrice(
   if (!wine.name) return { finding: { kind: "none", reason: "no_name" }, diagnostics };
   const size = sizeMl ?? standardSize(wine.type);
   const want: PriceWant & { name: string } = { year, sizeMl: size, type: wine.type, name: wine.name, producer: wine.producer };
-  // Eigenes Abruf-Budget für die gefundenen Produktseiten (die bekannten Shops haben ihr eigenes).
-  const get = options.get ?? createGetter({ maxRequests: 12 });
-  const pages = await findShopPages({ name: wine.name, producer: wine.producer, appellation: wine.appellation, region: wine.region, country: wine.country }, [year], {
-    vendors: vendor ? [vendor] : [],
-  }).catch(() => []);
-  const producers = producerVariants(wine.producer);
-  const queries = [vendor ? `${vendor} ${wine.name}` : null, wine.name, ...producers.slice(1).map((p) => `${wine.name} ${p}`), producers[0] ? `${wine.name} ${producers[0]}` : null].filter(
-    (q): q is string => Boolean(q),
-  );
-  const raw = await webResearch({
-    prompt: `Gesucht ist der Preis pro Flasche in CHF bei einem Schweizer Händler für: ${JSON.stringify({
-      name: wine.name,
-      produzent: wine.producer,
-      produzent_auch: producers.slice(1),
-      art: wine.type === "spirit" ? "Spirituose" : "Wein",
-      jahrgang: year ?? "ohne Jahrgang",
-      flaschengroesse: clSize(size),
-      land: wine.country,
-      region: wine.region,
-      haendler: vendor,
-    })}
-- Suchanfragen in dieser Reihenfolge (bis du eine Produktseite findest): ${[...new Set(queries)].map((q) => `„${q}“`).join(", ")}.
-- Nur Schweizer Händler mit Preisen in CHF: Domain .ch bzw. moevenpick-wein.com, andere Domains nur, wenn die Seite CHF-Preise und eine Schweizer Adresse bzw. Versand aus der Schweiz zeigt. Keine ausländischen Shops, keine Preise in EUR oder anderen Währungen, keine Preisvergleichs- oder Auktionsseiten.
-- Bekannte Schweizer Shops: ${SHOP_DOMAINS.join(", ")}${vendor ? `; zuerst der Shop von „${vendor}“, falls es einen gibt` : ""}.
-- Derselbe ${wine.type === "spirit" ? "Spirituose" : "Wein"}: massgebend sind die unterscheidenden Teile des Namens und die Art – Gross-/Kleinschreibung, Grössenangaben im Titel („70 cl.“) und andere Schreibweisen des Produzenten (z. B. „Giovanni Poli“ statt „Giovannipoli“, Marke statt Firmenname) machen keinen anderen ${wine.type === "spirit" ? "Spirituose" : "Wein"}. Ein anderes Alter bzw. eine andere Reifezeit („18 mesi“ statt „36 mesi“) schon. Zusätze wie Riserva/Reserva/Reserve, Single Cask, Cask Strength, Vintage, XO/VSOP/VS bezeichnen oft ein eigenes Produkt: Steht so ein Zusatz nur beim gesuchten Namen oder nur im Angebot, melde das Angebot trotzdem (mit wörtlichem Titel), aber same_wine false.
-- Möglichst ${year != null ? `Jahrgang ${year}` : "ohne Jahrgang"} und ${clSize(size)}. Gibt es das nur in einem anderen Jahrgang bzw. einer anderen Grösse, melde diesen mit seinem Jahrgang und seiner Grösse.
-- Zeigt der Shop einen Aktionspreis und einen Normalpreis („statt“, durchgestrichen), gib beide an: price = Aktionspreis, regular_price = Normalpreis.
-- Preis pro Flasche (nicht pro Karton). Gib den Titel des Angebots wörtlich an (product_title). Weitere passende Produktseiten Schweizer Shops in candidate_urls. Nichts gefunden: found false, Rest leer bzw. 0, reason kurz begründen.${shopPagesNote(pages)}`,
-    toolName: "report_price",
-    toolDescription: "Meldet den gefundenen Preis pro Flasche in CHF mit Händler und Quelle.",
-    schema: PriceSchema,
-    maxSearches: 6,
-    pages: shopDocuments(pages),
-  });
-  if (raw) {
-    const { quote: _quote, candidate_urls: _candidates, ...rest } = raw;
-    void _quote;
-    void _candidates;
-    diagnostics.raw = { ...rest, reason: rest.reason.slice(0, 300), product_title: rest.product_title.slice(0, 200) };
+  // Eigenes Abruf-Budget (Shop-Suchen, Produktseiten); die Shop-Adapter haben ihr eigenes.
+  const get = options.get ?? createGetter({ maxRequests: 40, timeoutMs: DIRECT_TIMEOUT_MS });
+  const found: PriceOfferFoundKind[] = [];
+
+  // 1. Direkte Shop-Suchen (dazu die Händlerseiten der Shop-Adapter als Beilage für das Modell).
+  const [direct, pages] = await Promise.all([
+    searchShops({ name: wine.name, producer: wine.producer, year, sizeMl: size, type: wine.type }, get),
+    findShopPages({ name: wine.name, producer: wine.producer, appellation: wine.appellation, region: wine.region, country: wine.country }, [year], { vendors: vendor ? [vendor] : [] }).catch(() => []),
+  ]);
+  diagnostics.direct = direct.map((d) => ({ ...d, ...(d.urls ? { urls: d.urls.map(shortUrl) } : {}) }));
+  const directUrls = [...new Set(direct.flatMap((d) => d.urls ?? []))];
+  if (directUrls.length) found.push(...(await verifyPages(directUrls, want, get, diagnostics.pages)));
+
+  // 2. Websuche – entfällt, wenn schon zwei Händler den exakten Treffer führen.
+  let raw: PriceRaw | null = null;
+  const blocks: Parameters<typeof searchLog>[0] = [];
+  const exactHosts = new Set(found.filter((f) => f.kind === "exact").map((f) => hostOf(f.url)));
+  if (exactHosts.size < 2) {
+    const planned = priceQueries({ name: wine.name, producer: wine.producer, year, sizeMl: size, vendor });
+    diagnostics.planned = planned;
+    raw = await webResearch({
+      prompt: priceSearchPrompt(wine, year, size, vendor, planned) + shopPagesNote(pages),
+      toolName: "report_price",
+      toolDescription: "Meldet den gefundenen Preis pro Flasche in CHF mit Händler und Quelle.",
+      schema: PriceSchema,
+      maxSearches: PRICE_MAX_SEARCHES,
+      maxRounds: 12,
+      pages: shopDocuments(pages),
+      onContent: (content) => blocks.push(...(content as unknown as typeof blocks)),
+    });
+    const searches: SearchLog[] = searchLog(blocks);
+    diagnostics.queries = searches.map((x) => x.query.slice(0, 120));
+    diagnostics.searches = searches.length;
+    diagnostics.search_results = compactSearches(searches);
+    if (raw) {
+      const { quote: _quote, candidate_urls: _candidates, ...rest } = raw;
+      void _quote;
+      void _candidates;
+      diagnostics.raw = { ...rest, reason: rest.reason.slice(0, 300), product_title: rest.product_title.slice(0, 200) };
+    }
+    // 3. Eigene Prüfung: gemeldete Adressen, Schweizer Shops aus allen Suchergebnissen, Händlerseiten.
+    const checked = new Set(diagnostics.pages.map((x) => x.url));
+    const fromResults = swissResultUrls(searches, searchTitles(blocks), want, MAX_RESULT_URLS);
+    const urls = [...new Set([raw?.url ?? "", ...(raw?.candidate_urls ?? []).slice(0, 4), ...fromResults, ...pages.map((x) => x.url)].filter((u) => hostOf(u) && !checked.has(u)))].slice(0, MAX_RESULT_URLS + 4);
+    if (urls.length) found.push(...(await verifyPages(urls, want, get, diagnostics.pages)));
   }
-  // Gefundene Produktseiten selbst abrufen und den Preis direkt lesen (verlässlicher als die Antwort).
-  const urls = [...new Set([raw?.url ?? "", ...(raw?.candidate_urls ?? []).slice(0, 4), ...pages.map((p) => p.url)].filter((u) => hostOf(u)))].slice(0, 6);
-  const verified = urls.length ? await verifyPages(urls, want, get, diagnostics.pages) : null;
-  if (verified) {
-    diagnostics.verdict = verified.kind === "other" && verified.reason ? `not_exact:${verified.reason}` : `${verified.kind}:page`;
-    return { finding: verified, diagnostics };
+
+  const best = pickBest(found);
+  if (best) {
+    const { merchants, ...offer } = best;
+    const result: PriceFinding = best.kind === "exact" && merchants > 1 ? { ...offer, kind: "exact", merchants } : offer;
+    if (best.kind === "exact") diagnostics.merchants = merchants;
+    diagnostics.verdict = result.kind === "other" && result.reason ? `not_exact:${result.reason}` : `${result.kind}:page`;
+    return { finding: result, diagnostics };
   }
   const result = evaluatePrice(raw, want);
   diagnostics.verdict = result.kind === "none" ? (result.reason ?? "none") : result.kind === "other" && result.reason ? `not_exact:${result.reason}` : `${result.kind}:answer`;
   return { finding: result, diagnostics };
+}
+
+/** Auftrag an das Modell: feste Suchbegriffe der Reihe nach, Regeln für Händler und Angebot. */
+function priceSearchPrompt(wine: PriceWine, year: number | null, size: number, vendor: string | null, planned: string[]) {
+  const spirit = wine.type === "spirit";
+  const what = spirit ? "Spirituose" : "Wein";
+  const same = spirit ? "Dieselbe Spirituose" : "Derselbe Wein";
+  const other = spirit ? "keine andere Spirituose" : "keinen anderen Wein";
+  return `Gesucht ist der Preis pro Flasche in CHF bei einem Schweizer Händler für: ${JSON.stringify({
+    name: wine.name,
+    produzent: wine.producer,
+    marke_und_name: productTerm(wine),
+    art: what,
+    jahrgang: year ?? "ohne Jahrgang",
+    flaschengroesse: clSize(size),
+    land: wine.country,
+    region: wine.region,
+    haendler_hinweis: vendor,
+  })}
+- Arbeite diese Suchanfragen genau so und der Reihe nach ab (eine nach der anderen, wörtlich), bis du eine Schweizer Produktseite mit CHF-Preis hast: ${planned.map((q) => `„${q}“`).join(", ")}. Danach höchstens eigene Varianten aus Marke und Name (z. B. andere Schreibweise), nie den Händlernamen allein mit Teilen des Namens.
+- Der Händler ist nur ein Hinweis, wo gekauft wurde (bei Ketten wie Coop, Denner, Migros, Galaxus oft nicht online) – das Angebot darf von jedem Schweizer Händler sein.
+- Nur Schweizer Händler mit Preisen in CHF: Domain .ch bzw. moevenpick-wein.com, andere Domains nur, wenn die Seite CHF-Preise und eine Schweizer Adresse bzw. Versand aus der Schweiz zeigt. Keine ausländischen Shops, keine Preise in EUR oder anderen Währungen, keine Preisvergleichs- oder Auktionsseiten.
+- Bekannte Schweizer Shops: ${SHOP_DOMAINS.join(", ")}, drinks.ch, casapoli.ch, flaschenpost.ch, piemont-weine.ch.
+- ${same}: massgebend sind die unterscheidenden Teile des Namens und die Art – Gross-/Kleinschreibung, Grössenangaben im Titel („70 cl.“) und andere Schreibweisen des Produzenten (z. B. „Giovanni Poli“ statt „Giovannipoli“, Marke statt Firmenname) machen ${other}. Ein anderes Alter bzw. eine andere Reifezeit („18 mesi“ statt „36 mesi“) schon. Zusätze wie Riserva/Reserva/Reserve, Single Cask, Cask Strength, Vintage, XO/VSOP/VS bezeichnen oft ein eigenes Produkt: Steht so ein Zusatz nur beim gesuchten Namen oder nur im Angebot, melde das Angebot trotzdem (mit wörtlichem Titel), aber same_wine false.
+- Möglichst ${year != null ? `Jahrgang ${year}` : "ohne Jahrgang"} und ${clSize(size)}. Gibt es das nur in einem anderen Jahrgang bzw. einer anderen Grösse, melde diesen mit seinem Jahrgang und seiner Grösse.
+- Zeigt der Shop einen Aktionspreis und einen Normalpreis („statt“, durchgestrichen), gib beide an: price = Aktionspreis, regular_price = Normalpreis.
+- Preis pro Flasche (nicht pro Karton). Gib den Titel des Angebots wörtlich an (product_title). Weitere passende Produktseiten Schweizer Shops in candidate_urls. Nichts gefunden: found false, Rest leer bzw. 0, reason kurz begründen.`;
 }
 
 /** Spalten fehlen (Migration noch nicht eingespielt)? */
@@ -285,14 +374,17 @@ export async function updateItemPrices(db: Db, itemId: string, values: PriceValu
 /** Flaschengrösse wie auf dem Etikett: „75 cl“, „150 cl“. */
 export const clSize = (ml: number | null | undefined) => (ml ? `${Math.round(ml / 10)} cl` : null);
 
-/** „Mövenpick, 2019, 75 cl“ */
-export const offerDetails = (o: { merchant: string; year: number | null; sizeMl?: number | null; size_ml?: number | null }) =>
-  [o.merchant, o.year ?? "ohne Jahrgang", clSize(o.sizeMl ?? o.size_ml)].filter(Boolean).join(", ");
+/** „3 Händler“ – bei mehreren Händlern mit exaktem Treffer (Preis = häufigster bzw. mittlerer). */
+const merchantCount = (o: { merchants?: number }) => (o.merchants && o.merchants > 1 ? `${o.merchants} Händler` : null);
 
-/** price_note: „Mövenpick · 2019 · 75 cl · 29.10.2026 · https://…“ */
-export const priceNote = (o: { merchant: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; url: string }) => {
+/** „Mövenpick, 2019, 75 cl“ bzw. „Drinks, ohne Jahrgang, 70 cl, 3 Händler“ */
+export const offerDetails = (o: { merchant: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; merchants?: number }) =>
+  [o.merchant, o.year ?? "ohne Jahrgang", clSize(o.sizeMl ?? o.size_ml), merchantCount(o)].filter(Boolean).join(", ");
+
+/** price_note: „Mövenpick · 2019 · 75 cl · 29.10.2026 · https://…“ (mehrere Händler: „· 3 Händler“ vor dem Datum). */
+export const priceNote = (o: { merchant: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; url: string; merchants?: number }) => {
   const [y, m, d] = todayIso().split("-");
-  return [o.merchant, o.year ?? "ohne Jahrgang", clSize(o.sizeMl ?? o.size_ml), `${d}.${m}.${y}`, o.url].filter(Boolean).join(" · ").slice(0, 500);
+  return [o.merchant, o.year ?? "ohne Jahrgang", clSize(o.sizeMl ?? o.size_ml), merchantCount(o), `${d}.${m}.${y}`, o.url].filter(Boolean).join(" · ").slice(0, 500);
 };
 
 const money = (v: number) => formatMoney(v, "CHF")!;
@@ -535,12 +627,16 @@ export async function askPriceForItem(db: Db, chatId: number, itemId: string, mo
 }
 
 /** Gefundenen (bzw. übernommenen) Preis in die Charge – nur leere Felder, Herkunft research. */
-export async function storeFoundPrice(db: Db, itemId: string, offer: { amount: number; merchant: string; url: string; year: number | null; sizeMl?: number | null; size_ml?: number | null }, mode: PriceMode) {
+export async function storeFoundPrice(db: Db, itemId: string, offer: { amount: number; merchant: string; url: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; merchants?: number }, mode: PriceMode) {
   const values = mode === "both" ? { purchase_price: offer.amount, regular_price: offer.amount } : { regular_price: offer.amount };
   return updateItemPrices(db, itemId, values, "research", priceNote(offer), true);
 }
 
-export type PriceJobParams = { item_id: string; mode: PriceMode; chat_id: number };
+/**
+ * dry_run: Testlauf – sucht wie sonst, speichert aber nichts in inventory_items, sendet nichts an
+ * Telegram und legt keine Rückfrage an; das Ergebnis steht nur in research_jobs.result (diagnostics).
+ */
+export type PriceJobParams = { item_id: string; mode: PriceMode; chat_id: number; dry_run?: boolean };
 
 /** Preissuche für eine Charge ausführen und Antoine melden lassen (Auftrag „price“). */
 export async function runPriceSearch(db: Db, p: PriceJobParams): Promise<ResearchOutcome> {
@@ -558,11 +654,15 @@ export async function runPriceSearch(db: Db, p: PriceJobParams): Promise<Researc
   try {
     const item = await loadItem(db, p.item_id);
     if (!item?.wine) return done();
-    // Schon von Hand ausgefüllt (z. B. inzwischen in der App)? Dann nichts suchen.
+    // Schon von Hand ausgefüllt (z. B. inzwischen in der App)? Dann nichts suchen (Testlauf: trotzdem).
     const empty = p.mode === "both" ? item.purchase_price == null || item.regular_price == null : item.regular_price == null;
-    if (!empty) return done();
+    if (!empty && !p.dry_run) return done();
     const { finding, diagnostics } = await researchPrice(item.wine, item.vintage_year, item.bottle_size_ml, item.vendor?.name ?? null);
     diag = diagnostics;
+    if (p.dry_run) {
+      diag = { ...diagnostics, finding };
+      return done();
+    }
     if (finding.kind === "exact") {
       const saved = await storeFoundPrice(db, item.id, finding, p.mode);
       if (!saved) return done();

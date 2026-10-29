@@ -169,6 +169,13 @@ export const MAX_SHOP_FETCHES = 3;
  * Werkzeuge der Recherche: Websuche, das strict-Tool für die Antwort und – nur wenn die
  * Händler-Shops nichts geliefert haben (fetchShops) – web_fetch, beschränkt auf die Shops.
  */
+/**
+ * Standort der Websuche: Schweiz (Zürich) – Ergebnisse wie bei Google Schweiz (Schweizer Shops,
+ * CHF). Schadet den übrigen Recherchen nicht (Stammdaten, Trinkfenster, Profil); Schweizer
+ * Händlerseiten sind dort ohnehin erwünschte Quellen.
+ */
+export const SWISS_LOCATION = { type: "approximate", country: "CH", city: "Zürich", region: "Zürich", timezone: "Europe/Zurich" } as const;
+
 export function researchTools(options: {
   toolName: string;
   toolDescription: string;
@@ -177,7 +184,7 @@ export function researchTools(options: {
   fetchShops?: boolean;
 }): Anthropic.Beta.BetaToolUnion[] {
   return [
-    { type: "web_search_20260209", name: "web_search", max_uses: options.maxSearches },
+    { type: "web_search_20260209", name: "web_search", max_uses: options.maxSearches, user_location: SWISS_LOCATION },
     ...(options.fetchShops
       ? [{ type: "web_fetch_20260209" as const, name: "web_fetch" as const, max_uses: MAX_SHOP_FETCHES, allowed_domains: [...SHOP_DOMAINS] }]
       : []),
@@ -202,6 +209,10 @@ export async function webResearch<T>(options: {
   pages?: { url: string; title: string; text: string }[];
   /** Shops ohne Treffer: Datenblatt per web_fetch (nur Shop-Domains) suchen lassen. */
   fetchShops?: boolean;
+  /** Höchstens so viele Durchgänge (pause_turn der Suchschleife); Standard 4. */
+  maxRounds?: number;
+  /** Alle Inhaltsblöcke jeder Antwort (Suchen und Suchergebnisse – für die eigene Prüfung). */
+  onContent?: (blocks: Anthropic.Beta.BetaContentBlock[]) => void;
 }): Promise<T | null> {
   const text = `${options.prompt}\nRufe am Ende genau einmal ${options.toolName} auf.`;
   const blocks: Anthropic.Beta.BetaRequestDocumentBlock[] = [
@@ -229,7 +240,7 @@ export async function webResearch<T>(options: {
   if (problems.length) throw new Error(`Schema für ${options.toolName} nicht strict-tauglich: ${problems.join(", ")}`);
   const tools = researchTools({ ...options, inputSchema });
 
-  for (let round = 0; round < 4; round++) {
+  for (let round = 0; round < (options.maxRounds ?? 4); round++) {
     const response = await anthropic().beta.messages.create({
       model: FALLBACK_MODEL,
       max_tokens: 16000,
@@ -240,6 +251,7 @@ export async function webResearch<T>(options: {
     });
 
     if (response.stop_reason === "refusal") return null;
+    options.onContent?.(response.content);
 
     const report = response.content.find(
       (block): block is Anthropic.Beta.BetaToolUseBlock =>
