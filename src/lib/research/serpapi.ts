@@ -2,14 +2,14 @@
 // der Preissuche – Anbieter 1 (zweiter: Serper, serper.ts). Rein bis auf searchShopping (Netz).
 // Schlüssel in SERPAPI_API_KEY; Kontingent 250 Abfragen pro Monat (Gratis-Plan).
 
-import { merchantOf } from "./merchant";
+import { merchantOf, type MerchantVia } from "./merchant";
 
 /** Gratis-Plan: 250 Abfragen pro Monat. Ab SOFT nur noch eine Abfrage pro Flasche, ab HARD keine. */
 export const SERPAPI_MONTHLY_LIMIT = 250;
 export const SERPAPI_SOFT_LIMIT = 230;
 /** Höchstens so viele (Schweizer) Kandidaten gehen an den Abgleich. */
 export const MAX_CANDIDATES = 30;
-/** Ausländische Kandidaten: höchstens so viele fürs Protokoll. */
+/** Ausländische Kandidaten (Domain bekannt, nicht Schweiz): höchstens so viele fürs Protokoll. */
 const MAX_FOREIGN = 20;
 
 export type ShoppingCandidate = {
@@ -23,11 +23,12 @@ export type ShoppingCandidate = {
   url: string;
   /** Link laut Anbieter (unverändert) */
   link?: string;
-  /** Händler-Domain (aus Link bzw. Händlername) und ob Schweizer Händler */
+  /** Händler-Domain und ob Schweizer Händler; woher die Erkennung stammt */
   domain?: string | null;
   swiss?: boolean;
-  /** Aus der direkten Shop-Suche (eigene Seitenprüfung) statt aus Google */
-  direct?: boolean;
+  via?: MerchantVia | null;
+  /** Quelle: Google Shopping, direkte Shop-Suche, Google-Suche site:.ch (je mit eigener Seitenprüfung) */
+  origin?: "shopping" | "direct" | "search";
   soldOut?: boolean;
 };
 
@@ -54,8 +55,9 @@ export type RawOffer = { title: string; source: string; price: number; currency:
 
 /**
  * Gemeinsamer Filter: nur CHF, ohne Marktplätze/Auktionen und Gebrauchtware, ohne Doppelte; je
- * Kandidat Händler-Domain und swiss. Höchstens max Schweizer (dazu ausländische fürs Protokoll –
- * die gehen nicht in den Abgleich).
+ * Kandidat Händler-Domain und swiss aus Link bzw. Namen (die Tabelle merchants prüft der Ablauf
+ * danach). Höchstens max mögliche Schweizer (Schweizer oder Domain unbekannt), dazu bekannt
+ * ausländische fürs Protokoll – die gehen nicht in den Abgleich.
  */
 export function filterCandidates(offers: RawOffer[], max = MAX_CANDIDATES): ShoppingCandidate[] {
   const out: ShoppingCandidate[] = [];
@@ -71,10 +73,11 @@ export function filterCandidates(offers: RawOffer[], max = MAX_CANDIDATES): Shop
     if (seen.has(key)) continue;
     seen.add(key);
     const m = merchantOf(source, o.url);
-    if (m.swiss ? swiss >= max : foreign >= MAX_FOREIGN) continue;
-    if (m.swiss) swiss++;
+    const maybeSwiss = m.swiss || m.domain == null;
+    if (maybeSwiss ? swiss >= max : foreign >= MAX_FOREIGN) continue;
+    if (maybeSwiss) swiss++;
     else foreign++;
-    out.push({ title, source, price: o.price, regular: o.regular != null && o.regular > o.price ? o.regular : null, url: m.url ?? o.url, link: o.url, domain: m.domain, swiss: m.swiss });
+    out.push({ title, source, price: o.price, regular: o.regular != null && o.regular > o.price ? o.regular : null, url: m.url ?? o.url, link: o.url, domain: m.domain, swiss: m.swiss, via: m.via, origin: "shopping" });
     if (swiss >= max) break;
   }
   return out;

@@ -547,6 +547,36 @@ export type Database = {
         }
         Relationships: []
       }
+      merchants: {
+        Row: {
+          created_at: string
+          display_name: string
+          domain: string | null
+          name_key: string
+          seen_at: string
+          source: string
+          swiss: boolean
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          domain?: string | null
+          name_key: string
+          seen_at?: string
+          source?: string
+          swiss?: boolean
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          domain?: string | null
+          name_key?: string
+          seen_at?: string
+          source?: string
+          swiss?: boolean
+        }
+        Relationships: []
+      }
       open_bottle_details: {
         Row: {
           created_at: string

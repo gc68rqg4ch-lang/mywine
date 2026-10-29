@@ -1,7 +1,8 @@
-// Händler eines Google-Shopping-Angebots: Domain aus dem Link (bei Google-Weiterleitungen die
-// Ziel-URL aus dem Parameter), sonst aus dem Händlernamen („Korkenknaller.ch“, „by Vinello.ch“),
-// sonst aus der Liste bekannter Schweizer Händler. Schweizer Händler = Domain .ch/.swiss bzw. eine
-// der bekannten Schweizer Domains mit anderer Endung. Rein.
+// Händler eines Angebots und ob er Schweizer ist – entschieden über die echte Domain: aus dem Link
+// (bei Google-Weiterleitungen die Ziel-URL aus dem Parameter), aus dem Händlernamen („Korkenknaller.ch“,
+// „by Vinello.ch“) oder über die Tabelle merchants (Name → Domain, gelernt aus gelesenen
+// .ch-Produktseiten, dazu Startdaten). Schweizer Händler = Domain .ch/.swiss bzw. eine bekannte
+// Schweizer Domain mit anderer Endung. Rein.
 //
 // Antwortfelder (geprüft an gespeicherten Testläufen): Serper liefert in „link“ nur eine
 // Google-Suchseite (https://www.google.com/search?ibp=oshop&…), keinen Händlerlink – dort bleibt
@@ -13,29 +14,25 @@ import { SHOP_DOMAINS } from "./shops/match";
 /** Schweizer Händler mit anderer Endung als .ch (Mövenpick, Feldschlösschen …). */
 export const SWISS_DOMAINS: readonly string[] = [...SHOP_DOMAINS.filter((d) => !d.endsWith(".ch")), "feldschloesschen.swiss"];
 
-/**
- * Bekannte Schweizer Händler, wie Google sie ohne Domain nennt (Serper liefert keinen
- * Händlerlink). Schlüssel: Name klein, ohne Akzente.
- */
-export const SWISS_MERCHANT_NAMES: Record<string, string> = {
-  "casa poli": "casapoli.ch",
-  galaxus: "galaxus.ch",
-  digitec: "digitec.ch",
-  brack: "brack.ch",
-  coop: "coop.ch",
-  denner: "denner.ch",
-  manor: "manor.ch",
-  globus: "globus.ch",
-  gerstl: "gerstl.ch",
-  "gerstl weinselektionen": "gerstl.ch",
-  movenpick: "moevenpick-wein.com",
-  "movenpick wein": "moevenpick-wein.com",
-  "caratello weine": "caratello.ch",
-  "feldschlosschen getranke shop": "feldschloesschen.swiss",
-};
+/** Rechtsformen – fallen im Schlüssel weg („Kitsune Trading Sagl“ = „Kitsune Trading“). */
+const LEGAL = new Set(["ag", "gmbh", "sa", "sagl", "sarl", "ltd", "inc", "kg", "co", "llc", "srl", "spa", "bv"]);
 
-const nameKey = (s: string) =>
-  s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9.]+/g, " ").trim();
+/**
+ * Schlüssel eines Händlernamens (Spalte merchants.name_key): klein, ohne Akzente, Satzzeichen als
+ * Leerzeichen, ohne Rechtsform und ohne „by“ vorne. Gleich wie in der Migration (Startdaten).
+ */
+export function merchantKey(name: string) {
+  const words = name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .replace(/['’`´]/g, "")
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w && !LEGAL.has(w));
+  if (words[0] === "by" && words.length > 1) words.shift();
+  return words.join(" ");
+}
 
 const host = (url: string) => {
   try {
@@ -71,14 +68,62 @@ export function domainInName(source: string): string | null {
 export const swissDomain = (domain: string) =>
   domain.endsWith(".ch") || domain.endsWith(".swiss") || SWISS_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`));
 
-export type Merchant = { url: string | null; domain: string | null; swiss: boolean };
+/** Gelernte bzw. bekannte Händler (Tabelle merchants): Schlüssel → Domain, swiss, Herkunft. */
+export type KnownMerchant = { domain: string | null; swiss: boolean; source: string };
+export type KnownMerchants = Map<string, KnownMerchant>;
+
+/** Woher die Händlererkennung stammt: Link, Domain im Namen, Tabelle merchants, in diesem Lauf von einer Seite gelernt. */
+export type MerchantVia = "link" | "name" | "merchants" | "page";
+
+export type Merchant = { url: string | null; domain: string | null; swiss: boolean; via: MerchantVia | null };
 
 /**
  * Händler eines Angebots. Ohne bestimmbare Domain → nicht Schweizer (lieber kein Preis als ein
- * ausländischer).
+ * ausländischer). learned: in diesem Lauf von Seiten gelernte Namen (Herkunft „page“).
  */
-export function merchantOf(source: string, link: string | null | undefined): Merchant {
+export function merchantOf(source: string, link: string | null | undefined, known: KnownMerchants = new Map(), learned: KnownMerchants = new Map()): Merchant {
   const url = merchantUrl(link);
-  const domain = (url && host(url)) || domainInName(source) || SWISS_MERCHANT_NAMES[nameKey(source)] || null;
-  return { url, domain, swiss: domain != null && swissDomain(domain) };
+  const fromLink = url ? host(url) : null;
+  if (fromLink) return { url, domain: fromLink, swiss: swissDomain(fromLink), via: "link" };
+  const inName = domainInName(source);
+  if (inName) return { url, domain: inName, swiss: swissDomain(inName), via: "name" };
+  const key = merchantKey(source);
+  const k = learned.get(key) ?? known.get(key);
+  if (k?.domain) return { url, domain: k.domain, swiss: k.swiss && swissDomain(k.domain), via: learned.has(key) ? "page" : "merchants" };
+  return { url, domain: null, swiss: false, via: null };
+}
+
+const decode = (s: string) =>
+  s
+    .replace(/&amp;/g, "&")
+    .replace(/&#0?39;|&apos;|&#x27;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;| /g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Name taugt als Shopname: kurz, nicht nur Zahlen/Allgemeines. */
+const plausibleShopName = (s: string | null | undefined) => {
+  const t = s ? decode(s) : "";
+  return t.length >= 2 && t.length <= 60 && /[a-z]/i.test(t) && !/^(home|startseite|shop|online ?shop|warenkorb|produkt|product)$/i.test(t) ? t : null;
+};
+
+/**
+ * Shopname einer Seite (rein): og:site_name, schema.org WebSite/Organization/Store bzw.
+ * offers.seller, sonst der Titel-Zusatz („… | Drinks.ch“, „… – Hugi Weine“). null = keiner.
+ */
+export function shopNameFromHtml(html: string): string | null {
+  const og = html.match(/<meta[^>]+property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i) ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:site_name["']/i);
+  const fromOg = plausibleShopName(og?.[1]);
+  if (fromOg) return fromOg;
+  const seller = html.match(/"seller"\s*:\s*\{[^{}]*"name"\s*:\s*"([^"]+)"/);
+  const fromSeller = plausibleShopName(seller?.[1]);
+  if (fromSeller) return fromSeller;
+  const site = html.match(/"@type"\s*:\s*"(?:WebSite|Organization|Store|OnlineStore|LiquorStore)"[^{}]*?"name"\s*:\s*"([^"]+)"/) ?? html.match(/"name"\s*:\s*"([^"]+)"[^{}]*?"@type"\s*:\s*"(?:WebSite|Organization|Store|OnlineStore|LiquorStore)"/);
+  const fromSite = plausibleShopName(site?.[1]);
+  if (fromSite) return fromSite;
+  const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
+  if (!title) return null;
+  const parts = decode(title).split(/\s+[|–—]\s+|\s+-\s+/);
+  return parts.length > 1 ? plausibleShopName(parts[parts.length - 1]) : null;
 }

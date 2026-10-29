@@ -6,6 +6,7 @@ import { formatMoney } from "@/lib/format";
 import { GENERIC_NAMES, brandFromProducer, brandInName, genericName, sameProduct, sizeFromText, wordsOf } from "./price-match";
 export { brandFromProducer, genericName } from "./price-match";
 import { SHOP_DOMAINS } from "./shops/match";
+import { swissDomain } from "./merchant";
 
 export const hostOf = (url: string) => {
   try {
@@ -16,10 +17,10 @@ export const hostOf = (url: string) => {
   }
 };
 
-/** Schweizer Händler: Domain .ch bzw. einer der bekannten Schweizer Shops (moevenpick-wein.com). */
+/** Schweizer Händler: Domain .ch/.swiss bzw. einer der bekannten Schweizer Shops (moevenpick-wein.com). */
 export function swissMerchantUrl(url: string) {
   const host = hostOf(url);
-  return host != null && (host.endsWith(".ch") || SHOP_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`)));
+  return host != null && (swissDomain(host) || SHOP_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`)));
 }
 
 // ——— Marke und Suchbegriffe ———

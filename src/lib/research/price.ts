@@ -55,6 +55,8 @@ import {
 import { SHOP_DOMAINS } from "./shops/match";
 import { MAX_CANDIDATES, SERPAPI_MONTHLY_LIMIT, SERPAPI_SOFT_LIMIT, searchShopping, type ShoppingCandidate } from "./serpapi";
 import { searchSerper } from "./serper";
+import { searchSerpApiWeb, searchSerperWeb, type SearchHit } from "./site-search";
+import { merchantKey, merchantOf, shopNameFromHtml, swissDomain, type KnownMerchants, type MerchantVia } from "./merchant";
 import { judgeCandidates } from "./price-judge";
 import { zurichMonth } from "@/lib/ai/cost";
 import { currentUsageContext, recordUsage } from "@/lib/ai/usage";
@@ -445,11 +447,19 @@ export async function serpApiQueriesThisMonth(db: Db, now = new Date()) {
 
 export type ShoppingOptions = { get?: Get; db?: Db; serpApiKey?: string | null; serperApiKey?: string | null };
 
-type Provider = { provider: ShoppingProvider; maxQueries: number; used: number; search: (q: string) => Promise<ShoppingCandidate[]> };
+type Provider = {
+  provider: ShoppingProvider;
+  maxQueries: number;
+  used: number;
+  search: (q: string) => Promise<ShoppingCandidate[]>;
+  /** Google-Suche (site:.ch) beim selben Anbieter */
+  web: (q: string) => Promise<SearchHit[]>;
+};
 
 /**
  * Verfügbare Anbieter, in dieser Reihenfolge: SerpApi (Schlüssel gesetzt, Monatskontingent nicht
  * erschöpft), dann Serper (Schlüssel gesetzt; Kontingent verwaltet Serper). Leer → bisherige Suche.
+ * Je Anbieter höchstens maxQueries Shopping- und ebenso viele Such-Abfragen (Serper: 2 + 2).
  */
 async function shoppingProviders(options: ShoppingOptions): Promise<Provider[]> {
   const serpKey = options.serpApiKey !== undefined ? options.serpApiKey : process.env.SERPAPI_API_KEY;
@@ -458,9 +468,9 @@ async function shoppingProviders(options: ShoppingOptions): Promise<Provider[]> 
   if (serpKey) {
     const used = options.db ? await serpApiQueriesThisMonth(options.db) : 0;
     const maxQueries = serpQueriesAllowed(used);
-    if (maxQueries) list.push({ provider: "serpapi", maxQueries, used, search: (q) => searchShopping(q, serpKey) });
+    if (maxQueries) list.push({ provider: "serpapi", maxQueries, used, search: (q) => searchShopping(q, serpKey), web: (q) => searchSerpApiWeb(q, serpKey) });
   }
-  if (serperKey) list.push({ provider: "serper", maxQueries: 2, used: 0, search: (q) => searchSerper(q, serperKey) });
+  if (serperKey) list.push({ provider: "serper", maxQueries: 2, used: 0, search: (q) => searchSerper(q, serperKey), web: (q) => searchSerperWeb(q, serperKey) });
   return list;
 }
 
@@ -475,60 +485,109 @@ export type ShoppingDiagnostics = {
   failed?: { provider: ShoppingProvider; error: string }[];
   queries: string[];
   used_this_month: number;
-  /** Je Kandidat: Link laut Anbieter, Händler-Domain, Schweizer Händler, aus direkter Shop-Suche. */
-  candidates: { title: string; price: number; source: string; link: string; domain: string | null; swiss: boolean; direct?: true; verdict: string; reason: string }[];
+  /** Google-Suche site:.ch: Abfragen, Anzahl Ergebnisse, geprüfte Seiten; Fehler. */
+  search?: { provider: ShoppingProvider; queries: string[]; results: number; pages: string[]; error?: string };
+  /** In diesem Lauf von Produktseiten gelernte Händlernamen. */
+  learned?: { name: string; domain: string }[];
+  /**
+   * Je Kandidat: Quelle (shopping / direct / search), Link, Händler-Domain, Schweizer Händler,
+   * Herkunft der Händlererkennung (link / name / merchants / page).
+   */
+  candidates: {
+    title: string;
+    price: number;
+    source: string;
+    origin: "shopping" | "direct" | "search";
+    link: string;
+    domain: string | null;
+    swiss: boolean;
+    via: MerchantVia | null;
+    verdict: string;
+    reason: string;
+  }[];
   chosen: { amount: number; merchant: string; merchants: number } | null;
 };
 
-/** Gefundene Seiten der direkten Shop-Suche lesen → Kandidaten für den Abgleich (CHF, Schweizer Händler). */
-async function directCandidates(urls: string[], get: Get, log: PriceDiagnostics["pages"]): Promise<ShoppingCandidate[]> {
+/** Seite lesen wie readPage, dazu der Shopname (für merchants) und ob die Seite gar nicht lesbar war (403, Zeitlimit). */
+async function readPageInfo(url: string, get: Get): Promise<{ read: PageRead; shopName: string | null; unreadable: boolean }> {
+  let html: string | null = null;
+  let status: number | null = null;
+  const spy: Get = async (u) => {
+    const res = await get(u);
+    if (u === url) {
+      status = res?.status ?? null;
+      html = res?.status === 200 ? (res.text ?? null) : null;
+    }
+    return res;
+  };
+  const read = await readPage(url, spy).catch((): PageRead => ({ kind: "none" }));
+  // Shopify-Daten gelesen, Seite selbst nicht: für den Shopnamen die Seite holen.
+  if (read.kind === "product" && html == null && status == null) await spy(url).catch(() => null);
+  const fetchedStatus = status as number | null;
+  return { read, shopName: html ? shopNameFromHtml(html) : null, unreadable: read.kind === "none" && (fetchedStatus == null || fetchedStatus >= 400) };
+}
+
+type PageSource = { url: string; origin: "direct" | "search"; hit?: SearchHit };
+
+/**
+ * Seiten aus direkten Shop-Suchen und der Google-Suche lesen → Kandidaten für den Abgleich (CHF,
+ * Schweizer Händler) und gelernte Shopnamen. Nicht lesbare Seite der Google-Suche mit Preis im Rich
+ * Snippet → Kandidat aus dem Snippet.
+ */
+async function pageCandidates(pages: PageSource[], get: Get, log: PriceDiagnostics["pages"]): Promise<{ candidates: ShoppingCandidate[]; learned: { name: string; domain: string }[] }> {
   const results = await Promise.all(
-    urls.map(async (url): Promise<{ result: string; c?: ShoppingCandidate }> => {
-      const read = await readPage(url, get).catch((): PageRead => ({ kind: "none" }));
+    pages.map(async ({ url, origin, hit }): Promise<{ result: string; c?: ShoppingCandidate; shop?: { name: string; domain: string } }> => {
+      const domain = hostOf(url);
+      const { read, shopName, unreadable } = await readPageInfo(url, get);
+      const base = { url, link: url, domain, swiss: true, via: "link" as const, origin };
       if (read.kind === "listing") return { result: `listing:${read.reason}` };
-      if (read.kind === "none") return { result: "no_price" };
+      if (read.kind === "none") {
+        const p = hit?.price;
+        if (unreadable && p && p.currency === "CHF" && hit?.title) {
+          return { result: "unreadable:snippet", c: { ...base, title: hit.title, source: domain ?? merchantFromUrl(url), price: p.amount, regular: null } };
+        }
+        return { result: unreadable ? "unreadable" : "no_price" };
+      }
       const offer = read.offer;
       if (offer.currency !== "CHF") return { result: "not_chf" };
       if (!swissMerchantUrl(url) && !offer.swiss) return { result: "not_swiss" };
-      if (offer.soldOut && offer.sizeMl == null) return { result: "sold_out_no_size" };
+      const shop = shopName && domain ? { name: shopName, domain } : undefined;
+      if (offer.soldOut && offer.sizeMl == null) return { result: "sold_out_no_size", shop };
       // Grösse von der Seite in den Titel, damit der Abgleich sie sieht.
       const title = offer.sizeMl != null && sizeFromText(offer.title) == null ? `${offer.title} ${offer.sizeMl / 10} cl` : offer.title;
-      const c: ShoppingCandidate = { title, source: merchantFromUrl(url), price: offer.price, regular: offer.regular ?? null, url, link: url, domain: hostOf(url), swiss: true, direct: true, ...(offer.soldOut ? { soldOut: true } : {}) };
-      return { result: offer.soldOut ? "candidate:sold_out" : "candidate", c };
+      const c: ShoppingCandidate = { ...base, title, source: shopName ?? merchantFromUrl(url), price: offer.price, regular: offer.regular ?? null, ...(offer.soldOut ? { soldOut: true } : {}) };
+      return { result: offer.soldOut ? "candidate:sold_out" : "candidate", c, shop };
     }),
   );
-  results.forEach((r, i) => log.push({ url: urls[i], result: r.result }));
-  return results.flatMap((r) => (r.c ? [r.c] : []));
+  results.forEach((r, i) => log.push({ url: pages[i].url, result: r.result }));
+  const learned = new Map<string, { name: string; domain: string }>();
+  for (const r of results) if (r.shop && merchantKey(r.shop.name)) learned.set(merchantKey(r.shop.name), r.shop);
+  return { candidates: results.flatMap((r) => (r.c ? [r.c] : [])), learned: [...learned.values()] };
 }
 
-/**
- * Preis über Google Shopping Schweiz (SerpApi bzw. Serper) und einen Haiku-Abgleich: höchstens 2
- * Abfragen („<Name> <Grösse>“, bei wenig Treffern ohne Grösse), Kandidaten in CHF ohne
- * Marktplätze und nur von Schweizer Händlern (Domain .ch bzw. bekannte Schweizer Händler). Die
- * direkten Schweizer Shop-Suchen laufen immer parallel (kostenlos); ihre Produktseiten gehen als
- * Kandidaten in denselben Abgleich. Je Kandidat yes/variant/no, danach Grösse/Jahrgang und bei
- * Gattungsnamen der Produzent hart geprüft. Preiswahl aus den yes-Kandidaten (Ausreisser weg,
- * häufigster/mittlerer, bei zwei ähnlichen der höhere); nur variant → Rückfrage. null = nicht
- * verfügbar (Schlüssel, Kontingent, Fehler der ersten Abfrage) – dann übernimmt die bisherige Suche.
- */
-export async function researchPriceShopping(
-  wine: PriceWine,
-  year: number | null,
-  sizeMl: number | null,
-  options: ShoppingOptions = {},
-): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics } | null> {
-  const providers = await shoppingProviders(options);
-  if (!providers.length) return null;
-  const size = sizeMl ?? standardSize(wine.type);
-  const term = `${productTerm(wine)}${year != null ? ` ${year}` : ""}`;
-  const queries = [`${term} ${clTerm(size)}`, term];
-  // Direkte Shop-Suchen parallel zu Google (wirft nie).
-  const get = options.get ?? createGetter({ maxRequests: 60, timeoutMs: DIRECT_TIMEOUT_MS });
-  const directSearch = searchShops({ name: wine.name, producer: wine.producer, year, sizeMl: size, type: wine.type }, get);
+/** Bekannte Händler (Tabelle merchants). Ohne Migration bzw. Fehler: leer. */
+export async function loadMerchants(db: Db | undefined): Promise<KnownMerchants> {
+  const map: KnownMerchants = new Map();
+  if (!db) return map;
+  const { data, error } = await db.from("merchants").select("name_key, domain, swiss, source");
+  if (error) return map;
+  for (const m of data ?? []) map.set(m.name_key, { domain: m.domain, swiss: m.swiss, source: m.source });
+  return map;
+}
+
+/** Gelernte Shopnamen speichern (source page); bestehende Einträge (known/manual) bleiben. Fehler: ignoriert. */
+async function saveLearned(db: Db | undefined, learned: { name: string; domain: string }[]) {
+  if (!db || !learned.length) return;
+  const rows = learned.map((l) => ({ name_key: merchantKey(l.name), display_name: l.name.slice(0, 80), domain: l.domain, swiss: swissDomain(l.domain), source: "page", seen_at: new Date().toISOString() }));
+  const { error } = await db.from("merchants").upsert(rows, { onConflict: "name_key", ignoreDuplicates: true });
+  if (error) console.error("merchants upsert failed", error.message);
+}
+
+const usageOf = (provider: ShoppingProvider) => recordUsage(provider, { server_tool_use: { web_search_requests: 1 } }, { ...currentUsageContext(), purpose: "research_price" });
+
+/** Shopping-Abfragen: Anbieter der Reihe nach; scheitert die erste Abfrage, der nächste. */
+async function runShopping(providers: Provider[], queries: string[], swissEnough: (c: ShoppingCandidate) => boolean) {
   const failed: { provider: ShoppingProvider; error: string }[] = [];
-  let shop: ShoppingDiagnostics | null = null;
-  let candidates: ShoppingCandidate[] = [];
-  // Anbieter der Reihe nach: scheitert die erste Abfrage, der nächste; erst dann die bisherige Suche.
   for (const p of providers) {
     const run: ShoppingDiagnostics = { provider: p.provider, queries: [], used_this_month: p.used, candidates: [], chosen: null };
     const found: ShoppingCandidate[] = [];
@@ -544,33 +603,117 @@ export async function researchPriceShopping(
         }
         break;
       } finally {
-        await recordUsage(p.provider, { server_tool_use: { web_search_requests: 1 } }, { ...currentUsageContext(), purpose: "research_price" });
+        await usageOf(p.provider);
       }
       run.queries.push(q);
       for (const c of hits) if (!found.some((x) => x.source === c.source && x.title === c.title && x.price === c.price)) found.push(c);
       // Genug Schweizer Treffer: keine zweite Abfrage.
-      if (found.filter((c) => c.swiss).length >= 5) break;
+      if (found.filter(swissEnough).length >= 5) break;
     }
-    if (!ok) continue;
-    shop = run;
-    candidates = found;
-    break;
+    if (ok) return { shop: run, candidates: found, failed };
   }
+  return { shop: null, candidates: [] as ShoppingCandidate[], failed };
+}
+
+/** Google-Suche site:.ch: „<Name> <Grösse> site:.ch“, bei weniger als 3 Schweizer Treffern ohne Grösse. */
+async function runSiteSearch(providers: Provider[], queries: string[], want: { name: string; producer: string | null; year: number | null }) {
+  const errors: string[] = [];
+  for (const p of providers) {
+    const done: string[] = [];
+    const hits: SearchHit[] = [];
+    let ok = true;
+    for (const q of queries.slice(0, p.maxQueries)) {
+      try {
+        const found = await p.web(q);
+        for (const h of found) if (!hits.some((x) => x.url === h.url)) hits.push(h);
+      } catch (error) {
+        if (!done.length) {
+          errors.push(`${p.provider}: ${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`);
+          ok = false;
+        }
+        break;
+      } finally {
+        await usageOf(p.provider);
+      }
+      done.push(q);
+      if (shopHitUrls(hits, want).length >= 3) break;
+    }
+    if (ok) return { provider: p.provider, queries: done, hits, error: errors.join("; ") || undefined };
+  }
+  return { provider: providers[0].provider, queries: [] as string[], hits: [] as SearchHit[], error: errors.join("; ") || undefined };
+}
+
+/** Schweizer Seiten aus den Suchergebnissen, passende Titel zuerst, je Shop höchstens zwei, höchstens 8. */
+const shopHitUrls = (hits: SearchHit[], want: { name: string; producer: string | null; year: number | null }) =>
+  swissResultUrls([{ query: "", urls: hits.map((h) => h.url) }], new Map(hits.map((h) => [h.url, h.title])), want, MAX_SEARCH_PAGES);
+
+/** Seiten aus der Google-Suche: höchstens so viele lesen. */
+export const MAX_SEARCH_PAGES = 8;
+
+/**
+ * Preis über drei Quellen parallel, alle nur mit Schweizer Händlern: Google Shopping Schweiz
+ * (SerpApi bzw. Serper, 1–2 Abfragen), Google-Suche „… site:.ch“ (1–2 Abfragen, bis 8 Seiten selbst
+ * gelesen) und die direkten Shop-Suchen (kostenlos). Shopping-Treffer zählen als Schweizer Händler
+ * nur mit Schweizer Domain aus Link bzw. Namen oder laut Tabelle merchants (Händlernamen werden aus
+ * gelesenen .ch-Produktseiten gelernt). Alle Kandidaten in einen Haiku-Abgleich (yes/variant/no),
+ * danach Grösse/Jahrgang und bei Gattungsnamen der Produzent hart geprüft; Preiswahl aus den
+ * yes-Kandidaten (Ausreisser weg, häufigster/mittlerer, bei zwei ähnlichen der höhere); nur variant
+ * → Rückfrage. null = nicht verfügbar (kein Schlüssel, Kontingent, Shopping-Fehler) – dann übernimmt
+ * die bisherige Suche.
+ */
+export async function researchPriceShopping(
+  wine: PriceWine,
+  year: number | null,
+  sizeMl: number | null,
+  options: ShoppingOptions = {},
+): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics } | null> {
+  const providers = await shoppingProviders(options);
+  if (!providers.length) return null;
+  const size = sizeMl ?? standardSize(wine.type);
+  const term = `${productTerm(wine)}${year != null ? ` ${year}` : ""}`;
+  const want = { name: wine.name, producer: wine.producer, year };
+  const known = await loadMerchants(options.db);
+  const get = options.get ?? createGetter({ maxRequests: 60, timeoutMs: DIRECT_TIMEOUT_MS });
+  // Alles parallel: direkte Shops (wirft nie), Shopping, Google-Suche site:.ch.
+  const directTask = searchShops({ name: wine.name, producer: wine.producer, year, sizeMl: size, type: wine.type }, get);
+  const swissEnough = (c: ShoppingCandidate) => c.swiss === true || merchantOf(c.source, c.link, known).swiss;
+  const shoppingTask = runShopping(providers, [`${term} ${clTerm(size)}`, term], swissEnough);
+  const searchTask = runSiteSearch(providers, [`${term} ${clTerm(size)} site:.ch`, `${term} site:.ch`], want);
+  const [shopping, search, direct] = await Promise.all([shoppingTask, searchTask, directTask]);
+  const { shop, failed } = shopping;
   if (!shop) {
     console.error("shopping price search unavailable", failed.map((f) => `${f.provider}: ${f.error}`).join("; "));
-    // Die bisherige Suche macht die direkten Shop-Suchen selbst noch einmal; diese hier verwerfen.
-    void directSearch.catch(() => undefined);
     return null;
   }
   if (failed.length) shop.failed = failed;
   const diagnostics: PriceDiagnostics = { raw: null, verdict: "none", pages: [], shopping: shop };
-  const direct = await directSearch;
   diagnostics.direct = direct.map((d) => ({ ...d, ...(d.urls ? { urls: d.urls.map(shortUrl) } : {}), ...(d.brandPage ? { brandPage: shortUrl(d.brandPage) } : {}) }));
+
+  // Seiten lesen: direkte Shops, dann die Google-Suche (ohne schon gelesene Adressen).
   const directUrls = [...new Set(direct.flatMap((d) => d.urls ?? []))];
-  const fromShops = directUrls.length ? await directCandidates(directUrls, get, diagnostics.pages) : [];
-  // Nur Schweizer Händler in den Abgleich; direkte Shops zuerst (werden nicht abgeschnitten).
-  const swiss = [...fromShops, ...candidates.filter((c) => c.swiss)].slice(0, MAX_CANDIDATES);
-  const foreign = candidates.filter((c) => !c.swiss);
+  const searchUrls = shopHitUrls(search.hits, want).filter((u) => !directUrls.includes(u));
+  shop.search = { provider: search.provider, queries: search.queries, results: search.hits.length, pages: searchUrls.map(shortUrl), ...(search.error ? { error: search.error } : {}) };
+  const sources: PageSource[] = [
+    ...directUrls.map((url) => ({ url, origin: "direct" as const })),
+    ...searchUrls.map((url) => ({ url, origin: "search" as const, hit: search.hits.find((h) => h.url === url) })),
+  ];
+  const read = sources.length ? await pageCandidates(sources, get, diagnostics.pages) : { candidates: [], learned: [] };
+
+  // Händlernamen lernen, dann Shopping-Treffer mit unbekannter Domain neu einordnen.
+  const learned: KnownMerchants = new Map(read.learned.map((l) => [merchantKey(l.name), { domain: l.domain, swiss: swissDomain(l.domain), source: "page" }]));
+  if (read.learned.length) {
+    shop.learned = read.learned;
+    await saveLearned(options.db, read.learned);
+  }
+  const shoppingCandidates = shopping.candidates.map((c) => {
+    if (c.via === "link" || c.via === "name") return c;
+    const m = merchantOf(c.source, c.link, known, learned);
+    return { ...c, url: m.url ?? c.url, domain: m.domain, swiss: m.swiss, via: m.via };
+  });
+
+  // Nur Schweizer Händler in den Abgleich; gelesene Seiten zuerst (werden nicht abgeschnitten).
+  const swiss = [...read.candidates, ...shoppingCandidates.filter((c) => c.swiss)].slice(0, MAX_CANDIDATES);
+  const foreign = shoppingCandidates.filter((c) => !c.swiss);
   const category = wine.spirit_category_id && options.db ? await spiritCategoryName(options.db, wine.spirit_category_id) : null;
   const verdicts = await judgeCandidates(
     { name: wine.name, producer: wine.producer, type: wine.type, category, year, sizeMl: size, alcohol: wine.alcohol_content ?? null, age: wine.age_years ?? null, cask: wine.cask ?? null },
@@ -580,16 +723,17 @@ export async function researchPriceShopping(
     title: c.title.slice(0, 160),
     price: c.price,
     source: c.source.slice(0, 60),
+    origin: c.origin ?? "shopping",
     link: (c.link ?? c.url).slice(0, 200),
     domain: c.domain ?? null,
     swiss: c.swiss === true,
-    ...(c.direct ? { direct: true as const } : {}),
+    via: c.via ?? null,
     verdict,
     reason: reason.slice(0, 120),
   });
   shop.candidates = [
     ...swiss.map((c, i) => logged(c, verdicts[i]?.verdict ?? "no", verdicts[i]?.reason ?? "")),
-    ...foreign.map((c) => logged(c, "foreign", "kein Schweizer Händler")),
+    ...foreign.map((c) => logged(c, "foreign", c.domain ? "kein Schweizer Händler" : "Händler unbekannt (keine Domain)")),
   ];
   const found: Found[] = swiss.flatMap((c, i): Found[] => {
     const v = verdicts[i];
