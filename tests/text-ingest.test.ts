@@ -171,8 +171,8 @@ test("B) Nachkauf: Wein + Jahrgang liegt schon im Bestand → Rückfrage, keine 
   assert.equal(state("bbbbbbbb-0000-4000-8000-00000000000b").step, "price"); assert.match(lastText(), /^3 Flaschen\. .*[Ww]as hast du pro Flasche bezahlt\? Schreib mir einfach den Betrag/);
 });
 
-test("C) „Neuer Wein“ in der Menüleiste: wartet auf eine Beschreibung", async () => {
-  await handleUpdate(msg("📷 Neuer Wein") as never);
+test("C) „Neue Flasche“ in der Menüleiste: wartet auf eine Beschreibung", async () => {
+  await handleUpdate(msg("📷 Neue Flasche") as never);
   const describe = net.tables.ingest_jobs.find((j) => (j.extracted as IngestState).step === "describe")!;
   assert.equal(describe.source, "text"); assert.equal(describe.status, "needs_review");
   assert.match(lastText(), /beschreib mir den Wein/);

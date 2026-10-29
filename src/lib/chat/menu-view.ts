@@ -494,11 +494,14 @@ export const MENU_TEXT = {
   stock: "📦 Bestand",
   ready: "⏰ Trinkreif",
   tasted: "🍽 Verkostet",
-  newWine: "📷 Neuer Wein",
+  newWine: "📷 Neue Flasche",
 } as const;
 
+/** Frühere Knopf-Texte: eine alte Menüleiste auf dem Handy schickt sie noch. */
+const MENU_ALIASES: Record<string, keyof typeof MENU_TEXT> = { "📷 Neuer Wein": "newWine" };
+
 /** Version der Menüleiste: erhöhen, wenn sie sich ändert – jeder Chat bekommt sie einmal neu. */
-export const MENU_VERSION = 2;
+export const MENU_VERSION = 3;
 
 export const MAIN_KEYBOARD: TgReplyKeyboard = {
   keyboard: [
@@ -511,5 +514,5 @@ export const MAIN_KEYBOARD: TgReplyKeyboard = {
 
 export function menuKeyFor(text: string): keyof typeof MENU_TEXT | null {
   const entry = Object.entries(MENU_TEXT).find(([, label]) => label === text.trim());
-  return entry ? (entry[0] as keyof typeof MENU_TEXT) : null;
+  return entry ? (entry[0] as keyof typeof MENU_TEXT) : (MENU_ALIASES[text.trim()] ?? null);
 }

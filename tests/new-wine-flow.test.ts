@@ -65,9 +65,9 @@ async function album(n: number, caption?: string) {
 }
 const BESIDE = /lasse ich mal beiseite/;
 
-test("„📷 Neuer Wein“ → Album: keine Meldung „beiseite“, genau ein aktiver Ablauf, Erkennung läuft", async () => {
+test("„📷 Neue Flasche“ → Album: keine Meldung „beiseite“, genau ein aktiver Ablauf, Erkennung läuft", async () => {
   reset();
-  await say("📷 Neuer Wein");
+  await say("📷 Neue Flasche");
   assert.match(texts().at(-1)!, /Vorder- und Rückseite/);
   assert.equal(active().length, 1);
   assert.equal((active()[0].extracted as { step: string }).step, "describe");
@@ -82,9 +82,11 @@ test("„📷 Neuer Wein“ → Album: keine Meldung „beiseite“, genau ein a
   assert.equal(active().length, 1);
 });
 
-test("„📷 Neuer Wein“ → Beschreibung als Text: keine Meldung, derselbe Ablauf läuft weiter", async () => {
+test("„📷 Neuer Wein“ (alte Menüleiste) → Beschreibung als Text: gleicher Ablauf wie „📷 Neue Flasche“", async () => {
   reset();
   await say("📷 Neuer Wein");
+  assert.match(texts().at(-1)!, /Vorder- und Rückseite/);
+  assert.equal((active()[0].extracted as { step: string }).step, "describe");
   const describe = active()[0];
   await say("La Crée 2022 von Domaine Belleville, 6 Flaschen, Weinkeller, gekauft");
   await runLater();

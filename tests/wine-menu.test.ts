@@ -55,7 +55,7 @@ for (const bad of ["L:x", "O:" + I1, "G:" + I1 + ":9:o", "S:o" + I1 + ":c7690541
   assert.equal(decodeMenu(bad), null, bad);
 }
 assert.equal(formatStars(4.5), "4½"); assert.equal(formatStars(1), "1"); assert.equal(formatStars(0.5), "½");
-assert.equal(menuKeyFor("🍷 Offen"), "open"); assert.equal(menuKeyFor("📷 Neuer Wein"), "newWine"); assert.equal(menuKeyFor("Offen"), null);
+assert.equal(menuKeyFor("🍷 Offen"), "open"); assert.equal(menuKeyFor("📷 Neue Flasche"), "newWine"); assert.equal(menuKeyFor("📷 Neuer Wein"), "newWine", "alte Menüleiste"); assert.equal(menuKeyFor("Offen"), null);
 assert.equal(typeCode("sweet"), "y"); assert.equal(typeCode("fortified"), "f"); assert.equal(typeCode(null), "u");
 // Orange gibt es nicht mehr (auch nicht aus alten DB-Werten): neutrale Traube.
 assert.equal(typeCode("orange"), "u"); assert.equal(decodeMenu("L:to"), null);

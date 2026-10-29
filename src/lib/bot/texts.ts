@@ -102,7 +102,7 @@ export const T = {
   unknownUserToast: (id: number) => `Ich kenne dich leider noch nicht – deine Telegram-ID ist ${id}.`,
   yourId: (id: number, name: string) => `Deine Telegram-ID ist <code>${id}</code> (${e(name)}).`,
   hello: (name: string, help: string) => `Hallo ${e(name)}!\n\n${help}`,
-  newMenu: "Unten in der Menüleiste gibt es jetzt auch <b>🍽 Verkostet</b>.",
+  newMenu: "Unten in der Menüleiste heisst der Knopf jetzt <b>📷 Neue Flasche</b> – für Wein und Spirituosen.",
   chatForgotten: "Gut, ich habe unser bisheriges Gespräch vergessen.",
   chatLookFirst: "Da schaue ich lieber zuerst nach, bevor ich etwas Falsches sage – frag mich bitte nochmals.",
   alreadyDone: "Das ist schon erledigt.",
@@ -337,10 +337,10 @@ export const T = {
   // --- Hilfe und Erfassung
   help: [
     "Ich bin Antoine, dein Sommelier. 🍷",
-    "Unten findest du das Menü: <b>🍷 Offen</b>, <b>📦 Bestand</b>, <b>⏰ Trinkreif</b>, <b>🍽 Verkostet</b>, <b>📷 Neuer Wein</b>.",
+    "Unten findest du das Menü: <b>🍷 Offen</b>, <b>📦 Bestand</b>, <b>⏰ Trinkreif</b>, <b>🍽 Verkostet</b>, <b>📷 Neue Flasche</b>.",
     "Tipp auf einen Wein – dann kümmere ich mich um Gläser, Füllstand, Öffnen, Bewertungen, Fotos und Dokumente.",
     "",
-    "📷 Neuer Wein: Schick mir Vorder- und Rückseite als Album – oder beschreib ihn mir. Ich frage dich, ob du ihn gekauft oder nur verkostet hast.",
+    "📷 Neue Flasche: Schick mir Vorder- und Rückseite als Album – oder beschreib sie mir. Ich frage dich, ob du sie gekauft oder nur verkostet hast.",
     "🍽 Nur probiert? Schreib mir z. B. <i>Heute im Kronenhalle den Pintia 2019 probiert, 4,5 Sterne</i> – oder schick ein Foto mit dem Bildtext „verkostet“.",
     "📎 Datenblätter und andere PDFs kannst du mir einfach schicken – ich frage dich, zu welchem Wein sie gehören.",
     "💬 Oder schreib mir einfach, z. B. <i>Welche Rioja habe ich noch?</i>, <i>Sara gibt dem Pintia 4,5 Sterne</i> oder <i>Verschieb 2 Flaschen Pintia ins Wohnzimmer</i>.",

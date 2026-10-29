@@ -223,8 +223,10 @@ test("Neue Menüleiste: einmal pro Chat mitschicken, Version gemerkt", async () 
   reset();
   net.tables.ingest_jobs = []; // noch kein Merker
   await say("/id", 222);
-  assert.match(texts()[0], /Menüleiste gibt es jetzt auch/);
-  assert.ok((sent()[0].body.reply_markup as { keyboard?: { text: string }[][] }).keyboard!.flat().some((b) => b.text === "🍽 Verkostet"));
+  assert.match(texts()[0], /Menüleiste heisst der Knopf jetzt <b>📷 Neue Flasche<\/b>/);
+  // Die neue Menüleiste ersetzt die alte (Reply-Tastatur mit allen Knöpfen, nur noch „Neue Flasche“).
+  const labels = (sent()[0].body.reply_markup as { keyboard?: { text: string }[][] }).keyboard!.flat().map((b) => b.text);
+  assert.deepEqual(labels, ["🍷 Offen", "📦 Bestand", "⏰ Trinkreif", "🍽 Verkostet", "📷 Neue Flasche"]);
   net.telegram.length = 0;
   await say("/id", 222);
   assert.ok(!texts().some((t) => t.includes("Menüleiste")), "nur einmal");
