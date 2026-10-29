@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
+import { navScrollLeft } from "@/lib/ui/nav-scroll";
 
 export function NavLinks({ openCount }: { openCount: number }) {
   const pathname = usePathname();
@@ -18,8 +20,18 @@ export function NavLinks({ openCount }: { openCount: number }) {
     { href: "/recherche", label: "🔎", long: "Recherche", active: pathname.startsWith("/recherche") },
   ];
 
+  // Schmale Bildschirme: die Reiter sind wischbar – den aktiven sichtbar machen (nur die Reiterzeile
+  // scrollen, nie die Seite).
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    const active = nav?.querySelector<HTMLElement>(".nav-link.active");
+    if (!nav || !active) return;
+    nav.scrollLeft = navScrollLeft({ left: active.offsetLeft - nav.offsetLeft, width: active.offsetWidth }, { width: nav.clientWidth, scrollWidth: nav.scrollWidth });
+  }, [pathname]);
+
   return (
-    <nav className="nav" aria-label="Hauptnavigation">
+    <nav className="nav" aria-label="Hauptnavigation" ref={navRef}>
       {links.map((link) => (
         <Link
           key={link.href}

@@ -875,22 +875,63 @@ html:has(.viewer[open]) {
     gap: 6px 8px;
     padding-bottom: 8px;
   }
+  /* Reiter in eigener Zeile: passen sie nicht, seitlich wischbar (ohne Scrollleiste) – die Seite
+     wird nie breiter als der Bildschirm. Tippflächen mindestens 44 px hoch. */
   .nav {
     order: 3;
     width: 100%;
+    min-width: 0;
     margin-right: 0;
+    gap: 2px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar {
+    display: none;
   }
   .header .segmented {
     order: 4;
     width: 100%;
+    min-width: 0;
   }
   .header .segmented .segment {
-    flex: 1;
+    flex: 1 0 auto;
+    min-height: 44px;
   }
   .nav-link {
-    flex: 1;
+    flex: 1 0 auto;
     justify-content: center;
+    min-height: 44px;
     padding: 6px 8px;
+    white-space: nowrap;
+  }
+}
+/* iPad hochkant: eine Zeile wäre zu breit – oben Logo, Name und Abmelden, darunter die Reiter und
+   die Lagerort-Wahl (statt die Seite zu verbreitern). */
+@media (min-width: 561px) and (max-width: 899px) {
+  .header-inner {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .nav {
+    order: 3;
+    margin-right: auto;
+  }
+  .header .segmented {
+    order: 4;
+  }
+  .header-inner::after {
+    content: "";
+    order: 2;
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 400px) {
+  .nav-link {
+    gap: 4px;
+    padding: 6px 6px;
+    font-size: 0.95rem;
   }
 }
 
