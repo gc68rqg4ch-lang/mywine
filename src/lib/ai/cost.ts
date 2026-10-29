@@ -16,6 +16,8 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   // SerpApi (Google Shopping) im Gratis-Plan: Abfragen werden gezählt (web_searches), kosten nichts.
   serpapi: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearch: 0 },
+  // Serper (Google Shopping): rund 1 USD pro 1000 Abfragen (Prepaid; Gratis-Abfragen inbegriffen).
+  serper: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearch: 0.001 },
 };
 /** Unbekanntes Modell (z. B. eine Ausweichstufe): vorsichtig wie Opus 5.5 rechnen. */
 export const FALLBACK_PRICE = MODEL_PRICES["claude-opus-5-5"];

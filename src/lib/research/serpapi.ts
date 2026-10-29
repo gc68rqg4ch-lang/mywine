@@ -1,6 +1,6 @@
 // Google Shopping Schweiz über SerpApi (engine=google_shopping, gl=ch, hl=de, google.ch) als Quelle
-// der Preissuche. Rein bis auf searchShopping (Netz). Schlüssel in SERPAPI_API_KEY; ohne Schlüssel,
-// bei Fehler oder erschöpftem Kontingent übernimmt die bisherige Preissuche.
+// der Preissuche – Anbieter 1 (zweiter: Serper, serper.ts). Rein bis auf searchShopping (Netz).
+// Schlüssel in SERPAPI_API_KEY; Kontingent 250 Abfragen pro Monat (Gratis-Plan).
 
 /** Gratis-Plan: 250 Abfragen pro Monat. Ab SOFT nur noch eine Abfrage pro Flasche, ab HARD keine. */
 export const SERPAPI_MONTHLY_LIMIT = 250;
@@ -36,28 +36,42 @@ const MARKETPLACE_RE = /\b(ebay|ricardo|tutti|anibis|kleinanzeigen|catawiki|whis
 /** Preistext in Franken? „CHF 29.90“, „29,90 CHF“, „Fr. 29.90“. */
 const chfText = (s: string) => /\bCHF\b|\bFr\.|SFr/i.test(s);
 
-/** Kandidaten aus einer SerpApi-Antwort (shopping_results und inline_shopping_results): nur CHF, ohne Marktplätze, ohne doppelte, höchstens max. */
-export function shoppingCandidates(json: unknown, max = MAX_CANDIDATES): ShoppingCandidate[] {
-  const data = (json ?? {}) as { shopping_results?: RawResult[]; inline_shopping_results?: RawResult[] };
-  const all = [...(data.inline_shopping_results ?? []), ...(data.shopping_results ?? [])];
+/** Rohes Angebot eines Anbieters (SerpApi, Serper), schon in Zahl und Währung zerlegt. */
+export type RawOffer = { title: string; source: string; price: number; currency: string; regular?: number | null; url: string; used?: boolean };
+
+/** Gemeinsamer Filter: nur CHF, ohne Marktplätze/Auktionen und Gebrauchtware, ohne Doppelte, höchstens max. */
+export function filterCandidates(offers: RawOffer[], max = MAX_CANDIDATES): ShoppingCandidate[] {
   const out: ShoppingCandidate[] = [];
   const seen = new Set<string>();
-  for (const r of all) {
-    const title = typeof r.title === "string" ? r.title.trim() : "";
-    const source = typeof r.source === "string" ? r.source.trim() : "";
-    const priceText = typeof r.price === "string" ? r.price : "";
-    const price = typeof r.extracted_price === "number" ? r.extracted_price : NaN;
-    const url = typeof r.link === "string" ? r.link : typeof r.product_link === "string" ? r.product_link : "";
-    if (!title || !(price > 0) || !chfText(priceText)) continue;
-    if (MARKETPLACE_RE.test(source) || MARKETPLACE_RE.test(url) || r.second_hand_condition) continue;
-    const key = `${source.toLowerCase()}|${title.toLowerCase()}|${price}`;
+  for (const o of offers) {
+    const title = o.title.trim();
+    const source = o.source.trim();
+    if (!title || !(o.price > 0) || o.currency !== "CHF" || o.used) continue;
+    if (MARKETPLACE_RE.test(source) || MARKETPLACE_RE.test(o.url)) continue;
+    const key = `${source.toLowerCase()}|${title.toLowerCase()}|${o.price}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const old = typeof r.extracted_old_price === "number" ? r.extracted_old_price : NaN;
-    out.push({ title, source, price, regular: old > price ? old : null, url });
+    out.push({ title, source, price: o.price, regular: o.regular != null && o.regular > o.price ? o.regular : null, url: o.url });
     if (out.length >= max) break;
   }
   return out;
+}
+
+/** Kandidaten aus einer SerpApi-Antwort (shopping_results und inline_shopping_results). */
+export function shoppingCandidates(json: unknown, max = MAX_CANDIDATES): ShoppingCandidate[] {
+  const data = (json ?? {}) as { shopping_results?: RawResult[]; inline_shopping_results?: RawResult[] };
+  const offers = [...(data.inline_shopping_results ?? []), ...(data.shopping_results ?? [])].map(
+    (r): RawOffer => ({
+      title: typeof r.title === "string" ? r.title : "",
+      source: typeof r.source === "string" ? r.source : "",
+      price: typeof r.extracted_price === "number" ? r.extracted_price : NaN,
+      currency: chfText(typeof r.price === "string" ? r.price : "") ? "CHF" : "",
+      regular: typeof r.extracted_old_price === "number" ? r.extracted_old_price : null,
+      url: typeof r.link === "string" ? r.link : typeof r.product_link === "string" ? r.product_link : "",
+      used: Boolean(r.second_hand_condition),
+    }),
+  );
+  return filterCandidates(offers, max);
 }
 
 /** Adresse der Abfrage (ohne Schlüssel im Protokoll – der wird nur hier angehängt). */

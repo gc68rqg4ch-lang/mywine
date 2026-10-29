@@ -2,7 +2,7 @@ import "server-only";
 
 // Preis beim Einbuchen suchen (🤷 (Preis suchen) bei Antoine): Preis pro Flasche in CHF bei Schweizer
 // Händlern – genau dieser Wein bzw. diese Spirituose, gleicher Jahrgang, gleiche Flaschengrösse.
-// Ablauf: Google Shopping Schweiz über SerpApi (serpapi.ts) und ein Haiku-Abgleich je Kandidat
+// Ablauf: Google Shopping Schweiz über SerpApi (serpapi.ts) bzw. Serper (serper.ts) und ein Haiku-Abgleich je Kandidat
 // (price-judge.ts), direkte Shop-Suchen nur als Ergänzung ohne yes-Treffer. Ohne Schlüssel, ohne
 // Kontingent oder bei Fehler die bisherige Suche: direkte Shops (DIRECT_SHOPS) → Websuche mit
 // Standort Schweiz und festen Suchbegriffen (price-search.ts) → eigene Prüfung der Produktseiten. Zeigt ein Shop Aktions- und Normalpreis, gilt
@@ -54,6 +54,7 @@ import {
 } from "./price-search";
 import { SHOP_DOMAINS } from "./shops/match";
 import { MAX_CANDIDATES, SERPAPI_MONTHLY_LIMIT, SERPAPI_SOFT_LIMIT, searchShopping, type ShoppingCandidate } from "./serpapi";
+import { searchSerper } from "./serper";
 import { judgeCandidates } from "./price-judge";
 import { zurichMonth } from "@/lib/ai/cost";
 import { currentUsageContext, recordUsage } from "@/lib/ai/usage";
@@ -345,7 +346,7 @@ export async function researchPrice(
   year: number | null,
   sizeMl: number | null,
   vendor: string | null,
-  options: { get?: Get; db?: Db; serpApiKey?: string | null } = {},
+  options: ShoppingOptions = {},
 ): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics }> {
   if (!wine.name) return { finding: { kind: "none", reason: "no_name" }, diagnostics: { raw: null, verdict: "no_name", pages: [] } };
   // Zuerst Google Shopping (SerpApi) + Haiku; ohne Schlüssel, ohne Kontingent oder bei Fehler die bisherige Suche.
@@ -442,10 +443,36 @@ export async function serpApiQueriesThisMonth(db: Db, now = new Date()) {
   return error ? 0 : (count ?? 0);
 }
 
+export type ShoppingOptions = { get?: Get; db?: Db; serpApiKey?: string | null; serperApiKey?: string | null };
+
+type Provider = { provider: ShoppingProvider; maxQueries: number; used: number; search: (q: string) => Promise<ShoppingCandidate[]> };
+
+/**
+ * Verfügbare Anbieter, in dieser Reihenfolge: SerpApi (Schlüssel gesetzt, Monatskontingent nicht
+ * erschöpft), dann Serper (Schlüssel gesetzt; Kontingent verwaltet Serper). Leer → bisherige Suche.
+ */
+async function shoppingProviders(options: ShoppingOptions): Promise<Provider[]> {
+  const serpKey = options.serpApiKey !== undefined ? options.serpApiKey : process.env.SERPAPI_API_KEY;
+  const serperKey = options.serperApiKey !== undefined ? options.serperApiKey : process.env.SERPER_API_KEY;
+  const list: Provider[] = [];
+  if (serpKey) {
+    const used = options.db ? await serpApiQueriesThisMonth(options.db) : 0;
+    const maxQueries = serpQueriesAllowed(used);
+    if (maxQueries) list.push({ provider: "serpapi", maxQueries, used, search: (q) => searchShopping(q, serpKey) });
+  }
+  if (serperKey) list.push({ provider: "serper", maxQueries: 2, used: 0, search: (q) => searchSerper(q, serperKey) });
+  return list;
+}
+
 /** Wie viele Abfragen dürfen es für diese Flasche sein? 2, ab 230 im Monat 1, ab 250 keine (rein). */
 export const serpQueriesAllowed = (used: number) => (used >= SERPAPI_MONTHLY_LIMIT ? 0 : used >= SERPAPI_SOFT_LIMIT ? 1 : 2);
 
+export type ShoppingProvider = "serpapi" | "serper";
+
 export type ShoppingDiagnostics = {
+  /** Anbieter der Abfragen (SerpApi bzw. Serper) und Anbieter, die vorher scheiterten. */
+  provider: ShoppingProvider;
+  failed?: { provider: ShoppingProvider; error: string }[];
   queries: string[];
   used_this_month: number;
   candidates: { title: string; price: number; source: string; verdict: string; reason: string }[];
@@ -464,34 +491,49 @@ export async function researchPriceShopping(
   wine: PriceWine,
   year: number | null,
   sizeMl: number | null,
-  options: { get?: Get; db?: Db; serpApiKey?: string | null } = {},
+  options: ShoppingOptions = {},
 ): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics } | null> {
-  const key = options.serpApiKey !== undefined ? options.serpApiKey : process.env.SERPAPI_API_KEY;
-  if (!key) return null;
-  const used = options.db ? await serpApiQueriesThisMonth(options.db) : 0;
-  const allowed = serpQueriesAllowed(used);
-  if (!allowed) return null;
+  const providers = await shoppingProviders(options);
+  if (!providers.length) return null;
   const size = sizeMl ?? standardSize(wine.type);
   const term = `${productTerm(wine)}${year != null ? ` ${year}` : ""}`;
   const queries = [`${term} ${clTerm(size)}`, term];
-  const shop: ShoppingDiagnostics = { queries: [], used_this_month: used, candidates: [], chosen: null };
+  const failed: { provider: ShoppingProvider; error: string }[] = [];
+  let shop: ShoppingDiagnostics | null = null;
   let candidates: ShoppingCandidate[] = [];
-  for (const q of queries.slice(0, allowed)) {
-    let found: ShoppingCandidate[];
-    try {
-      found = await searchShopping(q, key);
-    } catch (error) {
-      // Erste Abfrage gescheitert (Fehler, Kontingent): bisherige Suche; spätere: mit dem Bisherigen weiter.
-      if (!shop.queries.length) throw error;
-      break;
-    } finally {
-      await recordUsage("serpapi", { server_tool_use: { web_search_requests: 1 } }, { ...currentUsageContext(), purpose: "research_price" });
+  // Anbieter der Reihe nach: scheitert die erste Abfrage, der nächste; erst dann die bisherige Suche.
+  for (const p of providers) {
+    const run: ShoppingDiagnostics = { provider: p.provider, queries: [], used_this_month: p.used, candidates: [], chosen: null };
+    const found: ShoppingCandidate[] = [];
+    let ok = true;
+    for (const q of queries.slice(0, p.maxQueries)) {
+      let hits: ShoppingCandidate[];
+      try {
+        hits = await p.search(q);
+      } catch (error) {
+        if (!run.queries.length) {
+          failed.push({ provider: p.provider, error: (error instanceof Error ? error.message : String(error)).slice(0, 160) });
+          ok = false;
+        }
+        break;
+      } finally {
+        await recordUsage(p.provider, { server_tool_use: { web_search_requests: 1 } }, { ...currentUsageContext(), purpose: "research_price" });
+      }
+      run.queries.push(q);
+      for (const c of hits) if (!found.some((x) => x.source === c.source && x.title === c.title && x.price === c.price)) found.push(c);
+      // Genug Treffer: keine zweite Abfrage.
+      if (found.length >= 5) break;
     }
-    shop.queries.push(q);
-    for (const c of found) if (!candidates.some((x) => x.source === c.source && x.title === c.title && x.price === c.price)) candidates.push(c);
-    // Genug Treffer: keine zweite Abfrage.
-    if (candidates.length >= 5) break;
+    if (!ok) continue;
+    shop = run;
+    candidates = found;
+    break;
   }
+  if (!shop) {
+    console.error("shopping price search unavailable", failed.map((f) => `${f.provider}: ${f.error}`).join("; "));
+    return null;
+  }
+  if (failed.length) shop.failed = failed;
   candidates = candidates.slice(0, MAX_CANDIDATES);
   const category = wine.spirit_category_id && options.db ? await spiritCategoryName(options.db, wine.spirit_category_id) : null;
   const verdicts = await judgeCandidates(

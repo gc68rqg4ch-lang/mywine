@@ -16,7 +16,7 @@ export type Net = {
    * Andere Websites (Händler-Shops): Adresse → Antwort; url = Adresse nach einer Weiterleitung.
    * Ohne Eintrag bzw. null: 404 (kein echter Netzverkehr).
    */
-  web?: (url: string) => { status?: number; body: string | Uint8Array; type?: string; url?: string } | null;
+  web?: (url: string, request?: { method: string; body: unknown }) => { status?: number; body: string | Uint8Array; type?: string; url?: string } | null;
 };
 const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(data === undefined ? null : JSON.stringify(data), { status, headers: { "content-type": "application/json", ...headers } });
@@ -99,9 +99,9 @@ export function installNet(net: Net) {
       return typeof answer.status === "number" && answer.body ? json(answer.body, answer.status) : json(answer);
     }
     if (!url.pathname.startsWith("/rest/v1/")) {
-      const page = net.web?.(url.toString());
-      const body = page?.body ?? "";
-      const res = new Response(typeof body === "string" ? body : new Blob([body as Uint8Array<ArrayBuffer>]), { status: page ? (page.status ?? 200) : 404, headers: { "content-type": page?.type ?? "text/html" } });
+      const page = net.web?.(url.toString(), { method, body });
+      const content = page?.body ?? "";
+      const res = new Response(typeof content === "string" ? content : new Blob([content as Uint8Array<ArrayBuffer>]), { status: page ? (page.status ?? 200) : 404, headers: { "content-type": page?.type ?? "text/html" } });
       Object.defineProperty(res, "url", { value: page?.url ?? url.toString() });
       return res;
     }
