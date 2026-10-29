@@ -7,6 +7,7 @@ import "server-only";
 // Trigger – hier entstehen nie eigene Einträge.
 
 import type { PostgrestError } from "@supabase/supabase-js";
+import { MAX_WINE_NOTES, cleanNotes } from "./notes";
 import type { Database } from "@/lib/database.types";
 import { WINE_TYPE_LABELS, asWineType, formatBottleSize, formatMoney, wineTypeLabel, zurichDate, type WineType } from "@/lib/format";
 import { formatShares, normalizeGrapeShares, percentSum } from "@/lib/grapes/shares";
@@ -136,14 +137,7 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
   });
 }
 
-/** Höchstlänge der Notizen zum Wein. */
-export const MAX_WINE_NOTES = 10_000;
-
-/** Notizen: getrimmt, Zeilenumbrüche bleiben (CRLF → LF); leer → NULL (DB-Check: nie leer). */
-export const cleanNotes = (text: string | null | undefined) => {
-  const t = (text ?? "").replace(/\r\n?/g, "\n").trim();
-  return t ? t : null;
-};
+export { MAX_WINE_NOTES, cleanNotes };
 
 async function prepareWineNotes(db: Db, wineId: string, raw: string | null): Promise<PreparedEdit> {
   const wine = await loadWine(db, wineId);

@@ -127,18 +127,6 @@ export function WineCardForm({
   );
 }
 
-/** Notizen zum Wein: ein mehrzeiliges Feld; Speichern getrimmt, leer → keine Notiz. */
-export function WineNotesForm({ wineId, notes }: { wineId: string; notes: string | null }) {
-  return (
-    <EditForm hidden={{ kind: "wineNotes", wineId }}>
-      <label className="field">
-        <span className="sr-only">Notizen</span>
-        <textarea name="notes" rows={6} defaultValue={notes ?? ""} maxLength={10000} placeholder="Notizen zum Wein …" />
-      </label>
-    </EditForm>
-  );
-}
-
 export type EditBatch = {
   inventory_item_id: string;
   status: InventoryStatus;

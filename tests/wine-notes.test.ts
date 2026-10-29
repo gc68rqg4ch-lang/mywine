@@ -1,12 +1,11 @@
-// Notizen pro Wein (wines.notes): Karte „Notizen“ auf der Weinseite (✏️, mehrzeilig, getrimmt,
-// leer → NULL), Anzeige mit Zeilenumbrüchen, Suche in den Listen über den Notiztext, Bot zeigt
+// Notizen pro Wein (wines.notes): Karte „Notizen“ auf der Weinseite (immer ein Freitextfeld,
+// speichert automatisch, getrimmt, leer → NULL), Suche in den Listen über den Notiztext, Bot zeigt
 // die Notiz unter „ℹ️ Details“ (kein Bearbeiten). tasting_notes wird nirgends mehr verwendet.
 import "./env";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { ReactElement } from "react";
 import { installNet, type Net } from "./stub-net";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { applyEdit, cleanNotes } from "@/lib/edit/edit";
@@ -14,7 +13,6 @@ import { editsFromForm } from "@/lib/edit/form";
 import { matchesQuery } from "@/lib/cellar/overview";
 import { loadWineNotes } from "@/lib/cellar/notes";
 import { wineDetailsText } from "@/lib/chat/details";
-import { WineNotesView } from "@/components/wine-notes";
 
 const W = "11111111-1111-4111-8111-111111111111";
 const W2 = "22222222-2222-4222-8222-222222222222";
@@ -57,23 +55,22 @@ test("Notiz speichern (getrimmt, Umbrüche bleiben), leeren → NULL", async () 
   assert.equal((await applyEdit(db, { kind: "wineNotes", wineId: W, notes: "x".repeat(10_001) })).ok, false, "zu lang");
 });
 
-test("Mehrzeilige Notiz wird mit Umbrüchen angezeigt; ohne Notiz „Noch keine Notizen“", () => {
-  const el = WineNotesView({ notes: "2021: kräftig\n2022: noch jung" }) as ReactElement<{ className: string; children: ReactElement<{ children: unknown[] }>[] }>;
-  assert.equal(el.props.className, "wine-notes");
-  const parts = el.props.children.flatMap((f) => f.props.children).filter((c) => c !== false);
-  assert.equal(parts.filter((c) => (c as ReactElement).type === "br").length, 1);
-  assert.deepEqual(parts.filter((c) => typeof c === "string"), ["2021: kräftig", "2022: noch jung"]);
-  const empty = WineNotesView({ notes: null }) as ReactElement<{ children: string }>;
-  assert.equal(empty.props.children, "Noch keine Notizen");
-
-  // Karte „Notizen“ nach „Zum Wein“, vor Bewertungen; iPad quer mit „Zum Wein“ in Spalte 2; ✏️ wie die anderen Karten
+test("Karte „Notizen“: immer ein Freitextfeld (kein ✏️), nach „Zum Wein“, vor Bewertungen", () => {
   const page = readFileSync("src/app/(cellar)/wein/[id]/page.tsx", "utf8");
   const main = page.slice(page.indexOf('<div className="wine-col wine-col-main">'), page.indexOf('className="wine-col wine-col-taste"'));
   assert.ok(main.indexOf("WINE_SECTIONS.map") < main.indexOf('id="notes"'), "nach „Zum Wein“");
-  assert.ok(main.includes("<WineNotesForm wineId={wine.id} notes={wine.notes} />") && main.includes("<WineNotesView notes={wine.notes} />"));
+  assert.ok(main.includes("<NotesField key={wine.id} wineId={wine.id} notes={wine.notes} />"));
+  const card = main.slice(main.indexOf('id="notes"'), main.indexOf("</section>", main.indexOf('id="notes"')));
+  assert.ok(!card.includes("EditUnit"), "keine ✏️-Bearbeitung – zählt nicht als offene Bearbeitung");
   assert.ok(page.indexOf('id="notes"') < page.indexOf('id="ratings"'), "vor Bewertungen");
-  const sections = readFileSync("src/app/(cellar)/wein/[id]/edit-sections.tsx", "utf8");
-  assert.match(sections, /<textarea name="notes" rows=\{6\}/);
+  const field = readFileSync("src/app/(cellar)/wein/[id]/notes-field.tsx", "utf8");
+  assert.match(field, /placeholder="Notiz zum Wein …"/);
+  assert.match(field, /el\.style\.height = `\$\{el\.scrollHeight\}px`/, "wächst mit dem Text");
+  assert.match(field, /onBlur=\{\(\) => void saver\.flush\(\)\}/, "speichert beim Verlassen");
+  assert.match(field, /"beforeunload"/, "Seite verlassen: speichern bzw. nachfragen");
+  assert.ok(!/router\.refresh|revalidatePath/.test(field), "kein Neuladen der Seite");
+  const css = readFileSync("src/app/globals.css", "utf8");
+  assert.match(css, /\.notes-field textarea \{[^}]*resize: none;[^}]*overflow: hidden;/, "keine Scrollbox");
 });
 
 test("Suche in den Listen findet den Wein über den Notiztext", async () => {

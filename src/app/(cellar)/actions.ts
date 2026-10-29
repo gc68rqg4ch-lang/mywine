@@ -3,8 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { applyEdit } from "@/lib/edit/edit";
+import { NOTHING } from "@/lib/edit/helpers";
+import { cleanNotes } from "@/lib/edit/notes";
 import { todayIso } from "@/lib/format";
 
 export type ActionState = { error?: string; ok?: string; link?: { href: string; label: string } } | undefined;
@@ -108,4 +111,23 @@ export async function markDrunk(_prev: ActionState, formData: FormData): Promise
 
   revalidatePath("/", "layout");
   redirect(wineHref(updated[0].wine_id, updated[0].vintage_year, { ausgetrunken: "1" }));
+}
+
+/**
+ * Notizen zum Wein automatisch speichern (Feld auf der Weinseite, ohne ✏️): getrimmt, leer →
+ * NULL. Kein Neuladen der Seite (die Listen laden ohnehin frisch). Liefert die gespeicherte Form.
+ */
+export async function saveWineNotes(wineId: string, text: string): Promise<{ ok: true; notes: string | null } | { ok: false; error: string }> {
+  if (!UUID_RE.test(wineId)) return { ok: false, error: "Kein Zugriff." };
+  // Ohne Umleitung auf /login (wie getSession): sonst wäre der getippte Text weg.
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = claims?.claims?.sub;
+  if (!userId) return { ok: false, error: "Nicht mehr angemeldet." };
+  const { data: member } = await supabase.from("app_members").select("user_id").eq("user_id", userId).maybeSingle();
+  if (!member) return { ok: false, error: "Kein Zugriff." };
+  const result = await applyEdit(supabase, { kind: "wineNotes", wineId, notes: typeof text === "string" ? text : "" });
+  // „Nichts zu ändern“ ist kein Fehler – die Notiz steht schon so in der DB.
+  if (result.ok || result.error === NOTHING) return { ok: true, notes: cleanNotes(text) };
+  return { ok: false, error: result.error };
 }

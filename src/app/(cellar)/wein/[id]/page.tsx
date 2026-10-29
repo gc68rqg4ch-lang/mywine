@@ -38,8 +38,8 @@ import { WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, giftLabel, grapeLine, type
 import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { DocumentClip } from "./documents";
-import { BatchForm, WineCardForm, WineNotesForm, type EditBatch } from "./edit-sections";
-import { WineNotesView } from "@/components/wine-notes";
+import { BatchForm, WineCardForm, type EditBatch } from "./edit-sections";
+import { NotesField } from "./notes-field";
 import { ResearchHead } from "./research-head";
 import { wineJobStatus } from "@/lib/research/jobs";
 import { WinePhotos } from "./photos";
@@ -422,15 +422,10 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             <Fragment key={key}>{sections[key]}</Fragment>
           ))}
         </section>
-        <section className="card stack wine-notes-card">
-          <EditUnit
-            id="notes"
-            label="Notizen"
-            title={<h2 className="section-title">Notizen</h2>}
-            form={<WineNotesForm wineId={wine.id} notes={wine.notes} />}
-          >
-            <WineNotesView notes={wine.notes} />
-          </EditUnit>
+        {/* Notizen: immer ein Freitextfeld, speichert selbst (keine „offene Bearbeitung“). */}
+        <section className="card stack-sm wine-notes-card" id="notes">
+          <h2 className="section-title">Notizen</h2>
+          <NotesField key={wine.id} wineId={wine.id} notes={wine.notes} />
         </section>
       </div>
       {/* Geschmacksprofil direkt nach „Zum Wein“ (iPhone, iPad hochkant); iPad quer zuoberst in Spalte 3
