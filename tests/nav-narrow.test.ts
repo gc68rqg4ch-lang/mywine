@@ -1,6 +1,6 @@
 // Reiterzeile auf schmalen Bildschirmen: wischbar in eigenem Container (die Seite wird nie breiter
 // als der Bildschirm), aktiver Reiter beim Laden sichtbar, Tippflächen ≥ 44 px; iPad hochkant
-// zweizeilig statt zu breit.
+// und kleineres iPad quer zweizeilig statt zu breit bzw. abgeschnitten.
 // Ausführen: npm test
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -23,7 +23,9 @@ test("CSS: Reiter wischbar ohne Scrollleiste, 44 px hoch; iPad hochkant zweizeil
   assert.match(block, /\.nav::-webkit-scrollbar \{\s*display: none;/);
   assert.match(block, /\.nav-link \{[^}]*min-height: 44px;/);
   assert.match(block, /\.header \.segmented \.segment \{[^}]*min-height: 44px;/);
-  assert.match(css, /@media \(min-width: 561px\) and \(max-width: 899px\) \{\s*\.header-inner \{\s*flex-wrap: wrap;/);
+  // iPad hochkant und kleineres iPad quer (bis 1139 px): zweizeilig, die Lagerort-Wahl ganz sichtbar.
+  assert.match(css, /@media \(min-width: 561px\) and \(max-width: 1139px\) \{\s*\.header-inner \{\s*flex-wrap: wrap;/);
+  assert.match(css, /@media \(min-width: 900px\) and \(max-width: 1139px\) and \(pointer: coarse\) \{\s*\.nav-link,\s*\.header \.segmented \.segment \{\s*min-height: 44px;/);
   const nav = readFileSync("src/components/nav-links.tsx", "utf8");
   assert.match(nav, /nav\.scrollLeft = navScrollLeft\(/);
 });

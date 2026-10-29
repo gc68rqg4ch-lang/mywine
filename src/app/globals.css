@@ -907,9 +907,10 @@ html:has(.viewer[open]) {
     white-space: nowrap;
   }
 }
-/* iPad hochkant: eine Zeile wäre zu breit – oben Logo, Name und Abmelden, darunter die Reiter und
-   die Lagerort-Wahl (statt die Seite zu verbreitern). */
-@media (min-width: 561px) and (max-width: 899px) {
+/* iPad hochkant und kleineres iPad quer (bis 1139 px): eine Zeile wäre zu breit bzw. die
+   Lagerort-Wahl abgeschnitten – oben Logo, Name und Abmelden, darunter die Reiter und die
+   Lagerort-Wahl (statt die Seite zu verbreitern). */
+@media (min-width: 561px) and (max-width: 1139px) {
   .header-inner {
     flex-wrap: wrap;
     row-gap: 8px;
@@ -925,6 +926,13 @@ html:has(.viewer[open]) {
     content: "";
     order: 2;
     flex-basis: 100%;
+  }
+}
+/* 900–1139 px auf Touch (iPad quer): Tippflächen mindestens 44 px hoch. */
+@media (min-width: 900px) and (max-width: 1139px) and (pointer: coarse) {
+  .nav-link,
+  .header .segmented .segment {
+    min-height: 44px;
   }
 }
 @media (max-width: 400px) {
