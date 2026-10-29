@@ -2687,3 +2687,18 @@ a.doc-clip-name:hover {
     font-size: max(16px, 1em) !important;
   }
 }
+
+/* Diagnose des Zoom-Rücksetzers (nur mit ?zoomdebug=1, vorübergehend). */
+.zoom-debug {
+  position: fixed;
+  right: 6px;
+  bottom: 6px;
+  z-index: 1000;
+  max-width: min(92vw, 420px);
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font: 11px/1.35 ui-monospace, Menlo, monospace;
+  pointer-events: none;
+}

@@ -41,3 +41,63 @@ export function lockedViewport(content: string) {
     .filter((p) => p && !/^(initial-scale|minimum-scale|maximum-scale|user-scalable)\s*=/i.test(p));
   return [...parts, "initial-scale=1", "minimum-scale=1", "maximum-scale=1", "user-scalable=no"].join(", ");
 }
+
+// ——— Auch beim normalen Laden, verzögert und mit mehreren Methoden ———
+// Safari lädt die Seite beim Wiederöffnen oft neu (pageshow ohne persisted) und stellt den Zoom
+// erst danach wieder her. Darum nach dem Laden bzw. der Rückkehr mehrmals prüfen und in diesem
+// Zeitfenster auch auf visualViewport-„resize“ reagieren; danach nicht mehr eingreifen.
+
+/** Prüfzeitpunkte nach dem Laden bzw. der Rückkehr (ms). */
+export const CHECK_DELAYS_MS = [0, 300, 1000, 2500] as const;
+/** So lange nach dem Laden bzw. der Rückkehr reagiert der Rücksetzer auch auf „resize“. */
+export const WATCH_MS = 3000;
+
+/** Wie die Seite kam: neu geladen, aus dem Zwischenspeicher, Rückkehr (Tab/App), zurück/vor. */
+export type LoadKind = "neu" | "neu geladen" | "zurück/vor" | "Zwischenspeicher" | "Rückkehr";
+
+/** Art des Ladens aus performance.navigation (type) bzw. pageshow.persisted. */
+export function loadKind(navigationType: string | null | undefined, persisted = false): LoadKind {
+  if (persisted) return "Zwischenspeicher";
+  if (navigationType === "reload") return "neu geladen";
+  if (navigationType === "back_forward") return "zurück/vor";
+  return "neu";
+}
+
+/** Noch im Zeitfenster nach dem Laden bzw. der Rückkehr? (sonst: Zwei-Finger-Zoom nicht stören) */
+export const inWatchWindow = (now: number, since: number | null) => since != null && now - since >= 0 && now - since <= WATCH_MS;
+
+/** Hineingezoomt? */
+export const zoomedIn = (scale: number | null | undefined) => typeof scale === "number" && Number.isFinite(scale) && scale > ZOOM_TOLERANCE;
+
+/** Methoden, der Reihe nach: Meta umstellen, Meta neu einfügen, nur minimum-/maximum-scale=1. */
+export const RESET_METHODS = ["Meta umstellen", "Meta neu einfügen", "min/max-scale=1"] as const;
+export type ResetMethod = (typeof RESET_METHODS)[number];
+
+/** Nächste noch nicht versuchte Methode (null = alle versucht). */
+export function nextMethod(tried: readonly string[]): ResetMethod | null {
+  return RESET_METHODS.find((m) => !tried.includes(m)) ?? null;
+}
+
+/** Viewport für „min/max-scale=1“ (ohne user-scalable=no). */
+export function minMaxViewport(content: string) {
+  const parts = content
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p && !/^(initial-scale|minimum-scale|maximum-scale|user-scalable)\s*=/i.test(p));
+  return [...parts, "initial-scale=1", "minimum-scale=1", "maximum-scale=1"].join(", ");
+}
+
+/** Ergebnis eines Versuchs, gemessen an visualViewport.scale danach. */
+export function resetOutcome(before: number, after: number | null | undefined): "zurückgesetzt" | "teilweise" | "ohne Wirkung" | "unbekannt" {
+  if (typeof after !== "number" || !Number.isFinite(after)) return "unbekannt";
+  if (!zoomedIn(after)) return "zurückgesetzt";
+  return after < before - 0.01 ? "teilweise" : "ohne Wirkung";
+}
+
+/** Diagnose an? ?zoomdebug=1 schaltet ein, ?zoomdebug=0 aus; sonst gilt die gespeicherte Einstellung. */
+export function debugEnabled(search: string, stored: string | null) {
+  const flag = new URLSearchParams(search).get("zoomdebug");
+  if (flag === "1") return true;
+  if (flag === "0") return false;
+  return stored === "1";
+}
