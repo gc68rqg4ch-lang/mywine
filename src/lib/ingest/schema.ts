@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { FALLBACK_CATEGORIES, spiritLabelSchema } from "@/lib/spirits/ai-categories";
+import type { SpiritCategory } from "@/lib/spirits/categories";
 import { sizeFromText } from "@/lib/research/price-match";
 import { completeSpiritName, completeWineName } from "./wine-names";
 import { COUNTRY_HINT, WINE_TYPES } from "@/lib/format";
@@ -45,29 +47,11 @@ const BestBeforeField = z
   .catch("");
 
 /**
- * Spirituose auf dem Etikett – ohne nullable Felder (Grenze von 16 Union-Feldern): "" bzw. 0 =
- * unbekannt. kind: wine, spirit oder unsure (dann fragt Antoine „Wein oder Spirituose?“).
+ * Spirituose auf dem Etikett (Kategorien aus spirit_categories, siehe spirits/ai-categories.ts).
+ * SpiritLabelSchema: mit der festen Rückfall-Liste (Typen, Tests); zur Laufzeit baut die
+ * Erkennung das Schema mit den Kategorien aus der DB (recognitionSchema, textEntrySchema).
  */
-export const SpiritLabelSchema = z
-  .object({
-    kind: z.enum(["wine", "spirit", "unsure"]).describe("wine = Wein (auch Port, Sherry, Madeira = fortified), spirit = Spirituose (Whisky, Grappa, Likör, Obstbrand, Cognac, Rum, Gin, Vodka, Tequila …), unsure = nicht sicher"),
-    category: z
-      .string()
-      .describe(
-        "Bei Spirituosen die Hauptkategorie – nur genau einer dieser Namen, nie einen neuen: Whisky, Likör, Kräuterschnaps / Bitter, Obstbrand, Grappa / Trester, Cognac / Brandy, Rum, Gin, Vodka, Tequila / Mezcal, Andere; leer, wenn unklar bzw. bei Wein",
-      ),
-    subcategory: z
-      .string()
-      .describe(
-        "Unterkategorie – nur einer dieser Namen, nie einen neuen (sonst leer): Whisky: Scotch Single Malt, Scotch Blend, Bourbon, Irish, Japanese, Schweizer; Likör: Frucht, Kaffee, Kräuter, Nuss, Sahne; Obstbrand: Apfel / Calvados, Kirsch, Williams, Zwetschge; Cognac / Brandy: Cognac, Armagnac, Brandy",
-      ),
-    age_years: z.number().describe("Altersangabe in Jahren (z. B. 12 bei „12 Years Old“); 0 = keine"),
-    cask: z.string().describe("Fass, Reifung bzw. Finish (z. B. „Sherry Cask Finish“); leer, wenn keins dasteht"),
-    distilled_year: z.number().describe("Jahr der Destillation („Distilled 2008“); 0 = keins"),
-    bottled_year: z.number().describe("Jahr der Abfüllung („Bottled 2020“); 0 = keins"),
-  })
-  // Fehlt der Block in der Antwort: Wein (die Erkennung scheitert deswegen nicht).
-  .catch({ kind: "wine", category: "", subcategory: "", age_years: 0, cask: "", distilled_year: 0, bottled_year: 0 });
+export const SpiritLabelSchema = spiritLabelSchema(FALLBACK_CATEGORIES);
 
 /** Korrektur des Vorschlags (✏️ Korrigieren): Weindaten plus Ablaufdatum. */
 export const CorrectionSchema = WineProposalSchema.extend({ best_before: BestBeforeField });
@@ -90,6 +74,9 @@ export const RecognitionSchema = WineProposalSchema.extend({
   spirit: SpiritLabelSchema,
 });
 export type Recognition = z.infer<typeof RecognitionSchema>;
+
+/** Erkennung (Foto) mit den aktuellen Kategorien. */
+export const recognitionSchema = (categories: SpiritCategory[], lenient = false) => RecognitionSchema.extend({ spirit: spiritLabelSchema(categories, { lenient }) });
 
 /**
  * Felder, die eine Websuche ergänzen darf (nie Name/Jahrgang; den Produzenten nur,
@@ -291,6 +278,9 @@ export const TextEntrySchema = WineProposalSchema.extend({
   spirit: SpiritLabelSchema,
 });
 export type TextEntry = z.infer<typeof TextEntrySchema>;
+
+/** Erfassung per Text mit den aktuellen Kategorien. */
+export const textEntrySchema = (categories: SpiritCategory[], lenient = false) => TextEntrySchema.extend({ spirit: spiritLabelSchema(categories, { lenient }) });
 
 export function missingEnrichableFields(p: WineProposal): EnrichableField[] {
   return ENRICHABLE_FIELDS.filter((field) => p[field] == null);

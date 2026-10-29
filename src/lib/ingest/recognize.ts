@@ -8,15 +8,16 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { usageLimit } from "@/lib/ai/api-errors";
 import type { Purpose } from "@/lib/ai/cost";
 import { meteredFetch, withUsage } from "@/lib/ai/usage";
+import { spiritCategoriesForAi } from "@/lib/spirits/load";
 import { strictSchemaProblems } from "@/lib/ai/schema-limits";
 import { SHOP_DOMAINS, shopSourceAllowed } from "@/lib/research/shops/match";
 import { hasCompletePercents, normalizeGrapeShares, type GrapeShare } from "@/lib/grapes/shares";
 import {
   GrapeShareSchema,
   CorrectionSchema,
-  RecognitionSchema,
   TastedTextSchema,
-  TextEntrySchema,
+  recognitionSchema,
+  textEntrySchema,
   WineProposalSchema,
   missingEnrichableFields,
   normalizeProposal,
@@ -94,7 +95,17 @@ function imageBlocks(images: LabelImage[]): Anthropic.Beta.BetaContentBlockParam
   ]);
 }
 
+/**
+ * Ausgabeformat: JSON-Schema mit den Kategorien als enum (für Claude), eingelesen mit der
+ * nachsichtigen Variante (unbekannter Name → Abgleich im Code statt Fehler).
+ */
+function enumFormat<S extends z.ZodType, L extends z.ZodType>(strict: S, lenient: L) {
+  return { ...betaZodOutputFormat(strict), parse: (content: string) => lenient.parse(JSON.parse(content)) as z.infer<L> };
+}
+
 async function recognizeWith(model: string, images: LabelImage[]): Promise<Recognition> {
+  // Kategorien der Spirituosen aus der DB (5 Min. zwischengespeichert; sonst feste Liste).
+  const { categories } = await spiritCategoriesForAi();
   const response = await withUsage({ purpose: "recognize" }, () => anthropic().beta.messages.parse({
     model,
     max_tokens: 16000,
@@ -108,7 +119,7 @@ async function recognizeWith(model: string, images: LabelImage[]): Promise<Recog
         ],
       },
     ],
-    output_config: { format: betaZodOutputFormat(RecognitionSchema) },
+    output_config: { format: enumFormat(recognitionSchema(categories), recognitionSchema(categories, true)) },
     ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
   }));
 
@@ -487,13 +498,14 @@ const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in 
 export async function parseTextEntry(
   text: string,
 ): Promise<{ proposal: WineProposal; purchase: TextEntry["purchase"]; bestBefore: string | null; spirit: SpiritLabel | null }> {
+  const { categories } = await spiritCategoriesForAi();
   const run = async (model: string) => {
     const response = await withUsage({ purpose: "recognize" }, () => anthropic().beta.messages.parse({
       model,
       max_tokens: 8000,
       system: TEXT_SYSTEM,
       messages: [{ role: "user", content: text }],
-      output_config: { format: betaZodOutputFormat(TextEntrySchema) },
+      output_config: { format: enumFormat(textEntrySchema(categories), textEntrySchema(categories, true)) },
       ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
     }));
     if (response.stop_reason === "refusal" || !response.parsed_output) {

@@ -9,7 +9,7 @@ import "server-only";
 
 import type { Database } from "@/lib/database.types";
 import { webResearch } from "@/lib/ingest/recognize";
-import { loadSpiritCategories } from "@/lib/spirits/load";
+import { spiritCategoriesForAi } from "@/lib/spirits/load";
 import { SPIRIT_FIELD_LABELS, spiritFindings, spiritResearchSchema, type SpiritFindings } from "@/lib/spirits/research";
 import { toSpiritFields } from "@/lib/spirits/categories";
 import type { Db } from "@/lib/taste/store";
@@ -28,8 +28,10 @@ export async function researchAndFillSpirit(
   wine: SpiritWine,
   extra: { pages?: { url: string; title: string; text: string }[]; pagesNote?: string } = {},
 ): Promise<{ filled: string[]; suggested: number }> {
-  const [categories, { data: row, error }] = await Promise.all([
-    loadSpiritCategories(db),
+  const [ai, { data: row, error }] = await Promise.all([
+    // Kategorien aus der DB (5 Min. zwischengespeichert); nicht lesbar → feste Liste fürs Schema,
+    // dann aber keine Zuordnung zu einer id.
+    spiritCategoriesForAi(db),
     db.from("wines").select("*").eq("id", wine.id).maybeSingle(),
   ]);
   if (error) throw error;
@@ -45,11 +47,11 @@ export async function researchAndFillSpirit(
     toolName: "report_spirit_details",
     pages: extra.pages,
     toolDescription: "Meldet die per Websuche gefundenen Angaben zur Spirituose samt Quellen-URLs.",
-    schema: spiritResearchSchema(categories),
+    schema: spiritResearchSchema(ai.categories),
     maxSearches: 5,
   });
   if (!raw) return { filled: [], suggested: 0 };
-  const found = spiritFindings(raw, categories);
+  const found = spiritFindings(raw, ai.fromDb ? ai.categories : []);
   if (!found) return { filled: [], suggested: 0 };
   return applySpiritFindings(db, wine.id, current, found, sourceNote(raw.sources));
 }

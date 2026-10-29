@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { COUNTRY_HINT } from "@/lib/format";
 import { categoryLabel, categoryPath, type SpiritCategory } from "./categories";
+import { MAX_ENUM } from "./ai-categories";
 
 export const UNKNOWN_CATEGORY = "unbekannt";
 
@@ -18,6 +19,8 @@ export function categoryChoices(all: SpiritCategory[]) {
 
 export function spiritResearchSchema(all: SpiritCategory[]) {
   const labels = categoryChoices(all).map((c) => c.label);
+  // Sehr viele Kategorien: Text statt enum (Grenze der strukturierten Ausgabe), Abgleich im Code.
+  const category = labels.length < MAX_ENUM ? z.enum([UNKNOWN_CATEGORY, ...labels] as [string, ...string[]]) : z.string();
   return z.object({
     matches_spirit: z.boolean().describe("true nur, wenn die Quellen genau diese Spirituose (Name + Hersteller/Destillerie, gleiche Altersangabe) beschreiben"),
     producer: z.string().describe("Destillerie bzw. Hersteller; leer, wenn unbekannt"),
@@ -28,9 +31,7 @@ export function spiritResearchSchema(all: SpiritCategory[]) {
     cask: z.string().describe("Fass, Reifung bzw. Finish (z. B. „Sherry Cask Finish“); leer, wenn unbekannt"),
     distilled_year: z.number().describe("Jahr der Destillation (ganze Zahl); 0 = unbekannt"),
     bottled_year: z.number().describe("Jahr der Abfüllung (ganze Zahl); 0 = unbekannt"),
-    category: z
-      .enum([UNKNOWN_CATEGORY, ...labels] as [string, ...string[]])
-      .describe(`Passende bestehende Kategorie; „${UNKNOWN_CATEGORY}“, wenn keine eindeutig passt (keine neuen Kategorien)`),
+    category: category.describe(`Passende bestehende Kategorie (${labels.join("; ")}); „${UNKNOWN_CATEGORY}“, wenn keine eindeutig passt (keine neuen Kategorien)`),
     sources: z.array(z.string()).describe("URLs der verwendeten Quellen"),
   });
 }
