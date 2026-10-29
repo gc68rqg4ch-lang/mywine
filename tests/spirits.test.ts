@@ -174,7 +174,7 @@ test("Bot-Plan: nur bestehende Kategorien – Unterkategorie, sonst Hauptkategor
   const withoutOther = planCategory(CATS.filter((c) => c.id !== "c-andere"), draftFromLabel({ ...label, category: "", subcategory: "" }));
   assert.deepEqual([withoutOther.categoryId, withoutOther.done], [null, false]);
   // Ablauf: Kategorie vor allem anderen; Jahrgang bei Spirituosen freiwillig.
-  const state = { step: "review", proposal: { type: "spirit", vintage_year: null }, spirit: sake } as unknown as IngestState;
+  const state = { step: "review", proposal: { type: "spirit", vintage_year: null, bottle_size_ml: 700 }, spirit: sake } as unknown as IngestState;
   assert.equal(nextPurchaseStep(state), "category_main");
   assert.equal(nextPurchaseStep({ ...state, spirit: rye }), "location");
   assert.equal(nextPurchaseStep({ ...state, spirit: ok }), "location");
@@ -369,14 +369,23 @@ test("Bot: unsicher → „Wein oder Spirituose?“, unbekannte Unterkategorie �
 
   await handleUpdate(cb(callbackData("kind", JOB, "s")) as never);
   assert.equal(state().proposal.type, "spirit");
-  assert.equal(state().proposal.bottle_size_ml, 700, "Standard 0,7 l");
-  // „Rye“ gibt es nicht: Whisky, ohne Rückfrage und ohne „Anlegen“; kein Jahrgang nötig → Lagerort.
-  assert.equal(state().step, "location");
+  assert.equal(state().proposal.bottle_size_ml, null, "keine Standardgrösse (0,7 l) mehr");
+  // „Rye“ gibt es nicht: Whisky, ohne Rückfrage und ohne „Anlegen“; kein Jahrgang nötig; Grösse nicht lesbar → Rückfrage.
+  assert.equal(state().step, "size");
+  assert.match(lastText(), /Wie gross ist die Flasche\?/);
+  assert.deepEqual(buttons(), ["35 cl", "50 cl", "70 cl", "75 cl", "1 l", "✏️ Andere", "✖️ Abbrechen"]);
   assert.equal(state().spirit?.categoryId, "c-whisky");
   assert.ok(!sent().some((m) => /anlegen/i.test(String(m.body.text))), "nichts zum Anlegen vorgeschlagen");
   assert.ok(!buttons().some((b) => /Anlegen/.test(b)));
   assert.equal(net.tables.spirit_categories.length, CATS.length, "nichts angelegt");
 
+  await handleUpdate(cb(callbackData("size", JOB, "other")) as never);
+  assert.match(lastText(), /Wie viel enthält die Flasche/);
+  await handleUpdate({ update_id: 3, message: { message_id: 6, from: { id: 111, is_bot: false, first_name: "M" }, chat: { id: 111, type: "private" }, date: 0, text: "zwei" } } as never);
+  assert.match(lastText(), /nicht verstanden/);
+  await handleUpdate({ update_id: 4, message: { message_id: 7, from: { id: 111, is_bot: false, first_name: "M" }, chat: { id: 111, type: "private" }, date: 0, text: "0,7 l" } } as never);
+  assert.equal(state().proposal.bottle_size_ml, 700);
+  assert.equal(state().step, "location");
   await handleUpdate(cb(callbackData("loc", JOB, "wohnzimmer")) as never);
   await handleUpdate(cb(callbackData("qty", JOB, "1")) as never);
   await handleUpdate(cb(callbackData("skipprice", JOB)) as never);
@@ -413,6 +422,9 @@ test("Bot: unsichere Hauptkategorie → nur bestehende als Knöpfe, dann Unterka
   await handleUpdate(cb(callbackData("catsub", JOB, "1")) as never);
   assert.equal(state().spirit?.categoryId, "c-bourbon");
   assert.equal(state().spirit?.label, "Whisky › Bourbon");
+  assert.equal(state().step, "size");
+  await handleUpdate(cb(callbackData("size", JOB, "500")) as never);
+  assert.equal(state().proposal.bottle_size_ml, 500);
   assert.equal(state().step, "location");
   assert.equal(net.tables.spirit_categories.length, CATS.length, "„Sake“ nicht angelegt");
 });

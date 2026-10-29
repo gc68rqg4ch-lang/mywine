@@ -10,7 +10,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { MAX_CANDIDATES, shoppingCandidates, shoppingUrl } from "@/lib/research/serpapi";
 import { SERPER_URL, parsePriceText, serperCandidates } from "@/lib/research/serper";
 import { SERPER_SEARCH_URL, serperSearchHits } from "@/lib/research/site-search";
-import { hardCheck, judgePrompt, producerCheck } from "@/lib/research/price-judge";
+import { JUDGE_SYSTEM, hardCheck, judgePrompt, producerCheck, styleCheck } from "@/lib/research/price-judge";
+import { T } from "@/lib/bot/texts";
 import { merchantKey, merchantOf, merchantUrl, shopNameFromHtml } from "@/lib/research/merchant";
 import { readFileSync, readdirSync } from "node:fs";
 
@@ -21,7 +22,7 @@ const SEED = (() => {
   const sql = readFileSync(`${dir}/${file}`, "utf8");
   return [...sql.matchAll(/\('([^']+)', '([^']+)', '([^']+)', (true|false), '(known)'\)/g)].map((m) => ({ name_key: m[1], display_name: m[2], domain: m[3], swiss: m[4] === "true", source: m[5] }));
 })();
-import { researchPrice, serpQueriesAllowed, type PriceWine } from "@/lib/research/price";
+import { researchPrice, serpQueriesAllowed, sizeUnknownFinding, type PriceWine } from "@/lib/research/price";
 import { googleQueries } from "@/lib/research/price-search";
 import { sizeFromText } from "@/lib/research/price-match";
 import { costUsd } from "@/lib/ai/cost";
@@ -606,4 +607,51 @@ test("Hennessy «Very Special»: Google-Suche mit «Hennessy Very Special 70cl»
   assert.ok(finding.kind === "exact" && finding.amount >= 44.95 && finding.amount <= 45.9 && finding.merchants === 2, JSON.stringify(finding));
   assert.ok([...calls, ...searchCalls].some((c) => c.q.startsWith("Hennessy Very Special 70cl")));
   assert.ok(calls.length + searchCalls.length <= 4);
+});
+
+// --- Ausführung (Liqueur/Holzfass) und unbekannte Grösse
+
+test("Ausführung hart: Liqueur gegen Brand, Holzfass gegen ohne → variant; Amaretto Liqueur bleibt gleich", () => {
+  const yes = { verdict: "yes" as const, reason: "gleich", sizeMl: 500, year: null };
+  const holz = { name: "Pflaumenbrand Holzfass", cask: null };
+  assert.equal(styleCheck(holz, { title: "Pflaumenbrand Liqueur Urs Hecht 50cl" }, yes).verdict, "variant");
+  assert.equal(styleCheck(holz, { title: "Pflaumenbrand Urs Hecht 50cl" }, yes).verdict, "variant", "ohne Holzfass");
+  assert.equal(styleCheck(holz, { title: "Pflaumenbrand Urs Hecht, im Holzfass 50 cl" }, yes).verdict, "yes");
+  assert.equal(styleCheck({ name: "Williamsbrand Liqueur" }, { title: "Williamsbrand Urs Hecht 50cl" }, yes).verdict, "variant");
+  assert.equal(styleCheck({ name: "Amaretto" }, { title: "Lazzaroni Amaretto Liqueur 70cl" }, yes).verdict, "yes");
+  assert.match(JUDGE_SYSTEM, /Liqueur\/Likör statt Brand/);
+  assert.match(JUDGE_SYSTEM, /Holzfass\/Barrique/);
+});
+
+test("Pflaumenbrand Holzfass (Urs Hecht): «… im Holzfass» 124.00 gewählt, Pflaumenbrand Liqueur nur variant", async () => {
+  reset();
+  answers.set("Pflaumenbrand Holzfass 50cl", [
+    g("Pflaumenbrand Liqueur Urs Hecht 50cl", "schuewo.ch", 54.5),
+    g("Pflaumenbrand Urs Hecht, im Holzfass 50 cl", "schuewo.ch", 124),
+  ]);
+  judge = { Pflaumenbrand: { v: "yes" } };
+  const { finding, diagnostics } = await researchPrice(spirit("Pflaumenbrand Holzfass", "Urs Hecht"), null, 500, null, { db, ...keys("serper") });
+  assert.ok(finding.kind === "exact" && finding.amount === 124, JSON.stringify(finding));
+  assert.deepEqual(diagnostics.shopping!.candidates.filter((c) => c.origin === "shopping").map((c) => [c.price, c.verdict]), [[54.5, "variant"], [124, "yes"]]);
+});
+
+test("Grösse unbekannt: ohne Grösse suchen, kein hartes Kriterium, Treffer nur als Rückfrage mit Angebotsgrösse", async () => {
+  reset();
+  answers.set("Pflaumenbrand Holzfass", [g("Pflaumenbrand Urs Hecht, im Holzfass 50 cl", "schuewo.ch", 124)]);
+  judge = { Pflaumenbrand: { v: "yes" } };
+  const { finding } = await researchPrice(spirit("Pflaumenbrand Holzfass", "Urs Hecht"), null, null, null, { db, ...keys("serper") });
+  assert.deepEqual(finding, { kind: "other", amount: 124, merchant: "schuewo.ch", url: finding.kind === "other" ? finding.url : "", year: null, sizeMl: 500, reason: "size_unknown", why: "Angebot für 50 cl – stimmt die Grösse" });
+  assert.equal(qs()[0], "Pflaumenbrand Holzfass", "Abfrage ohne Grösse");
+  assert.ok([...qs(), ...searchCalls.map((c) => c.q)].every((q) => !/\d+cl/.test(q)));
+  assert.equal(T.priceSizeCheck("🥃 Pflaumenbrand Holzfass", "CHF 124.00", "50 cl", "schuewo.ch"), "🥃 Pflaumenbrand Holzfass\nGefunden: CHF 124.00 für 50 cl (schuewo.ch) – stimmt die Grösse? Übernehmen?");
+  // Grösse bekannt: wie bisher direkt ein Treffer
+  assert.equal(sizeUnknownFinding({ kind: "none" }).kind, "none");
+});
+
+test("Suchbegriffe: Marke schon im Namen → nicht nochmals voranstellen", () => {
+  const q = googleQueries({ name: "Hennessy Very Special", producer: "Hennessy", sizeMl: 700 });
+  assert.ok([...q.shopping, ...q.search].every((x) => !/Hennessy Hennessy/.test(x)), JSON.stringify(q));
+  assert.equal(q.brand, null);
+  const noSize = googleQueries({ name: "Galliano Vanilla", producer: "Galliano", sizeMl: null });
+  assert.deepEqual(noSize, { shopping: ["Galliano Vanilla"], search: ["Galliano Vanilla site:.ch"], brand: null });
 });

@@ -32,7 +32,8 @@ export type JudgeBottle = {
   type: string | null;
   category?: string | null;
   year: number | null;
-  sizeMl: number;
+  /** null = Grösse der Flasche unbekannt (kein hartes Kriterium) */
+  sizeMl: number | null;
   alcohol?: number | null;
   age?: number | null;
   cask?: string | null;
@@ -41,7 +42,7 @@ export type JudgeBottle = {
 export const JUDGE_SYSTEM = `Du prüfst für eine private Weinsammlung in der Schweiz, welche Angebote aus Google Shopping genau diese Flasche sind.
 Je Kandidat same_product:
 - yes: dasselbe Produkt. Werbewörter („Top-Angebot“, „Aktion“), Schreibweisen, Apostrophe, Gross-/Kleinschreibung, Reihenfolge von Marke und Name und zusätzliche Beschreibungen (Kategorie, Herkunft, Alkohol) sind egal. Fehlt die Firma (z. B. Destillerie) im Titel, ist das egal, solange Marke bzw. Name stimmen.
-- variant: dasselbe Produkt in anderer Ausführung – Riserva/Reserva/Reservado statt normal (oder umgekehrt), anderes Alter bzw. andere Reifezeit, Cask Strength, Single Cask, XO/VSOP/VS, Sonderedition, anderer Jahrgang, Geschenkset/mit Gläsern, Mehrfachpackung.
+- variant: dasselbe Produkt in anderer Ausführung – Riserva/Reserva/Reservado statt normal (oder umgekehrt), Liqueur/Likör statt Brand/Edelbrand (oder umgekehrt), Holzfass/Barrique/„Vieille“ statt ohne (oder umgekehrt), anderes Alter bzw. andere Reifezeit, Cask Strength, Single Cask, XO/VSOP/VS, Sonderedition, anderer Jahrgang, Geschenkset/mit Gläsern, Mehrfachpackung.
 - Die Flaschengrösse prüft der Code (je Kandidat schon in ml umgerechnet): bewerte sie nicht – auch nicht „50 cl“ gegen „500 ml“.
 - no: anderer Produzent bzw. andere Marke oder anderes Produkt (auch gleiche Gattung wie „Amaretto“ einer anderen Marke), Zubehör, Gutscheine.
 Bei Gattungsnamen (gattungsname: true – z. B. Pflaumenbrand, Amaretto, Grappa, Kirsch) muss der Produzent bzw. die Marke im Titel oder beim Händler stehen, sonst no.
@@ -56,7 +57,7 @@ export function judgePrompt(bottle: JudgeBottle, candidates: Pick<ShoppingCandid
     art: bottle.type === "spirit" ? "Spirituose" : bottle.type ? `Wein (${bottle.type})` : null,
     kategorie: bottle.category ?? null,
     jahrgang: bottle.year ?? "ohne Jahrgang",
-    groesse_ml: bottle.sizeMl,
+    groesse_ml: bottle.sizeMl ?? "unbekannt",
     alkohol: bottle.alcohol ?? null,
     alter_jahre: bottle.age ?? null,
     fass: bottle.cask ?? null,
@@ -83,10 +84,32 @@ export function hardCheck(bottle: Pick<JudgeBottle, "year" | "sizeMl">, j: Pick<
   const year = j.vintage >= 1900 && j.vintage <= 2100 ? Math.round(j.vintage) : null;
   const base = { sizeMl, year };
   if (j.same_product === "no") return { verdict: "no", reason: j.reason, ...base };
-  if (sizeMl != null && sizeMl !== bottle.sizeMl) return { verdict: "variant", reason: `andere Grösse (${Math.round(sizeMl / 10)} cl)`, ...base };
+  if (sizeMl != null && bottle.sizeMl != null && sizeMl !== bottle.sizeMl) return { verdict: "variant", reason: `andere Grösse (${Math.round(sizeMl / 10)} cl)`, ...base };
   if (bottle.year != null && year !== bottle.year) return { verdict: "variant", reason: year == null ? "Jahrgang nicht genannt" : `Jahrgang ${year}`, ...base };
   if (bottle.year == null && year != null) return { verdict: "variant", reason: `Jahrgang ${year}`, ...base };
   return { verdict: j.same_product, reason: j.reason, ...base };
+}
+
+/** Liqueur/Likör bzw. Holzfass/Barrique/„Vieille“ im Namen (Wortteile: „Pflaumenbrand Holzfass“). */
+const LIQUEUR_RE = /lik(?:ö|oe|o)r|liqueur|liquore|licor\b|liquor\b|crème de|creme de/i;
+const CASK_RE = /holzfass|eichenfass|barrique|vieille|im fass\b|fassgereift|fasslagerung/i;
+/** Brand/Edelbrand („Pflaumenbrand“, „Kirsch-Edelbrand“, „Williamsgeist“) – nur dagegen zählt Liqueur. */
+const BRAND_RE = /brand\b|schnaps|eau[- ]de[- ]vie|geist\b|wasser\b|pfl(?:ü|u)mli|grappa/i;
+
+/**
+ * Ausführung hart (rein): Liqueur/Likör gegenüber Brand und Holzfass/Barrique/„Vieille“
+ * gegenüber ohne – steht es nur auf einer Seite, höchstens variant.
+ */
+export function styleCheck(bottle: Pick<JudgeBottle, "name" | "cask">, c: Pick<ShoppingCandidate, "title">, v: CandidateVerdict): CandidateVerdict {
+  if (v.verdict !== "yes") return v;
+  const want = `${bottle.name} ${bottle.cask ?? ""}`;
+  // Liqueur nur gegenüber einem Brand (Amaretto ist ohnehin ein Likör – „Amaretto Liqueur“ bleibt gleich).
+  const lw = LIQUEUR_RE.test(want);
+  const lc = LIQUEUR_RE.test(c.title);
+  if (lw && !lc && BRAND_RE.test(c.title)) return { ...v, verdict: "variant", reason: "Brand statt Liqueur" };
+  if (lc && !lw && BRAND_RE.test(want)) return { ...v, verdict: "variant", reason: "Liqueur statt Brand" };
+  if (CASK_RE.test(want) !== CASK_RE.test(c.title)) return { ...v, verdict: "variant", reason: CASK_RE.test(want) ? "ohne Holzfass" : "Holzfass statt ohne" };
+  return v;
 }
 
 /**
@@ -116,6 +139,6 @@ export async function judgeCandidates(bottle: JudgeBottle, candidates: ShoppingC
   return candidates.map((_, i) => {
     const j = judged.find((x) => x.index === i);
     // Grösse allein aus dem Titel (im Code in ml umgerechnet), nicht aus dem Urteil.
-    return j ? producerCheck(bottle, candidates[i], hardCheck(bottle, { ...j, size_ml: sizeFromText(candidates[i].title) ?? 0 })) : { verdict: "no", reason: "nicht bewertet", sizeMl: null, year: null };
+    return j ? producerCheck(bottle, candidates[i], styleCheck(bottle, candidates[i], hardCheck(bottle, { ...j, size_ml: sizeFromText(candidates[i].title) ?? 0 }))) : { verdict: "no", reason: "nicht bewertet", sizeMl: null, year: null };
   });
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { completeWineName } from "./wine-names";
+import { sizeFromText } from "@/lib/research/price-match";
+import { completeSpiritName, completeWineName } from "./wine-names";
 import { COUNTRY_HINT, WINE_TYPES } from "@/lib/format";
 import { normalizeGrapeShares, type GrapeSource } from "@/lib/grapes/shares";
 import type { SpiritDraft, SpiritLabel } from "@/lib/spirits/draft";
@@ -16,7 +17,7 @@ export const GrapeShareSchema = z.object({
 
 /** Weindaten, wie sie vom Etikett gelesen bzw. korrigiert werden. */
 export const WineProposalSchema = z.object({
-  name: z.string().nullable().describe("Name des Weins ohne Produzent und ohne Jahrgang"),
+  name: z.string().nullable().describe("Vollständiger Name ohne Jahrgang (mit Zusätzen wie Liqueur, Holzfass); Wein ohne Produzent, Spirituose mit Marke, wenn sie Teil des Produktnamens ist (z. B. Galliano Vanilla)"),
   producer: z.string().nullable().describe("Weingut / Produzent"),
   vintage_year: z.number().int().nullable().describe("Jahrgang, z. B. 2019; null wenn ohne Jahrgang"),
   country: z.string().nullable().describe(`${COUNTRY_HINT}; z. B. Spanien, Frankreich, Schweiz, USA`),
@@ -26,8 +27,8 @@ export const WineProposalSchema = z.object({
   grape_shares: z
     .array(GrapeShareSchema)
     .describe("Rebsorten mit Anteil; percent nur, wenn der Anteil angegeben ist, sonst null"),
-  alcohol_content: z.number().nullable().describe("Alkoholgehalt in Volumenprozent, z. B. 13.5"),
-  bottle_size_ml: z.number().int().nullable().describe("Flaschengrösse in ml, z. B. 750 für 75 cl"),
+  alcohol_content: z.number().nullable().describe("Alkoholgehalt in Volumenprozent, z. B. 13.5 – nur, wenn er dasteht; sonst null"),
+  bottle_size_ml: z.number().int().nullable().describe("Flaschengrösse in ml, z. B. 750 für 75 cl, 500 für 50 cl – nur, wenn sie dasteht; sonst null (keine Standardgrösse)"),
 });
 export type WineProposal = z.infer<typeof WineProposalSchema>;
 
@@ -116,6 +117,8 @@ export type PriceOffer = {
   mode: "both" | "regular";
   /** Abweichender Zusatz, z. B. „Angebot ohne Riserva“ (kein exakter Treffer). */
   why?: string;
+  /** Grösse der Flasche war unbekannt: beim Übernehmen die Grösse des Angebots eintragen. */
+  set_size?: boolean;
 };
 
 export type StorageRoom = "Weinkeller" | "Wohnzimmer";
@@ -140,6 +143,8 @@ export type IngestStep =
   | "review"
   | "correcting"
   | "location"
+  /** Flaschengrösse nicht sicher gelesen: Knöpfe (35 cl … 1 l) oder getippt. */
+  | "size"
   | "quantity"
   | "price"
   /** Geschenk: „Von wem?“ – Freitext oder „Überspringen“. */
@@ -302,7 +307,7 @@ export function normalizeProposal(p: WineProposal, options: { spiritPossible?: b
   const size = p.bottle_size_ml;
   return {
     // Nur Stufe („Reserva“) → Marke davor („Legaris Reserva“), wie die bestehenden Weine.
-    name: completeWineName(text(p.name), text(p.producer)),
+    name: p.type === "spirit" ? completeSpiritName(text(p.name), text(p.producer)) : completeWineName(text(p.name), text(p.producer)),
     producer: text(p.producer),
     vintage_year: year != null && year >= 1800 && year <= 2100 ? year : null,
     country: text(p.country),
@@ -312,9 +317,9 @@ export function normalizeProposal(p: WineProposal, options: { spiritPossible?: b
     grape_shares: normalizeGrapeShares(p.grape_shares),
     // Spirituosen (bzw. noch unklar, ob Spirituose) bis 100 % vol, Wein höchstens 25 %.
     alcohol_content:
-      alcohol != null && alcohol >= 0 && alcohol <= (p.type === "spirit" || options.spiritPossible ? 100 : 25) ? Math.round(alcohol * 10) / 10 : null,
-    // Spirituose ohne Angabe: Standard 0,7 l.
-    bottle_size_ml: size != null && size > 0 && size <= 30000 ? size : p.type === "spirit" ? 700 : null,
+      alcohol != null && alcohol > 0 && alcohol <= (p.type === "spirit" || options.spiritPossible ? 100 : 25) ? Math.round(alcohol * 10) / 10 : null,
+    // Keine Standardgrösse: nur was auf dem Etikett bzw. im Text steht (sonst Rückfrage).
+    bottle_size_ml: size != null && size >= 20 && size <= 30000 ? Math.round(size) : null,
   };
 }
 
@@ -327,6 +332,21 @@ export function needsVintage(state: Pick<IngestState, "proposal" | "vintage_unce
   // Spirituosen: Jahrgang freiwillig (Destilliert/Abgefüllt stehen eigens) – nicht nachfragen.
   if (state.proposal.type === "spirit") return false;
   return !state.vintage_confirmed && (state.proposal.vintage_year == null || state.vintage_uncertain === true);
+}
+
+/**
+ * Antwort auf die Grössenfrage: „50 cl“, „500 ml“, „0,5 l“, „0,7“, „1.5 Liter“; eine Zahl allein bis
+ * 300 = cl, ab 20 sonst ml. Sonst null.
+ */
+export function parseSizeAnswer(text: string): number | null {
+  const fromText = sizeFromText(text);
+  if (fromText) return fromText >= 20 && fromText <= 30000 ? fromText : null;
+  const m = text.trim().replace(",", ".").match(/^(\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (n > 0 && n < 10) return Math.round(n * 1000);
+  if (n >= 10 && n <= 300) return Math.round(n * 10);
+  return n > 300 && n <= 30000 ? Math.round(n) : null;
 }
 
 /** Antwort auf die Jahrgangsfrage: „2019“ → 2019, „NV“/„ohne“ → null, sonst undefined. */

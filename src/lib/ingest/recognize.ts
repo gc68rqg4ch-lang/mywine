@@ -56,6 +56,17 @@ export class RecognitionError extends Error {}
 const NAME_RULE =
   "Den Produzenten nicht in den Namen – ausser der Name besteht nur aus einer Qualitäts-/Reifestufe oder einem Gattungswort (Reserva, Gran Reserva, Grande Reserva, Riserva, Crianza, Reserve, Grand Vin, Cuvée, Tinto, Rosso): dann Produzent bzw. Marke davor, z. B. „Legaris Reserva“, „Protos Reserva“, „Pago de los Capellanes Reserva“ (ohne „Bodegas“).";
 
+/**
+ * Gilt für Foto und Text: Name vollständig, bei Spirituosen mit Marke, wenn sie Teil des
+ * Produktnamens ist; Grösse und Alkohol nur, was dasteht (keine Standardwerte).
+ */
+export const FULL_NAME_RULE =
+  "Den Produktnamen vollständig übernehmen, mit allen Zusätzen wie Liqueur/Likör, Holzfass, Barrique, Reserve, Single Cask, Altersangabe (z. B. „Pflaumenbrand Holzfass“, „Williamsbrand Liqueur“ – nicht „Pflaumenbrand“, „Williamsbrand“).";
+export const SPIRIT_NAME_RULE =
+  "Bei Spirituosen ist name der Name, unter dem man die Flasche kennt und kauft – mit Marke, wenn die Marke Teil des Produktnamens ist: „Galliano Vanilla“ (nicht „Vanilla“), „Hendrick's Lunar“, „Malfy Gin Rosa“, „Hennessy Very Special“, „Lazzaroni Amaretto“, „Diplomático Reserva Exclusiva“; bei kleinen Brennereien ohne Markennamen den Produktnamen allein („Pflaumenbrand Holzfass“, Produzent Urs Hecht). Steht die Marke schon im Namen, nicht doppeln („Blanton's Original Single Barrel“, „Maker's Mark No. 46“). producer = Hersteller/Destillerie bzw. Marke (darf zusätzlich im Namen stehen). Bei Wein bleibt der Produzent aus dem Namen („Pintia“, Produzent „Vega Sicilia“).";
+export const SIZE_ALCOHOL_RULE =
+  "bottle_size_ml und alcohol_content nur, wenn sie dastehen und sicher lesbar sind – sonst null; keine Standardgrösse (weder 70 cl noch 75 cl) annehmen und keinen Alkoholgehalt schätzen (die Recherche ergänzt ihn).";
+
 /** Gilt für Foto und Text: Ablaufdatum nur, wenn klar lesbar – sonst leer. */
 const BEST_BEFORE_RULE =
   "best_before: Ablaufdatum, falls eins dasteht (oft bei alkoholfreien Weinen und Schaumweinen: „mindestens haltbar bis“, „MHD“, „best before“, „à consommer de préférence avant“, „consumir preferentemente antes de“, „da consumarsi preferibilmente entro“). Mit Tag als YYYY-MM-DD, nur Monat und Jahr als YYYY-MM (z. B. „09/2028“ oder „SEP 2028“ → 2028-09). Leer, wenn keins dasteht oder es nicht klar lesbar ist – nicht raten, nie den Jahrgang oder das Abfülldatum (Los/Lot) nehmen.";
@@ -64,11 +75,11 @@ const RECOGNITION_SYSTEM = `Du liest Weinetiketten für eine private Weinsammlun
 Du bekommst Fotos der Vorder- und meist auch der Rückseite derselben Flasche.
 Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. Land aus "Product of Spain").
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
-- name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist.
+- name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist. ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE}
 - country: ${COUNTRY_HINT} (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira – das ist Wein), spirit (Spirituose: Whisky, Grappa, Likör, Obstbrand, Cognac/Brandy, Rum, Gin, Vodka, Tequila/Mezcal, Kräuterschnaps).
-- bottle_size_ml: aus der Füllmenge (75 cl = 750, 70 cl = 700, 37,5 cl = 375, 1,5 l = 1500).
-- spirit: kind „spirit“ bei einer Spirituose, „wine“ bei Wein, „unsure“, wenn du es nicht sicher erkennst. Bei Spirituosen: name = Name der Abfüllung (z. B. „Lagavulin 16“, „Woodford Reserve“), producer = Destillerie bzw. Hersteller, region z. B. Islay, Speyside, Kentucky, Cognac; alcohol_content in % vol (oft 40–60); grape_shares leer (bei Grappa die Rebsorte nur, wenn sie dasteht). Dazu category/subcategory (Haupt-, Unterkategorie – nur aus den im Schema genannten Kategorien, nie neue Namen erfinden; z. B. „Monovitigno Nosiola“ ist keine Unterkategorie, sondern gehört zu Grappa / Trester ohne Unterkategorie), Altersangabe, Fass/Finish, Destilliert- und Abfülljahr – nur, was auf dem Etikett steht; sonst leer bzw. 0. vintage_year nur, wenn ein Jahrgang ausdrücklich als solcher dasteht (sonst null; Destilliert/Abgefüllt gehören in spirit).
+- bottle_size_ml: aus der aufgedruckten Füllmenge (75 cl = 750, 70 cl = 700, 50 cl = 500, 37,5 cl = 375, 1,5 l = 1500). ${SIZE_ALCOHOL_RULE}
+- spirit: kind „spirit“ bei einer Spirituose, „wine“ bei Wein, „unsure“, wenn du es nicht sicher erkennst. Bei Spirituosen: name = Name der Abfüllung wie oben (z. B. „Lagavulin 16“, „Galliano Vanilla“), producer = Destillerie bzw. Hersteller, region z. B. Islay, Speyside, Kentucky, Cognac; alcohol_content in % vol, nur vom Etikett; grape_shares leer (bei Grappa die Rebsorte nur, wenn sie dasteht). Dazu category/subcategory (Haupt-, Unterkategorie – nur aus den im Schema genannten Kategorien, nie neue Namen erfinden; z. B. „Monovitigno Nosiola“ ist keine Unterkategorie, sondern gehört zu Grappa / Trester ohne Unterkategorie), Altersangabe, Fass/Finish, Destilliert- und Abfülljahr – nur, was auf dem Etikett steht; sonst leer bzw. 0. vintage_year nur, wenn ein Jahrgang ausdrücklich als solcher dasteht (sonst null; Destilliert/Abgefüllt gehören in spirit).
 - grape_shares: Rebsorten, die auf dem Etikett stehen; percent nur, wenn der Anteil aufgedruckt ist (z. B. "85 % Tempranillo"), sonst null. Bei reinsortigen Weinen ("100 % Merlot" oder Sortenbezeichnung wie "Pinot Noir") ist percent 100.
 - vintage_certain: true nur, wenn der Jahrgang klar auf dem Etikett steht. Fehlt er oder ist er unleserlich, ist vintage_year null bzw. vintage_certain false – rate keinen Jahrgang.
 - image_sides: für jedes Foto in Reihenfolge, ob es das Vorderetikett (front), das Rückenetikett (back) oder etwas anderes (other) zeigt.
@@ -465,8 +476,8 @@ export async function enrichFromWeb(proposal: WineProposal): Promise<{
 
 const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in der Schweiz aus einer kurzen Nachricht, z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“.
 Übernimm nur, was in der Nachricht steht oder sich eindeutig daraus ergibt; erfinde nichts.
-- name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
-- type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500).
+- name: Weinname ohne Jahrgang. ${NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
+- type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500, „50 cl“ = 500). ${SIZE_ALCOHOL_RULE}
 - ${COUNTRY_HINT}.
 - Spirituosen (Whisky, Grappa, Likör, Obstbrand, Cognac, Rum, Gin …): type spirit, im Block spirit Kategorie, Altersangabe, Fass/Finish, Destilliert/Abgefüllt, wenn genannt; kind unsure, wenn unklar ist, ob Wein oder Spirituose. Bei Wein kind wine.
 - ${BEST_BEFORE_RULE}

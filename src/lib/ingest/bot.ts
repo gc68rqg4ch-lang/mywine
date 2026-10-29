@@ -83,7 +83,7 @@ import {
   startTastedFromPhoto,
   tastedAnswerFit,
 } from "@/lib/chat/tasted";
-import { parseVintageAnswer, type IngestState, type StorageRoom, type WineProposal } from "./schema";
+import { parseSizeAnswer, parseVintageAnswer, type IngestState, type StorageRoom, type WineProposal } from "./schema";
 import { handleChatCallback, handleChatMessage, resetChat } from "@/lib/chat/handler";
 import { isChatCallback } from "@/lib/chat/proposals";
 import { handleResearchCallback, isResearchCallback } from "@/lib/chat/research";
@@ -470,6 +470,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
           "review",
           "correcting",
           "location",
+          "size",
           "quantity",
           "price",
           "gift_from",
@@ -509,6 +510,21 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
       await advanceTo(db, job, chatId, "quantity", { quantity });
+      return;
+    }
+
+    case "size": {
+      await answerCallback(cb.id);
+      if (state.step !== "size") return;
+      await clearKeyboard(chatId, messageId);
+      if (parsed.value === "other") {
+        await touchFlow(db, job.id);
+        await sendMessage(chatId, T.sizeOther, cancelKeyboard(job.id));
+        return;
+      }
+      const ml = Number(parsed.value);
+      if (!Number.isInteger(ml) || ml < 20 || ml > 30000) return;
+      await advanceTo(db, job, chatId, "size", { proposal: { ...state.proposal, bottle_size_ml: ml } });
       return;
     }
 
@@ -852,6 +868,15 @@ async function handleText(msg: TgMessage, actor: Actor) {
       after(() => correctJob(job, state, chatId, text));
       return;
     }
+    case "size": {
+      const ml = parseSizeAnswer(text);
+      if (!ml) {
+        await sendMessage(chatId, T.sizeRetry, cancelKeyboard(job.id));
+        return;
+      }
+      await advanceTo(db, job, chatId, "size", { proposal: { ...state.proposal, bottle_size_ml: ml } });
+      return;
+    }
     case "quantity": {
       const quantity = parseQuantity(text);
       if (!quantity) {
@@ -939,6 +964,8 @@ export function purchaseAnswerFit(step: IngestState["step"], text: string): "ans
       return parseVintageAnswer(text) !== undefined ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
     case "quantity":
       return !strongNewConcern(text) && parseQuantity(text) ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
+    case "size":
+      return !strongNewConcern(text) && parseSizeAnswer(text) ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";
     case "price":
     case "regular_price":
       return isLeaveEmpty(text) || (!strongNewConcern(text) && parseAmount(text) != null) ? "answer" : looksLikeNewConcern(text) ? "new" : "answer";

@@ -357,8 +357,20 @@ export async function researchPrice(
     console.error("shopping price search failed", error instanceof Error ? error.message : error);
     return null;
   });
-  if (shopping) return shopping;
-  return researchPriceLegacy(wine, year, sizeMl, vendor, options);
+  const result = shopping ?? (await researchPriceLegacy(wine, year, sizeMl, vendor, options));
+  return sizeMl == null ? { ...result, finding: sizeUnknownFinding(result.finding) } : result;
+}
+
+/**
+ * Grösse der Flasche unbekannt (rein): ein Treffer wird nicht direkt gespeichert, sondern als
+ * Rückfrage mit der Grösse des Angebots („Gefunden: CHF 124.00 für 50 cl – stimmt die Grösse?“).
+ */
+export function sizeUnknownFinding(f: PriceFinding): PriceFinding {
+  if (f.kind !== "exact") return f;
+  const { merchants: _merchants, ...offer } = f;
+  void _merchants;
+  const size = clSize(f.sizeMl);
+  return { ...offer, kind: "other", reason: "size_unknown", why: size ? `Angebot für ${size} – stimmt die Grösse` : "Grösse des Angebots unbekannt – stimmt sie" };
 }
 
 /** Bisherige Preissuche (direkte Shops, Claude-Websuche, eigene Seitenprüfung) – Rückfall. */
@@ -669,7 +681,8 @@ export async function researchPriceShopping(
 ): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics } | null> {
   const providers = await shoppingProviders(options);
   if (!providers.length) return null;
-  const size = sizeMl ?? standardSize(wine.type);
+  // Grösse unbekannt: kein hartes Kriterium; die Grösse des Angebots kommt als Rückfrage (researchPrice).
+  const size = sizeMl;
   const q = googleQueries({ name: wine.name, producer: wine.producer, year, sizeMl: size });
   const want = { name: wine.name, producer: wine.producer, year };
   const known = await loadMerchants(options.db);
@@ -742,7 +755,7 @@ export async function researchPriceShopping(
     if (!v || v.verdict === "no") return [];
     // Zeigt Google einen alten Preis („statt“), gilt der Normalpreis.
     const amount = Math.round((c.regular ?? c.price) * 100) / 100;
-    const base = { amount, merchant: c.source || c.domain || hostOf(c.url) || "Google Shopping", url: c.url, domain: c.domain ?? null, year: v.year ?? year, sizeMl: v.sizeMl ?? size, ...(c.soldOut ? { soldOut: true } : {}) };
+    const base = { amount, merchant: c.source || c.domain || hostOf(c.url) || "Google Shopping", url: c.url, domain: c.domain ?? null, year: v.year ?? year, sizeMl: v.sizeMl ?? size ?? 0, ...(c.soldOut ? { soldOut: true } : {}) };
     return v.verdict === "yes" ? [{ kind: "exact", ...base }] : [{ kind: "other", ...base, why: v.reason, reason: "variant" }];
   });
   const best = pickBest(found);
@@ -943,6 +956,11 @@ async function sendPriceQuestion(chatId: number, jobId: string, state: IngestSta
   const label = f.label ?? "";
   if (state.step === "price_offer" && state.price_offer) {
     const o = state.price_offer;
+    // Grösse der Flasche war unbekannt: Grösse des Angebots bestätigen lassen.
+    if (o.set_size && o.size_ml) {
+      await sendMessage(chatId, T.priceSizeCheck(label, money(o.amount), clSize(o.size_ml)!, o.merchant), priceOfferKeyboard(jobId));
+      return;
+    }
     if (o.why) {
       await sendMessage(chatId, T.priceOtherProduct(label, o.why, money(o.amount), o.merchant), priceOfferKeyboard(jobId));
       return;
@@ -1091,9 +1109,16 @@ export async function askPriceForItem(db: Db, chatId: number, itemId: string, mo
 }
 
 /** Gefundenen (bzw. übernommenen) Preis in die Charge – nur leere Felder, Herkunft research. */
-export async function storeFoundPrice(db: Db, itemId: string, offer: { amount: number; merchant: string; url: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; merchants?: number; soldOut?: boolean; source?: "model" }, mode: PriceMode) {
+export async function storeFoundPrice(db: Db, itemId: string, offer: { amount: number; merchant: string; url: string; year: number | null; sizeMl?: number | null; size_ml?: number | null; merchants?: number; soldOut?: boolean; source?: "model"; set_size?: boolean }, mode: PriceMode) {
   const values = mode === "both" ? { purchase_price: offer.amount, regular_price: offer.amount } : { regular_price: offer.amount };
-  return updateItemPrices(db, itemId, values, "research", priceNote(offer), true);
+  const saved = await updateItemPrices(db, itemId, values, "research", priceNote(offer), true);
+  // Grösse war unbekannt und mk hat das Angebot bestätigt: dessen Grösse eintragen (nur, wenn noch leer).
+  const size = offer.size_ml ?? offer.sizeMl;
+  if (saved && offer.set_size && size) {
+    const { error } = await db.from("inventory_items").update({ bottle_size_ml: size }).eq("id", itemId).is("bottle_size_ml", null);
+    if (error) console.error("bottle size update failed", error.message);
+  }
+  return saved;
 }
 
 /**
@@ -1135,7 +1160,16 @@ export async function runPriceSearch(db: Db, p: PriceJobParams): Promise<Researc
       return done([`${p.mode === "regular" ? "Normalpreis" : "Preis"} ${money(finding.amount)} (${offerDetails(finding)})`]);
     }
     if (finding.kind === "other") {
-      const offer: PriceOffer = { amount: finding.amount, merchant: finding.merchant, url: finding.url, year: finding.year, size_ml: finding.sizeMl, mode: p.mode, ...(finding.why ? { why: finding.why } : {}) };
+      const offer: PriceOffer = {
+        amount: finding.amount,
+        merchant: finding.merchant,
+        url: finding.url,
+        year: finding.year,
+        size_ml: finding.sizeMl || null,
+        mode: p.mode,
+        ...(finding.why ? { why: finding.why } : {}),
+        ...(finding.reason === "size_unknown" && finding.sizeMl ? { set_size: true } : {}),
+      };
       await askOrHold(db, p.chat_id, item, p.mode, "price_offer", "offer", { price_offer: offer });
       return done();
     }

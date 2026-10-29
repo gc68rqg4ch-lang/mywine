@@ -47,6 +47,7 @@ import {
   similarKeyboard,
   similarLabel,
   textSummaryMessage,
+  sizeKeyboard,
   vendorKeyboard,
   wineSummaryLines,
 } from "./messages";
@@ -255,6 +256,8 @@ export function nextPurchaseStep(state: IngestState): IngestStep {
   if (state.kind_unsure) return "kind";
   if (state.proposal.type === "spirit" && state.spirit && !state.spirit.done) return "category_main";
   if (needsVintage(state)) return "vintage";
+  // Grösse nicht vom Etikett bzw. aus dem Text: fragen (keine Standardgrösse).
+  if (state.proposal.bottle_size_ml == null) return "size";
   if (state.storage_room === undefined) return "location";
   if (state.quantity === undefined) return "quantity";
   // Geschenk: nur noch „Von wem?“ (falls nicht schon bekannt) – kein Preis, Händler oder Kaufdatum.
@@ -323,6 +326,9 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
     }
     case "location":
       await sendMessage(chatId, T.whereStored, locationKeyboard(job.id));
+      return;
+    case "size":
+      await sendMessage(chatId, T.sizeAsk, sizeKeyboard(job.id));
       return;
     case "quantity":
       await sendMessage(

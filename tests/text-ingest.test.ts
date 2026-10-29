@@ -48,7 +48,7 @@ import { processTextJob, saveJob, nextPurchaseStep } from "@/lib/ingest/flow";
 
 const empty = (purchase: Record<string, unknown>, wine: Record<string, unknown>) => ({
   name: null, producer: null, vintage_year: null, country: null, region: null, appellation: null, type: null,
-  grape_shares: [], alcohol_content: null, bottle_size_ml: null, ...wine,
+  grape_shares: [], alcohol_content: null, bottle_size_ml: 750, ...wine,
   purchase: { quantity: 0, storage_room: "", price: 0, regular_price: 0, vendor: "", gift: false, gift_from: "", ...purchase },
 });
 const job = (id: string) => net.tables.ingest_jobs.find((j) => j.id === id)!;
@@ -61,13 +61,15 @@ const newJob = (id: string) => net.tables.ingest_jobs.push({ id, source: "text",
 let st: IngestState;
 
 test("Reine Schrittfolge: nur Fehlendes, am Ende Zusammenfassung (Text) bzw. Speichern (Foto)", async () => {
-  const s0 = { source: "text", proposal: { vintage_year: 2019 } } as IngestState;
+  const s0 = { source: "text", proposal: { vintage_year: 2019, bottle_size_ml: 750 } } as IngestState;
   assert.equal(nextPurchaseStep(s0), "location");
+  // Grösse weder im Text noch auf dem Etikett: Rückfrage (keine Standardgrösse)
+  assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: 2019, bottle_size_ml: null } } as IngestState), "size");
 
   // Jahrgang ist Pflicht: fehlt er oder ist er unsicher, kommt er zuerst – ausser schon bestätigt (auch NV)
   assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: null } } as IngestState), "vintage");
   assert.equal(nextPurchaseStep({ ...s0, vintage_uncertain: true }), "vintage");
-  assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: null }, vintage_confirmed: true } as IngestState), "location");
+  assert.equal(nextPurchaseStep({ ...s0, proposal: { vintage_year: null, bottle_size_ml: 750 }, vintage_confirmed: true } as IngestState), "location");
   assert.equal(nextPurchaseStep({ ...s0, storage_room: "Weinkeller", quantity: 6, price: 66 }), "regular_price");
   assert.equal(nextPurchaseStep({ ...s0, storage_room: "Weinkeller", quantity: 6, price: 66, regular_price: null, vendor_name: "X" }), "confirm");
   assert.equal(nextPurchaseStep({ ...s0, source: undefined, storage_room: "Weinkeller", quantity: 1, price: null, regular_price: null, vendor_id: null }), "saving");

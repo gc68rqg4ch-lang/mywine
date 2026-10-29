@@ -18,6 +18,8 @@ export type CallbackAction =
   | "loc"
   | "qty"
   | "qtyother"
+  /** Flaschengrösse in ml bzw. „other“ (tippen) */
+  | "size"
   | "skipprice"
   | "gift"
   | "skipgift"
@@ -67,6 +69,7 @@ export function parseCallbackData(data: string | undefined) {
     "loc",
     "qty",
     "qtyother",
+    "size",
     "skipprice",
     "gift",
     "skipgift",
@@ -190,6 +193,18 @@ export function locationKeyboard(jobId: string): TgInlineKeyboard {
         { text: "Weinkeller", callback_data: callbackData("loc", jobId, "keller") },
         { text: "Wohnzimmer", callback_data: callbackData("loc", jobId, "wohnzimmer") },
       ],
+      cancelRow(jobId),
+    ],
+  };
+}
+
+/** Grössen-Knöpfe (Etikett ohne lesbare Grösse); jede andere Grösse als Text. */
+export const SIZE_CHOICES: [string, number][] = [["35 cl", 350], ["50 cl", 500], ["70 cl", 700], ["75 cl", 750], ["1 l", 1000]];
+export function sizeKeyboard(jobId: string): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      SIZE_CHOICES.slice(0, 3).map(([text, ml]) => ({ text, callback_data: callbackData("size", jobId, String(ml)) })),
+      [...SIZE_CHOICES.slice(3).map(([text, ml]) => ({ text, callback_data: callbackData("size", jobId, String(ml)) })), { text: "✏️ Andere", callback_data: callbackData("size", jobId, "other") }],
       cancelRow(jobId),
     ],
   };

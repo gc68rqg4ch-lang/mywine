@@ -96,7 +96,7 @@ async function start() {
   reset();
   parseResult = {
     name: "Pintia", producer: "Vega Sicilia", vintage_year: 2019, country: null, region: null, appellation: null, type: null,
-    grape_shares: [], alcohol_content: null, bottle_size_ml: null,
+    grape_shares: [], alcohol_content: null, bottle_size_ml: 750,
     purchase: { quantity: 6, storage_room: "Weinkeller", price: 0, regular_price: 0, vendor: "Mövenpick", gift: false, gift_from: "" },
   };
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller, bei Mövenpick");
@@ -325,7 +325,7 @@ test("Suche endet während einer neuen Erfassung: Rückfrage erst danach, mit Fl
   net.tables.ingest_jobs.push({ id: JOB2, source: "text", telegram_chat_id: 111, status: "processing", extracted: { step: "researching", source: "text" }, photo_paths: [], created_at: minutesAgo(0), updated_at: minutesAgo(0) });
   parseResult = {
     name: "Grappa Fass 13", producer: "Brennerei Muster", vintage_year: 2015, country: null, region: null, appellation: null, type: null,
-    grape_shares: [], alcohol_content: null, bottle_size_ml: null,
+    grape_shares: [], alcohol_content: null, bottle_size_ml: 750,
     purchase: { quantity: 1, storage_room: "Weinkeller", price: 0, regular_price: 0, vendor: "Mövenpick", gift: false, gift_from: "" },
   };
   await processTextJob(JOB2, 111, "Grappa Fass 13 2015, 1 Flasche, Weinkeller, bei Mövenpick");
@@ -414,7 +414,7 @@ async function heldWhileOtherFlow() {
   net.tables.ingest_jobs.push({ id: JOB2, source: "text", telegram_chat_id: 111, status: "processing", extracted: { step: "researching", source: "text" }, photo_paths: [], created_at: minutesAgo(0), updated_at: minutesAgo(0) });
   parseResult = {
     name: "Grappa Fass 13", producer: "Brennerei Muster", vintage_year: 2015, country: null, region: null, appellation: null, type: null,
-    grape_shares: [], alcohol_content: null, bottle_size_ml: null,
+    grape_shares: [], alcohol_content: null, bottle_size_ml: 750,
     purchase: { quantity: 1, storage_room: "Weinkeller", price: 0, regular_price: 0, vendor: "Mövenpick", gift: false, gift_from: "" },
   };
   await processTextJob(JOB2, 111, "Grappa Fass 13 2015, 1 Flasche, Weinkeller, bei Mövenpick");

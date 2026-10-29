@@ -63,7 +63,7 @@ const press = (text: string) => {
   return handleUpdate({ update_id: 1, callback_query: { id: "cb", from: { id: 111, is_bot: false, first_name: "M" }, data: b.callback_data, message: { message_id: 9, chat: { id: 111, type: "private" }, date: Math.floor(Date.now() / 1000) } } } as never);
 };
 const textEntry = (wine: Record<string, unknown>) => ({
-  name: null, producer: null, vintage_year: 2019, country: null, region: null, appellation: null, type: null, grape_shares: [], alcohol_content: null, bottle_size_ml: null, ...wine,
+  name: null, producer: null, vintage_year: 2019, country: null, region: null, appellation: null, type: null, grape_shares: [], alcohol_content: null, bottle_size_ml: 750, ...wine,
   purchase: { quantity: 6, storage_room: "Weinkeller", price: 24, regular_price: 29, vendor: "Coop", gift: false, gift_from: "" },
 });
 async function textIngest(wine: Record<string, unknown>) {

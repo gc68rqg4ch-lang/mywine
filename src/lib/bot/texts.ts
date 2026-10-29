@@ -200,6 +200,9 @@ export const T = {
   whereStored: "Wo lagerst du die Flaschen?",
   howMany: (room: string) => `${e(room)} – schön. Wie viele Flaschen sind es?`,
   howManyRetry: "Wie viele Flaschen sind es?",
+  sizeAsk: "Wie gross ist die Flasche? Auf dem Etikett habe ich keine Grösse sicher gelesen.",
+  sizeOther: "Wie viel enthält die Flasche? Z. B. «50 cl», «0,5 l» oder «1,5 l».",
+  sizeRetry: "Das habe ich nicht verstanden. Wie gross ist die Flasche – z. B. «50 cl» oder «0,7 l»?",
   /** „✏️ Andere Zahl“: Bitte um die Zahl als Text (Varianten). */
   quantityOther: (random?: () => number) => say("quantityOther", random),
   /** Keine gültige Anzahl (0, -3, „zwei“, 2.5): freundlich nochmals fragen (Varianten). */
@@ -233,6 +236,7 @@ export const T = {
   /** Nur anderer Jahrgang bzw. andere Grösse: „Nur Jahrgang 2020 gefunden: CHF 64.00 (Mövenpick). Übernehmen?“ */
   priceOther: (label: string, what: string, money: string, merchant: string) => `${label}\nNur ${e(what)} gefunden: ${e(money)} (${e(merchant)}). Übernehmen?`,
   /** Zusatz wie Riserva nur auf einer Seite: „Gefunden: CHF 70.05 (Trinkgenuss) – Angebot ohne Riserva. Übernehmen?“ */
+  priceSizeCheck: (label: string, money: string, size: string, merchant: string) => `${label}\nGefunden: ${e(money)} für ${e(size)} (${e(merchant)}) – stimmt die Grösse? Übernehmen?`,
   priceOtherProduct: (label: string, why: string, money: string, merchant: string) => `${label}\nGefunden: ${e(money)} (${e(merchant)}) – ${e(why)}. Übernehmen?`,
   /** Nichts gefunden: nur eine Meldung (ohne Knöpfe) – ein getippter Betrag wird noch gespeichert. */
   priceNotFound: (label: string) => `${label}\nKeinen Preis bei Schweizer Händlern gefunden – bleibt leer. Wenn du ihn weisst, schreib mir einfach den Betrag.`,

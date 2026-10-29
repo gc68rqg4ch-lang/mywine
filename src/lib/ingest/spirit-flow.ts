@@ -5,6 +5,7 @@ import "server-only";
 // der bestehenden; neue legt der Chat direkt in der DB an). Beim Speichern die Angaben (Kategorie,
 // Alter, Fass, Destilliert, Abgefüllt) in wines – Bestehendes bleibt.
 
+import { completeSpiritName } from "./wine-names";
 import type { Database } from "@/lib/database.types";
 import { T } from "@/lib/bot/texts";
 import { mainCategories, subCategories, toSpiritFields, type SpiritCategory } from "@/lib/spirits/categories";
@@ -44,7 +45,7 @@ export async function spiritStart(
         }
       : draft;
     return {
-      proposal: { ...proposal, type: "spirit", grape_shares: [], bottle_size_ml: proposal.bottle_size_ml ?? 700 },
+      proposal: { ...proposal, type: "spirit", name: completeSpiritName(proposal.name, proposal.producer), grape_shares: [], bottle_size_ml: proposal.bottle_size_ml ?? null },
       patch: { spirit: planCategory(categories, merged, knownFields?.categoryId) },
       spirit: true,
       unsure: false,
@@ -69,7 +70,7 @@ export async function kindPatch(db: AdminClient, state: IngestState, kind: "wine
   const categories = await loadSpiritCategories(db).catch(() => [] as SpiritCategory[]);
   return {
     kind_unsure: false,
-    proposal: { ...state.proposal, type: "spirit", grape_shares: [], bottle_size_ml: state.proposal.bottle_size_ml ?? 700 },
+    proposal: { ...state.proposal, type: "spirit", name: completeSpiritName(state.proposal.name, state.proposal.producer), grape_shares: [], bottle_size_ml: state.proposal.bottle_size_ml ?? null },
     drink_from_year: null,
     drink_until_year: null,
     grape_source: null,

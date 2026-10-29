@@ -43,14 +43,15 @@ export function productTerm(want: { name: string; producer?: string | null }) {
  * steht. Die zweite Abfrage ist jeweils die andere Variante. Steht die Marke im Namen (bzw. gibt es
  * keine): zweite Abfrage ohne Grösse. brand: die vorangestellte Marke (sonst null).
  */
-export function googleQueries(want: { name: string; producer?: string | null; year?: number | null; sizeMl: number }) {
+export function googleQueries(want: { name: string; producer?: string | null; year?: number | null; sizeMl: number | null }) {
   const y = want.year != null ? ` ${want.year}` : "";
   const name = `${want.name.trim()}${y}`;
   const brand = brandFromProducer(want.producer);
   const withBrand = brand && !brandInName(brand, want.name) ? `${brand} ${want.name.trim()}${y}` : null;
-  const cl = clTerm(want.sizeMl);
-  if (!withBrand) return { shopping: [`${name} ${cl}`, name], search: [`${name} ${cl} site:.ch`, `${name} site:.ch`], brand: null };
-  return { shopping: [`${name} ${cl}`, `${withBrand} ${cl}`], search: [`${withBrand} ${cl} site:.ch`, `${name} ${cl} site:.ch`], brand };
+  // Grösse unbekannt: ohne Grösse suchen (die Rückfrage nennt die Grösse des Angebots).
+  const cl = want.sizeMl ? ` ${clTerm(want.sizeMl)}` : "";
+  if (!withBrand) return { shopping: unique([`${name}${cl}`, name]), search: unique([`${name}${cl} site:.ch`, `${name} site:.ch`]), brand: null };
+  return { shopping: [`${name}${cl}`, `${withBrand}${cl}`], search: [`${withBrand}${cl} site:.ch`, `${name}${cl} site:.ch`], brand };
 }
 
 /** Schreibweisen mit Apostroph: „Noah's Mill“, „Noahs Mill“, „Noah s Mill“ (ohne Doppel). */

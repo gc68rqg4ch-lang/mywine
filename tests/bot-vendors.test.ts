@@ -55,7 +55,7 @@ function reset(extraVendors = 0) {
 }
 const entry = () => ({
   name: "Pintia", producer: "Vega Sicilia", vintage_year: 2019, country: null, region: null, appellation: null, type: null,
-  grape_shares: [], alcohol_content: null, bottle_size_ml: null,
+  grape_shares: [], alcohol_content: null, bottle_size_ml: 750,
   purchase: { quantity: 6, storage_room: "Weinkeller", price: 30, regular_price: 35, vendor: "", gift: false, gift_from: "" },
 });
 const job = () => net.tables.ingest_jobs.find((j) => j.id === JOB)!;
