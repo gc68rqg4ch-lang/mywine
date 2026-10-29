@@ -1846,6 +1846,10 @@ export type Database = {
           thumb_path: string
         }[]
       }
+      ensure_spirit_current: {
+        Args: { p_bottle_size_ml?: number; p_wine_id: string }
+        Returns: string
+      }
       ensure_wine_vintage: {
         Args: { p_vintage_year?: number; p_wine_id: string }
         Returns: string
@@ -1892,6 +1896,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      spirit_bottle_empty: { Args: { p_item_id: string }; Returns: Json }
     }
     Enums: {
       event_type:

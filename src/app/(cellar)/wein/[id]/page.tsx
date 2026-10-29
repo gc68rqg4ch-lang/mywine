@@ -38,6 +38,7 @@ import { EditUnit, EditUnits } from "@/components/edit-unit";
 import { SPIRIT_DETAIL_FIELDS, WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, giftLabel, grapeLine, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
 import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
+import { SpiritBottle } from "./spirit-bottle";
 import { DocumentClip } from "./documents";
 import { BatchForm, WineCardForm, type EditBatch } from "./edit-sections";
 import { NotesField } from "./notes-field";
@@ -222,6 +223,9 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     .filter((i) => i.status === "drunk")
     .sort((a, b) => (b.drunk_at ?? "").localeCompare(a.drunk_at ?? ""));
   const sealedCount = sealed.reduce((s, i) => s + i.quantity, 0);
+  // Spirituose: die aktuelle Flasche zählt wie eine volle.
+  const current = spirit ? open[0] : undefined;
+  const bottleCount = spirit ? sealedCount + open.length : sealedCount;
   const place = (i: { storage_room: string | null }) => i.storage_room ?? "ohne Lagerort";
   const priceOf = (i: (typeof inVintage)[number]): PriceInfo => ({
     itemId: i.inventory_item_id,
@@ -255,8 +259,14 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   // Spalte 1: offene Flaschen, Bestand (Chargen), Flasche öffnen, getrunkene – je mit ✏️.
   const openColumn = (
     <div className="wine-col wine-col-open">
+      {/* Spirituose: keine „offenen“ Flaschen, sondern eine aktuelle mit Füllstand. */}
+      {spirit && current && (
+        <EditUnit id={`item:${current.inventory_item_id}`} label={`Aktuelle Flasche (${place(current)})`} className="bottle-unit" form={batchForm(current)}>
+          <SpiritBottle key={current.inventory_item_id} wineId={wine.id} fill={current.fill_level_percent} bottles={bottleCount} />
+        </EditUnit>
+      )}
       {/* Offene Flaschen zuerst – die trinkt man als Nächstes. */}
-      {open.length > 0 && (
+      {!spirit && open.length > 0 && (
         <section className="card stack">
           <h2 className="section-title">Offen</h2>
           {open.map((o) => (
@@ -306,7 +316,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
           </ul>
         </section>
       )}
-      {charges.length > 0 && (
+      {!spirit && charges.length > 0 && (
         <section className="card stack">
           <h2 className="section-title">Flasche öffnen</h2>
           <OpenBottleForm charges={charges} today={today} />
@@ -560,9 +570,9 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             </div>
             <div className="detail-total">
               <span className="tile-big">
-                {sealedCount} <span>Fl.</span>
+                {bottleCount} <span>Fl.</span>
               </span>
-              {open.length > 0 && <span className="muted">+{open.length} offen</span>}
+              {!spirit && open.length > 0 && <span className="muted">+{open.length} offen</span>}
               <DocumentClip key={`${year}:${documents.length}`} docs={documents} wineId={wine.id} vintageYear={year} />
             </div>
           </div>
@@ -578,7 +588,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 >
                   {o.year ?? "o. J."}
                   <span className="segment-count">
-                    {o.sealed + o.open > 0 ? `${o.sealed}${o.open ? `+${o.open}` : ""}` : o.tastedOnly ? "verk." : "getr."}
+                    {o.sealed + o.open > 0 ? (spirit ? `${o.sealed + o.open}` : `${o.sealed}${o.open ? `+${o.open}` : ""}`) : o.tastedOnly ? "verk." : "getr."}
                   </span>
                 </Link>
               ))}

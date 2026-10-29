@@ -122,6 +122,17 @@ export const T = {
     `${pick(["Mein Kontingent für heute ist aufgebraucht – ich kann den Wein gerade nicht nachschlagen.", "Oje, mein Kontingent ist aufgebraucht – nachschlagen kann ich gerade nicht."], random)} Versuch es später nochmals${until ? ` (ab ${until} geht es wieder)` : ""} – ich habe nichts gespeichert.`,
   thinkingResearch: "🔎 Ich recherchiere den Wein und melde mich gleich.",
   /** Login-Code für die App (nicht im Gesprächsgedächtnis). */
+  // --- Spirituosen (aktuelle Flasche)
+  /** Nach „leer“: getrunken gebucht, ggf. neue aktuelle Flasche. */
+  spiritEmptied: (name: string, remaining: number) =>
+    remaining > 0
+      ? `${e(name)} als getrunken gebucht – noch ${remaining === 1 ? "1 Flasche" : `${remaining} Flaschen`}, neue aktuelle Flasche 100 %.`
+      : `${e(name)} als getrunken gebucht – das war die letzte Flasche, nicht mehr im Bestand.`,
+  /** Füllstand der aktuellen Flasche gesetzt. */
+  spiritFillSet: (name: string, percent: number) => `Aktuelle Flasche ${e(name)}: noch ${percent} %.`,
+  /** „geöffnet“ bei Spirituosen: kein eigener Schritt. */
+  spiritNoOpen:
+    "Bei Spirituosen gibt es kein „geöffnet“: Von jeder Spirituose gilt immer eine Flasche als aktuelle – mit Füllstand. Sag mir einfach z. B. „Lagavulin noch 30 %“ oder „Lagavulin leer“.",
   // --- Spirituosen (Erfassung)
   /** Erkennung unsicher: Wein oder Spirituose? */
   kindAsk: (random?: () => number) =>

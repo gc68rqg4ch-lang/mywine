@@ -27,7 +27,8 @@ function field(row: Row, col: string) {
   return row[col];
 }
 function matches(row: Row, col: string, expr: string): boolean {
-  if (col === "or") return true;
+  // or=(a.op.x,b.op.y): mindestens eine Bedingung (ohne verschachtelte Klammern).
+  if (col === "or") return expr.replace(/^\(|\)$/g, "").split(",").some((c) => { const [k, ...rest] = c.split("."); return matches(row, k, rest.join(".")); });
   const [op, ...rest] = expr.split(".");
   const raw = rest.join(".");
   const v = field(row, col);

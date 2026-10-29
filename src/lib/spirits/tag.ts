@@ -82,3 +82,22 @@ export function spiritMeta(e: { type: string | null; spirit?: SpiritTag | null }
   const age = e.spirit.ageYears;
   return [e.spirit.label, age ? `${age} ${age === 1 ? "Jahr" : "Jahre"}` : null];
 }
+
+/** Spirituose: Füllstand der aktuellen Flasche je Wein (aus offenen Zeilen; die niedrigste zählt). */
+export function currentFills(rows: { wine_id: string | null; status: string | null; type: string | null; fill_level_percent?: number | null }[]) {
+  const fills = new Map<string, number>();
+  for (const r of rows) {
+    if (r.type !== "spirit" || r.status !== "open" || !r.wine_id || r.fill_level_percent == null) continue;
+    fills.set(r.wine_id, Math.min(fills.get(r.wine_id) ?? 100, r.fill_level_percent));
+  }
+  return fills;
+}
+
+/** „aktuelle ~40 %“ – bei 100 % (bzw. unbekannt) nichts. */
+export const currentFillNote = (fill: number | null | undefined) => (fill == null || fill >= 100 ? null : `aktuelle ~${fill} %`);
+
+/** Zählt eine Zeile zum Bestand (voll, bzw. aktuelle Flasche einer Spirituose)? */
+export const inStockRow = (r: { status: string | null; type: string | null }) => r.status === "sealed" || (r.status === "open" && r.type === "spirit");
+
+/** Offene Flasche im Sinn von „Offen“ (Reiter, Kachel): nur Wein, keine Spirituosen. */
+export const openWineRow = (r: { status: string | null; type: string | null }) => r.status === "open" && r.type !== "spirit";

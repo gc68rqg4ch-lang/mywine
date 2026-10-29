@@ -40,13 +40,14 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
       .order("date_opened", { ascending: true, nullsFirst: false })
       .order("producer"),
     filter
-      ? supabase.from("cellar_overview").select("inventory_item_id", { count: "exact", head: true }).eq("status", "open").is("storage_room", null)
+      ? supabase.from("cellar_overview").select("inventory_item_id", { count: "exact", head: true }).eq("status", "open").is("storage_room", null).or("type.is.null,type.neq.spirit")
       : Promise.resolve({ count: 0 }),
   ]);
   if (error) throw error;
 
+  // Spirituosen haben kein „offen“ (nur eine aktuelle Flasche im Bestand) – hier nur Wein.
   const rows = (data ?? []).flatMap((r) =>
-    r.inventory_item_id && r.wine_id && r.name && r.producer
+    r.inventory_item_id && r.wine_id && r.name && r.producer && r.type !== "spirit"
       ? [{ ...r, inventory_item_id: r.inventory_item_id, wine_id: r.wine_id, name: r.name, producer: r.producer, type: asWineType(r.type) }]
       : [],
   );

@@ -85,7 +85,8 @@ export async function loadHomeData(db: Db, personId: string | null, now: Date | 
             producer: s.producer,
             type: asWineType(s.type),
             year: s.vintage_year,
-            status: s.status,
+            // Spirituose: die aktuelle Flasche zählt wie eine volle (Bestand, Wert); kein „offen“.
+            status: s.status === "open" && s.type === "spirit" ? "sealed" : s.status,
             quantity: s.quantity ?? 1,
             paid: s.stock_value,
             regular: s.stock_value_regular,

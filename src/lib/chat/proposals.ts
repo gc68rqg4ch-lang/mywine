@@ -10,7 +10,11 @@ export type Proposal =
   | { kind: "fill"; itemId: string; percent: number }
   | { kind: "open"; itemId: string }
   | { kind: "drunk"; itemId: string }
-  | { kind: "rate"; wineId: string; vintageYear: number | null; personKey: string; rating: number };
+  | { kind: "rate"; wineId: string; vintageYear: number | null; personKey: string; rating: number }
+  /** Spirituose: Füllstand der aktuellen Flasche (0 = leer). */
+  | { kind: "spiritFill"; wineId: string; percent: number }
+  /** Spirituose: aktuelle Flasche leer, die nächste wird aktuell. */
+  | { kind: "spiritEmpty"; wineId: string };
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const UUID_RE = new RegExp(`^${UUID}$`);
@@ -30,6 +34,10 @@ export function encodeProposal(p: Proposal) {
       return `cd:${p.itemId}`;
     case "rate":
       return `cr:${p.wineId}:${p.vintageYear ?? "-"}:${p.personKey}:${Math.round(p.rating * 2)}`;
+    case "spiritFill":
+      return `cs:${p.wineId}:${p.percent}`;
+    case "spiritEmpty":
+      return `cz:${p.wineId}`;
   }
 }
 
@@ -55,7 +63,7 @@ export function editKeyboard(jobId: string, labels: { yes: string; no: string } 
 }
 
 export function isChatCallback(data: string | undefined) {
-  return data === REJECT_DATA || /^c[fodrnew]:/.test(data ?? "");
+  return data === REJECT_DATA || /^c[fodrnewsz]:/.test(data ?? "");
 }
 
 export function decodeProposal(data: string | undefined): Proposal | null {
@@ -71,6 +79,12 @@ export function decodeProposal(data: string | undefined): Proposal | null {
     }
     case "co":
       return rest.length === 1 ? { kind: "open", itemId: id } : null;
+    case "cs": {
+      const percent = Number(rest[1]);
+      return rest.length === 2 && Number.isInteger(percent) && percent >= 0 && percent <= 100 ? { kind: "spiritFill", wineId: id, percent } : null;
+    }
+    case "cz":
+      return rest.length === 1 ? { kind: "spiritEmpty", wineId: id } : null;
     case "cd":
       return rest.length === 1 ? { kind: "drunk", itemId: id } : null;
     case "cr": {

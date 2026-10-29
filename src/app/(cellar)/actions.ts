@@ -9,6 +9,7 @@ import { applyEdit } from "@/lib/edit/edit";
 import { NOTHING } from "@/lib/edit/helpers";
 import { cleanNotes } from "@/lib/edit/notes";
 import { todayIso } from "@/lib/format";
+import { emptySpiritBottle, setSpiritFill } from "@/lib/spirits/bottles";
 
 export type ActionState = { error?: string; ok?: string; link?: { href: string; label: string } } | undefined;
 
@@ -130,4 +131,36 @@ export async function saveWineNotes(wineId: string, text: string): Promise<{ ok:
   // „Nichts zu ändern“ ist kein Fehler – die Notiz steht schon so in der DB.
   if (result.ok || result.error === NOTHING) return { ok: true, notes: cleanNotes(text) };
   return { ok: false, error: result.error };
+}
+
+/**
+ * Spirituose: Füllstand der aktuellen Flasche speichern (Regler auf der Weinseite, speichert
+ * selbst wie die Notizen). 0 % ist „leer“ – dafür emptySpiritAction (mit Bestätigung).
+ */
+export async function saveSpiritFill(wineId: string, percent: number): Promise<{ ok: true; fill: number } | { ok: false; error: string }> {
+  const session = await memberSession();
+  if (!session) return { ok: false, error: "Kein Zugriff." };
+  if (!UUID_RE.test(wineId)) return { ok: false, error: "Ungültiger Wein." };
+  if (!Number.isInteger(percent) || percent < 1 || percent > 100) return { ok: false, error: "Füllstand bitte zwischen 10 und 100 %." };
+  const result = await setSpiritFill(session.supabase, wineId, percent);
+  if (!result.ok) return result;
+  return { ok: true, fill: result.fill };
+}
+
+/** Spirituose: aktuelle Flasche leer – getrunken, die nächste volle wird aktuell (100 %). */
+export async function emptySpiritAction(wineId: string): Promise<{ ok: true; message: string; remaining: number } | { ok: false; error: string }> {
+  const session = await memberSession();
+  if (!session) return { ok: false, error: "Kein Zugriff." };
+  if (!UUID_RE.test(wineId)) return { ok: false, error: "Ungültiger Wein." };
+  const result = await emptySpiritBottle(session.supabase, wineId);
+  if (!result.ok) return result;
+  revalidatePath("/", "layout");
+  return {
+    ok: true,
+    remaining: result.remaining,
+    message:
+      result.remaining > 0
+        ? `Als getrunken gebucht – noch ${result.remaining === 1 ? "1 Flasche" : `${result.remaining} Flaschen`}, neue aktuelle Flasche 100 %.`
+        : "Als getrunken gebucht – das war die letzte Flasche, nicht mehr im Bestand.",
+  };
 }

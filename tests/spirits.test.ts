@@ -259,10 +259,15 @@ type Row = Record<string, unknown>;
 let recognition: Row = {};
 let researchCategory = "unbekannt";
 const claudeCalls: string[] = [];
+const ensureCalls: Row[] = [];
 const net: Net = {
   tables: {},
   telegram: [],
-  rpc: { replace_grape_shares: () => [] },
+  rpc: {
+    replace_grape_shares: () => [],
+    // Einbuchen einer Spirituose: aktuelle Flasche sicherstellen (Wein, Grösse).
+    ensure_spirit_current: (args) => (ensureCalls.push(args), null),
+  },
   storage: new Map(),
   claude: (body) => {
     const tools = (body.tools as { name?: string }[] | undefined)?.map((t) => t.name).filter(Boolean) ?? [];
@@ -384,6 +389,7 @@ test("Bot: unsicher → „Wein oder Spirituose?“, neue Unterkategorie erst na
   assert.deepEqual([saved.type, saved.spirit_category_id, saved.alcohol_content], ["spirit", rye.id, 45.2]);
   assert.equal(net.tables.inventory_items[0].bottle_size_ml, 700);
   assert.equal(net.tables.wine_vintages.filter((v) => v.drink_from_year != null || v.drink_until_year != null).length, 0, "kein Trinkfenster");
+  assert.deepEqual(ensureCalls.at(-1), { p_wine_id: saved.id, p_bottle_size_ml: 700 }, "erste Flasche wird aktuell");
 });
 
 test("Bot: „Bestehende wählen“ zeigt Haupt-, dann Unterkategorien; Bestätigung ohne Trinkfenster", async () => {

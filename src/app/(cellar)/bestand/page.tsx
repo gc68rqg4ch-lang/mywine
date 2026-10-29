@@ -33,7 +33,7 @@ import { getLocationFilter, withLocation } from "@/lib/location";
 import { newestVintage } from "@/lib/media/pick";
 import { loadLabelPhotos } from "@/lib/media/store";
 import { loadSpirits } from "@/lib/spirits/load";
-import { spiritMeta, withSpiritTags } from "@/lib/spirits/tag";
+import { currentFillNote, currentFills, inStockRow, openWineRow, spiritMeta, withSpiritTags } from "@/lib/spirits/tag";
 
 export const metadata: Metadata = { title: "Bestand" };
 
@@ -68,7 +68,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
     withLocation(
       supabase
         .from("cellar_overview")
-        .select("inventory_item_id, wine_id, status, stock_value, stock_value_regular, date_opened, name, vintage_year, type, bottle_size_ml, vendor_name")
+        .select("inventory_item_id, wine_id, status, stock_value, stock_value_regular, date_opened, name, vintage_year, type, bottle_size_ml, vendor_name, fill_level_percent")
         .in("status", ["sealed", "open"]),
       filter,
     ),
@@ -86,7 +86,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
   // Händler der ungeöffneten Flaschen je Wein, Jahrgang und Grösse (Filter „Händler“).
   const vendors = new Map<string, string[]>();
   for (const i of items.data ?? []) {
-    if (i.status !== "sealed" || !i.wine_id || !i.vendor_name) continue;
+    if (!inStockRow(i) || !i.wine_id || !i.vendor_name) continue;
     const key = unitKey(i.wine_id, i.vintage_year, i.bottle_size_ml);
     vendors.set(key, [...new Set([...(vendors.get(key) ?? []), i.vendor_name])]);
   }
@@ -105,11 +105,14 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
 
   const totals = cellarTotals(wines);
   const drink = drinkCounts(wines);
-  const sealedItems = (items.data ?? []).filter((i) => i.status === "sealed");
+  // Bestandswert: die aktuelle Flasche einer Spirituose zählt wie eine volle.
+  const sealedItems = (items.data ?? []).filter(inStockRow);
+  const fills = currentFills(items.data ?? []);
   const valuePaid = sealedItems.reduce((s, i) => s + (i.stock_value ?? 0), 0);
   const valueRegular = sealedItems.reduce((s, i) => s + (i.stock_value_regular ?? 0), 0);
+  // Offen: nur Wein (Spirituosen haben eine aktuelle Flasche, kein „offen“).
   const openItems = (items.data ?? [])
-    .filter((i) => i.status === "open")
+    .filter(openWineRow)
     .sort((a, b) => (a.date_opened ?? "9999").localeCompare(b.date_opened ?? "9999"));
   const bought = (purchases.data ?? []).reduce(
     (acc, e) => ({ bottles: acc.bottles + (e.quantity ?? 0), chf: acc.chf + (e.quantity ?? 0) * (e.price ?? 0) }),
@@ -201,7 +204,13 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
             aside={
               <BottleCount
                 bottles={bottles}
-                note={wine.open > 0 && ["typ", "land", "rebsorte"].includes(state.groupBy) ? `+${wine.open} offen` : null}
+                note={
+                  wine.type === "spirit"
+                    ? currentFillNote(fills.get(wine.wine_id))
+                    : wine.open > 0 && ["typ", "land", "rebsorte"].includes(state.groupBy)
+                      ? `+${wine.open} offen`
+                      : null
+                }
               />
             }
           />

@@ -53,6 +53,7 @@ import {
 } from "./messages";
 import { enrichFromWeb, parseTextEntry, type RecognitionResult } from "./recognize";
 import { mainOptions, spiritStart, storeSpiritFields } from "./spirit-flow";
+import { ensureSpiritCurrent } from "@/lib/spirits/bottles";
 import { scheduleSpiritResearch } from "@/lib/research/spirit-auto";
 import type { SpiritCategory } from "@/lib/spirits/categories";
 import { needsVintage, type IngestState, type IngestStep, type WineProposal } from "./schema";
@@ -493,6 +494,10 @@ export async function saveJob(job: IngestJob, chatId: number) {
       photoPaths: job.photo_paths,
     });
     await storeJobMedia(db, job.photo_paths, state, { wineId, itemId });
+    // Spirituose: ohne aktuelle Flasche wird eine volle aktuell (100 %); eine vorhandene bleibt.
+    if (state.proposal.type === "spirit") {
+      await ensureSpiritCurrent(db, wineId, state.proposal.bottle_size_ml).catch((error) => console.error("ensure spirit current failed", error));
+    }
 
     await advanceJob(
       db,

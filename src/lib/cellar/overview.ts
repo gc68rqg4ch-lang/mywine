@@ -292,8 +292,10 @@ export function buildCellarWines(
 
   const result: CellarWine[] = [];
   for (const wine of wines) {
-    const wineRows = byWine.get(wine.wine_id);
+    let wineRows = byWine.get(wine.wine_id);
     if (!wineRows) continue;
+    // Spirituose: die aktuelle (angebrochene) Flasche zählt zum Bestand wie eine volle – kein „offen“.
+    if (wine.type === "spirit") wineRows = wineRows.map((r) => ({ ...r, sealed: r.sealed + r.open, open: 0 }));
     const sealed = wineRows.reduce((s, r) => s + r.sealed, 0);
     const open = wineRows.reduce((s, r) => s + r.open, 0);
     result.push({
