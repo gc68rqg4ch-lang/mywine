@@ -353,3 +353,15 @@ test("Kopf der Startseite: ohne Überschrift „ANTOINE“, Screenreader erfahre
   assert.match(src, /antoine-placeholder" role="img" aria-label="Antoine"/);
   assert.doesNotMatch(readFileSync("src/app/globals.css", "utf8"), /\.antoine-name/);
 });
+
+test("Kopf der Startseite: Text fliesst um das runde Foto, Karte mindestens so hoch wie das Foto", () => {
+  const css = readFileSync("src/app/globals.css", "utf8");
+  const head = css.slice(css.indexOf(".antoine {"), css.indexOf(".antoine-text {"));
+  assert.match(head, /\.antoine \{[^}]*--antoine-size: 116px;[^}]*display: flow-root;/);
+  assert.match(head, /min-width: 700px\) \{\s*\.antoine \{\s*--antoine-size: 150px;/);
+  assert.match(head, /min-width: 1000px\) \{\s*\.antoine \{\s*--antoine-size: 176px;/);
+  assert.match(head, /\.antoine-photo \{[^}]*float: left;[^}]*object-fit: cover;[^}]*shape-outside: circle\(50%\)[^}]*shape-margin: 18px;/);
+  // Der Text darf unter dem Foto weiterlaufen: kein Flex mehr, die Textspalte ist kein eigener Block.
+  assert.doesNotMatch(head, /display: flex;\s*align-items: flex-start/);
+  assert.doesNotMatch(css, /\.antoine-body \{/);
+});

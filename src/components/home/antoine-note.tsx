@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { NoteSegment } from "@/lib/home/note";
 
 /**
- * Kopf der Startseite: Antoines Foto (rund) und sein Text. Weine im Text sind Links auf die
+ * Kopf der Startseite: Antoines Foto (rund, oben links) und sein Text, der um das Foto herum fliesst. Weine im Text sind Links auf die
  * Weinseite; Weine, die nicht mehr im Bestand sind, stehen als reiner Text. Ohne Foto ein
  * Platzhalter (Weinrot, Creme-Initiale „A“).
  */
@@ -11,7 +11,7 @@ export function AntoineNote({ photo, segments }: { photo: string | null; segment
     <section className="antoine" aria-label="Antoine">
       {photo ? (
         // eslint-disable-next-line @next/next/no-img-element -- eigenes Bild aus /media (privat, lange gecacht)
-        <img src={photo} alt="Antoine" className="antoine-photo" width={112} height={112} />
+        <img src={photo} alt="Antoine" className="antoine-photo" width={176} height={176} />
       ) : (
         <span className="antoine-photo antoine-placeholder" role="img" aria-label="Antoine">
           A
