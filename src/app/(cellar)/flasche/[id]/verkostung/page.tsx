@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { FallbackLink } from "@/components/back-link";
 import { notFound } from "next/navigation";
 import { getMemberSession } from "@/lib/auth";
 import { wineHref } from "@/lib/cellar/wine-page";
@@ -66,9 +66,9 @@ export default async function TastingPage({ params, searchParams }: PageProps<"/
 
   return (
     <div className="stack-lg">
-      <Link href={wineHref(wine.id, item.vintage_year)} className="back">
+      <FallbackLink href={wineHref(wine.id, item.vintage_year)}>
         ← {wine.producer ? `${wine.producer} · ` : ""}{wineTitle({ name: wine.name, vintage_year: item.vintage_year })}
-      </Link>
+      </FallbackLink>
       <div className="stack-sm">
         <h1 className="page-title">WSET Level 3 – Systematisches Verkosten</h1>
         <p className="muted small">

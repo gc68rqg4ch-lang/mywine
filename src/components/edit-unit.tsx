@@ -24,7 +24,13 @@ export function EditUnits({ children }: { children: ReactNode }) {
     current.current = next;
     setState(next);
   }, []);
-  const close = useCallback((id: string, flash?: string) => setState((s) => closeUnit(s, id, flash)), []);
+  const close = useCallback((id: string, flash?: string) => {
+    // iPad: Fokus (Tastatur) vor dem Entfernen des Formulars lösen. Verschwindet das fokussierte
+    // Feld einfach, bleibt Safari teils verschoben – der nächste Tipp (z. B. „← Bestand“) geht ins Leere.
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest(`[data-unit="${CSS.escape(id)}"]`)) active.blur();
+    setState((s) => closeUnit(s, id, flash));
+  }, []);
   const dirty = useCallback((id: string) => setState((s) => markDirty(s, id)), []);
 
   // Ungespeicherte Änderungen: auch beim Verlassen der Seite nachfragen.

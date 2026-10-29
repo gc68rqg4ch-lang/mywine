@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { FallbackLink } from "@/components/back-link";
 import { getMemberSession } from "@/lib/auth";
 import { parseVintageParam } from "@/lib/cellar/wine-page";
 import { loadPlaces } from "@/lib/edit/encounters";
@@ -25,9 +25,9 @@ export default async function NewEncounterPage({ searchParams }: PageProps<"/ver
 
   return (
     <div className="stack-lg">
-      <Link href="/verkostet" className="back">
+      <FallbackLink href="/verkostet">
         ← Verkostet
-      </Link>
+      </FallbackLink>
       <h1 className="page-title">Verkostet erfassen</h1>
       <NewEncounterForm
         wines={(wines.data ?? []).map((w) => ({ ...w, type: asWineType(w.type) }))}
