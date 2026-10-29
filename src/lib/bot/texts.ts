@@ -349,6 +349,61 @@ export const T = {
  * Alle festen Texte (ohne Werte) – für Tests, dass keine technischen Meldungen drinstehen.
  * Funktionen werden mit Beispielwerten aufgerufen.
  */
+/**
+ * Startseite: Ersatztext von Antoine, wenn kein Tagestext von Claude da ist. Reiner Text
+ * (kein HTML); Weine als Platzhalter {{W1}} … (die App macht Links daraus). Jeder Satz nur,
+ * wenn die Daten ihn hergeben.
+ */
+const fl = (n: number) => (n === 1 ? "1 Flasche" : `${n} Flaschen`);
+export const HOME_TEXTS = {
+  greeting: {
+    Morgen: [(name: string) => `Guten Morgen, ${name}.`, (name: string) => `Schönen guten Morgen, ${name}!`, (name: string) => `Morgen, ${name} – schön, dass du reinschaust.`],
+    Mittag: [(name: string) => `Hallo ${name}, schöne Mittagszeit!`, (name: string) => `Grüezi ${name} – Zeit für eine kleine Pause.`],
+    Nachmittag: [(name: string) => `Hallo ${name}, schönen Nachmittag!`, (name: string) => `Grüezi ${name}.`],
+    Abend: [(name: string) => `Guten Abend, ${name}.`, (name: string) => `Schönen Abend, ${name}!`, (name: string) => `Hallo ${name} – der Abend gehört dem Wein.`],
+    Nacht: [(name: string) => `Noch wach, ${name}?`, (name: string) => `Hallo ${name}, spät geworden heute.`],
+  },
+  greetingAnonymous: {
+    Morgen: ["Guten Morgen.", "Schönen guten Morgen!"],
+    Mittag: ["Hallo, schöne Mittagszeit!"],
+    Nachmittag: ["Hallo, schönen Nachmittag!"],
+    Abend: ["Guten Abend.", "Schönen Abend!"],
+    Nacht: ["Noch wach?"],
+  },
+  stock: [
+    (bottles: number, wines: number) => `Im Keller liegen gerade ${fl(bottles)} von ${wines === 1 ? "einem Wein" : `${wines} Weinen`}.`,
+    (bottles: number, wines: number) => `${bottles === 1 ? "Im Keller wartet 1 Flasche" : `Im Keller warten ${bottles} Flaschen`} – ${wines === 1 ? "ein Wein" : `${wines} verschiedene Weine`}.`,
+  ],
+  stockEmpty: ["Im Keller ist gerade nichts eingelagert – vielleicht Zeit für einen Einkauf?", "Der Keller ist im Moment leer."],
+  overdueOne: [
+    (w: string) => `${w} hat seinen Höhepunkt schon hinter sich – den würde ich bald öffnen.`,
+    (w: string) => `Bei ${w} würde ich nicht mehr lange warten, er ist über dem Höhepunkt.`,
+  ],
+  overdueMany: [
+    (n: number, w: string) => `${fl(n)} sind über dem Höhepunkt – ich würde mit ${w} anfangen.`,
+    (n: number, w: string) => `${fl(n)} haben ihren Höhepunkt schon hinter sich, zum Beispiel ${w}.`,
+  ],
+  now: [
+    (w: string) => `Gerade in seiner besten Zeit ist ${w}.`,
+    (w: string) => `Wenn du heute etwas öffnen magst: ${w} ist genau jetzt schön zu trinken.`,
+    (w: string) => `Mein Vorschlag für heute: ${w} – er ist jetzt trinkreif.`,
+  ],
+  openOld: [
+    (w: string, days: number) => `${w} ist seit ${days === 1 ? "einem Tag" : `${days} Tagen`} offen – den solltest du bald austrinken.`,
+    (w: string, days: number) => `Denk an ${w}: die Flasche ist seit ${days === 1 ? "einem Tag" : `${days} Tagen`} offen.`,
+  ],
+  recent: [(w: string) => `Neu im Keller ist ${w}.`, (w: string) => `Zuletzt dazugekommen ist ${w}.`],
+  drunkMonth: [
+    (n: number) => `Diesen Monat ${n === 1 ? "ist schon 1 Flasche" : `sind schon ${n} Flaschen`} leer geworden.`,
+    (n: number) => `Diesen Monat ${n === 1 ? "wurde 1 Flasche" : `wurden ${n} Flaschen`} getrunken.`,
+  ],
+  suggestions: [
+    (n: number) => `Auf der Recherche-Seite ${n === 1 ? "wartet ein Vorschlag" : `warten ${n} Vorschläge`} von mir aufs Prüfen.`,
+    (n: number) => `Ich habe ${n === 1 ? "einen Vorschlag" : `${n} Vorschläge`} zum Prüfen für dich – unter Recherche.`,
+  ],
+  closing: ["Zum Wohl!", "Ich freue mich auf dein nächstes Glas.", "Santé!", "Lass es dir schmecken."],
+} as const;
+
 export function allBotTexts(): string[] {
   const out: string[] = [];
   const walk = (v: unknown) => {
@@ -370,5 +425,6 @@ export function allBotTexts(): string[] {
   };
   walk(T);
   walk(VARIANTS);
+  walk(HOME_TEXTS);
   return out;
 }

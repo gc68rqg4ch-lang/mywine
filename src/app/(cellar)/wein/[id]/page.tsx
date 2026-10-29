@@ -60,7 +60,8 @@ export const maxDuration = 300;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const BACK_LINKS: Record<string, { href: string; label: string }> = {
-  bestand: { href: "/", label: "Bestand" },
+  bestand: { href: "/bestand", label: "Bestand" },
+  start: { href: "/", label: "Start" },
   offen: { href: "/offen", label: "Offen" },
   getrunken: { href: "/getrunken", label: "Getrunken" },
   verkostet: { href: "/verkostet", label: "Verkostet" },

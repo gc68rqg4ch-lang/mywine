@@ -8,7 +8,10 @@ export function secretMatches(received: string | null | undefined, expected: str
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** Aus „x-research-worker-secret: …“ oder „Authorization: Bearer …“. */
-export function workerSecretFrom(headers: Headers) {
-  return headers.get("x-research-worker-secret") ?? headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
+/** Aus „x-research-worker-secret: …“ (bzw. einem anderen Header) oder „Authorization: Bearer …“. */
+export function workerSecretFrom(headers: Headers, header = "x-research-worker-secret") {
+  return headers.get(header) ?? headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
 }
+
+/** Header der Route /api/home/daily (Antoines Tagestexte). */
+export const DAILY_SECRET_HEADER = "x-daily-notes-secret";

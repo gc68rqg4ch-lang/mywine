@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 export function NavLinks({ openCount }: { openCount: number }) {
   const pathname = usePathname();
   const links = [
-    { href: "/", label: "Bestand", active: pathname === "/" },
+    { href: "/bestand", label: "Bestand", active: pathname.startsWith("/bestand") },
     {
       href: "/offen",
       label: "Offen",

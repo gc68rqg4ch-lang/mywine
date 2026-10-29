@@ -185,7 +185,7 @@ test("Anzeige: Schätzung mit „≈“ in App und Bot; „bald trinken“ / „
   const page = readFileSync("src/app/(cellar)/wein/[id]/page.tsx", "utf8");
   assert.ok(page.includes("drinkWindowText(vintage?.drink_from_year ?? null, vintage?.drink_until_year ?? null, drinkSource)"));
   assert.ok(page.includes("DRINK_SOURCE_LABELS[drinkSource]"));
-  for (const f of ["src/app/(cellar)/page.tsx", "src/app/(cellar)/offen/page.tsx"]) assert.match(readFileSync(f, "utf8"), /withDrinkWindows\(/, f);
+  for (const f of ["src/app/(cellar)/bestand/page.tsx", "src/app/(cellar)/offen/page.tsx"]) assert.match(readFileSync(f, "utf8"), /withDrinkWindows\(/, f);
 });
 
 test("Sammellauf „Trinkfenster fehlt“: nur Jahrgänge mit Flaschen (ungeöffnet/offen) ohne „ab“ und „bis“, auch NV", async () => {

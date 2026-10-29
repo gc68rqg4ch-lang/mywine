@@ -12,6 +12,8 @@ type Db = SupabaseClient<Database>;
 export const ORPHAN_BUCKETS = ["wine-photos", "wine-documents"] as const;
 export const OPEN_JOB_STATUSES = ["received", "processing", "needs_review"] as const;
 /** Standard: Dateien unter einer Stunde nie anfassen. */
+/** Ordner für Dateien der App (Antoines Foto) – nie verwaist. */
+export const APP_ASSETS_PREFIX = "app-assets";
 export const ORPHAN_MIN_AGE_MS = 60 * 60 * 1000;
 
 export type StorageFile = { bucket: string; path: string; createdAt: string | null; size: number | null };
@@ -60,6 +62,8 @@ export async function findOrphanFiles(db: Db, options: { now?: number; minAgeMs?
   return lists
     .flat()
     .filter((f) => !refs.has(`${f.bucket}/${f.path}`))
+    // Dateien der App selbst (z. B. Antoines Foto) haben keinen Verweis in der DB.
+    .filter((f) => !f.path.startsWith(`${APP_ASSETS_PREFIX}/`))
     .filter((f) => !f.createdAt || now - Date.parse(f.createdAt) >= minAge);
 }
 

@@ -32,11 +32,11 @@ export async function saveEdit(_prev: ActionState, formData: FormData): Promise<
  * aus den Buckets entfernt. Die Seite navigiert danach selbst zurück zur Liste.
  */
 /** Nur Listen als Ziel nach dem Löschen (kein offener Redirect). */
-const LIST_PATHS = ["/", "/offen", "/getrunken", "/verkostet"];
+const LIST_PATHS = ["/", "/bestand", "/offen", "/getrunken", "/verkostet"];
 function listTarget(value: FormDataEntryValue | null) {
   const v = typeof value === "string" ? value : "";
   const path = v.split("?")[0];
-  return v.startsWith("/") && !v.startsWith("//") && LIST_PATHS.includes(path) ? v : "/";
+  return v.startsWith("/") && !v.startsWith("//") && LIST_PATHS.includes(path) ? v : "/bestand";
 }
 
 export async function deleteWineAction(formData: FormData): Promise<{ error?: string }> {

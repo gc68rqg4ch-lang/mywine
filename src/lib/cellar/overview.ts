@@ -84,7 +84,7 @@ export function drinkStatusText(from: number | null, until: number | null, year:
 
 /** Bestand nach Trinkreife gruppiert, diese Gruppe aufgeklappt und angesprungen. */
 export function drinkStatusHref(status: DrinkStatus) {
-  return `/?gruppe=trinkreife&auf=${status}#${groupAnchor("trinkreife", status)}`;
+  return `/bestand?gruppe=trinkreife&auf=${status}#${groupAnchor("trinkreife", status)}`;
 }
 
 export function isDrinkStatus(value: unknown): value is DrinkStatus {

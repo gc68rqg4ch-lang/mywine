@@ -111,7 +111,7 @@ test("Suchfeld: filtert beim Tippen, Enter lädt nicht neu, ✕ leert und behäl
   assert.match(controls, /onMouseDown=\{\(e\) => e\.preventDefault\(\)\}/);
   const view = readFileSync("src/components/cellar/list-view.tsx", "utf8");
   assert.match(view, /<SearchScope /);
-  for (const f of ["src/app/(cellar)/page.tsx", "src/app/(cellar)/offen/page.tsx", "src/app/(cellar)/getrunken/page.tsx", "src/app/(cellar)/verkostet/page.tsx"]) {
+  for (const f of ["src/app/(cellar)/bestand/page.tsx", "src/app/(cellar)/offen/page.tsx", "src/app/(cellar)/getrunken/page.tsx", "src/app/(cellar)/verkostet/page.tsx"]) {
     const page = readFileSync(f, "utf8");
     assert.match(page, /<ListView/, f);
     assert.ok(!/state\.query \?/.test(page), `${f}: Server filtert nicht mehr nach q`);

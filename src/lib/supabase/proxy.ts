@@ -6,7 +6,7 @@ import { supabasePublishableKey, supabaseUrl } from "./env";
 // /api/telegram: Webhook ohne Cookies (prüft selbst das Secret); die Setup-Route
 // prüft die Session selbst.
 // /api/research/worker prüft sein Secret selbst (Aufruf durch pg_cron, ohne Anmeldung).
-const PUBLIC_PATHS = ["/login", "/auth", "/api/telegram", "/api/research/worker"];
+const PUBLIC_PATHS = ["/login", "/auth", "/api/telegram", "/api/research/worker", "/api/home/daily"];
 
 /**
  * Erneuert die Supabase-Session bei jedem Request und leitet nicht

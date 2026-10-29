@@ -29,6 +29,53 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_notes: {
+        Row: {
+          created_at: string
+          error: string | null
+          generated_at: string | null
+          id: string
+          model: string | null
+          note_date: string
+          person_id: string
+          status: string
+          text: string | null
+          wines: Json
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          generated_at?: string | null
+          id?: string
+          model?: string | null
+          note_date: string
+          person_id: string
+          status?: string
+          text?: string | null
+          wines?: Json
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          generated_at?: string | null
+          id?: string
+          model?: string | null
+          note_date?: string
+          person_id?: string
+          status?: string
+          text?: string | null
+          wines?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_notes_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "persons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ingest_jobs: {
         Row: {
           confidence: number | null
@@ -1680,6 +1727,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      cleanup_daily_notes: { Args: never; Returns: number }
       cleanup_login_codes: { Args: never; Returns: number }
       cleanup_research_jobs: { Args: never; Returns: number }
       delete_bottles: {

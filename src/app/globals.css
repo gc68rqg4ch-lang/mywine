@@ -2710,3 +2710,103 @@ a.doc-clip-name:hover {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+
+/* Startseite: Antoine (Foto rund + Text) und Kacheln in 1/2/3 Spalten wie die Listen. */
+.antoine {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.antoine-photo {
+  flex: none;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+@media (min-width: 700px) {
+  .antoine-photo {
+    width: 112px;
+    height: 112px;
+  }
+}
+.antoine-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #6e1f33;
+  color: #f5ebdd;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.75rem;
+  font-weight: 600;
+  user-select: none;
+}
+.antoine-body {
+  flex: 1;
+  min-width: 0;
+}
+.antoine-name {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.antoine-text {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.antoine-wine {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  text-underline-offset: 2px;
+}
+.tiles.home-tiles {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 700px) {
+  .tiles.home-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1000px) {
+  .tiles.home-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.tile-money {
+  font-size: 1.6rem;
+  overflow-wrap: anywhere;
+}
+.tile-title-link {
+  color: inherit;
+}
+.home-drunk {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.home-drunk-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.home-drunk-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}

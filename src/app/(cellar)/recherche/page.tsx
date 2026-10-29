@@ -20,6 +20,7 @@ import { loadPendingSuggestions, type Suggestion } from "@/lib/research/suggesti
 import { loadGapData } from "@/lib/research/wine";
 import { BatchResearch, type BatchCandidate } from "./batch-research";
 import { BatchProgress } from "./batch-progress";
+import { AvatarRefresh } from "./avatar-refresh";
 import { latestBatchRun } from "@/lib/research/jobs";
 import { runActive } from "@/lib/research/job-text";
 
@@ -287,6 +288,14 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
         mode={windowMode ? "window" : "research"}
       />
       )}
+
+      <section className="card stack-sm" aria-labelledby="antoine-foto">
+        <h2 className="section-title" id="antoine-foto">
+          Antoines Foto
+        </h2>
+        <p className="muted small">Die Startseite zeigt Antoines Profilbild aus Telegram. Es wird wöchentlich neu geholt – oder hier sofort.</p>
+        <AvatarRefresh />
+      </section>
     </div>
   );
 }

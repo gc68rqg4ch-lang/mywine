@@ -1,207 +1,195 @@
-import { loadDrinkWindows } from "@/lib/cellar/load";
-import { withDrinkWindows } from "@/lib/cellar/filters";
-import { loadAllWineNotes } from "@/lib/cellar/notes";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ListView } from "@/components/cellar/list-view";
-import { readListState } from "@/lib/cellar/list-params";
-import { loadRatingsByWine } from "@/lib/cellar/load";
-import { BottleCount, WineCard } from "@/components/cellar/wine-card";
+import { redirect } from "next/navigation";
 import { StockValue } from "@/components/cellar/stock-value";
 import { WineTypeIcon } from "@/components/wine-type-icon";
+import { AntoineNote } from "@/components/home/antoine-note";
 import { getMemberSession } from "@/lib/auth";
-import {
-  BASE_GROUPINGS,
-  DRINK_STATUS_LABELS,
-  DRINK_STATUS_ORDER,
-  buildCellarWines,
-  cellarTotals,
-  currentYear,
-  drinkBadges,
-  drinkCounts,
-  drinkStatusHref,
-  formatVintages,
-  originLabel,
-  toSummaryWine,
-  toVintageRow,
-  unitKey,
-  type LocationFilter,
-} from "@/lib/cellar/overview";
-import { daysSince, formatMoney, todayIso } from "@/lib/format";
+import { DRINK_STATUS_LABELS, drinkStatusHref } from "@/lib/cellar/overview";
 import { wineHref } from "@/lib/cellar/wine-page";
-import { getLocationFilter, withLocation } from "@/lib/location";
-import { newestVintage } from "@/lib/media/pick";
-import { loadLabelPhotos } from "@/lib/media/store";
+import { formatDate, formatMoney, wineTypeLabel } from "@/lib/format";
+import { loadAvatar } from "@/lib/home/avatar";
+import { noteContext } from "@/lib/home/compose";
+import { generateDailyNote, PENDING_STALE_MS } from "@/lib/home/daily";
+import { loadHomeData } from "@/lib/home/data";
+import { currentTime, zurichParts } from "@/lib/home/dates";
+import { fallbackNote } from "@/lib/home/fallback";
+import { renderNote, wineLabel } from "@/lib/home/note";
+import { legacyListTarget } from "@/lib/home/redirect";
+import { drunkByType, openBottles, ratingSummary, readiness, recentPurchases, spending, stockTotals, stockUnits, unitKey } from "@/lib/home/summary";
+import { later } from "@/lib/later";
+import { getLocationFilter } from "@/lib/location";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-export const metadata: Metadata = { title: "Bestand" };
+export const metadata: Metadata = { title: "Start" };
 
-const nonNull = <T,>(v: T | null): v is T => v != null;
+const fl = (n: number) => `${n} Fl.`;
 
-/** ILIKE-Muster für storage_to ("Haus / Raum / …") im gewählten Lagerort. */
-function storagePattern(filter: NonNullable<LocationFilter>) {
-  const esc = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
-  return filter.house ? `${esc(filter.house)} / ${esc(filter.room)}%` : `%${esc(filter.room)}%`;
-}
+export default async function HomePage({ searchParams }: PageProps<"/">) {
+  // Alte Adressen des Bestands („/?q=…“) → „/bestand?…“.
+  const target = legacyListTarget(await searchParams);
+  if (target) redirect(target);
 
-export default async function InventoryPage({ searchParams }: PageProps<"/">) {
-  const params = await searchParams;
-  const state = readListState(params, BASE_GROUPINGS);
+  const [{ supabase, person }, { filter, selected }] = await Promise.all([getMemberSession(), getLocationFilter()]);
+  const now = currentTime();
+  const p = zurichParts(now);
+  const [data, avatar] = await Promise.all([loadHomeData(supabase, person?.id ?? null, now), loadAvatar(supabase)]);
 
-  const [{ supabase }, { filter, selected }] = await Promise.all([getMemberSession(), getLocationFilter()]);
-  const year = todayIso().slice(0, 4);
-  const thisYear = currentYear();
-
-  let purchasesQuery = supabase
-    .from("inventory_events")
-    .select("quantity, price")
-    .eq("event_type", "purchased")
-    .gte("occurred_at", `${year}-01-01T00:00:00+01:00`);
-  if (filter) purchasesQuery = purchasesQuery.ilike("storage_to", storagePattern(filter));
-
-  // Alles in einem Schritt: Bewertungen und Etiketten aller Weine gleich mit (statt danach).
-  // Notizen für die Suche (im Browser) – parallel, ohne auf die Liste der Weine zu warten.
-  const [summary, vintageRows, items, purchases, ratings, photo, windows, notes] = await Promise.all([
-    supabase.from("cellar_wine_summary").select("wine_id, name, producer, country, region, type, grapes"),
-    supabase.from("cellar_wines").select("*"),
-    withLocation(
-      supabase
-        .from("cellar_overview")
-        .select("inventory_item_id, wine_id, status, stock_value, stock_value_regular, date_opened, name, vintage_year, type, bottle_size_ml, vendor_name")
-        .in("status", ["sealed", "open"]),
-      filter,
-    ),
-    purchasesQuery,
-    loadRatingsByWine(supabase, null),
-    loadLabelPhotos(supabase, null),
-    // Herkunft der Trinkfenster (Schätzungen mit „≈“).
-    loadDrinkWindows(supabase, null),
-    loadAllWineNotes(supabase),
-  ]);
-  for (const r of [summary, vintageRows, items, purchases]) if (r.error) throw r.error;
-
-  // Händler der ungeöffneten Flaschen je Wein, Jahrgang und Grösse (Filter „Händler“).
-  const vendors = new Map<string, string[]>();
-  for (const i of items.data ?? []) {
-    if (i.status !== "sealed" || !i.wine_id || !i.vendor_name) continue;
-    const key = unitKey(i.wine_id, i.vintage_year, i.bottle_size_ml);
-    vendors.set(key, [...new Set([...(vendors.get(key) ?? []), i.vendor_name])]);
+  // Antoines Text: fertig aus der Tabelle; fehlt er (Cron ausgefallen), einmal im Hintergrund
+  // nachholen und bis dahin den Ersatztext zeigen.
+  const today = data.notes?.find((n) => n.note_date === p.date);
+  const stalePending = today?.status === "pending" && now - Date.parse(today.created_at) >= PENDING_STALE_MS;
+  if (person && data.notes && (!today || stalePending)) {
+    later(async () => {
+      try {
+        await generateDailyNote(createAdminClient(), person);
+      } catch (error) {
+        console.error("daily note catch-up failed", error instanceof Error ? error.message : error);
+      }
+    });
   }
-  const wines = withDrinkWindows(
-    buildCellarWines(
-      (summary.data ?? []).map(toSummaryWine).filter(nonNull),
-      (vintageRows.data ?? []).map((r) => toVintageRow(r, thisYear)).filter(nonNull),
-      filter,
-      vendors,
-    ),
-    windows,
-    (w) => w.wine_id,
-  );
-  const inStock = wines.filter((w) => w.sealed > 0);
-  const entries = inStock.map((w) => ({ ...w, ratings: ratings.get(w.wine_id) ?? [] }));
+  const context = noteContext(data, person?.name ?? null, now);
+  const note = today?.status === "done" && today.text ? { text: today.text, refs: today.wines } : fallbackNote(context.fallback);
+  const inStock = new Set(context.fallback.units.map((u) => unitKey(u.wineId, u.year)));
+  const { segments, errors } = renderNote(note.text, note.refs, inStock);
+  if (errors.length) console.warn("daily note: wines", errors.join(", "));
 
-  const totals = cellarTotals(wines);
-  const drink = drinkCounts(wines);
-  const sealedItems = (items.data ?? []).filter((i) => i.status === "sealed");
-  const valuePaid = sealedItems.reduce((s, i) => s + (i.stock_value ?? 0), 0);
-  const valueRegular = sealedItems.reduce((s, i) => s + (i.stock_value_regular ?? 0), 0);
-  const openItems = (items.data ?? [])
-    .filter((i) => i.status === "open")
-    .sort((a, b) => (a.date_opened ?? "9999").localeCompare(b.date_opened ?? "9999"));
-  const bought = (purchases.data ?? []).reduce(
-    (acc, e) => ({ bottles: acc.bottles + (e.quantity ?? 0), chf: acc.chf + (e.quantity ?? 0) * (e.price ?? 0) }),
-    { bottles: 0, chf: 0 },
-  );
-
+  // Kacheln zum Bestand im gewählten Lagerort (wie die Bestand-Seite).
+  const stock = filter ? data.stock.filter((s) => s.room === filter.room && (!filter.house || s.house === filter.house)) : data.stock;
+  const totals = stockTotals(stock);
+  const ready = readiness(stockUnits(stock, p.year));
+  const open = openBottles(stock, p.date);
+  const spent = spending(data.purchases, p.year);
+  const recent = recentPurchases(data.purchases, 5);
+  const drunk = drunkByType(data.drunk, now);
+  const ratings = ratingSummary(data.ratings);
+  const money = (chf: number) => formatMoney(chf, "CHF", { whole: true });
 
   return (
     <div className="stack-lg">
+      <AntoineNote photo={avatar?.url ?? null} segments={segments} />
+
       {selected && <p className="muted small">Lagerort: {selected.label}</p>}
 
-      <section className="tiles" aria-label="Übersicht">
-        <div className="tile">
+      <section className="tiles home-tiles" aria-label="Übersicht">
+        <Link href="/bestand" className="tile tile-link">
           <h2 className="tile-title">Bestand</h2>
           <p className="tile-big">
             {totals.bottles} <span>Fl.</span>
           </p>
-          <p className="tile-line">
-            {totals.wines} Weine · {totals.vintages} Jahrgänge
-          </p>
-          <StockValue paid={valuePaid} regular={valueRegular} />
-        </div>
+          <p className="tile-line">{totals.wines === 1 ? "1 Wein" : `${totals.wines} Weine`}</p>
+          <StockValue paid={totals.paid} regular={totals.regular} />
+        </Link>
 
-        <Link href="/offen" className="tile tile-link">
-          <h2 className="tile-title">Offene Flaschen</h2>
-          <p className="tile-big">
-            {openItems.length} <span>Fl.</span>
+        <Link href="/bestand" className="tile tile-link">
+          <h2 className="tile-title">Ausgaben {p.year}</h2>
+          <p className="tile-big tile-money">{money(spent.thisYear.chf)}</p>
+          <p className="tile-line">{fl(spent.thisYear.bottles)} gekauft</p>
+          {spent.thisYear.gifts > 0 && <p className="tile-line">🎁 {fl(spent.thisYear.gifts)} geschenkt</p>}
+          <p className="tile-line muted">
+            {p.year - 1}: {money(spent.lastYear.chf)} · {fl(spent.lastYear.bottles)}
+            {spent.lastYear.gifts > 0 ? ` · 🎁 ${spent.lastYear.gifts}` : ""}
           </p>
-          {openItems.slice(0, 3).map((o) => {
-            const days = daysSince(o.date_opened);
-            return (
-              <p key={o.inventory_item_id} className="tile-line tile-open">
-                <WineTypeIcon type={o.type} size={16} />
-                <span className="tile-open-name">
-                  {o.name} {o.vintage_year ?? ""}
-                </span>
-                <span className="muted">{days == null ? "–" : `${days} T.`}</span>
-              </p>
-            );
-          })}
-          {openItems.length === 0 && <p className="tile-line muted">Keine offen</p>}
         </Link>
 
         <div className="tile">
-          <h2 className="tile-title">Käufe {year}</h2>
-          <p className="tile-big">
-            {bought.bottles} <span>Fl.</span>
-          </p>
-          <p className="tile-line">{formatMoney(bought.chf, "CHF", { whole: true })}</p>
-          <p className="tile-line muted small">aus dem Journal</p>
+          <h2 className="tile-title">
+            <Link href="/bestand" className="tile-title-link">
+              Zuletzt eingebucht
+            </Link>
+          </h2>
+          {recent.map((r, i) => (
+            <Link key={`${r.at}-${i}`} href={wineHref(r.wineId!, r.year, { von: "start" })} className="tile-line tile-open">
+              <span className="tile-open-name">{wineLabel(r.name ?? "Wein", r.year)}</span>
+              <span className="muted">{formatDate(r.at.slice(0, 10))}</span>
+            </Link>
+          ))}
+          {recent.length === 0 && <p className="tile-line muted">Noch keine Käufe</p>}
         </div>
+
+        <Link href="/getrunken" className="tile tile-link">
+          <h2 className="tile-title">Getrunken</h2>
+          <DrunkLine label="Diesen Monat" count={drunk.month} />
+          <DrunkLine label={`Jahr ${p.year}`} count={drunk.year} />
+        </Link>
 
         <div className="tile">
           <h2 className="tile-title">Trinkreife</h2>
           <dl className="tile-dl">
-            {DRINK_STATUS_ORDER.map((s) => (
+            {(["overdue", "now"] as const).map((s) => (
               <div key={s} className={`drink drink-${s}`}>
                 <dt>
                   <Link href={drinkStatusHref(s)} className="drink-link">
                     {DRINK_STATUS_LABELS[s]}
                   </Link>
                 </dt>
-                <dd>{drink[s]} Fl.</dd>
+                <dd>{fl(s === "overdue" ? ready.overdueBottles : ready.nowBottles)}</dd>
               </div>
             ))}
           </dl>
+          {[...ready.overdue, ...ready.now].slice(0, 3).map((u) => (
+            <Link key={unitKey(u.wineId, u.year)} href={wineHref(u.wineId, u.year, { von: "start" })} className="tile-line tile-open">
+              <WineTypeIcon type={u.type} size={16} />
+              <span className="tile-open-name">{wineLabel(u.name, u.year)}</span>
+            </Link>
+          ))}
         </div>
-      </section>
 
-      <ListView
-        basePath="/"
-        state={state}
-        groupings={BASE_GROUPINGS}
-        entries={entries}
-        notes={(e) => notes.get(e.wine_id)}
-        year={thisYear}
-        empty="Keine ungeöffneten Flaschen hier."
-        itemKey={({ wine }) => wine.wine_id}
-        renderItem={({ wine, bottles, vintages }) => (
-          <WineCard
-            href={wineHref(wine.wine_id, vintages.length === 1 ? vintages[0] : undefined, { von: "bestand" })}
-            type={wine.type}
-            producer={wine.producer}
-            title={wine.name}
-            meta={[formatVintages(vintages), originLabel(wine)]}
-            photo={photo(wine.wine_id, newestVintage(vintages))}
-            drink={drinkBadges(wine, vintages, thisYear)}
-            aside={
-              <BottleCount
-                bottles={bottles}
-                note={wine.open > 0 && ["typ", "land", "rebsorte"].includes(state.groupBy) ? `+${wine.open} offen` : null}
-              />
-            }
-          />
+        <Link href="/offen" className="tile tile-link">
+          <h2 className="tile-title">Offen</h2>
+          <p className="tile-big">
+            {open.length} <span>Fl.</span>
+          </p>
+          {open.slice(0, 4).map((o) => (
+            <p key={o.itemId} className="tile-line tile-open">
+              <WineTypeIcon type={o.type} size={16} />
+              <span className="tile-open-name">{wineLabel(o.name, o.year)}</span>
+              <span className="muted">{o.days == null ? "–" : `${o.days} T.`}</span>
+            </p>
+          ))}
+          {open.length === 0 && <p className="tile-line muted">Keine offen</p>}
+        </Link>
+
+        <Link href="/verkostet" className="tile tile-link">
+          <h2 className="tile-title">Verkostet</h2>
+          <p className="tile-big">{data.tastedThisMonth}</p>
+          <p className="tile-line">diesen Monat</p>
+        </Link>
+
+        {ratings && (
+          <div className="tile">
+            <h2 className="tile-title">Deine Bewertungen</h2>
+            <p className="tile-big">
+              {ratings.avg.toFixed(1)} <span>★ im Schnitt</span>
+            </p>
+            <p className="tile-line">{ratings.count === 1 ? "1 Wein bewertet" : `${ratings.count} Weine bewertet`}</p>
+            <Link href={wineHref(ratings.best.wineId, ratings.best.year, { von: "start" })} className="tile-line tile-open">
+              <span className="tile-open-name">Bester: {wineLabel(ratings.best.name, ratings.best.year)}</span>
+              <span className="muted">{ratings.best.rating} ★</span>
+            </Link>
+          </div>
         )}
-      />
+      </section>
+    </div>
+  );
+}
+
+function DrunkLine({ label, count }: { label: string; count: ReturnType<typeof drunkByType>["month"] }) {
+  return (
+    <div className="home-drunk">
+      <p className="tile-line">
+        <span className="muted">{label}:</span> <strong>{fl(count.total)}</strong>
+      </p>
+      {count.byType.length > 0 && (
+        <p className="home-drunk-types">
+          {count.byType.map((t) => (
+            <span key={t.type} className="home-drunk-type" title={wineTypeLabel(t.type === "unknown" ? null : t.type)}>
+              <WineTypeIcon type={t.type === "unknown" ? null : t.type} size={18} />
+              {t.bottles}
+            </span>
+          ))}
+        </p>
+      )}
     </div>
   );
 }

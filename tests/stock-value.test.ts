@@ -38,7 +38,7 @@ test("Nie mit „…“ abgeschnitten: Zeilen umbrechen, schmal „normal“ sta
   assert.match(rule(".tile-line.tile-amount"), /white-space: normal;/);
   assert.match(rule(".tile-amounts"), /container-type: inline-size;/);
   assert.match(css, /@container \(max-width: 165px\) \{\s*\.amount-long \{\s*display: none;/);
-  const page = readFileSync("src/app/(cellar)/page.tsx", "utf8");
+  const page = readFileSync("src/app/(cellar)/bestand/page.tsx", "utf8");
   assert.ok(page.includes("<StockValue paid={valuePaid} regular={valueRegular} />"));
   assert.ok(!/bezahlt[\s\S]{0,80}· \$\{formatMoney/.test(page), "nicht mehr auf einer Zeile");
 });
