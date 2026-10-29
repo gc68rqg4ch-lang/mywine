@@ -317,7 +317,7 @@ test("Likör: Schätzung nach Unterkategorie, „offen gut bis“ beim Öffnen; 
 });
 
 test("Migration: Haltbarkeit auch bei Spirituosen, Trigger leert bei Wechsel zu Wein; kein Nachrücken", () => {
-  const sql = readFileSync(new URL("../supabase/migrations/20261029170000_spirit_open_by_hand.sql", import.meta.url), "utf8");
+  const sql = readFileSync(new URL("../supabase/migrations/20261029145554_spirit_open_by_hand.sql", import.meta.url), "utf8");
   assert.match(sql, /type::text in \('fortified', 'spirit'\) or \(open_keep_days is null/);
   assert.match(sql, /if new\.type is null or new\.type::text not in \('fortified', 'spirit'\) then\s+new\.open_keep_days := null;/);
   assert.match(sql, /drop function if exists public\.ensure_spirit_current/);
