@@ -55,6 +55,8 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* Kein Zoom durch schnelles Doppeltippen (Zwei-Finger-Zoom bleibt). */
+  touch-action: manipulation;
 }
 
 body {
@@ -2649,4 +2651,16 @@ a.doc-clip-name:hover {
 }
 .gift-line {
   margin: 2px 0 0;
+}
+
+/* Touch-Geräte (iPad/iPhone): Felder mit mindestens 16 px Schrift, sonst zoomt Safari beim
+   Antippen hinein. Viele Felder erben eine kleinere Schrift (font: inherit in Karten, Filter,
+   WSET, Verkostet) – darum !important; grössere Schrift bleibt (1em = bisherige Grösse). Am
+   Desktop (Maus) ändert sich nichts. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
 }

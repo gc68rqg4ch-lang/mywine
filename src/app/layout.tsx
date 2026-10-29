@@ -12,7 +12,12 @@ export const metadata: Metadata = {
   description: "Persönliche Weinsammlung",
 };
 
+// iPad/iPhone: kein automatisches Hineinzoomen beim Antippen von Feldern (maximum-scale=1);
+// Zoomen mit zwei Fingern bleibt in Safari möglich – deshalb kein userScalable: false.
 export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#faf7f5" },
     { media: "(prefers-color-scheme: dark)", color: "#17110f" },
