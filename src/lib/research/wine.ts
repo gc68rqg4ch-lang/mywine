@@ -72,6 +72,8 @@ export type ResearchOutcome = {
   taste?: "saved" | "suggested" | "none" | "unchanged" | "skipped";
   /** Jahrgang, für den das Profil gesucht wurde (null = Wein ohne Jahrgang). */
   tasteYear?: number | null;
+  /** Preissuche: Rohantwort, Verwerfungsgrund, geprüfte Seiten (für research_jobs.result). */
+  diagnostics?: unknown;
   /** Bei status „error“: was schiefging (Nutzungslimit → Lauf sofort stoppen). */
   error?: { kind: "usage_limit" | "temporary" | "api" | "other"; message: string };
   seconds: number;

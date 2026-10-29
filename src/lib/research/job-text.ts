@@ -10,6 +10,8 @@ export type JobResult = {
   filled: string[];
   suggested: number;
   taste?: string;
+  /** Preissuche: Rohantwort des Modells, Verwerfungsgrund, geprüfte Seiten (ohne Seiteninhalte). */
+  diagnostics?: unknown;
 };
 
 export type RunCounts = { total: number; done: number; failed: number; skipped: number; queued: number; running: number; held: number };

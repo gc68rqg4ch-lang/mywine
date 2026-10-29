@@ -28,9 +28,10 @@ let priceCalls = 0;
 
 const offer = (o: Partial<PriceRaw> = {}): PriceRaw => ({
   found: true, same_wine: true, merchant: "Mövenpick", url: "https://www.moevenpick-wein.com/de/2019-pintia.html", currency: "CHF",
-  price: 66, regular_price: 0, vintage: 2019, size_ml: 750, quote: "Pintia 2019, 75 cl, CHF 66.00", ...o,
+  price: 66, regular_price: 0, vintage: 2019, size_ml: 750, quote: "Pintia 2019, 75 cl, CHF 66.00",
+  product_title: "", candidate_urls: [], reason: "", ...o,
 });
-const NOTHING = { found: false, same_wine: false, merchant: "", url: "", currency: "", price: 0, regular_price: 0, vintage: 0, size_ml: 0, quote: "" };
+const NOTHING = { found: false, same_wine: false, product_title: "", merchant: "", url: "", currency: "", price: 0, regular_price: 0, vintage: 0, size_ml: 0, quote: "", candidate_urls: [], reason: "nichts gefunden" };
 
 const net: Net = {
   tables: {}, telegram: [], rpc: {}, storage: new Map(),

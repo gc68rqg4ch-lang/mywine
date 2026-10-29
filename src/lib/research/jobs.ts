@@ -156,7 +156,13 @@ export function kickWorker() {
 
 // ——— Abarbeiten ———
 
-const toResult = (o: ResearchOutcome): JobResult => ({ status: o.status, filled: o.filled, suggested: o.suggested, ...(o.taste ? { taste: o.taste } : {}) });
+const toResult = (o: ResearchOutcome): JobResult => ({
+  status: o.status,
+  filled: o.filled,
+  suggested: o.suggested,
+  ...(o.taste ? { taste: o.taste } : {}),
+  ...(o.diagnostics ? { diagnostics: o.diagnostics } : {}),
+});
 
 /** Einen Auftrag ausführen (wie bisher die Server Actions). Fehler kommen als status „error“ zurück. */
 export async function runJob(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "params">): Promise<ResearchOutcome> {
