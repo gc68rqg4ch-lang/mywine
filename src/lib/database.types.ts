@@ -1605,6 +1605,13 @@ export type Database = {
             referencedRelation: "vendors"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "wines_spirit_category_id_fkey"
+            columns: ["spirit_category_id"]
+            isOneToOne: false
+            referencedRelation: "spirit_categories"
+            referencedColumns: ["id"]
+          },
         ]
       }
       cellar_wine_summary: {
@@ -1634,7 +1641,15 @@ export type Database = {
           vintages: number[] | null
           wine_id: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "wines_spirit_category_id_fkey"
+            columns: ["spirit_category_id"]
+            isOneToOne: false
+            referencedRelation: "spirit_categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       cellar_wines: {
         Row: {
@@ -1693,6 +1708,13 @@ export type Database = {
             columns: ["wine_id"]
             isOneToOne: false
             referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wines_spirit_category_id_fkey"
+            columns: ["spirit_category_id"]
+            isOneToOne: false
+            referencedRelation: "spirit_categories"
             referencedColumns: ["id"]
           },
         ]
