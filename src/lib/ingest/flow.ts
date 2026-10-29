@@ -29,7 +29,10 @@ import { saveWineMedia } from "@/lib/media/store";
 import { PHOTO_BUCKET, advanceJob, jobState, toJson, type IngestJob } from "./jobs";
 import {
   cancelKeyboard,
+  categoryKeyboard,
   confirmKeyboard,
+  kindKeyboard,
+  newCategoryKeyboard,
   locationKeyboard,
   proposalMessage,
   reviewKeyboard,
@@ -49,6 +52,9 @@ import {
   wineSummaryLines,
 } from "./messages";
 import { enrichFromWeb, parseTextEntry, type RecognitionResult } from "./recognize";
+import { mainOptions, spiritStart, storeSpiritFields } from "./spirit-flow";
+import { scheduleSpiritResearch } from "@/lib/research/spirit-auto";
+import type { SpiritCategory } from "@/lib/spirits/categories";
 import { needsVintage, type IngestState, type IngestStep, type WineProposal } from "./schema";
 import { completeWineName } from "./wine-names";
 import {
@@ -141,15 +147,22 @@ export async function continuePhotoPurchase(
     // (Stammdaten, Trinkfenster, Rebsorten mit %) – auch bei bekannten Weinen; Vorhandenes bleibt.
     const known = await findWine(db, proposal.name, proposal.producer);
     if (known) proposal = mergeWithKnownWine(proposal, known);
-    const web = await enrichFromWeb(proposal).catch((error) => {
-      console.error("web enrichment failed", error);
-      return null;
-    });
+    // Spirituose (bzw. unsicher): keine Wein-Recherche (Trinkfenster, Rebsorten) – die Recherche
+    // der Spirituose läuft nach dem Einbuchen im Hintergrund.
+    const spirit = await spiritStart(db, proposal, recognition.spirit, known);
+    proposal = spirit.proposal;
+    const web =
+      spirit.spirit || spirit.unsure
+        ? null
+        : await enrichFromWeb(proposal).catch((error) => {
+            console.error("web enrichment failed", error);
+            return null;
+          });
     if (web) {
       proposal = web.proposal;
       enriched = { filled: web.filled, sources: web.sources };
     }
-    const grapes = await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
+    const grapes = spirit.spirit || spirit.unsure ? { shares: proposal.grape_shares, source: null, sources: [] as string[] } : await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
     proposal = { ...proposal, grape_shares: grapes.shares };
 
     const gift = giftInText(caption);
@@ -159,6 +172,7 @@ export async function continuePhotoPurchase(
     const state: IngestState = {
       step: "review",
       intent: "bought",
+      ...spirit.patch,
       ...(options.firstQuestion ? { photo_join: true } : {}),
       ...(gift ? giftPatch(gift.from, giftValueInText(caption)) : {}),
       // Anzahl im Bildtext („6 Flaschen“): nicht nochmals fragen.
@@ -221,6 +235,9 @@ export function giftPatch(from: string | null | undefined, value?: number | null
 
 /** Nächster Schritt: die erste noch fehlende Kaufangabe, sonst Zusammenfassung (Text) bzw. Speichern. */
 export function nextPurchaseStep(state: IngestState): IngestStep {
+  // Zuerst klären: Wein oder Spirituose? Bei Spirituosen die Kategorie (neue erst nach „Anlegen“).
+  if (state.kind_unsure) return "kind";
+  if (state.proposal.type === "spirit" && state.spirit && !state.spirit.done) return state.spirit.newCategory ? "category" : "category_main";
   if (needsVintage(state)) return "vintage";
   if (state.storage_room === undefined) return "location";
   if (state.quantity === undefined) return "quantity";
@@ -249,21 +266,39 @@ export async function advanceTo(
   patch: Partial<IngestState>,
 ) {
   const merged = { ...jobState(job)!, ...patch };
-  const step = nextPurchaseStep(merged);
+  let step = nextPurchaseStep(merged);
   const vendors = step === "vendor" ? await listVendors(db) : [];
+  const mains = step === "category_main" ? await mainOptions(db).catch(() => [] as SpiritCategory[]) : [];
+  // Keine Kategorien ladbar (z. B. vor der Migration): ohne Kategorie weiter.
+  if (step === "category_main" && !mains.length && merged.spirit) {
+    patch = { ...patch, spirit: { ...merged.spirit, done: true } };
+    step = nextPurchaseStep({ ...merged, ...patch });
+  }
   const next = await advanceJob(db, job, from, {
     ...patch,
     step,
     ...(step === "vendor" ? { vendor_options: vendors.map((v) => v.id) } : {}),
+    ...(step === "category_main" ? { category_options: mains.map((c) => c.id) } : {}),
   });
   if (!next) return null;
-  await askFor(next, chatId, vendors);
+  await askFor(next, chatId, vendors, mains);
   return next;
 }
 
-async function askFor(job: IngestJob, chatId: number, vendors: { id: string; name: string }[]) {
+async function askFor(job: IngestJob, chatId: number, vendors: { id: string; name: string }[], mains: SpiritCategory[] = []) {
   const state = jobState(job)!;
   switch (state.step) {
+    case "kind":
+      await sendMessage(chatId, T.kindAsk(), kindKeyboard(job.id));
+      return;
+    case "category": {
+      const c = state.spirit?.newCategory;
+      if (c) await sendMessage(chatId, T.newCategoryAsk(c.name, c.parentName), newCategoryKeyboard(job.id));
+      return;
+    }
+    case "category_main":
+      await sendMessage(chatId, T.chooseCategory, categoryKeyboard(job.id, mains.map((c) => c.name), "main"));
+      return;
     case "vintage": {
       const guess = state.proposal.vintage_year;
       await sendMessage(
@@ -432,6 +467,8 @@ export async function saveJob(job: IngestJob, chatId: number) {
     // Nachkauf: immer der bestehende Wein, nur eine neue Charge.
     const wineId = await resolveWine(db, state.proposal, job.matched_wine_id);
     await fillWineGaps(db, wineId, state.proposal);
+    // Spirituose: Kategorie, Alter, Fass, Destilliert, Abgefüllt (nur Leeres).
+    await storeSpiritFields(db, wineId, state);
     await storeGrapes(db, wineId, state);
     // Jahrgang gleich mit anlegen: die Hintergrund-Suchen (Profil, Trinkfenster) finden ihn dann
     // schon vor und schreiben nur noch ihre Felder (ensureVintage ist auch bei Gleichzeitigkeit sicher).
@@ -486,7 +523,9 @@ export async function saveJob(job: IngestJob, chatId: number) {
     // Geschmacksprofil und Trinkfenster für genau diesen Jahrgang im Hintergrund (auch beim Nachkauf,
     // falls noch keins da ist). Das Trinkfenster läuft danach, damit Etikett/Recherche Vorrang haben.
     scheduleTasteProfile(wineId, state.proposal.vintage_year ?? null);
-    scheduleDrinkWindow(wineId, state.proposal.vintage_year ?? null);
+    // Spirituosen: kein Trinkfenster, dafür die fehlenden Angaben recherchieren.
+    if (state.proposal.type === "spirit") scheduleSpiritResearch(wineId);
+    else scheduleDrinkWindow(wineId, state.proposal.vintage_year ?? null);
   } catch (error) {
     await failJob(db, job.id, chatId, "Das Speichern ist mir nicht gelungen", error, state.source === "text");
   }
@@ -648,11 +687,17 @@ export async function processTextJob(jobId: string, chatId: number, text: string
 
     let enriched: IngestState["recognition"] = { model: "text", confidence: 1, notes: null, enriched_fields: [], sources: [] };
     let drink = { from: null as number | null, until: null as number | null };
+    // Spirituose (bzw. unsicher): keine Wein-Recherche; Recherche der Spirituose nach dem Einbuchen.
+    const spirit = await spiritStart(db, proposal, parsed.spirit, known);
+    proposal = spirit.proposal;
     // Ein Durchgang für alles, was fehlt – auch bei bekannten Weinen (deren Lücken).
-    const web = await enrichFromWeb(proposal).catch((error) => {
-      console.error("web enrichment failed", error);
-      return null;
-    });
+    const web =
+      spirit.spirit || spirit.unsure
+        ? null
+        : await enrichFromWeb(proposal).catch((error) => {
+            console.error("web enrichment failed", error);
+            return null;
+          });
     if (web) {
       proposal = web.proposal;
       enriched = { ...enriched, enriched_fields: web.filled, sources: web.sources };
@@ -664,7 +709,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
       if (known) proposal = mergeWithKnownWine(proposal, known);
     }
 
-    const grapes = await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
+    const grapes = spirit.spirit || spirit.unsure ? { shares: proposal.grape_shares, source: null, sources: [] as string[] } : await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
     proposal = { ...proposal, grape_shares: grapes.shares };
 
     const p = parsed.purchase;
@@ -674,6 +719,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     const base: IngestState = {
       step: "researching",
       source: "text",
+      ...spirit.patch,
       proposal,
       grape_source: grapes.source,
       recognition: { ...enriched, sources: [...enriched.sources, ...grapes.sources].slice(0, 8) },
@@ -701,10 +747,12 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     const similar = known ? [] : await findSimilarWines(db, proposal.name, proposal.producer);
     const step: IngestStep = similar.length ? "similar" : restockCandidate && !needsVintage(base) ? "restock" : textStep(base);
     const vendors = step === "vendor" ? await listVendors(db) : [];
+    const mains = step === "category_main" ? await mainOptions(db).catch(() => [] as SpiritCategory[]) : [];
     const state: IngestState = {
       ...base,
       step,
       ...(step === "vendor" ? { vendor_options: vendors.map((v) => v.id) } : {}),
+      ...(step === "category_main" ? { category_options: mains.map((c) => c.id) } : {}),
       ...(similar.length ? { similar_ids: similar.map((w) => w.id) } : {}),
     };
 
@@ -728,7 +776,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     } else if (step === "producer") {
       await sendMessage(chatId, T.producerAsk, cancelKeyboard(jobId));
     } else {
-      await askFor(job, chatId, vendors);
+      await askFor(job, chatId, vendors, mains);
     }
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erfassung ist fehlgeschlagen", error, true);

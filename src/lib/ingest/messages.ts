@@ -8,6 +8,7 @@ import { formatShares } from "@/lib/grapes/shares";
 import { escapeHtml } from "@/lib/telegram/api";
 import type { TgInlineKeyboard } from "@/lib/telegram/types";
 import type { EnrichableField, IngestState } from "./schema";
+import { spiritLines } from "@/lib/spirits/draft";
 
 /** callback_data: "<aktion>:<jobId>[:<wert>]" – bleibt unter Telegrams 64 Bytes. */
 export type CallbackAction =
@@ -30,7 +31,17 @@ export type CallbackAction =
   | "confirm"
   | "vint"
   | "simyes"
-  | "simno";
+  | "simno"
+  /** Wein oder Spirituose? (w | s) */
+  | "kind"
+  /** Spirituose: vorgeschlagene neue Kategorie anlegen */
+  | "catnew"
+  /** Spirituose: bestehende Kategorie wählen (Hauptkategorien zeigen) */
+  | "catpick"
+  /** Hauptkategorie (Index) */
+  | "catmain"
+  /** Unterkategorie (Index) bzw. „none“ = ohne */
+  | "catsub";
 
 export function callbackData(action: CallbackAction, jobId: string, value?: string) {
   return [action, jobId, value].filter(Boolean).join(":");
@@ -59,6 +70,11 @@ export function parseCallbackData(data: string | undefined) {
     "restock",
     "confirm",
     "vint",
+    "kind",
+    "catnew",
+    "catpick",
+    "catmain",
+    "catsub",
   ];
   if (!actions.includes(action as CallbackAction) || !/^[0-9a-f-]{36}$/.test(jobId ?? "")) {
     return null;
@@ -99,21 +115,25 @@ export function bestBeforeLine(state: Pick<IngestState, "best_before">, today = 
 export function proposalMessage(state: IngestState, matched: boolean, extra: string[] = []) {
   const p = state.proposal;
   const r = state.recognition;
+  // Spirituose: Kategorie, Alter, Fass …; keine Trauben, kein Trinkfenster (nur ein Ablaufdatum).
+  const spirit = p.type === "spirit";
+  const icon = spirit ? "🥃" : "🍷";
   const lines = [
     // Ohne Produzent steht der Name oben (kein „Produzent unbekannt“).
     ...(p.producer
-      ? [`🍷 <b>${e(p.producer)}</b>`, `${e(p.name ?? "Name unbekannt")}${p.vintage_year != null ? ` ${p.vintage_year}` : ""}`]
-      : [`🍷 <b>${e(p.name ?? "Name unbekannt")}</b>${p.vintage_year != null ? ` ${p.vintage_year}` : ""}`]),
-    vintageLine(state),
+      ? [`${icon} <b>${e(p.producer)}</b>`, `${e(p.name ?? "Name unbekannt")}${p.vintage_year != null ? ` ${p.vintage_year}` : ""}`]
+      : [`${icon} <b>${e(p.name ?? "Name unbekannt")}</b>${p.vintage_year != null ? ` ${p.vintage_year}` : ""}`]),
+    spirit ? (p.vintage_year != null ? `📅 Jahrgang: ${p.vintage_year}` : null) : vintageLine(state),
     "",
-    `Typ: ${e(p.type ? wineTypeLabel(p.type) : "–")}`,
+    `Typ: ${e(p.type ? wineTypeLabel(p.type) : state.kind_unsure ? "Wein oder Spirituose? (ich frage gleich nach)" : "–")}`,
+    ...(spirit ? spiritLines(state.spirit).map(e) : []),
     `Herkunft: ${e([p.country, p.region, p.appellation].filter(Boolean).join(" · ") || "–")}`,
-    `Trauben: ${e(formatShares(p.grape_shares) || "–")}`,
+    spirit ? null : `Trauben: ${e(formatShares(p.grape_shares) || "–")}`,
     `Alkohol: ${p.alcohol_content != null ? `${p.alcohol_content.toLocaleString("de-CH")} %` : "–"}`,
     `Flasche: ${e(formatBottleSize(p.bottle_size_ml) ?? "–")}`,
-    ...[drinkLine(state), bestBeforeLine(state)].filter((l): l is string => l != null),
+    ...[spirit ? null : drinkLine(state), bestBeforeLine(state)].filter((l): l is string => l != null),
     ...extra,
-  ];
+  ].filter((l): l is string => l != null);
   // Keine Technik (Modell, Prozent) – nur, wo ich unsicher bin.
   if (r.notes) lines.push("", `<i>Nicht ganz sicher bin ich bei: ${e(r.notes)}</i>`);
   const grapeNote = {
@@ -128,7 +148,7 @@ export function proposalMessage(state: IngestState, matched: boolean, extra: str
     );
   }
   if (!p.name) {
-    lines.push("", "Mir fehlt noch der Name des Weins – magst du ihn kurz korrigieren?");
+    lines.push("", spirit ? "Mir fehlt noch der Name – magst du ihn kurz korrigieren?" : "Mir fehlt noch der Name des Weins – magst du ihn kurz korrigieren?");
   }
   return lines.join("\n");
 }
@@ -330,18 +350,19 @@ export function confirmKeyboard(jobId: string): TgInlineKeyboard {
 /** Kurzer Steckbrief des erkannten Weins (Text-Erfassung). */
 export function wineSummaryLines(state: IngestState) {
   const p = state.proposal;
+  const spirit = p.type === "spirit";
   const window =
-    state.drink_from_year || state.drink_until_year
+    !spirit && (state.drink_from_year || state.drink_until_year)
       ? `Trinkreife ${state.drink_from_year ?? "?"}–${state.drink_until_year ?? "?"}${drinkHintText(state.drink_until_year ?? null)}`
       : null;
   return [
-    `🍷 <b>${e([p.producer, [p.name, p.vintage_year].filter(Boolean).join(" ")].filter(Boolean).join(" – "))}</b>${state.restock ? " <i>(Nachkauf)</i>" : ""}`,
-    vintageLine(state),
+    `${spirit ? "🥃" : "🍷"} <b>${e([p.producer, [p.name, p.vintage_year].filter(Boolean).join(" ")].filter(Boolean).join(" – "))}</b>${state.restock ? " <i>(Nachkauf)</i>" : ""}`,
+    spirit ? null : vintageLine(state),
     e(
       [
         p.type ? wineTypeLabel(p.type) : null,
         [p.country, p.region, p.appellation].filter(Boolean).join(", ") || null,
-        p.bottle_size_ml && p.bottle_size_ml !== 750 ? formatBottleSize(p.bottle_size_ml) : null,
+        p.bottle_size_ml && p.bottle_size_ml !== (spirit ? 700 : 750) ? formatBottleSize(p.bottle_size_ml) : null,
       ]
         .filter(Boolean)
         .join(" · "),
@@ -355,6 +376,8 @@ export function wineSummaryLines(state: IngestState) {
         .filter(Boolean)
         .join(" · "),
     ),
+    // Spirituose: „Whisky › Bourbon · 12 Jahre · Sherry Cask …“
+    spirit ? e(spiritLines(state.spirit).map((l) => l.replace(/^(Kategorie|Alter): /, "")).join(" · ")) : null,
     bestBeforeLine(state),
   ].filter((l) => l && l !== "<b></b>");
 }
@@ -405,4 +428,45 @@ export function textSummaryMessage(state: IngestState, extra: string[] = []) {
   ]
     .filter((l) => l != null && l !== undefined)
     .join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Spirituosen: Wein oder Spirituose? Kategorie wählen bzw. neue vorschlagen
+
+export function kindKeyboard(jobId: string): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: "🍷 Wein", callback_data: callbackData("kind", jobId, "w") },
+        { text: "🥃 Spirituose", callback_data: callbackData("kind", jobId, "s") },
+      ],
+      cancelRow(jobId),
+    ],
+  };
+}
+
+/** Vorschlag neue Kategorie: „Anlegen“ / „Bestehende wählen“. */
+export function newCategoryKeyboard(jobId: string): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: `➕ Anlegen`, callback_data: callbackData("catnew", jobId) },
+        { text: "📋 Bestehende wählen", callback_data: callbackData("catpick", jobId) },
+      ],
+      cancelRow(jobId),
+    ],
+  };
+}
+
+/** Kategorien als Knöpfe (je zwei pro Zeile); Unterkategorien mit „Ohne Unterkategorie“. */
+export function categoryKeyboard(jobId: string, names: string[], level: "main" | "sub", mainName?: string): TgInlineKeyboard {
+  const rows: TgInlineKeyboard["inline_keyboard"] = [];
+  names.forEach((name, index) => {
+    const button = { text: name, callback_data: callbackData(level === "main" ? "catmain" : "catsub", jobId, String(index)) };
+    if (index % 2 === 0) rows.push([button]);
+    else rows[rows.length - 1].push(button);
+  });
+  if (level === "sub") rows.push([{ text: `Nur „${mainName ?? "Hauptkategorie"}“`, callback_data: callbackData("catsub", jobId, "none") }]);
+  rows.push(cancelRow(jobId));
+  return { inline_keyboard: rows };
 }

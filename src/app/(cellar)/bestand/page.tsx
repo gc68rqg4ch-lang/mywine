@@ -32,6 +32,8 @@ import { wineHref } from "@/lib/cellar/wine-page";
 import { getLocationFilter, withLocation } from "@/lib/location";
 import { newestVintage } from "@/lib/media/pick";
 import { loadLabelPhotos } from "@/lib/media/store";
+import { loadSpirits } from "@/lib/spirits/load";
+import { spiritMeta, withSpiritTags } from "@/lib/spirits/tag";
 
 export const metadata: Metadata = { title: "Bestand" };
 
@@ -60,7 +62,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
 
   // Alles in einem Schritt: Bewertungen und Etiketten aller Weine gleich mit (statt danach).
   // Notizen für die Suche (im Browser) – parallel, ohne auf die Liste der Weine zu warten.
-  const [summary, vintageRows, items, purchases, ratings, photo, windows, notes] = await Promise.all([
+  const [summary, vintageRows, items, purchases, ratings, photo, windows, notes, spirits] = await Promise.all([
     supabase.from("cellar_wine_summary").select("wine_id, name, producer, country, region, type, grapes"),
     supabase.from("cellar_wines").select("*"),
     withLocation(
@@ -76,6 +78,8 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
     // Herkunft der Trinkfenster (Schätzungen mit „≈“).
     loadDrinkWindows(supabase, null),
     loadAllWineNotes(supabase),
+    // Kategorien und Angaben der Spirituosen (vor der Migration leer).
+    loadSpirits(supabase, null),
   ]);
   for (const r of [summary, vintageRows, items, purchases]) if (r.error) throw r.error;
 
@@ -97,7 +101,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
     (w) => w.wine_id,
   );
   const inStock = wines.filter((w) => w.sealed > 0);
-  const entries = inStock.map((w) => ({ ...w, ratings: ratings.get(w.wine_id) ?? [] }));
+  const entries = withSpiritTags(inStock, (w) => w.wine_id, spirits).map((w) => ({ ...w, ratings: ratings.get(w.wine_id) ?? [] }));
 
   const totals = cellarTotals(wines);
   const drink = drinkCounts(wines);
@@ -182,6 +186,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
         entries={entries}
         notes={(e) => notes.get(e.wine_id)}
         year={thisYear}
+        spiritCategories={spirits.categories}
         empty="Keine ungeöffneten Flaschen hier."
         itemKey={({ wine }) => wine.wine_id}
         renderItem={({ wine, bottles, vintages }) => (
@@ -190,7 +195,7 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
             type={wine.type}
             producer={wine.producer}
             title={wine.name}
-            meta={[formatVintages(vintages), originLabel(wine)]}
+            meta={[...spiritMeta(wine), formatVintages(vintages), originLabel(wine)]}
             photo={photo(wine.wine_id, newestVintage(vintages))}
             drink={drinkBadges(wine, vintages, thisYear)}
             aside={

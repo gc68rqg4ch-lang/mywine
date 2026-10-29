@@ -28,9 +28,9 @@ export const PAGE_SIZE = 10;
 // ---------------------------------------------------------------------------
 // Weintypen
 
-export type TypeCode = "r" | "w" | "p" | "s" | "y" | "f" | "u";
+export type TypeCode = "r" | "w" | "p" | "s" | "y" | "f" | "x" | "u";
 
-export const TYPE_CODES: TypeCode[] = ["r", "w", "p", "s", "y", "f", "u"];
+export const TYPE_CODES: TypeCode[] = ["r", "w", "p", "s", "y", "f", "x", "u"];
 
 const TYPE_INFO: Record<TypeCode, { emoji: string; label: string }> = {
   r: { emoji: "🍷", label: "Rot" },
@@ -38,7 +38,8 @@ const TYPE_INFO: Record<TypeCode, { emoji: string; label: string }> = {
   p: { emoji: "🌸", label: "Rosé" },
   s: { emoji: "🍾", label: "Schaumwein" },
   y: { emoji: "🍯", label: "Süsswein" },
-  f: { emoji: "🥃", label: "Likörwein" },
+  f: { emoji: "🫗", label: "Likörwein" },
+  x: { emoji: "🥃", label: "Spirituose" },
   u: { emoji: "🍇", label: "Unbekannt" },
 };
 
@@ -56,6 +57,8 @@ export function typeCode(type: string | null | undefined): TypeCode {
       return "y";
     case "fortified":
       return "f";
+    case "spirit":
+      return "x";
     default:
       return "u";
   }
@@ -425,7 +428,8 @@ export function openBottleLine(row: OpenBottleRow, name: string) {
   return [
     `${typeEmoji(row.type)} ${name}`,
     row.fill != null ? `${row.fill} %` : null,
-    daysLabel(row.days),
+    // Spirituosen: keine „seit … T.“ (halten offen lange).
+    row.type === "spirit" ? null : daysLabel(row.days),
   ]
     .filter(Boolean)
     .join(" · ");

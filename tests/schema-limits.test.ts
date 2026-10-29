@@ -14,6 +14,7 @@ import { applyExtraction, missingCategories } from "@/lib/tasting/bot-draft";
 import { chatTools } from "@/lib/chat/tools";
 import { tasteResearchSchema } from "@/lib/research/taste";
 import { DrinkWindowSchema } from "@/lib/research/drink-window";
+import { spiritResearchSchema } from "@/lib/spirits/research";
 
 // Zähler selbst: nullable und anyOf zählen, verschachtelt auch
 assert.equal(countUnionParams({ type: "object", properties: { a: { type: ["string", "null"] }, b: { anyOf: [{ type: "string" }, { type: "null" }] }, c: { type: "object", properties: { d: { type: ["number", "null"] } } } } }), 3);
@@ -100,8 +101,27 @@ for (const { type } of SAT_TYPES) {
 for (const [name, schema] of [["Trinkfenster", DrinkWindowSchema], ["Stammdaten", EnrichmentSchema], ["Profil rot", tasteResearchSchema("rot")]] as const) {
   const tools = researchTools({ toolName: "report", toolDescription: "x", inputSchema: toolInputSchema(schema as z.ZodType), maxSearches: 4, fetchShops: true });
   const fetch = tools.find((t) => "type" in t && t.type === "web_fetch_20260209") as { max_uses?: number; allowed_domains?: string[]; input_schema?: unknown } | undefined;
-  assert.ok(fetch && fetch.max_uses === 3 && fetch.allowed_domains?.length === 4 && fetch.input_schema === undefined, name);
+  assert.ok(fetch && fetch.max_uses === 3 && fetch.allowed_domains?.length === 6 && fetch.input_schema === undefined, name);
   const own = tools.find((t) => "name" in t && t.name === "report") as { input_schema: unknown };
   assert.deepEqual(strictSchemaProblems(own.input_schema), [], name);
   assert.ok(countUnionParams(own.input_schema) <= MAX_UNION_PARAMS, name);
+}
+
+// Spirituosen: Recherche der Stammdaten (strict Tool, Kategorie nur aus der Liste) und Profil ohne
+// Säure/Tannin – beide ohne Unions; Erkennung mit Spirituosen-Block bleibt unter der Grenze.
+{
+  const cats = [
+    { id: "a", parentId: null, name: "Whisky", sortOrder: 10 },
+    { id: "b", parentId: "a", name: "Bourbon", sortOrder: 10 },
+  ];
+  const spiritTool = toolInputSchema(spiritResearchSchema(cats));
+  assert.deepEqual(strictSchemaProblems(spiritTool), [], "Spirituose Stammdaten strict");
+  assert.equal(countUnionParams(spiritTool), 0, "Spirituose Stammdaten ohne Unions");
+  const profile = toolInputSchema(tasteResearchSchema("rot", "spirit")) as { properties: { fields: { properties: Record<string, unknown> } } };
+  assert.deepEqual(strictSchemaProblems(profile), [], "Spirituose Profil strict");
+  assert.equal(countUnionParams(profile), 0);
+  assert.deepEqual(Object.keys(profile.properties.fields.properties).sort(), ["alcohol", "body", "finish", "flavour_intensity", "sweetness"]);
+  assert.ok(countUnionParams(outputFormat(RecognitionSchema)) <= MAX_UNION_PARAMS, "Erkennung mit Spirituosen-Block");
+  assert.ok(countUnionParams(outputFormat(TextEntrySchema)) <= MAX_UNION_PARAMS, "Text mit Spirituosen-Block");
+  console.log("spirit schema limits ok");
 }

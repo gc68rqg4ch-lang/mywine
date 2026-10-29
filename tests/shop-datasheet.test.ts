@@ -173,6 +173,6 @@ test("web_fetch nur ohne Shop-Treffer, nur Shop-Domains, höchstens 3 Abrufe; Hi
   const tools = researchTools({ toolName: "x", toolDescription: "x", inputSchema: { type: "object", properties: {}, additionalProperties: false, required: [] }, maxSearches: 4, fetchShops: true });
   assert.deepEqual(tools.map((t) => ("type" in t && t.type ? t.type : t.name)), ["web_search_20260209", "web_fetch_20260209", "x"]);
   assert.equal(MAX_SHOP_FETCHES, 3);
-  assert.deepEqual([...SHOP_DOMAINS].sort(), ["bauraulacvins.ch", "finespirits.ch", "moevenpick-wein.com", "napawine.ch"]);
+  assert.deepEqual([...SHOP_DOMAINS].sort(), ["bauraulacvins.ch", "finespirits.ch", "moevenpick-wein.com", "napawine.ch", "smithandsmith.ch", "ullrich.ch"]);
   assert.equal(researchTools({ toolName: "x", toolDescription: "x", inputSchema: { type: "object" }, maxSearches: 4 }).length, 2, "ohne fetchShops kein web_fetch");
 });

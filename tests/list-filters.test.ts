@@ -31,7 +31,7 @@ const params = (href: string) => {
 
 test("URL-Zustand: Standard (Weintyp, Rot), alles wieder lesbar, Standardwerte weggelassen", () => {
   const empty = readListState({}, BASE_GROUPINGS);
-  assert.deepEqual(empty, { query: "", groupBy: "typ", type: "red", open: [], filters: EMPTY_FILTERS });
+  assert.deepEqual(empty, { query: "", groupBy: "typ", type: "red", open: [], filters: EMPTY_FILTERS, spirit: { main: null, sub: null } });
   assert.equal(DEFAULT_TYPE, "red");
   assert.equal(listHref("/", empty), "/", "Rot vorausgewählt steht nicht in der URL");
 
@@ -71,6 +71,7 @@ test("URL-Zustand: Standard (Weintyp, Rot), alles wieder lesbar, Standardwerte w
       ratingBy: "Sara",
       vendors: ["Mövenpick"],
     },
+    spirit: { main: null, sub: null },
   });
   // Hin und zurück: gleicher Zustand (so führt „Zurück“ genau dorthin).
   const href = listHref("/getrunken", state);
@@ -166,7 +167,7 @@ test("Filterfeld: nur vorhandene Werte, Regionen des gewählten Lands, gewählte
   assert.deepEqual([windows[0].units[0].drink_from_year, windows[0].units[0].drink_until_year], [2020, 2030]);
 });
 
-test("Weintyp-Knöpfe: immer sechs Typen in fester Reihenfolge, leere mit 0, Unbekannt nur wenn vorhanden", () => {
+test("Art-Knöpfe: immer sechs Weinarten und Spirituose in fester Reihenfolge, leere mit 0, Unbekannt nur wenn vorhanden", () => {
   const counts = typeCounts(entries, "bottles");
   assert.deepEqual(counts, [
     { type: "red", count: 11 },
@@ -175,23 +176,24 @@ test("Weintyp-Knöpfe: immer sechs Typen in fester Reihenfolge, leere mit 0, Unb
     { type: "sparkling", count: 0 },
     { type: "sweet", count: 0 },
     { type: "fortified", count: 0 },
+    { type: "spirit", count: 0 },
   ]);
-  assert.deepEqual(counts.map((c) => WINE_TYPE_LABELS[c.type as keyof typeof WINE_TYPE_LABELS]), ["Rot", "Weiss", "Rosé", "Schaumwein", "Süsswein", "Likörwein"]);
+  assert.deepEqual(counts.map((c) => WINE_TYPE_LABELS[c.type as keyof typeof WINE_TYPE_LABELS]), ["Rot", "Weiss", "Rosé", "Schaumwein", "Süsswein", "Likörwein", "Spirituose"]);
   assert.deepEqual(typeCounts(entries, "wines").slice(0, 2), [{ type: "red", count: 2 }, { type: "white", count: 1 }], "Verkostet: Anzahl Weine");
   const withUnknown = typeCounts([...entries, entry("x", { type: null }, [unit(null, 2)])], "bottles");
   assert.deepEqual(withUnknown.at(-1), { type: "unknown", count: 2 });
-  assert.deepEqual(typeCounts([], "bottles").map((c) => c.count), [0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(typeCounts([], "bottles").map((c) => c.count), [0, 0, 0, 0, 0, 0, 0]);
 });
 
 test("Orange ist entfernt: App-Typen, Symbole/Bot, Erkennung und Tool-Schemas", () => {
-  assert.deepEqual([...WINE_TYPES], ["red", "white", "rose", "sparkling", "sweet", "fortified"]);
+  assert.deepEqual([...WINE_TYPES], ["red", "white", "rose", "sparkling", "sweet", "fortified", "spirit"]);
   assert.ok(!(TYPE_ORDER as string[]).includes("orange"));
   assert.equal("orange" in WINE_TYPE_LABELS, false);
   assert.equal(asWineType("orange"), null, "alte DB-Werte → unbekannt");
   assert.equal(wineTypeLabel("orange"), "Unbekannt");
   assert.equal(toSummaryWine({ wine_id: "w", name: "N", producer: "P", country: null, region: null, type: "orange", grapes: [] })?.type, null);
-  // Bot: Süsswein 🍯, Likörwein 🥃, kein 🟠
-  assert.deepEqual([typeEmoji("sweet"), typeEmoji("fortified"), typeEmoji("orange")], ["🍯", "🥃", "🍇"]);
+  // Bot: Süsswein 🍯, Likörwein 🫗, Spirituose 🥃, kein 🟠
+  assert.deepEqual([typeEmoji("sweet"), typeEmoji("fortified"), typeEmoji("spirit"), typeEmoji("orange")], ["🍯", "🫗", "🥃", "🍇"]);
   assert.equal(typeCode("orange"), "u");
   // Claude-Schemas: Erkennung, Text-Erfassung und alle Chat-Tools ohne „orange“
   for (const schema of [WineProposalSchema, RecognitionSchema, TextEntrySchema]) {

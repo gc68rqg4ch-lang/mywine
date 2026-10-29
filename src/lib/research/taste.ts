@@ -14,9 +14,9 @@ import {
   CLEAR_TERMS,
   SOURCE_KINDS,
   TASTE_FIELDS,
-  TASTE_KEYS,
   UNKNOWN,
-  aromaGroups,
+  aromaGroupsFor,
+  tasteKeysFor,
   tasteOptions,
   sourceRef,
   validateTasteProfile,
@@ -30,12 +30,16 @@ import { sourceNote } from "./compare";
 
 const enumOf = (values: string[]) => z.enum(values as [string, ...string[]]);
 
-/** Strict-Tool-Schema (ohne Unions, ohne min/max); Aromen nur aus dem Lexikon des Weintyps. */
-export function tasteResearchSchema(type: SatType) {
-  const lexicon = aromaGroups(type);
+/**
+ * Strict-Tool-Schema (ohne Unions, ohne min/max); Aromen nur aus dem Lexikon des Weintyps.
+ * Spirituose (wineType 'spirit'): ohne Säure und Tannin, Aromen aus dem Spirituosen-Lexikon.
+ */
+export function tasteResearchSchema(type: SatType, wineType: string | null = null) {
+  const lexicon = aromaGroupsFor(wineType, type);
   const aromas = [...new Set([...lexicon.values()].flat())];
+  const keys = tasteKeysFor(wineType);
   const fields = Object.fromEntries(
-    TASTE_FIELDS.map((f) => [f.key, enumOf([UNKNOWN, ...tasteOptions(f.key)]).describe(`${f.label}; „${UNKNOWN}“ ohne eindeutigen Beleg`)]),
+    TASTE_FIELDS.filter((f) => keys.includes(f.key)).map((f) => [f.key, enumOf([UNKNOWN, ...tasteOptions(f.key)]).describe(`${f.label}; „${UNKNOWN}“ ohne eindeutigen Beleg`)]),
   ) as Record<TasteKey, z.ZodEnum>;
   return z.object({
     matches_wine: z.boolean().describe("true nur, wenn die Quellen genau diesen Wein (Name + Produzent) beschreiben"),
@@ -64,17 +68,19 @@ export function tasteResearchSchema(type: SatType) {
     evidence: z
       .array(
         z.object({
-          field: enumOf([...TASTE_KEYS, "style_summary", "food_pairing"]),
+          field: enumOf([...keys, "style_summary", "food_pairing"]),
           source_url: z.string(),
           quote: z.string().describe("Wörtliches Zitat aus der Quelle, höchstens 25 Wörter"),
         }),
       )
       .describe("Je gemeldetem Merkmal mindestens ein Beleg"),
     contradictions: z
-      .array(z.object({ field: enumOf([...TASTE_KEYS]), note: z.string() }))
+      .array(z.object({ field: enumOf([...keys]), note: z.string() }))
       .describe("Merkmale, bei denen sich Quellen klar widersprechen"),
     style_summary: z.string().describe("1–2 Sätze auf Deutsch, nur aus den Quellen; leer ohne Beleg"),
-    food_pairing: z.array(z.string()).describe("Speiseempfehlungen der Quellen auf Deutsch; leer ohne Beleg"),
+    food_pairing: z
+      .array(z.string())
+      .describe(wineType === "spirit" ? "Serviervorschläge bzw. Anlässe der Quellen auf Deutsch (z. B. „pur“, „Digestif“, „zu dunkler Schokolade“); leer ohne Beleg" : "Speiseempfehlungen der Quellen auf Deutsch; leer ohne Beleg"),
   });
 }
 
@@ -91,25 +97,28 @@ export async function researchTasteProfile(
 ): Promise<TasteProfileData | null> {
   if (!wine.name) return null;
   const type = satTypeForWine(wine.type);
-  const lexicon = aromaGroups(type);
+  const spirit = wine.type === "spirit";
+  const lexicon = aromaGroupsFor(wine.type, type);
+  const keys = tasteKeysFor(wine.type);
+  const what = spirit ? "dieser Spirituose" : "diesem Wein";
   // Shops ohne Treffer: Datenblatt per web_fetch suchen lassen (nur Shop-Domains, nur mit Jahrgang).
   const fetchShops = shopFetchAllowed(pages, year);
   const raw = await webResearch({
-    prompt: `Suche Verkostungsnotizen zu genau diesem Wein: ${JSON.stringify({ name: wine.name, producer: wine.producer, jahrgang: year ?? "ohne Jahrgang", region: wine.region ?? null, land: wine.country ?? null })}.
+    prompt: `Suche Verkostungsnotizen zu genau ${what}${spirit ? " (Spirituose)" : ""}: ${JSON.stringify({ name: wine.name, producer: wine.producer, jahrgang: year ?? "ohne Jahrgang", region: wine.region ?? null, land: wine.country ?? null })}.
 Oberstes Ziel: kein falsches Profil. Lieber „${UNKNOWN}“ als geraten.
-- Nur Quellen zu genau diesem Wein (Name + Produzent): Produzent (Tech Sheet), Kritiker, Händler. Keine allgemeinen Beschreibungen der Rebsorte, Region oder anderer Weine des Produzenten.
+- ${spirit ? "Nur Quellen zu genau dieser Spirituose (Name + Destillerie/Hersteller, gleiche Altersangabe bzw. Abfüllung): Hersteller, Kritiker, Händler – zuerst Schweizer Händler (finespirits.ch, moevenpick-wein.com, ullrich.ch, smithandsmith.ch). Keine allgemeinen Beschreibungen der Kategorie oder anderer Abfüllungen." : "Nur Quellen zu genau diesem Wein (Name + Produzent): Produzent (Tech Sheet), Kritiker, Händler. Keine allgemeinen Beschreibungen der Rebsorte, Region oder anderer Weine des Produzenten."}
 - ${year != null ? `Nur Notizen zu genau Jahrgang ${year}. Notizen zu anderen Jahrgängen zählen nicht – gibt es keine zu ${year}: same_vintage false, sources leer.` : "Der Wein hat keinen Jahrgang (NV): Notizen zum Wein selbst; same_vintage true."} Trage bei jeder Quelle den beschriebenen Jahrgang ein (0 = ohne Jahrgang). Findest du nichts Passendes: matches_wine false, sources leer.
 - Jedes Merkmal und jedes Aroma braucht ein wörtliches Zitat (≤ 25 Wörter) mit source_url aus sources. Ohne Beleg: „${UNKNOWN}“ bzw. weglassen.
-- Übersetze klare Beschreibungen in die WSET-Begriffe, wenn das Zitat eindeutig ist: ${CLEAR_TERMS.map((t) => `„${t.example}“ → ${TASTE_FIELDS.find((f) => f.key === t.key)!.label} ${t.value}`).join(", ")}. Unklar → „${UNKNOWN}“. Nie das nächstbeste Aroma wählen.
+- ${spirit ? `Merkmale nur: ${keys.map((k) => TASTE_FIELDS.find((f) => f.key === k)!.label).join(", ")} (Säure und Tannin gibt es hier nicht). ` : ""}Übersetze klare Beschreibungen in die WSET-Begriffe, wenn das Zitat eindeutig ist: ${CLEAR_TERMS.filter((t) => keys.includes(t.key)).map((t) => `„${t.example}“ → ${TASTE_FIELDS.find((f) => f.key === t.key)!.label} ${t.value}`).join(", ")}. Unklar → „${UNKNOWN}“. Nie das nächstbeste Aroma wählen.
 - Aromen nur aus diesem Lexikon (Gruppe → Aromen): ${JSON.stringify(Object.fromEntries(lexicon))}
 - Widersprechen sich Quellen klar bei einem Merkmal: Merkmal „${UNKNOWN}“ und Eintrag in contradictions.
-- style_summary: ein, höchstens zwei kurze Sätze auf Deutsch; food_pairing: kurze Begriffe. Beide nur aus den Quellen, je mit Beleg (field style_summary bzw. food_pairing).${documentsNote(documents)}${shopPagesNote(pages)}${fetchShops ? shopFetchNote(wine, year!) : ""}`,
+- style_summary: ein, höchstens zwei kurze Sätze auf Deutsch; food_pairing: kurze Begriffe${spirit ? " (hier: Serviervorschlag bzw. Anlass, z. B. „pur“, „Digestif“, „mit einem Tropfen Wasser“)" : ""}. Beide nur aus den Quellen, je mit Beleg (field style_summary bzw. food_pairing).${documentsNote(documents)}${shopPagesNote(pages)}${fetchShops ? shopFetchNote(wine, year!) : ""}`,
     toolName: "report_taste_profile",
     documents,
     pages: shopDocuments(pages),
     fetchShops,
-    toolDescription: "Meldet das belegte Geschmacksprofil des Weins mit Quellen und Zitaten.",
-    schema: tasteResearchSchema(type),
+    toolDescription: spirit ? "Meldet das belegte Geschmacksprofil der Spirituose mit Quellen und Zitaten." : "Meldet das belegte Geschmacksprofil des Weins mit Quellen und Zitaten.",
+    schema: tasteResearchSchema(type, wine.type),
     maxSearches: 5,
   });
   if (!raw) return null;

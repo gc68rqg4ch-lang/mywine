@@ -116,8 +116,12 @@ export function pickCandidate<C extends { label: string; base: string }>(candida
   return top.map((x) => x.c);
 }
 
-/** Händler-Shops (auch für web_fetch freigegeben). */
-export const SHOP_DOMAINS = ["moevenpick-wein.com", "napawine.ch", "finespirits.ch", "bauraulacvins.ch"] as const;
+/**
+ * Händler-Shops (auch für web_fetch freigegeben). ullrich.ch und smithandsmith.ch (Spirituosen;
+ * geprüft am 29.10.2026, erreichbar): ohne eigene Suche – ullrich.ch sperrt /search per robots.txt,
+ * Smith & Smith hat keine Such-Schnittstelle; Produktseiten kommen über die Websuche.
+ */
+export const SHOP_DOMAINS = ["moevenpick-wein.com", "napawine.ch", "finespirits.ch", "bauraulacvins.ch", "ullrich.ch", "smithandsmith.ch"] as const;
 
 const hostOf = (url: string) => {
   try {

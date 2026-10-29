@@ -1,6 +1,6 @@
 import { asWineType, wineTypeLabel, type WineType } from "@/lib/format";
 
-// Einheitlich gezeichnete Trauben-Symbole je Weintyp (24×24-Raster).
+// Einheitlich gezeichnete Trauben-Symbole je Weintyp (24×24-Raster); Spirituosen: ein Glas.
 // Eine Traube = sechs Beeren (3-2-1), Stiel und Blatt. Jede Beere hat eine dunklere
 // Kontur und einen Glanzpunkt, damit sie auf hellem und dunklem Grund lesbar bleibt.
 
@@ -111,6 +111,16 @@ export function WineTypeIcon({
           <path d="M19.7 8v2.6M18.4 10.6h2.6" fill="none" />
         </g>
       </>
+    );
+  } else if (t === "spirit") {
+    // Spirituose: Tumbler mit bernsteinfarbenem Inhalt (statt Traube).
+    content = (
+      <g strokeLinejoin="round">
+        <path d="M5.4 6.2h13.2l-1.3 12.6a2 2 0 0 1-2 1.8H8.7a2 2 0 0 1-2-1.8Z" fill="#f4efe9" stroke="#776e6a" strokeWidth="0.9" />
+        <path d="M6.3 11.6h11.4l-.8 7.1a1.4 1.4 0 0 1-1.4 1.2H8.5a1.4 1.4 0 0 1-1.4-1.2Z" fill="#c47f1f" stroke="#83500d" strokeWidth="0.6" />
+        <path d="M8.1 13.2h3.2" stroke="#f2c46d" strokeWidth="0.9" strokeLinecap="round" />
+        <rect x="12.6" y="8.6" width="3.4" height="3.4" rx="0.7" fill="#dff1f8" stroke="#6fa7c4" strokeWidth="0.6" opacity="0.9" />
+      </g>
     );
   } else {
     content = <Cluster palette={paletteFor(t)} />;

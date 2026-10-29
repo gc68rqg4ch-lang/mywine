@@ -179,6 +179,9 @@ export async function findAndStoreDrinkWindow(
   if (error) throw error;
   if (wineError) throw wineError;
   if (!wine) return { result: "none" };
+  // Spirituosen: kein automatisches Trinkfenster (weder Recherche noch Schätzung). Ein Ablaufdatum
+  // vom Etikett (label) setzt das Einbuchen selbst.
+  if (wine.type === "spirit") return { result: "none" };
   const existing = row ? { from: row.drink_from_year, until: row.drink_until_year, source: asDrinkSource(row.drink_window_source) } : null;
   if ((options.onlyIfEmpty ?? true) && (existing?.from != null || existing?.until != null)) return { result: "exists" };
 

@@ -4,7 +4,7 @@
 type Params = Record<string, string | string[] | undefined>;
 
 /** Parameter der Listen (siehe list-params.ts). */
-export const LIST_PARAM_KEYS = ["q", "gruppe", "typ", "auf", "land", "region", "traube", "jv", "jb", "preis", "reife", "sterne", "von_person", "haendler"] as const;
+export const LIST_PARAM_KEYS = ["q", "gruppe", "typ", "auf", "land", "region", "traube", "jv", "jb", "preis", "reife", "sterne", "von_person", "haendler", "kat", "ukat"] as const;
 
 /** Ziel für eine alte Bestand-Adresse – null, wenn „/“ die Startseite bleibt. */
 export function legacyListTarget(params: Params): string | null {

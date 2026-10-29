@@ -43,7 +43,9 @@ export function markDirty(state: UnitsState, id: string): UnitsState {
 
 /** Reihenfolge in „Zum Wein“: eine Tabelle (Rebsorten und Trinkreife als Zeilen), dann Fotos. Die Recherche ist das 🔎 im Kopf. */
 export const WINE_DETAIL_FIELDS = ["Typ", "Land", "Region", "Appellation", "Alkohol", "Flasche", "Rebsorten", "Trinkreife"] as const;
-export type WineDetailField = (typeof WINE_DETAIL_FIELDS)[number];
+/** Spirituosen: Kategorie und eigene Angaben; ohne Rebsorten und Trinkreife. */
+export const SPIRIT_DETAIL_FIELDS = ["Typ", "Kategorie", "Land", "Region", "Alkohol", "Flasche", "Alter", "Fass/Finish", "Destilliert", "Abgefüllt"] as const;
+export type WineDetailField = (typeof WINE_DETAIL_FIELDS)[number] | (typeof SPIRIT_DETAIL_FIELDS)[number];
 export const WINE_SECTIONS = ["details"] as const;
 export type WineSection = (typeof WINE_SECTIONS)[number];
 

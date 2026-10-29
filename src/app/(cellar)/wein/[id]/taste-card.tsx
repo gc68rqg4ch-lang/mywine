@@ -1,6 +1,6 @@
 import { EditUnit } from "@/components/edit-unit";
 import { satTypeForWine, tanninVisible } from "@/lib/tasting/sat";
-import { TASTE_FIELDS, TASTE_KEYS, UNKNOWN, aromaGroups, tasteOptions, type StoredTasteProfile } from "@/lib/taste/profile";
+import { TASTE_FIELDS, UNKNOWN, aromaGroupsFor, tasteKeysFor, tasteOptions, type StoredTasteProfile } from "@/lib/taste/profile";
 import { EditForm } from "./edit-form";
 import { TasteResearchButton } from "./taste-research";
 import { TasteView, type Tasting } from "./taste-view";
@@ -25,7 +25,8 @@ export function TasteCard({
   tastings: Tasting[];
 }) {
   const type = satTypeForWine(wineType);
-  const keys = TASTE_KEYS.filter((k) => k !== "tannin" || tanninVisible(type));
+  // Spirituose: ohne Säure und Tannin; Wein: Tannin je nach Typ.
+  const keys = tasteKeysFor(wineType).filter((k) => k !== "tannin" || tanninVisible(type));
   const fields = TASTE_FIELDS.filter((f) => keys.includes(f.key));
 
   return (
@@ -34,7 +35,7 @@ export function TasteCard({
         id="taste"
         label="Geschmacksprofil"
         title={<h2 className="section-title">Geschmacksprofil</h2>}
-        form={<TasteForm wineId={wineId} type={type} year={year} profile={profile} fields={fields} />}
+        form={<TasteForm wineId={wineId} type={type} wineType={wineType} year={year} profile={profile} fields={fields} />}
       >
         {!profile ? (
           <div className="stack-sm">
@@ -53,12 +54,14 @@ export function TasteCard({
 function TasteForm({
   wineId,
   type,
+  wineType,
   year,
   profile,
   fields,
 }: {
   wineId: string;
   type: ReturnType<typeof satTypeForWine>;
+  wineType: string | null;
   year: number | null;
   profile: StoredTasteProfile | null;
   fields: (typeof TASTE_FIELDS)[number][];
@@ -84,7 +87,7 @@ function TasteForm({
       <details className="taste-aroma-edit">
         <summary className="field-label">Aromen ({chosen.size})</summary>
         <div className="stack-sm">
-          {[...aromaGroups(type)].map(([group, list]) => (
+          {[...aromaGroupsFor(wineType, type)].map(([group, list]) => (
             <fieldset key={group} className="stack-sm">
               <legend className="muted small">{group}</legend>
               <div className="chips">

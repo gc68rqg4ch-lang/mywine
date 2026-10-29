@@ -14,7 +14,7 @@ import {
 } from "@/components/encounter-fields";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { ENCOUNTER_MORE_FIELDS, ENCOUNTER_QUICK_FIELDS, type EncounterFormField } from "@/lib/edit/encounter-form";
-import { WINE_TYPES, WINE_TYPE_LABELS, wineName, type WineType } from "@/lib/format";
+import { GRAPE_WINE_TYPES, WINE_TYPE_LABELS, wineName, type WineType } from "@/lib/format";
 import { addEncounter, type EncounterActionState } from "../../encounter-actions";
 
 export type WineOption = { id: string; name: string; producer: string | null; type: WineType | null; country: string | null };
@@ -144,7 +144,7 @@ export function NewEncounterForm({
         <span>Weintyp</span>
         <select name="newType" defaultValue="">
           <option value="">–</option>
-          {WINE_TYPES.map((t) => (
+          {GRAPE_WINE_TYPES.map((t) => (
             <option key={t} value={t}>
               {WINE_TYPE_LABELS[t]}
             </option>

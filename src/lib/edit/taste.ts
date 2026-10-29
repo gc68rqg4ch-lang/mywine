@@ -5,7 +5,7 @@ import "server-only";
 // überschreibt es nicht mehr (nur noch Vorschlag).
 
 import { satTypeForWine } from "@/lib/tasting/sat";
-import { TASTE_FIELDS, TASTE_KEYS, UNKNOWN, aromaGroups, tasteOptions, type TasteProfileData } from "@/lib/taste/profile";
+import { TASTE_FIELDS, TASTE_KEYS, UNKNOWN, aromaGroupsFor, tasteOptions, type TasteProfileData } from "@/lib/taste/profile";
 import { loadExactTasteProfile, saveTasteProfile } from "@/lib/taste/store";
 import { DASH, clean, diff, fail, loadWine, ready, wineTitle, type Db, type PreparedEdit } from "./helpers";
 import type { Edit, EditChange } from "./types";
@@ -21,7 +21,7 @@ export async function prepareTasteProfile(db: Db, edit: Extract<Edit, { kind: "t
     const v = p.values[f.key] ?? UNKNOWN;
     if (v !== UNKNOWN && !tasteOptions(f.key).includes(v)) return fail(`${f.label}: ungültiger Wert.`);
   }
-  const lexicon = aromaGroups(satTypeForWine(wine.type));
+  const lexicon = aromaGroupsFor(wine.type, satTypeForWine(wine.type));
   const aromas: Record<string, string[]> = {};
   for (const [group, list] of Object.entries(p.aromas)) {
     const ok = [...new Set(list)].filter((a) => lexicon.get(group)?.includes(a));
@@ -40,7 +40,8 @@ export async function prepareTasteProfile(db: Db, edit: Extract<Edit, { kind: "t
   diff(changes, "Passt zu", current?.foodPairing.join(", ") || DASH, foodPairing.join(", ") || DASH);
 
   // Von Hand: Belege nur für unverändert gebliebene Angaben behalten.
-  let profile: TasteProfileData = { ...p, values, aromas, styleSummary, foodPairing };
+  // Spirituose: Säure und Tannin bleiben leer.
+  let profile: TasteProfileData = { ...p, values, aromas, styleSummary, foodPairing, ...(wine.type === "spirit" ? { spirit: true } : {}) };
   if (edit.source === "manual") {
     const old = current?.evidence ?? {};
     const keep = new Set<string>([

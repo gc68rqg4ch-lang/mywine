@@ -122,6 +122,19 @@ export const T = {
     `${pick(["Mein Kontingent für heute ist aufgebraucht – ich kann den Wein gerade nicht nachschlagen.", "Oje, mein Kontingent ist aufgebraucht – nachschlagen kann ich gerade nicht."], random)} Versuch es später nochmals${until ? ` (ab ${until} geht es wieder)` : ""} – ich habe nichts gespeichert.`,
   thinkingResearch: "🔎 Ich recherchiere den Wein und melde mich gleich.",
   /** Login-Code für die App (nicht im Gesprächsgedächtnis). */
+  // --- Spirituosen (Erfassung)
+  /** Erkennung unsicher: Wein oder Spirituose? */
+  kindAsk: (random?: () => number) =>
+    pick(["Ist das ein Wein oder eine Spirituose?", "Hilf mir kurz: Wein oder Spirituose?", "Da bin ich nicht ganz sicher – Wein oder Spirituose?"], random),
+  /** Keine passende Kategorie: neue vorschlagen (angelegt erst nach Bestätigung). */
+  newCategoryAsk: (name: string, parent: string | null) =>
+    parent
+      ? `Die Unterkategorie „${e(name)}“ unter ${e(parent)} gibt es bei mir noch nicht. Soll ich sie anlegen?`
+      : `Die Kategorie „${e(name)}“ gibt es bei mir noch nicht. Soll ich sie anlegen?`,
+  chooseCategory: "In welche Kategorie gehört sie?",
+  chooseSubCategory: (main: string) => `Und genauer – welche Art ${e(main)}?`,
+  categoryCreated: (label: string) => `Gut, ich habe „${e(label)}“ angelegt.`,
+  categoryUnavailable: "Die Kategorien kann ich gerade nicht laden – ich speichere die Spirituose vorerst ohne Kategorie.",
   loginCode: (code: string, random?: () => number) =>
     `${pick(["🔑 Dein Code für die Anmeldung in der App:", "🔑 Hier ist dein Code für MyWine:", "🔑 Damit kommst du in die App:"], random)} <b><code>${e(code)}</code></b>\nEr gilt 10 Minuten. Hast du das nicht angefordert? Dann ignoriere die Nachricht.`,
   /** Recherche im Hintergrund: Sammellauf fertig (zusammen mit den Zahlen aus job-text.ts). */

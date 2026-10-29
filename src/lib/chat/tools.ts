@@ -13,6 +13,8 @@ import {
   toVintageRow,
   type CellarWine,
 } from "@/lib/cellar/overview";
+import { loadSpirits } from "@/lib/spirits/load";
+import { withSpiritTags } from "@/lib/spirits/tag";
 import { WINE_TYPES, daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
 import type { AdminClient } from "@/lib/supabase/admin";
@@ -71,28 +73,40 @@ async function findWineIds(db: AdminClient, query: string) {
 }
 
 export async function loadCellar(db: AdminClient, room: string | null) {
-  const [summary, rows] = await Promise.all([
+  const [summary, rows, spirits] = await Promise.all([
     db.from("cellar_wine_summary").select("wine_id, name, producer, country, region, type, grapes"),
     db.from("cellar_wines").select("*"),
+    // Spirituosen: Kategorie, Alter, Fass (vor der Migration leer).
+    loadSpirits(db, null),
   ]);
   if (summary.error) throw summary.error;
   if (rows.error) throw rows.error;
-  return buildCellarWines(
-    (summary.data ?? []).map(toSummaryWine).filter(nonNull),
-    (rows.data ?? []).map((r) => toVintageRow(r)).filter(nonNull),
-    room ? { house: null, room } : null,
+  return withSpiritTags(
+    buildCellarWines(
+      (summary.data ?? []).map(toSummaryWine).filter(nonNull),
+      (rows.data ?? []).map((r) => toVintageRow(r)).filter(nonNull),
+      room ? { house: null, room } : null,
+    ),
+    (w) => w.wine_id,
+    spirits,
   );
 }
 
 function describeWine(w: CellarWine) {
+  // Spirituose: Art „Spirituose“ mit Kategorie, Alter und Fass; ohne Rebsorten und Trinkreife.
+  const spirit = w.type === "spirit";
   return {
     wine_id: w.wine_id,
     emoji: typeEmoji(w.type),
+    kind: spirit ? "Spirituose" : "Wein",
     producer: w.producer,
     name: w.name,
     type: wineTypeLabel(w.type),
+    ...(spirit
+      ? { category: w.spirit?.label ?? null, age_years: w.spirit?.ageYears ?? null, cask: w.spirit?.cask ?? null }
+      : {}),
     origin: [w.region, w.country].filter(Boolean).join(", ") || null,
-    grapes: w.grapes,
+    grapes: spirit ? undefined : w.grapes,
     sealed_bottles: w.sealed,
     open_bottles: w.open,
     vintages: w.rows.map((r) => ({
@@ -102,8 +116,8 @@ function describeWine(w: CellarWine) {
       open: r.open,
       avg_price_chf: r.avg_price,
       price_class: r.price_class,
-      drink_status: DRINK_STATUS_LABELS[r.drink_status],
-      drink_window: r.drink_from_year || r.drink_until_year
+      drink_status: spirit ? undefined : DRINK_STATUS_LABELS[r.drink_status],
+      drink_window: spirit ? undefined : r.drink_from_year || r.drink_until_year
         ? `${r.drink_from_year ?? "?"}–${r.drink_until_year ?? "?"}`
         : null,
       locations: r.locations
@@ -138,9 +152,9 @@ export function chatTools(
     betaZodTool({
       name: "search_cellar",
       description:
-        "Sucht im aktuellen Bestand (ungeöffnete und offene Flaschen). Liefert pro Wein die wine_id, Jahrgänge mit Flaschenzahl, Ø Preis, Preisklasse, Trinkreife und Lagerorten. Ohne Suchtext: ganzer Bestand.",
+        "Sucht im aktuellen Bestand (ungeöffnete und offene Flaschen) – Weine und Spirituosen (kind „Wein“ bzw. „Spirituose“, bei Spirituosen mit Kategorie wie „Whisky › Bourbon“, Alter, Fass). Liefert pro Eintrag die wine_id, Jahrgänge mit Flaschenzahl, Ø Preis, Preisklasse, Trinkreife (nur Wein) und Lagerorten. Ohne Suchtext: ganzer Bestand. type „spirit“ = nur Spirituosen.",
       inputSchema: z.object({
-        query: z.string().max(200).optional().describe("Freitext: Wein, Produzent, Region, Land, Rebsorte, Jahrgang"),
+        query: z.string().max(200).optional().describe("Freitext: Wein, Produzent, Region, Land, Rebsorte, Jahrgang, Kategorie (z. B. Bourbon), Fass"),
         room: z.string().max(80).optional().describe("Nur dieser Lagerort, z. B. Weinkeller oder Wohnzimmer"),
         type: z.enum(WINE_TYPES).optional(),
       }),
@@ -152,9 +166,13 @@ export function chatTools(
           wines = wines.filter((w) => matchesQuery(w, query, notes.get(w.wine_id)) || w.rows.some((r) => String(r.vintage_year) === query.trim()));
         }
         const total = wines.reduce((s, w) => s + w.sealed, 0);
+        const spiritBottles = wines.filter((w) => w.type === "spirit").reduce((s, w) => s + w.sealed, 0);
         return json({
           wines_found: wines.length,
           sealed_bottles_total: total,
+          // Getrennt: Wein und Spirituosen.
+          sealed_bottles_wine: total - spiritBottles,
+          sealed_bottles_spirits: spiritBottles,
           wines: wines.slice(0, 20).map(describeWine),
           truncated: wines.length > 20,
         });
@@ -194,7 +212,7 @@ export function chatTools(
             since: daysLabel(daysSince(r.date_opened)),
             wine: title(r),
             type: wineTypeLabel(r.type),
-            bottle_size_ml: r.bottle_size_ml ?? 750,
+            bottle_size_ml: r.bottle_size_ml ?? (r.type === "spirit" ? 700 : 750),
             fill_level_percent: r.fill_level_percent,
             days_open: daysSince(r.date_opened),
             room: place(r),
@@ -206,7 +224,7 @@ export function chatTools(
     betaZodTool({
       name: "drink_readiness",
       description:
-        "Trinkreife des Bestands (aus dem Trinkfenster je Jahrgang): Anzahl ungeöffneter Flaschen pro Status – overdue = über dem Höhepunkt (bis-Jahr vorbei), now = jetzt trinken (bis-Jahr = dieses Jahr), ready = trinkreif, wait = noch lagern, unknown = kein Trinkfenster – und die Weine dazu.",
+        "Trinkreife des Weinbestands (Spirituosen haben keine; aus dem Trinkfenster je Jahrgang): Anzahl ungeöffneter Flaschen pro Status – overdue = über dem Höhepunkt (bis-Jahr vorbei), now = jetzt trinken (bis-Jahr = dieses Jahr), ready = trinkreif, wait = noch lagern, unknown = kein Trinkfenster – und die Weine dazu.",
       inputSchema: z.object({
         status: z.enum(DRINK_STATUSES).optional().describe("Nur Weine mit diesem Status auflisten"),
         room: z.string().max(80).optional(),
@@ -216,6 +234,7 @@ export function chatTools(
         const counts = emptyDrinkCounts();
         const list: { wine_id: string; wine: string; status: string; window: string | null; sealed: number }[] = [];
         for (const w of wines) {
+          if (w.type === "spirit") continue;
           for (const r of w.rows) {
             if (r.sealed === 0) continue;
             counts[r.drink_status] += r.sealed;

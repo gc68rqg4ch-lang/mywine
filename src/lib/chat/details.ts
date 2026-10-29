@@ -47,6 +47,8 @@ export type WineDetails = {
   taste?: string | null;
   /** Notizen zum Wein (wines.notes), mehrzeilig – nur anzeigen, bearbeitet wird in der App. */
   notes?: string | null;
+  /** Spirituose: „Whisky › Bourbon“, „12 Jahre“, … (ohne Trinkreife und „seit … T.“). */
+  spirit?: string[];
 };
 
 /** Notizen im Bot höchstens so lang (Telegram-Nachrichten haben eine Grenze); Rest in der App. */
@@ -73,7 +75,7 @@ function priceText(b: Pick<DetailBottle, "purchase_price" | "regular_price" | "c
 
 export function wineDetailsText(d: WineDetails) {
   const place = (b: DetailBottle) => b.storage_room ?? "ohne Lagerort";
-  const size = (b: DetailBottle) => (b.bottle_size_ml && b.bottle_size_ml !== 750 ? ` (${formatBottleSize(b.bottle_size_ml)})` : "");
+  const size = (b: DetailBottle) => (b.bottle_size_ml && b.bottle_size_ml !== (d.type === "spirit" ? 700 : 750) ? ` (${formatBottleSize(b.bottle_size_ml)})` : "");
 
   // Ungeöffnete Flaschen je Lagerort (und Grösse) zusammenzählen.
   const stock = new Map<string, number>();
@@ -104,7 +106,9 @@ export function wineDetailsText(d: WineDetails) {
 
   const flag = countryFlag(d.country);
   // Schätzung mit „≈“; „bis“ im laufenden Jahr oder davor → kurzer Hinweis.
-  const drinkWindow = drinkWindowText(d.drinkFrom, d.drinkUntil, d.drinkSource);
+  const spirit = d.type === "spirit";
+  // Spirituosen: kein Trinkfenster (ein Ablaufdatum steht als „bis“ – dann nur das).
+  const drinkWindow = spirit ? null : drinkWindowText(d.drinkFrom, d.drinkUntil, d.drinkSource);
   const drinkHint = drinkWindow ? drinkWindowHint(d.drinkUntil) : null;
   const tasting = d.lastTasting
     ? join([d.lastTasting.quality, d.lastTasting.points != null ? `${d.lastTasting.points.toLocaleString("de-CH")} / 4 Punkte` : null])
@@ -114,15 +118,17 @@ export function wineDetailsText(d: WineDetails) {
     `${typeEmoji(d.type)} <b>${e(d.name)} ${d.year ?? "o. J."}</b>`,
     d.producer && e(d.producer),
     e(join([d.country && `${flag ? `${flag} ` : ""}${d.country}`, d.region, d.appellation])),
-    e(join([d.grapes && `🍇 ${d.grapes}`, d.alcohol != null && `${d.alcohol.toLocaleString("de-CH")} % vol`])),
+    spirit && d.spirit?.length ? e(join(d.spirit)) : null,
+    e(join([!spirit && d.grapes && `🍇 ${d.grapes}`, d.alcohol != null && `${d.alcohol.toLocaleString("de-CH")} % vol`])),
     drinkWindow && `⏳ Trinkreife ${drinkWindow}${d.drinkSource === "estimate" ? " (geschätzt)" : ""}${drinkHint ? ` – ${drinkHint}` : ""}`,
     stock.size && `📦 ${e(join([...stock].map(([where, n]) => `${where} ${n}`)))}`,
     ...open.map((b) =>
       e(
         join([
-          `🍷 Offen: ${place(b)}${size(b)}`,
+          `${spirit ? "🥃" : "🍷"} Offen: ${place(b)}${size(b)}`,
           b.fill_level_percent != null && `${b.fill_level_percent} %`,
-          b.date_opened && `seit ${Math.max(0, daysSince(b.date_opened) ?? 0)} T.`,
+          // Spirituosen: keine „seit … T.“ (halten offen lange).
+          !spirit && b.date_opened && `seit ${Math.max(0, daysSince(b.date_opened) ?? 0)} T.`,
         ]),
       ),
     ),

@@ -47,6 +47,7 @@ import {
   skipVendorKeyboard,
   proposalMessage,
   reviewKeyboard,
+  categoryKeyboard,
 } from "./messages";
 import {
   applyCorrection,
@@ -107,6 +108,7 @@ import {
   setVintage,
   startTextIngest,
 } from "./flow";
+import { chooseMainCategory, chooseSubCategory, createProposedCategory, kindPatch, mainOptions } from "./spirit-flow";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Grenze der Claude API pro Bild
 const IMAGE_TYPES = {
@@ -453,6 +455,10 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
           "vendor",
           "vendor_new",
           "confirm",
+          "kind",
+          "category",
+          "category_main",
+          "category_sub",
         ],
         { step: "done" },
         { status: "discarded" },
@@ -591,6 +597,56 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
       await acceptRestock(db, job, chatId);
+      return;
+    }
+
+    case "kind": {
+      // „Wein oder Spirituose?“
+      const kind = parsed.value === "s" ? "spirit" : parsed.value === "w" ? "wine" : null;
+      await answerCallback(cb.id);
+      if (!kind || state.step !== "kind") return;
+      await clearKeyboard(chatId, messageId);
+      await advanceTo(db, job, chatId, "kind", await kindPatch(db, state, kind));
+      return;
+    }
+
+    case "catnew": {
+      // Vorgeschlagene Kategorie anlegen – erst jetzt, nach Bestätigung.
+      await answerCallback(cb.id);
+      if (state.step !== "category") return;
+      await clearKeyboard(chatId, messageId);
+      const created = await createProposedCategory(db, state);
+      if (created.label) await sendMessage(chatId, T.categoryCreated(created.label));
+      await advanceTo(db, job, chatId, "category", created.patch);
+      return;
+    }
+
+    case "catpick": {
+      // „Bestehende wählen“: Hauptkategorien als Knöpfe.
+      await answerCallback(cb.id);
+      if (state.step !== "category") return;
+      await clearKeyboard(chatId, messageId);
+      const mains = await mainOptions(db);
+      const next = await advanceJob(db, job, "category", { step: "category_main", category_options: mains.map((c) => c.id) });
+      if (next) await sendMessage(chatId, T.chooseCategory, categoryKeyboard(job.id, mains.map((c) => c.name), "main"));
+      return;
+    }
+
+    case "catmain": {
+      const index = Number(parsed.value);
+      await answerCallback(cb.id);
+      if (!Number.isInteger(index) || state.step !== "category_main") return;
+      await clearKeyboard(chatId, messageId);
+      await chooseMainCategory(db, job, chatId, index, (patch) => advanceTo(db, job, chatId, "category_main", patch));
+      return;
+    }
+
+    case "catsub": {
+      const index = parsed.value === "none" ? null : Number(parsed.value);
+      await answerCallback(cb.id);
+      if ((index !== null && !Number.isInteger(index)) || state.step !== "category_sub") return;
+      await clearKeyboard(chatId, messageId);
+      await chooseSubCategory(db, job, index, (patch) => advanceTo(db, job, chatId, "category_sub", patch));
       return;
     }
 

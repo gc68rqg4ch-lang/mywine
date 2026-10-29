@@ -40,6 +40,8 @@ export type ListState = {
   /** Aufgeklappte Gruppen (Schlüssel wie in groupWines). */
   open: string[];
   filters: ListFilters;
+  /** Kategorie der Spirituosen (gilt, wenn die Art „Spirituose“ gewählt ist): Haupt- und Unterkategorie (IDs). */
+  spirit: { main: string | null; sub: string | null };
 };
 
 export const EMPTY_FILTERS: ListFilters = {
@@ -94,6 +96,7 @@ export function readListState(params: Params, groupings: GroupBy[]): ListState {
     type: groupBy === "typ" ? (chosen ?? DEFAULT_TYPE) : chosen,
     open: all(params, "auf"),
     filters: readFilters(params),
+    spirit: { main: one(params, "kat"), sub: one(params, "kat") ? one(params, "ukat") : null },
   };
 }
 
@@ -115,6 +118,9 @@ export function listSearchParams(state: ListState): URLSearchParams {
   if (f.minRating != null) p.set("sterne", String(f.minRating));
   if (f.minRating != null && f.ratingBy) p.set("von_person", f.ratingBy);
   for (const v of f.vendors) p.append("haendler", v);
+  const spirit = state.spirit ?? { main: null, sub: null };
+  if (spirit.main) p.set("kat", spirit.main);
+  if (spirit.main && spirit.sub) p.set("ukat", spirit.sub);
   return p;
 }
 

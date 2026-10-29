@@ -8,6 +8,9 @@ import { applyFilters, optionPart, typeCountParts, type Filterable } from "@/lib
 import { applyTypeFilter, type ListState } from "@/lib/cellar/list-params";
 import { groupWines, type GroupBy, type GroupItem } from "@/lib/cellar/overview";
 import { searchText } from "@/lib/cellar/search";
+import { SpiritChips } from "@/components/cellar/spirit-chips";
+import type { SpiritCategory } from "@/lib/spirits/categories";
+import { applySpiritFilter, categoryChips } from "@/lib/spirits/tag";
 
 type Tagged<T> = T & { searchId: string };
 
@@ -29,6 +32,7 @@ export function ListView<T extends Filterable>({
   empty,
   itemKey,
   renderItem,
+  spiritCategories = [],
 }: {
   basePath: string;
   state: ListState;
@@ -43,6 +47,8 @@ export function ListView<T extends Filterable>({
   empty: string;
   itemKey: (item: GroupItem<T>) => string;
   renderItem: (item: GroupItem<T>) => ReactNode;
+  /** Kategorien der Spirituosen (Filter bei Art „Spirituose“). */
+  spiritCategories?: SpiritCategory[];
 }) {
   // Jeder Eintrag bekommt eine Kennung für die Suche (bleibt beim Filtern erhalten).
   const tagged: Tagged<T>[] = entries.map((e, i) => ({ ...e, searchId: `e${i}` }));
@@ -51,7 +57,14 @@ export function ListView<T extends Filterable>({
 
   const filtered = applyFilters(tagged, state.filters, year);
   const counts = typeCountParts(filtered, countMode, idOf);
-  const shown = applyTypeFilter(filtered, state.type);
+  const ofType = applyTypeFilter(filtered, state.type);
+  // Art „Spirituose“: Kategorie-Filter in zwei Ebenen (nur vorhandene Kategorien, mit Anzahl).
+  const spiritMode = state.type === "spirit";
+  const chips = spiritMode
+    ? categoryChips(ofType, spiritCategories, state.spirit, idOf, (e) => (countMode === "wines" ? 1 : e.units.reduce((n, u) => n + u.count, 0)))
+    : null;
+  const shown = spiritMode ? applySpiritFilter(ofType, state.spirit) : ofType;
+  const spiritRow = chips ? <SpiritChips basePath={basePath} state={state} mains={chips.mains} subs={chips.subs} /> : null;
   // Auswahl im Filterfeld aus der Liste des gewählten Typs (vor den Filtern) – live nach Suche.
   const optionParts = applyTypeFilter(tagged, state.type).map((e): [string, ReturnType<typeof optionPart>] => [e.searchId, optionPart(e, year)]);
   const nothing = <p className="empty">{entries.length ? "Keine Weine passen zu diesen Filtern." : empty}</p>;
@@ -68,6 +81,7 @@ export function ListView<T extends Filterable>({
     body = (
       <>
         <TypeTabs basePath={basePath} state={state} counts={counts} unit={countMode} />
+        {spiritRow}
         {items.length ? (
           <>
             <ul className="list list-cols">
@@ -88,6 +102,7 @@ export function ListView<T extends Filterable>({
     const groups = groupWines(shown, state.groupBy, year);
     body = groups.length ? (
       <>
+        {spiritRow}
         <GroupedList
           groups={groups}
           groupBy={state.groupBy}
@@ -101,7 +116,10 @@ export function ListView<T extends Filterable>({
         {noHits}
       </>
     ) : (
-      nothing
+      <>
+        {spiritRow}
+        {nothing}
+      </>
     );
   }
 

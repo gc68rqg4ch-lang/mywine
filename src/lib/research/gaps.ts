@@ -113,6 +113,12 @@ export function wineGaps(
   });
 
   const gaps: GapKey[] = [];
+  // Spirituosen: keine Rebsorten, kein Trinkfenster, keine Appellation.
+  if (wine.type === "spirit") {
+    if (wine.alcohol_content == null) gaps.push("alcohol");
+    if (wine.region == null) gaps.push("origin");
+    return { wine, gaps, basics: wine.country == null, vintages: vintages.map((v) => ({ ...v, window: false, grapes: false, grapesMissing: false })) };
+  }
   if (vintages.some((v) => v.grapes && !v.grapesMissing)) gaps.push("grapePercent");
   if (vintages.some((v) => v.grapesMissing)) gaps.push("grapes");
   if (wine.alcohol_content == null) gaps.push("alcohol");
@@ -163,6 +169,8 @@ export function newDocumentSince(docs: DocumentRow[] | undefined, wineId: string
  * solange das Trinkfenster leer ist, wird wieder gesucht.
  */
 export function windowTargets(g: WineGaps, data: { vintages: GapVintage[] }): (number | null)[] {
+  // Spirituosen haben kein Trinkfenster.
+  if (g.wine.type === "spirit") return [];
   const row = (y: number | null) => data.vintages.find((v) => v.wine_id === g.wine.id && v.vintage_year === y);
   return [...new Set(g.vintages.map((v) => v.year))]
     .filter((y) => row(y)?.drink_from_year == null && row(y)?.drink_until_year == null)

@@ -737,6 +737,41 @@ export type Database = {
         }
         Relationships: []
       }
+      spirit_categories: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          parent_id: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          parent_id?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          parent_id?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "spirit_categories_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "spirit_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       telegram_chat_messages: {
         Row: {
           chat_id: number
@@ -1444,10 +1479,14 @@ export type Database = {
       }
       wines: {
         Row: {
+          age_years: number | null
           alcohol_content: number | null
           appellation: string | null
+          bottled_year: number | null
+          cask: string | null
           country: string | null
           created_at: string
+          distilled_year: number | null
           grapes: string[]
           id: string
           name: string
@@ -1455,14 +1494,19 @@ export type Database = {
           producer: string | null
           region: string | null
           researched_at: string | null
+          spirit_category_id: string | null
           type: Database["public"]["Enums"]["wine_type"] | null
           want_to_buy: boolean
         }
         Insert: {
+          age_years?: number | null
           alcohol_content?: number | null
           appellation?: string | null
+          bottled_year?: number | null
+          cask?: string | null
           country?: string | null
           created_at?: string
+          distilled_year?: number | null
           grapes?: string[]
           id?: string
           name: string
@@ -1470,14 +1514,19 @@ export type Database = {
           producer?: string | null
           region?: string | null
           researched_at?: string | null
+          spirit_category_id?: string | null
           type?: Database["public"]["Enums"]["wine_type"] | null
           want_to_buy?: boolean
         }
         Update: {
+          age_years?: number | null
           alcohol_content?: number | null
           appellation?: string | null
+          bottled_year?: number | null
+          cask?: string | null
           country?: string | null
           created_at?: string
+          distilled_year?: number | null
           grapes?: string[]
           id?: string
           name?: string
@@ -1485,21 +1534,34 @@ export type Database = {
           producer?: string | null
           region?: string | null
           researched_at?: string | null
+          spirit_category_id?: string | null
           type?: Database["public"]["Enums"]["wine_type"] | null
           want_to_buy?: boolean
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "wines_spirit_category_id_fkey"
+            columns: ["spirit_category_id"]
+            isOneToOne: false
+            referencedRelation: "spirit_categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
       cellar_overview: {
         Row: {
+          age_years: number | null
           alcohol_content: number | null
           appellation: string | null
           bottle_size_ml: number | null
+          bottled_year: number | null
+          cask: string | null
           country: string | null
           currency: string | null
           date_opened: string | null
+          distilled_year: number | null
           drink_from_year: number | null
           drink_status: string | null
           drink_until_year: number | null
@@ -1517,6 +1579,10 @@ export type Database = {
           quantity: number | null
           region: string | null
           regular_price: number | null
+          spirit_category_id: string | null
+          spirit_main_category: string | null
+          spirit_main_category_id: string | null
+          spirit_sub_category: string | null
           status: Database["public"]["Enums"]["inventory_status"] | null
           stock_value: number | null
           stock_value_regular: number | null
@@ -1543,8 +1609,12 @@ export type Database = {
       }
       cellar_wine_summary: {
         Row: {
+          age_years: number | null
           appellation: string | null
+          bottled_year: number | null
+          cask: string | null
           country: string | null
+          distilled_year: number | null
           grapes: string[] | null
           locations: Json | null
           name: string | null
@@ -1553,6 +1623,10 @@ export type Database = {
           producer: string | null
           region: string | null
           sealed_bottles: number | null
+          spirit_category_id: string | null
+          spirit_main_category: string | null
+          spirit_main_category_id: string | null
+          spirit_sub_category: string | null
           stock_value: number | null
           stock_value_regular: number | null
           type: Database["public"]["Enums"]["wine_type"] | null
@@ -1564,10 +1638,14 @@ export type Database = {
       }
       cellar_wines: {
         Row: {
+          age_years: number | null
           appellation: string | null
           avg_price: number | null
           bottle_size_ml: number | null
+          bottled_year: number | null
+          cask: string | null
           country: string | null
+          distilled_year: number | null
           drink_from_year: number | null
           drink_status: string | null
           drink_until_year: number | null
@@ -1578,6 +1656,10 @@ export type Database = {
           producer: string | null
           region: string | null
           sealed_bottles: number | null
+          spirit_category_id: string | null
+          spirit_main_category: string | null
+          spirit_main_category_id: string | null
+          spirit_sub_category: string | null
           stock_value: number | null
           stock_value_regular: number | null
           type: Database["public"]["Enums"]["wine_type"] | null
@@ -1814,6 +1896,7 @@ export type Database = {
         | "sweet"
         | "fortified"
         | "orange"
+        | "spirit"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1967,6 +2050,7 @@ export const Constants = {
         "sweet",
         "fortified",
         "orange",
+        "spirit",
       ],
     },
   },

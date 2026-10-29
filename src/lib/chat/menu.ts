@@ -70,6 +70,8 @@ import {
 } from "./menu-view";
 import { fillAfterGlasses, personKey } from "./proposals";
 import { startTelling, tastingStartScreen } from "./tasting";
+import { loadSpirits } from "@/lib/spirits/load";
+import { spiritDetailLines } from "@/lib/spirits/categories";
 import { loadCellar } from "./tools";
 
 type Screen = { text: string; keyboard: TgInlineKeyboard };
@@ -230,6 +232,8 @@ type ReadyEntry = { wineId: string; type: OpenBottleRow["type"]; producer: strin
 async function readyEntries(db: AdminClient): Promise<ReadyEntry[]> {
   const entries: ReadyEntry[] = [];
   for (const w of await loadCellar(db, null)) {
+    // Trinkreife nur für Wein – Spirituosen haben kein Trinkfenster.
+    if (w.type === "spirit") continue;
     for (const r of w.rows) {
       if (r.sealed === 0) continue;
       entries.push({
@@ -562,9 +566,11 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     documentNames(db, wineId, year).catch(() => []),
     countPendingSuggestions(db, wineId).catch(() => 0),
   ]);
-  const [encounters, taste] = await Promise.all([
+  const [encounters, taste, spirits] = await Promise.all([
     loadWineEncounters(db, wineId).catch(() => []),
     loadTasteProfile(db, wineId, year).catch(() => null),
+    // Spirituose: Kategorie, Alter, Fass, Destilliert, Abgefüllt (vor der Migration leer).
+    wine?.type === "spirit" ? loadSpirits(db, [wineId]).catch(() => null) : Promise.resolve(null),
   ]);
   if (error) throw error;
   if (!wine) return null;
@@ -597,6 +603,7 @@ async function loadDetails(db: AdminClient, wineId: string, year: number | null)
     // Letzte Einträge „Verkostet“ (alle Jahrgänge; andere Jahrgänge mit Jahr).
     taste: taste ? tasteLine(taste) : null,
     notes: wine.notes,
+    spirit: spirits ? spiritDetailLines(spirits.categories, spirits.fields.get(wineId)) : undefined,
     encounters: encounters
       .slice(0, 3)
       .map((x) => (x.year !== year ? `${x.year ?? "NV"} · ${encounterSummary(x)}` : encounterSummary(x))),

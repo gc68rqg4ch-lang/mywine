@@ -43,11 +43,16 @@ export type HomeInput = {
   pendingSuggestions: number;
 };
 
-const TYPE_ORDER: WineType[] = ["red", "white", "rose", "sparkling", "sweet", "fortified"];
+// Arten in fester Reihenfolge; Spirituosen als eigene Zeile nach den Weinen.
+const TYPE_ORDER: WineType[] = ["red", "white", "rose", "sparkling", "sweet", "fortified", "spirit"];
 
 export function stockTotals(stock: StockItem[]) {
   const sealed = stock.filter((s) => s.status === "sealed" && s.quantity > 0);
+  const spirits = sealed.filter((s) => s.type === "spirit");
   return {
+    /** Davon Spirituosen (Flaschen, verschiedene). */
+    spiritBottles: spirits.reduce((n, s) => n + s.quantity, 0),
+    spirits: new Set(spirits.map((s) => s.wineId)).size,
     bottles: sealed.reduce((n, s) => n + s.quantity, 0),
     wines: new Set(sealed.map((s) => s.wineId)).size,
     open: stock.filter((s) => s.status === "open").length,
@@ -131,7 +136,8 @@ export function stockUnits(stock: StockItem[], year: number): StockUnit[] {
 
 /** Trinkreife: über dem Höhepunkt bzw. jetzt trinken (ungeöffnete Flaschen). */
 export function readiness(units: StockUnit[]) {
-  const sealed = units.filter((u) => u.sealed > 0);
+  // Nur Wein – Spirituosen haben kein Trinkfenster.
+  const sealed = units.filter((u) => u.sealed > 0 && u.type !== "spirit");
   const pick = (s: DrinkStatus) => sealed.filter((u) => u.status === s).sort((a, b) => (a.drinkUntil ?? 0) - (b.drinkUntil ?? 0));
   const bottles = (list: StockUnit[]) => list.reduce((n, u) => n + u.sealed, 0);
   const overdue = pick("overdue");

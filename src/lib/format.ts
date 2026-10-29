@@ -1,16 +1,30 @@
 import type { Enums } from "@/lib/database.types";
 
 /**
- * Weintypen der App. Der DB-Enum kennt noch „orange“ (bleibt aus technischen Gründen), ist
- * aber per Check-Constraint gesperrt – in der App gibt es ihn nicht.
+ * Arten der App: sechs Weinarten und „spirit“ (Spirituose: Whisky, Grappa, Likör … – gleiche
+ * Tabellen, eigene Kategorien in spirit_categories). Der DB-Enum kennt noch „orange“ (bleibt aus
+ * technischen Gründen), ist aber per Check-Constraint gesperrt – in der App gibt es ihn nicht.
  */
-export const WINE_TYPES = ["red", "white", "rose", "sparkling", "sweet", "fortified"] as const;
+export const WINE_TYPES = ["red", "white", "rose", "sparkling", "sweet", "fortified", "spirit"] as const;
 export type WineType = (typeof WINE_TYPES)[number];
+
+/** Nur die Weinarten (ohne Spirituose) – z. B. für Verkostungen unterwegs. */
+export const GRAPE_WINE_TYPES = WINE_TYPES.filter((t): t is Exclude<WineType, "spirit"> => t !== "spirit");
 
 /** Typ aus der DB bzw. einer Eingabe → App-Typ; Unbekanntes (auch „orange“) → null. */
 export function asWineType(value: unknown): WineType | null {
   return typeof value === "string" && (WINE_TYPES as readonly string[]).includes(value) ? (value as WineType) : null;
 }
+
+/** Spirituose? (Kein Trinkfenster, keine Rebsorten, kein Tannin/Säure, keine Offen-Warnungen.) */
+export const isSpirit = (type: unknown) => type === "spirit";
+
+/** Standard-Flaschengrösse: Wein 0,75 l, Spirituose 0,7 l. */
+export const defaultBottleSizeMl = (type: unknown) => (isSpirit(type) ? 700 : 750);
+
+/** „12 Jahre“ (Altersangabe einer Spirituose). */
+export const formatAge = (years: number | null | undefined) => (years ? `${years} ${years === 1 ? "Jahr" : "Jahre"}` : null);
+
 export type InventoryStatus = Enums<"inventory_status">;
 
 export const WINE_TYPE_LABELS: Record<WineType, string> = {
@@ -20,6 +34,7 @@ export const WINE_TYPE_LABELS: Record<WineType, string> = {
   sparkling: "Schaumwein",
   sweet: "Süsswein",
   fortified: "Likörwein",
+  spirit: "Spirituose",
 };
 
 export const STATUS_LABELS: Record<InventoryStatus, string> = {

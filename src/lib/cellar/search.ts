@@ -8,7 +8,7 @@ import type { Groupable } from "./overview";
 /** Durchsuchbarer Text eines Eintrags (gefaltet). */
 export function searchText(wine: Groupable, notes?: string | null) {
   return foldText(
-    [notes, wine.name, wine.producer, wine.country, wine.region, ...wine.grapes, ...wine.vintages.map((v) => (v == null ? "" : String(v)))]
+    [notes, wine.name, wine.producer, wine.country, wine.region, ...wine.grapes, ...wine.vintages.map((v) => (v == null ? "" : String(v))), wine.spirit?.label, wine.spirit?.cask]
       .filter(Boolean)
       .join(" "),
   );

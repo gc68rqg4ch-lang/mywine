@@ -72,7 +72,8 @@ export function WineCardForm({
           <span>Typ</span>
           <select name="type" defaultValue={wine.type ?? ""}>
             <option value="">Unbekannt</option>
-            {(Object.keys(WINE_TYPE_LABELS) as WineType[]).map((t) => (
+            {/* „Spirituose“ nur, wenn es schon eine ist – Spirituosen erfasst Antoine. */}
+            {(Object.keys(WINE_TYPE_LABELS) as WineType[]).filter((t) => t !== "spirit" || wine.type === "spirit").map((t) => (
               <option key={t} value={t}>
                 {WINE_TYPE_LABELS[t]}
               </option>
@@ -88,17 +89,22 @@ export function WineCardForm({
           <input type="text" name="region" defaultValue={wine.region ?? ""} autoComplete="off" />
         </label>
       </div>
-      <GrapeRowsField shares={shares} year={year} />
-      <div className="edit-grid">
-        <label className="field">
-          <span>Trinkreif ab</span>
-          <input type="text" name="drinkFrom" defaultValue={drinkFrom ?? ""} inputMode="numeric" placeholder="Jahr" autoComplete="off" />
-        </label>
-        <label className="field">
-          <span>bis</span>
-          <input type="text" name="drinkUntil" defaultValue={drinkUntil ?? ""} inputMode="numeric" placeholder="Jahr" autoComplete="off" />
-        </label>
-      </div>
+      {/* Spirituosen: keine Rebsorten-Anteile und kein Trinkfenster. */}
+      {wine.type !== "spirit" && (
+        <>
+          <GrapeRowsField shares={shares} year={year} />
+          <div className="edit-grid">
+            <label className="field">
+              <span>Trinkreif ab</span>
+              <input type="text" name="drinkFrom" defaultValue={drinkFrom ?? ""} inputMode="numeric" placeholder="Jahr" autoComplete="off" />
+            </label>
+            <label className="field">
+              <span>bis</span>
+              <input type="text" name="drinkUntil" defaultValue={drinkUntil ?? ""} inputMode="numeric" placeholder="Jahr" autoComplete="off" />
+            </label>
+          </div>
+        </>
+      )}
       <More>
         <label className="field">
           <span>Appellation</span>

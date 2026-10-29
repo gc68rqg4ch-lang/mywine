@@ -19,6 +19,7 @@ import {
 } from "@/lib/cellar/wine-page";
 import {
   asWineType,
+  formatAge,
   formatBottleSize,
   formatDate,
   formatDaysSince,
@@ -34,7 +35,7 @@ import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { EditUnit, EditUnits } from "@/components/edit-unit";
-import { WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, giftLabel, grapeLine, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
+import { SPIRIT_DETAIL_FIELDS, WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, giftLabel, grapeLine, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
 import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { DocumentClip } from "./documents";
@@ -52,6 +53,8 @@ import { DeleteWine } from "./delete-sections";
 import { loadWineDeleteSummary } from "@/lib/edit/delete";
 import { wineDeleteSummaryText } from "@/lib/edit/delete-text";
 import { BackLink } from "@/components/back-link";
+import { loadSpiritCategories } from "@/lib/spirits/load";
+import { categoryLabel, categoryPath, toSpiritFields } from "@/lib/spirits/categories";
 import { EMPTY_WINE_QUESTION, loadPlaces, loadWineEncounters, wouldLeaveEmptyWine } from "@/lib/edit/encounters";
 
 // Server Actions dieser Seite (z. B. Nachrecherchieren mit Websuche) brauchen Zeit.
@@ -207,6 +210,10 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     // Recherche im Hintergrund (🔎 bzw. Sammellauf): läuft sie noch?
     wineJobStatus(supabase, wine.id),
   ]);
+  // Spirituose: Kategorie (Haupt › Unter) und eigene Angaben; ohne Rebsorten, Trinkreife, WSET.
+  const spirit = wine.type === "spirit";
+  const spiritFields = toSpiritFields(wine as unknown as Record<string, unknown>);
+  const spiritCategory = spirit ? categoryLabel(categoryPath(await loadSpiritCategories(supabase), spiritFields.categoryId)) : null;
   const emptyWine = leavesEmpty ? { encounterId: encounters[0].id, wineId: wine.id, name: wine.name, question: EMPTY_WINE_QUESTION } : null;
 
   const sealed = inVintage.filter((i) => i.status === "sealed" && i.quantity > 0);
@@ -232,7 +239,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const drinkWindow = drinkWindowText(vintage?.drink_from_year ?? null, vintage?.drink_until_year ?? null, drinkSource);
   const latestReadiness = tastings.find((t) => t.readiness)?.readiness ?? null;
   const flag = countryFlag(wine.country);
-  const sizes = [...new Set(inVintage.map((i) => i.bottle_size_ml ?? 750))].map((ml) => formatBottleSize(ml)).join(", ");
+  const sizes = [...new Set(inVintage.map((i) => i.bottle_size_ml ?? (spirit ? 700 : 750)))].map((ml) => formatBottleSize(ml)).join(", ");
   const legacyRating = inVintage.map((i) => i.personal_wine_rating).find((r) => r != null) ?? null;
   const back = BACK_LINKS[typeof query.von === "string" ? query.von : ""] ?? BACK_LINKS.bestand;
   const yearLabel = year ?? "o. J.";
@@ -266,7 +273,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                   fillLevel: o.fill_level_percent,
                   price: priceOf(o),
                   label: [
-                    o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)} (${formatDaysSince(o.date_opened)})` : "Offen",
+                    o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)}${spirit ? "" : ` (${formatDaysSince(o.date_opened)})`}` : "Offen",
                     place(o),
                     o.bottle_size_ml && o.bottle_size_ml !== 750 ? formatBottleSize(o.bottle_size_ml) : null,
                     giftLabel(o.is_gift, o.gift_from),
@@ -364,7 +371,13 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     Rebsorten: grapeLine(shownShares),
     // Nur das Fenster („2025–2029“); den Status zeigen die Listen.
     Trinkreife: drink,
+    Kategorie: spiritCategory,
+    Alter: formatAge(spiritFields.ageYears),
+    "Fass/Finish": spiritFields.cask,
+    Destilliert: spiritFields.distilledYear,
+    Abgefüllt: spiritFields.bottledYear,
   };
+  const detailFields: readonly WineDetailField[] = spirit ? SPIRIT_DETAIL_FIELDS : WINE_DETAIL_FIELDS;
   const photoAlt = `${wine.name} ${yearLabel}`;
 
   // Spalte 2: nur „Zum Wein“ – eine Tabelle (Stammdaten, Rebsorten, Trinkreife, zuletzt die Fotos).
@@ -397,10 +410,10 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         }
       >
         <dl className="details">
-          {WINE_DETAIL_FIELDS.map((f) => (
+          {detailFields.map((f) => (
             <Detail key={f} label={f} value={details[f]} />
           ))}
-          <Detail label="Laut Verkostung" value={latestReadiness} />
+          {!spirit && <Detail label="Laut Verkostung" value={latestReadiness} />}
           <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
           <Detail label="Notiz" value={vintage?.notes} />
         </dl>
@@ -432,7 +445,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
       {/* Geschmacksprofil direkt nach „Zum Wein“ (iPhone, iPad hochkant); iPad quer zuoberst in Spalte 3
           über „Bewertungen“ – dann löst das CSS die Spalte auf (display: contents, Bereich „taste“). */}
       <div className="wine-col wine-col-taste">
-        <TasteCard wineId={wine.id} wineType={wine.type} year={year} profile={tasteProfile} tastings={tastings} />
+        <TasteCard wineId={wine.id} wineType={wine.type} year={year} profile={tasteProfile} tastings={spirit ? [] : tastings} />
       </div>
     </div>
   );
@@ -457,6 +470,8 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
           )}
           {legacyRating != null && <p className="muted small">Frühere Bewertung (Import): {formatRating(legacyRating)}</p>}
         </EditUnit>
+        {/* WSET-Verkostung (SAT) ist für Wein – bei Spirituosen nicht. */}
+        {!spirit && (
         <div className="stack section-divider">
           <div className="row row-between">
             <h3 className="subsection-title">WSET</h3>
@@ -491,6 +506,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             </ul>
           )}
         </div>
+        )}
       </section>
       <EncounterSection
         wineId={wine.id}

@@ -5,6 +5,7 @@
 import { matchesTerms, queryTerms, searchText } from "./search";
 import { drinkWindowText } from "./drink-window";
 import type { Json, Tables } from "@/lib/database.types";
+import type { SpiritTag } from "@/lib/spirits/tag";
 import { WINE_TYPE_LABELS, asWineType, compareWineNames, todayIso, type WineType } from "@/lib/format";
 
 export type LocationFilter = { house: string | null; room: string } | null;
@@ -101,6 +102,8 @@ export type DrinkBadge = { status: DrinkStatus; text: string; year?: number | nu
  * Fenster in allen Jahrgängen → ein Eintrag ohne Jahr, sonst einer pro Jahrgang.
  */
 export function drinkBadges(wine: Groupable, vintages: (number | null)[], year: number): DrinkBadge[] {
+  // Spirituosen haben kein Trinkfenster.
+  if (wine.type === "spirit") return [];
   const byYear = new Map<number | null, DrinkBadge>();
   for (const u of wine.units) {
     if (!vintages.includes(u.vintage_year) || byYear.has(u.vintage_year)) continue;
@@ -258,6 +261,8 @@ export type Groupable = {
   units: GroupUnit[];
   /** Merker „Kaufen?“ (nur Verkostet). */
   wantToBuy?: boolean;
+  /** Spirituosen: Kategorie, Alter, Fass (Karte, Suche, Kategorie-Filter). */
+  spirit?: SpiritTag | null;
 };
 
 export type CellarWine = SummaryWine & Groupable & {
@@ -357,7 +362,7 @@ export type WineGroup<T extends Groupable = CellarWine> = {
 };
 
 const TYPE_ORDER: (WineType | "unknown")[] = [
-  "red", "white", "rose", "sparkling", "sweet", "fortified", "unknown",
+  "red", "white", "rose", "sparkling", "sweet", "fortified", "spirit", "unknown",
 ];
 
 const MONTHS = [
@@ -431,6 +436,8 @@ export function groupWines<T extends Groupable>(wines: T[], by: GroupBy, thisYea
         break;
       }
       case "rebsorte": {
+        // Spirituosen haben keine Rebsorten – in dieser Übersicht weglassen.
+        if (wine.type === "spirit") break;
         const grapes = wine.grapes.length ? [...new Set(wine.grapes)] : [""];
         for (const grape of grapes) {
           pushTo(groups, grape, () => ({ key: grape, label: grape || "Rebsorte unbekannt" }), whole(wine));
@@ -450,6 +457,8 @@ export function groupWines<T extends Groupable>(wines: T[], by: GroupBy, thisYea
         break;
       }
       case "trinkreife": {
+        // Trinkreife nur für Wein.
+        if (wine.type === "spirit") break;
         const statusOf = (u: GroupUnit) => drinkStatus(u.drink_from_year ?? null, u.drink_until_year ?? null, thisYear);
         for (const [key, item] of splitBy(wine, statusOf)) {
           pushTo(groups, key, () => ({ key, label: DRINK_STATUS_LABELS[key as DrinkStatus] }), item);
@@ -540,7 +549,8 @@ export function cellarTotals(wines: CellarWine[]) {
 
 export function drinkCounts(wines: CellarWine[]) {
   const counts = emptyDrinkCounts();
-  for (const wine of wines) for (const row of wine.rows) counts[row.drink_status] += row.sealed;
+  // Trinkreife nur für Wein (Spirituosen haben kein Trinkfenster).
+  for (const wine of wines) if (wine.type !== "spirit") for (const row of wine.rows) counts[row.drink_status] += row.sealed;
   return counts;
 }
 

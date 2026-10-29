@@ -2,6 +2,7 @@ import { z } from "zod";
 import { completeWineName } from "./wine-names";
 import { WINE_TYPES } from "@/lib/format";
 import { normalizeGrapeShares, type GrapeSource } from "@/lib/grapes/shares";
+import type { SpiritDraft, SpiritLabel } from "@/lib/spirits/draft";
 
 const wineType = z.enum(WINE_TYPES);
 
@@ -21,7 +22,7 @@ export const WineProposalSchema = z.object({
   country: z.string().nullable().describe("Land auf Deutsch, z. B. Spanien, Frankreich, Schweiz, USA"),
   region: z.string().nullable().describe("Weinbauregion, z. B. Rioja, Bordeaux, California"),
   appellation: z.string().nullable().describe("Herkunftsbezeichnung/Appellation, z. B. Napa Valley, Priorat DOQ"),
-  type: wineType.nullable().describe("red, white, rose, sparkling, sweet oder fortified"),
+  type: wineType.nullable().describe("red, white, rose, sparkling, sweet, fortified oder spirit (Spirituose: Whisky, Grappa, Likör, Obstbrand …)"),
   grape_shares: z
     .array(GrapeShareSchema)
     .describe("Rebsorten mit Anteil; percent nur, wenn der Anteil angegeben ist, sonst null"),
@@ -42,6 +43,23 @@ const BestBeforeField = z
   // Fehlt das Feld in der Antwort, gilt „keins“ (die Erkennung scheitert deswegen nicht).
   .catch("");
 
+/**
+ * Spirituose auf dem Etikett – ohne nullable Felder (Grenze von 16 Union-Feldern): "" bzw. 0 =
+ * unbekannt. kind: wine, spirit oder unsure (dann fragt Antoine „Wein oder Spirituose?“).
+ */
+export const SpiritLabelSchema = z
+  .object({
+    kind: z.enum(["wine", "spirit", "unsure"]).describe("wine = Wein (auch Port, Sherry, Madeira = fortified), spirit = Spirituose (Whisky, Grappa, Likör, Obstbrand, Cognac, Rum, Gin, Vodka, Tequila …), unsure = nicht sicher"),
+    category: z.string().describe("Bei Spirituosen die Hauptkategorie, z. B. Whisky, Likör, Kräuterschnaps / Bitter, Obstbrand, Grappa / Trester, Cognac / Brandy, Rum, Gin, Vodka, Tequila / Mezcal; sonst leer"),
+    subcategory: z.string().describe("Unterkategorie, z. B. Scotch Single Malt, Bourbon, Rye, Irish, Kirsch, Williams, Armagnac, Kaffee, Sahne; leer, wenn nicht erkennbar"),
+    age_years: z.number().describe("Altersangabe in Jahren (z. B. 12 bei „12 Years Old“); 0 = keine"),
+    cask: z.string().describe("Fass, Reifung bzw. Finish (z. B. „Sherry Cask Finish“); leer, wenn keins dasteht"),
+    distilled_year: z.number().describe("Jahr der Destillation („Distilled 2008“); 0 = keins"),
+    bottled_year: z.number().describe("Jahr der Abfüllung („Bottled 2020“); 0 = keins"),
+  })
+  // Fehlt der Block in der Antwort: Wein (die Erkennung scheitert deswegen nicht).
+  .catch({ kind: "wine", category: "", subcategory: "", age_years: 0, cask: "", distilled_year: 0, bottled_year: 0 });
+
 /** Korrektur des Vorschlags (✏️ Korrigieren): Weindaten plus Ablaufdatum. */
 export const CorrectionSchema = WineProposalSchema.extend({ best_before: BestBeforeField });
 
@@ -60,6 +78,7 @@ export const RecognitionSchema = WineProposalSchema.extend({
     .array(z.enum(["front", "back", "other"]))
     .describe("Pro Foto in der gesendeten Reihenfolge: front = Vorderetikett, back = Rückenetikett, other = anderes"),
   best_before: BestBeforeField,
+  spirit: SpiritLabelSchema,
 });
 export type Recognition = z.infer<typeof RecognitionSchema>;
 
@@ -107,6 +126,14 @@ export type IngestStep =
   | "regular_price"
   | "vendor"
   | "vendor_new"
+  /** Wein oder Spirituose? (Erkennung unsicher) */
+  | "kind"
+  /** Spirituose: neue Kategorie vorschlagen – „Anlegen“ / „Bestehende wählen“. */
+  | "category"
+  /** Spirituose: Hauptkategorie wählen. */
+  | "category_main"
+  /** Spirituose: Unterkategorie wählen (oder ohne). */
+  | "category_sub"
   /** Text-Erfassung: Zusammenfassung mit [Ja] [Nein]. */
   | "confirm"
   | "saving"
@@ -128,6 +155,7 @@ export type IngestState = {
     notes: string | null;
     imageSides: ("front" | "back" | "other")[] | null;
     bestBefore?: string | null;
+    spirit?: SpiritLabel | null;
   };
   /** photo (Standard) oder text: Erfassung per Freitext ohne Etikett. */
   source?: "photo" | "text";
@@ -178,6 +206,12 @@ export type IngestState = {
   vendor_options?: string[];
   vendor_id?: string | null;
   vendor_name?: string | null;
+  /** Spirituose: Angaben vom Etikett und Kategorie (draft.ts). */
+  spirit?: SpiritDraft;
+  /** Wein oder Spirituose unklar → nachfragen (Schritt „kind“). */
+  kind_unsure?: boolean;
+  /** Kategorie-Knöpfe: IDs in der Reihenfolge der Knöpfe (callback_data enthält nur den Index). */
+  category_options?: string[];
 };
 
 /**
@@ -198,6 +232,7 @@ export const TextEntrySchema = WineProposalSchema.extend({
     gift_from: z.string().describe("Von wem geschenkt (Name); leer = nicht genannt"),
   }),
   best_before: BestBeforeField,
+  spirit: SpiritLabelSchema,
 });
 export type TextEntry = z.infer<typeof TextEntrySchema>;
 
@@ -206,7 +241,7 @@ export function missingEnrichableFields(p: WineProposal): EnrichableField[] {
 }
 
 /** Strings trimmen, leere Werte zu null, Zahlen auf plausible Bereiche prüfen. */
-export function normalizeProposal(p: WineProposal): WineProposal {
+export function normalizeProposal(p: WineProposal, options: { spiritPossible?: boolean } = {}): WineProposal {
   const text = (v: string | null) => {
     const t = v?.trim();
     return t ? t : null;
@@ -224,9 +259,11 @@ export function normalizeProposal(p: WineProposal): WineProposal {
     appellation: text(p.appellation),
     type: p.type,
     grape_shares: normalizeGrapeShares(p.grape_shares),
+    // Spirituosen (bzw. noch unklar, ob Spirituose) bis 100 % vol, Wein höchstens 25 %.
     alcohol_content:
-      alcohol != null && alcohol >= 0 && alcohol <= 25 ? Math.round(alcohol * 10) / 10 : null,
-    bottle_size_ml: size != null && size > 0 && size <= 30000 ? size : null,
+      alcohol != null && alcohol >= 0 && alcohol <= (p.type === "spirit" || options.spiritPossible ? 100 : 25) ? Math.round(alcohol * 10) / 10 : null,
+    // Spirituose ohne Angabe: Standard 0,7 l.
+    bottle_size_ml: size != null && size > 0 && size <= 30000 ? size : p.type === "spirit" ? 700 : null,
   };
 }
 
@@ -234,8 +271,10 @@ export function grapeNames(p: Pick<WineProposal, "grape_shares">) {
   return p.grape_shares.map((s) => s.grape);
 }
 
-/** Jahrgang ist Pflicht: fehlt er oder ist er unsicher, wird nachgefragt (ausser schon bestätigt). */
+/** Jahrgang ist Pflicht (ausser Spirituose): fehlt er oder ist er unsicher, wird nachgefragt (ausser schon bestätigt). */
 export function needsVintage(state: Pick<IngestState, "proposal" | "vintage_uncertain" | "vintage_confirmed">) {
+  // Spirituosen: Jahrgang freiwillig (Destilliert/Abgefüllt stehen eigens) – nicht nachfragen.
+  if (state.proposal.type === "spirit") return false;
   return !state.vintage_confirmed && (state.proposal.vintage_year == null || state.vintage_uncertain === true);
 }
 

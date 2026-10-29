@@ -102,7 +102,9 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
   if (!name) return fail("Der Name darf nicht leer sein.");
   if (next.type != null && !WINE_TYPES.includes(next.type)) return fail("Unbekannter Weintyp.");
   const alc = next.alcohol_content;
-  if (alc != null && !(Number.isFinite(alc) && alc >= 0 && alc <= 25)) return fail("Alkohol: bitte 0–25 % vol.");
+  // Spirituosen bis 100 % vol, Wein höchstens 25 %.
+  const maxAlc = next.type === "spirit" ? 100 : 25;
+  if (alc != null && !(Number.isFinite(alc) && alc >= 0 && alc <= maxAlc)) return fail(`Alkohol: bitte 0–${maxAlc} % vol.`);
 
   // Name + Produzent zusammen eindeutig (ohne Produzent: gleicher Name ohne Produzent).
   if (name.toLowerCase() !== wine.name.toLowerCase() || (producer ?? "").toLowerCase() !== (wine.producer ?? "").toLowerCase()) {
@@ -131,7 +133,9 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
   diff(changes, "Alkohol", pct(wine.alcohol_content), pct(alc));
 
   return ready({ title: wineTitle(wine), action: "Wein bearbeiten", changes, notes: [] }, wineId, async () => {
-    const { error } = await db.from("wines").update({ ...next, name, producer }).eq("id", wineId);
+    // Keine Spirituose mehr: Kategorie weg (nur bei Art „spirit“ erlaubt).
+    const leavesSpirit = wine.type === "spirit" && next.type !== "spirit";
+    const { error } = await db.from("wines").update({ ...next, name, producer, ...(leavesSpirit ? { spirit_category_id: null } : {}) }).eq("id", wineId);
     if (error) throw error;
     return `die Angaben zu ${wineTitle({ name, producer })} gespeichert`;
   });

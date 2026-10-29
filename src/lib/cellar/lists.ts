@@ -67,8 +67,9 @@ export function toOpenEntry(
 }
 
 export function openTotals(entries: OpenEntry[]) {
+  // „Am längsten offen“ nur bei Wein – Spirituosen halten offen lange, keine Warnung.
   const longest = entries.reduce<OpenEntry | null>(
-    (best, e) => (e.days != null && (best?.days == null || e.days > best.days) ? e : best),
+    (best, e) => (e.type !== "spirit" && e.days != null && (best?.days == null || e.days > best.days) ? e : best),
     null,
   );
   const fills = entries.map((e) => e.fill).filter((f): f is number => f != null);

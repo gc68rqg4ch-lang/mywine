@@ -16,6 +16,8 @@ import { loadLabelPhotos } from "@/lib/media/store";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { loadGrapeNames } from "@/lib/grapes/store";
 import { getLocationFilter, withLocation } from "@/lib/location";
+import { loadSpirits } from "@/lib/spirits/load";
+import { spiritMeta, withSpiritTags } from "@/lib/spirits/tag";
 
 export const metadata: Metadata = { title: "Offene Flaschen" };
 
@@ -52,14 +54,18 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
   const entries = rows.map((r) => toOpenEntry(r, grapes.get(r.wine_id) ?? []));
   const thisYear = currentYear();
   // Notizen für die Suche (im Browser) gleich mit.
-  const [ratings, photo, windows, notes] = await Promise.all([
+  const [ratings, photo, windows, notes, spirits] = await Promise.all([
     loadRatingsByWine(supabase, entries.map((e) => e.wine_id)),
     loadLabelPhotos(supabase, entries.map((e) => e.wine_id)),
     loadDrinkWindows(supabase, entries.map((e) => e.wine_id)),
     loadWineNotes(supabase, entries.map((e) => e.wine_id)),
+    loadSpirits(supabase, entries.filter((e) => e.type === "spirit").map((e) => e.wine_id)),
   ]);
   // Herkunft der Trinkfenster (Schätzungen mit „≈“).
-  const withRatings = withDrinkWindows(entries, windows, (e) => e.wine_id).map((e) => ({ ...e, ratings: ratings.get(e.wine_id) ?? [] }));
+  const withRatings = withSpiritTags(withDrinkWindows(entries, windows, (e) => e.wine_id), (e) => e.wine_id, spirits).map((e) => ({
+    ...e,
+    ratings: ratings.get(e.wine_id) ?? [],
+  }));
   const totals = openTotals(entries);
   const hidden = withoutRoom.count ?? 0;
 
@@ -108,6 +114,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
         entries={withRatings}
         notes={(e) => notes.get(e.wine_id)}
         year={thisYear}
+        spiritCategories={spirits.categories}
         empty="Gerade ist keine Flasche offen."
         itemKey={({ wine }) => wine.itemId}
         renderItem={({ wine }) => (
@@ -117,9 +124,11 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
             producer={wine.producer}
             title={wine.name}
             meta={[
+              ...spiritMeta(wine),
               String(wine.vintages[0] ?? "o. J."),
-              formatDaysSince(wine.dateOpened),
-              wine.bottleSizeMl && wine.bottleSizeMl !== 750 ? formatBottleSize(wine.bottleSizeMl) : null,
+              // Spirituosen: keine „seit … Tagen offen“-Hinweise (halten offen lange).
+              wine.type === "spirit" ? null : formatDaysSince(wine.dateOpened),
+              wine.bottleSizeMl && wine.bottleSizeMl !== (wine.type === "spirit" ? 700 : 750) ? formatBottleSize(wine.bottleSizeMl) : null,
               originLabel(wine),
             ]}
             drink={drinkBadges(wine, wine.vintages, thisYear)}

@@ -24,6 +24,9 @@ import {
   type WineProposal,
 } from "./schema";
 
+export type { SpiritLabel } from "@/lib/spirits/draft";
+import type { SpiritLabel } from "@/lib/spirits/draft";
+
 export const RECOGNITION_MODEL = "claude-haiku-5-5";
 export const FALLBACK_MODEL = "claude-sonnet-5-5";
 export const MIN_CONFIDENCE = 0.7;
@@ -59,8 +62,9 @@ Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. 
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
 - name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist.
 - country: auf Deutsch (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
-- type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira).
-- bottle_size_ml: aus der Füllmenge (75 cl = 750, 37,5 cl = 375, 1,5 l = 1500).
+- type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira – das ist Wein), spirit (Spirituose: Whisky, Grappa, Likör, Obstbrand, Cognac/Brandy, Rum, Gin, Vodka, Tequila/Mezcal, Kräuterschnaps).
+- bottle_size_ml: aus der Füllmenge (75 cl = 750, 70 cl = 700, 37,5 cl = 375, 1,5 l = 1500).
+- spirit: kind „spirit“ bei einer Spirituose, „wine“ bei Wein, „unsure“, wenn du es nicht sicher erkennst. Bei Spirituosen: name = Name der Abfüllung (z. B. „Lagavulin 16“, „Woodford Reserve“), producer = Destillerie bzw. Hersteller, region z. B. Islay, Speyside, Kentucky, Cognac; alcohol_content in % vol (oft 40–60); grape_shares leer (bei Grappa die Rebsorte nur, wenn sie dasteht). Dazu category/subcategory (Haupt-, Unterkategorie), Altersangabe, Fass/Finish, Destilliert- und Abfülljahr – nur, was auf dem Etikett steht; sonst leer bzw. 0. vintage_year nur, wenn ein Jahrgang ausdrücklich als solcher dasteht (sonst null; Destilliert/Abgefüllt gehören in spirit).
 - grape_shares: Rebsorten, die auf dem Etikett stehen; percent nur, wenn der Anteil aufgedruckt ist (z. B. "85 % Tempranillo"), sonst null. Bei reinsortigen Weinen ("100 % Merlot" oder Sortenbezeichnung wie "Pinot Noir") ist percent 100.
 - vintage_certain: true nur, wenn der Jahrgang klar auf dem Etikett steht. Fehlt er oder ist er unleserlich, ist vintage_year null bzw. vintage_certain false – rate keinen Jahrgang.
 - image_sides: für jedes Foto in Reihenfolge, ob es das Vorderetikett (front), das Rückenetikett (back) oder etwas anderes (other) zeigt.
@@ -104,6 +108,8 @@ async function recognizeWith(model: string, images: LabelImage[]): Promise<Recog
 
 export type RecognitionResult = {
   proposal: WineProposal;
+  /** Spirituose (kind spirit/unsure) – Angaben vom Etikett; null bei Wein. */
+  spirit?: SpiritLabel | null;
   model: string;
   confidence: number;
   notes: string | null;
@@ -130,9 +136,12 @@ export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionR
     result = await recognizeWith(model, images);
   }
 
-  const { confidence, uncertain_notes, image_sides, vintage_certain, best_before, ...proposal } = result;
+  const { confidence, uncertain_notes, image_sides, vintage_certain, best_before, spirit, ...wine } = result;
+  // Spirituose (bzw. unsicher): Art „spirit“ nur bei sicherer Erkennung – sonst fragt Antoine.
+  const proposal = spirit.kind === "spirit" ? { ...wine, type: "spirit" as const } : spirit.kind === "unsure" && wine.type === "spirit" ? { ...wine, type: null } : wine;
   return {
-    proposal: normalizeProposal(proposal),
+    proposal: normalizeProposal(proposal, { spiritPossible: spirit.kind !== "wine" }),
+    spirit: spirit.kind === "wine" && proposal.type !== "spirit" ? null : spirit,
     model,
     confidence: Math.min(1, Math.max(0, confidence)),
     notes: uncertain_notes?.trim() || null,
@@ -418,11 +427,14 @@ const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in 
 - name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500).
 - Land auf Deutsch.
+- Spirituosen (Whisky, Grappa, Likör, Obstbrand, Cognac, Rum, Gin …): type spirit, im Block spirit Kategorie, Altersangabe, Fass/Finish, Destilliert/Abgefüllt, wenn genannt; kind unsure, wenn unklar ist, ob Wein oder Spirituose. Bei Wein kind wine.
 - ${BEST_BEFORE_RULE}
 - purchase: Anzahl Flaschen, Lagerort (nur Weinkeller oder Wohnzimmer), bezahlter Preis (price) und Normalpreis (regular_price) pro Flasche in CHF, Händler. Ein einzelner Preis ist der bezahlte (price); regular_price nur, wenn ausdrücklich ein Normal-/Regulärpreis genannt ist (z. B. „49 statt 66“: price 49, regular_price 66). Nicht Genanntes: 0 bzw. leer. Ein Gesamtpreis für mehrere Flaschen wird durch die Anzahl geteilt.`;
 
 /** Freitext → Wein + Kaufangaben (Haiku, bei Fehler oder Ablehnung Sonnet). */
-export async function parseTextEntry(text: string): Promise<{ proposal: WineProposal; purchase: TextEntry["purchase"]; bestBefore: string | null }> {
+export async function parseTextEntry(
+  text: string,
+): Promise<{ proposal: WineProposal; purchase: TextEntry["purchase"]; bestBefore: string | null; spirit: SpiritLabel | null }> {
   const run = async (model: string) => {
     const response = await anthropic().beta.messages.parse({
       model,
@@ -444,8 +456,14 @@ export async function parseTextEntry(text: string): Promise<{ proposal: WineProp
     if (error instanceof Anthropic.AuthenticationError || usageLimit(error)) throw error;
     parsed = await run(FALLBACK_MODEL);
   }
-  const { purchase, best_before, ...wine } = parsed;
-  return { proposal: normalizeProposal(wine), purchase, bestBefore: cleanBestBefore(best_before) };
+  const { purchase, best_before, spirit, ...rest } = parsed;
+  const wine = spirit.kind === "spirit" ? { ...rest, type: "spirit" as const } : rest;
+  return {
+    proposal: normalizeProposal(wine, { spiritPossible: spirit.kind !== "wine" }),
+    purchase,
+    bestBefore: cleanBestBefore(best_before),
+    spirit: spirit.kind === "wine" && wine.type !== "spirit" ? null : spirit,
+  };
 }
 
 /**

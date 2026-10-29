@@ -79,7 +79,12 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
           <p className="tile-big">
             {totals.bottles} <span>Fl.</span>
           </p>
-          <p className="tile-line">{totals.wines === 1 ? "1 Wein" : `${totals.wines} Weine`}</p>
+          <p className="tile-line">{totals.wines - totals.spirits === 1 ? "1 Wein" : `${totals.wines - totals.spirits} Weine`}{totals.spirits > 0 ? ` · ${totals.spirits} Spirituosen` : ""}</p>
+          {totals.spiritBottles > 0 && (
+            <p className="tile-line tile-open">
+              <WineTypeIcon type="spirit" size={16} /> davon {fl(totals.spiritBottles)} Spirituosen
+            </p>
+          )}
           <StockValue paid={totals.paid} regular={totals.regular} />
         </Link>
 
@@ -146,7 +151,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
             <p key={o.itemId} className="tile-line tile-open">
               <WineTypeIcon type={o.type} size={16} />
               <span className="tile-open-name">{wineLabel(o.name, o.year)}</span>
-              <span className="muted">{o.days == null ? "–" : `${o.days} T.`}</span>
+              {/* Spirituosen: keine „schon lange offen“-Hinweise. */}
+              <span className="muted">{o.type === "spirit" ? "" : o.days == null ? "–" : `${o.days} T.`}</span>
             </p>
           ))}
           {open.length === 0 && <p className="tile-line muted">Keine offen</p>}

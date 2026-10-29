@@ -1,5 +1,7 @@
 import { loadWineNotes } from "@/lib/cellar/notes";
 import type { Metadata } from "next";
+import { loadSpirits } from "@/lib/spirits/load";
+import { spiritMeta, withSpiritTags } from "@/lib/spirits/tag";
 import Link from "next/link";
 import { ListView } from "@/components/cellar/list-view";
 import { withDrinkWindows } from "@/lib/cellar/filters";
@@ -89,13 +91,14 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
 
   const entries = buildDrunkEntries(bottles, grapes, ratingsByWine, (persons.data ?? []).map((p) => p.name));
   // Notizen für die Suche (im Browser) gleich mit.
-  const [windows, photo, notes] = await Promise.all([
+  const [windows, photo, notes, spirits] = await Promise.all([
     loadDrinkWindows(supabase, wineIds),
     loadLabelPhotos(supabase, entries.map((e) => e.wine_id)),
     loadWineNotes(supabase, entries.map((e) => e.wine_id)),
+    loadSpirits(supabase, entries.filter((e) => e.type === "spirit").map((e) => e.wine_id)),
   ]);
-  // Trinkfenster je Jahrgang für den Filter „Trinkreife“.
-  const filterable = withDrinkWindows(entries, windows, (e) => e.wine_id);
+  // Trinkfenster je Jahrgang für den Filter „Trinkreife“; Spirituosen mit Kategorie.
+  const filterable = withSpiritTags(withDrinkWindows(entries, windows, (e) => e.wine_id), (e) => e.wine_id, spirits);
   const totals = drunkTotals(entries, year);
   const hidden = withoutRoom.count ?? 0;
 
@@ -144,6 +147,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
         entries={filterable}
         notes={(e) => notes.get(e.wine_id)}
         year={currentYear()}
+        spiritCategories={spirits.categories}
         empty="Noch keine Flaschen ausgetrunken."
         itemKey={({ wine }) => wine.wine_id}
         renderItem={({ wine, bottles, vintages }) => (
@@ -153,6 +157,7 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
             producer={wine.producer}
             title={wine.name}
             meta={[
+              ...spiritMeta(wine),
               formatVintages(vintages),
               wine.lastDrunk ? `zuletzt ${formatDate(wine.lastDrunk)}` : null,
               originLabel(wine),

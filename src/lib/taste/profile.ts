@@ -22,6 +22,22 @@ export const TASTE_FIELDS = [
 export type TasteKey = (typeof TASTE_FIELDS)[number]["key"];
 export const TASTE_KEYS = TASTE_FIELDS.map((f) => f.key) as TasteKey[];
 
+/** Spirituosen: ohne Säure und Tannin (bleiben leer). */
+export const SPIRIT_TASTE_KEYS: TasteKey[] = ["sweetness", "alcohol", "body", "flavour_intensity", "finish"];
+
+/** Merkmale je Art: Spirituose ohne Säure/Tannin, Wein alle (Tannin zeigt die Karte je nach Typ). */
+export const tasteKeysFor = (wineType: string | null | undefined): TasteKey[] => (wineType === "spirit" ? SPIRIT_TASTE_KEYS : TASTE_KEYS);
+
+/** Aromen-Lexikon für Spirituosen (Gruppe → Aromen). */
+export const SPIRIT_AROMAS = new Map<string, string[]>([
+  ["Frucht", ["Zitrus", "Orange", "Apfel", "Birne", "Kirsche", "Pflaume", "Pfirsich", "Beeren", "tropische Früchte", "Trockenfrüchte", "Rosine", "Feige"]],
+  ["Blüten & Kräuter", ["Blüten", "Heidekraut", "Kräuter", "Wacholder", "Minze", "Anis", "Gras"]],
+  ["Würze", ["Zimt", "Nelke", "Pfeffer", "Muskat", "Ingwer", "Lakritz"]],
+  ["Rauch & Torf", ["Rauch", "Torf", "Jod", "Meersalz", "Asche"]],
+  ["Nüsse & Getreide", ["Mandel", "Haselnuss", "Walnuss", "Marzipan", "Malz", "Getreide", "Brot"]],
+  ["Fass & Reife", ["Vanille", "Eiche", "Karamell", "Toffee", "Honig", "Schokolade", "Kaffee", "Tabak", "Leder", "Sherry"]],
+]);
+
 /** Optionen je Merkmal (wie im WSET-Tool). */
 export function tasteOptions(key: TasteKey): string[] {
   const sat = TASTE_FIELDS.find((f) => f.key === key)!.sat;
@@ -49,6 +65,8 @@ export type Evidence = { source_url: string; quote: string };
 export type Confidence = "hoch" | "mittel" | "niedrig";
 
 export type TasteProfileData = {
+  /** Spirituose: Säure und Tannin werden nicht gespeichert (leer). */
+  spirit?: boolean;
   values: Record<TasteKey, string>;
   aromas: Record<string, string[]>;
   styleSummary: string | null;
@@ -123,6 +141,9 @@ const host = (url: string) => {
 };
 const normUrl = (url: string) => url.trim().replace(/#.*$/, "");
 
+/** Aroma-Lexikon je Art: Spirituose eigenes, Wein das des WSET-Typs. */
+export const aromaGroupsFor = (wineType: string | null | undefined, type: SatType) => (wineType === "spirit" ? SPIRIT_AROMAS : aromaGroups(type));
+
 /** Aroma-Lexikon des Weintyps: Gruppe → Aromen. */
 export function aromaGroups(type: SatType) {
   const map = new Map<string, string[]>();
@@ -164,7 +185,8 @@ export function applyRedDryRule<P extends Pick<TasteProfileData, "values" | "evi
  * - nur Quellen zu genau diesem Wein und genau diesem Jahrgang (NV: Quellen zum Wein);
  *   ohne passende Quelle → kein Profil (null);
  * - Merkmal nur mit gültiger Option und Beleg (Zitat mit Quelle); sonst „unbekannt“;
- *   eindeutige Begriffe im Zitat („sturdy tannins“) gelten (CLEAR_TERMS);
+ *   eindeutige Begriffe im Zitat („sturdy tannins“) gelten (CLEAR_TERMS); Spirituose (wineType
+ *   'spirit'): ohne Säure/Tannin, Aromen aus SPIRIT_AROMAS;
  * - widersprechen sich Quellen → „unbekannt“ und Hinweis;
  * - Aroma nur aus dem Lexikon des Weintyps (passende Gruppe) und mit Beleg; sonst weg;
  * - nichts Belegtes übrig → kein Profil;
@@ -216,11 +238,13 @@ export function validateTasteProfile(
 
   const contradicted = new Set(raw.contradictions.map((c) => c.field));
   const notes = raw.contradictions
-    .filter((c) => TASTE_KEYS.includes(c.field as TasteKey))
+    .filter((c) => tasteKeysFor(ctx.wineType).includes(c.field as TasteKey))
     .map((c) => `${TASTE_FIELDS.find((f) => f.key === c.field)!.label}: Quellen widersprechen sich${c.note.trim() ? ` (${c.note.trim().slice(0, 160)})` : ""}.`);
 
   const values = Object.fromEntries(TASTE_KEYS.map((k) => [k, UNKNOWN])) as Record<TasteKey, string>;
-  for (const key of TASTE_KEYS) {
+  // Spirituose: nur Süsse, Alkohol, Körper, Intensität, Abgang (Säure/Tannin bleiben leer).
+  const spirit = ctx.wineType === "spirit";
+  for (const key of tasteKeysFor(ctx.wineType)) {
     if (contradicted.has(key)) continue;
     const list = raw.evidence.filter((e) => e.field === key && sources.has(normUrl(e.source_url)) && e.quote.trim());
     // Eindeutiger Begriff im Zitat gilt; widersprechen sich die Zitate → unbekannt.
@@ -231,7 +255,7 @@ export function validateTasteProfile(
     if (proof(key, list)) values[key] = value;
   }
 
-  const lexicon = aromaGroups(ctx.type);
+  const lexicon = aromaGroupsFor(ctx.wineType, ctx.type);
   const aromas: Record<string, string[]> = {};
   for (const a of raw.aromas) {
     // Nur eindeutige Entsprechungen aus dem Lexikon – nie das „nächstbeste“ Aroma.
@@ -254,6 +278,7 @@ export function validateTasteProfile(
   // Erst nach der Prüfung „etwas belegt?“: die Regel allein ergibt kein Profil.
   const ruled = applyRedDryRule({ values, evidence }, ctx.wineType, contradicted.has("sweetness"));
   return {
+    ...(spirit ? { spirit: true } : {}),
     values: ruled.values,
     aromas,
     styleSummary,
@@ -406,8 +431,9 @@ export function fromRow(row: {
 export function toRow(p: TasteProfileData) {
   return {
     sweetness: p.values.sweetness,
-    acidity: p.values.acidity,
-    tannin: p.values.tannin,
+    // Spirituose: Säure und Tannin leer.
+    acidity: p.spirit ? null : p.values.acidity,
+    tannin: p.spirit ? null : p.values.tannin,
     alcohol: p.values.alcohol,
     body: p.values.body,
     flavour_intensity: p.values.flavour_intensity,

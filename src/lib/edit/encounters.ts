@@ -42,7 +42,8 @@ import {
 } from "./types";
 
 const MAX_TEXT = 500;
-const WINE_TYPES = Object.keys(WINE_TYPE_LABELS) as WineType[];
+// Neue Weine unterwegs: nur Weinarten (Spirituosen erfasst nur Antoine).
+const WINE_TYPES: WineType[] = (Object.keys(WINE_TYPE_LABELS) as WineType[]).filter((t) => t !== "spirit");
 
 type Place = { id: string; name: string; kind: string | null; city: string | null };
 

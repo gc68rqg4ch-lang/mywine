@@ -11,9 +11,11 @@ export type NoteContext = { fallback: FallbackInput; prompt: Omit<PromptInput, "
 /** Gemeinsame Grundlage für Ersatztext und Prompt. */
 export function noteContext(data: HomeInput, person: string | null, now: Date | number): NoteContext {
   const p = zurichParts(now);
-  const units = stockUnits(data.stock, p.year);
+  // Trinkreife und Trinkvorschläge (auch im Tagestext) nur Wein – Spirituosen zählen nur im Bestand.
+  const wineStock = data.stock.filter((s) => s.type !== "spirit");
+  const units = stockUnits(wineStock, p.year);
   const totals = stockTotals(data.stock);
-  const open = openBottles(data.stock, p.date).map((o) => ({ wineId: o.wineId, year: o.year, days: o.days }));
+  const open = openBottles(wineStock, p.date).map((o) => ({ wineId: o.wineId, year: o.year, days: o.days }));
   const recent = recentPurchases(data.purchases, 5);
   const drunk = drunkByType(data.drunk, now);
   const monthWines = data.drunk.filter((d) => sameZurichMonth(d.drunkAt, now));
