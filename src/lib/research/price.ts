@@ -311,11 +311,11 @@ export async function researchPrice(
   const directUrls = [...new Set(direct.flatMap((d) => d.urls ?? []))];
   if (directUrls.length) found.push(...(await verifyPages(directUrls, want, get, diagnostics.pages)));
 
-  // 2. Websuche – entfällt, wenn schon zwei Händler den exakten Treffer führen.
+  // 2. Websuche – nur, wenn die direkten Shop-Suchen keinen exakten Treffer liefern (spart Kosten).
   let raw: PriceRaw | null = null;
   const blocks: Parameters<typeof searchLog>[0] = [];
   const exactHosts = new Set(found.filter((f) => f.kind === "exact").map((f) => hostOf(f.url)));
-  if (exactHosts.size < 2) {
+  if (exactHosts.size === 0) {
     const planned = priceQueries({ name: wine.name, producer: wine.producer, year, sizeMl: size, vendor });
     diagnostics.planned = planned;
     raw = await webResearch({
@@ -324,7 +324,7 @@ export async function researchPrice(
       toolDescription: "Meldet den gefundenen Preis pro Flasche in CHF mit Händler und Quelle.",
       schema: PriceSchema,
       maxSearches: PRICE_MAX_SEARCHES,
-      maxRounds: 12,
+      maxRounds: 6,
       pages: shopDocuments(pages),
       onContent: (content) => blocks.push(...(content as unknown as typeof blocks)),
     });

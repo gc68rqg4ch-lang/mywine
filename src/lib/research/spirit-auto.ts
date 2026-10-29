@@ -4,7 +4,7 @@ import "server-only";
 // Region; Kategorie nur aus den bestehenden) im Hintergrund recherchieren. Nichts gefunden oder
 // Fehler (auch API-Limit): nichts gesetzt, keine Meldung an die Person, nur ins Log.
 
-import { later } from "@/lib/later";
+import { backgroundResearch } from "./background";
 import type { AdminClient } from "@/lib/supabase/admin";
 
 export async function autoSpiritResearch(db: AdminClient, wineId: string) {
@@ -26,5 +26,5 @@ export async function autoSpiritResearch(db: AdminClient, wineId: string) {
 
 /** Nach dem Speichern einplanen (läuft nach der Antwort, blockiert nichts). */
 export function scheduleSpiritResearch(wineId: string) {
-  later(async () => autoSpiritResearch((await import("@/lib/supabase/admin")).createAdminClient(), wineId));
+  backgroundResearch(wineId, "spirit research", (db) => autoSpiritResearch(db, wineId));
 }

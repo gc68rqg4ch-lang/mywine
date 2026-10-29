@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withUsage } from "@/lib/ai/usage";
 import Anthropic from "@anthropic-ai/sdk";
 import { usageLimit } from "@/lib/ai/api-errors";
 import { todayIso } from "@/lib/format";
@@ -81,7 +82,7 @@ async function runWith(
     output_config: { effort: "medium" },
     ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
   });
-  const final = await runner.runUntilDone();
+  const final = await withUsage({ purpose: "chat" }, () => runner.runUntilDone());
 
   // Ablehnung, abgeschnittene Antwort oder erschöpfte Runden: nochmals mit dem stärkeren Modell.
   if (final.stop_reason === "refusal" || final.stop_reason === "max_tokens" || final.stop_reason === "tool_use") {

@@ -4,7 +4,7 @@ import "server-only";
 // Stil) – nur wenn noch keine gesetzt ist. Fehler (auch API-Limit): nichts gesetzt, keine Meldung
 // an die Person, nur ins Log.
 
-import { later } from "@/lib/later";
+import { backgroundResearch } from "./background";
 import type { AdminClient } from "@/lib/supabase/admin";
 
 export async function autoOpenKeep(db: AdminClient, wineId: string, options: { replaceEstimate?: boolean } = {}) {
@@ -21,7 +21,7 @@ export async function autoOpenKeep(db: AdminClient, wineId: string, options: { r
 
 /** Nach dem Speichern einplanen (läuft nach der Antwort, blockiert nichts). replaceEstimate: eine Schätzung durch eine Quelle ersetzen. */
 export function scheduleOpenKeep(wineId: string, options: { replaceEstimate?: boolean } = {}) {
-  later(async () => autoOpenKeep((await import("@/lib/supabase/admin")).createAdminClient(), wineId, options));
+  backgroundResearch(wineId, "open keep", (db) => autoOpenKeep(db, wineId, options));
 }
 
 /**

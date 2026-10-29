@@ -5,16 +5,16 @@ import "server-only";
 // research, sonst Schätzung (estimate). Nichts gefunden oder Fehler (auch API-Limit): nichts
 // gesetzt, keine Meldung an die Person, nur ins Log.
 
-import { later } from "@/lib/later";
+import { backgroundResearch } from "./background";
 import type { AdminClient } from "@/lib/supabase/admin";
 
 export type AutoDrinkWindowResult = "exists" | "set" | "suggested" | "unchanged" | "none" | "failed";
 
-export async function autoDrinkWindow(db: AdminClient, wineId: string, year: number | null): Promise<AutoDrinkWindowResult> {
+export async function autoDrinkWindow(db: AdminClient, wineId: string, year: number | null, options: { searched?: boolean } = {}): Promise<AutoDrinkWindowResult> {
   try {
     // Erst hier laden: kein Kreis beim Start, Umgebungsvariablen erst beim Ausführen.
     const { findAndStoreDrinkWindow } = await import("./drink-window");
-    return (await findAndStoreDrinkWindow(db, wineId, year)).result;
+    return (await findAndStoreDrinkWindow(db, wineId, year, { noSearch: options.searched })).result;
   } catch (error) {
     const { usageLimit } = await import("@/lib/ai/api-errors");
     if (usageLimit(error)) console.error("api limit reached", "drink window auto", wineId, year);
@@ -23,7 +23,11 @@ export async function autoDrinkWindow(db: AdminClient, wineId: string, year: num
   }
 }
 
-/** Nach dem Speichern einplanen (läuft nach der Antwort, blockiert nichts). */
-export function scheduleDrinkWindow(wineId: string, year: number | null) {
-  later(async () => autoDrinkWindow((await import("@/lib/supabase/admin")).createAdminClient(), wineId, year));
+/**
+ * Nach dem Speichern einplanen (läuft nach der Antwort, blockiert nichts). searched: Beim Einbuchen
+ * wurde derselbe Wein eben schon im Web gesucht (ohne Trinkfenster) – dann nur schätzen, keine
+ * zweite Websuche.
+ */
+export function scheduleDrinkWindow(wineId: string, year: number | null, options: { searched?: boolean } = {}) {
+  backgroundResearch(wineId, "drink window", (db) => autoDrinkWindow(db, wineId, year, options));
 }

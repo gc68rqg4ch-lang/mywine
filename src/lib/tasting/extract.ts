@@ -1,5 +1,6 @@
 import "server-only";
 
+import { withUsage } from "@/lib/ai/usage";
 import Anthropic from "@anthropic-ai/sdk";
 import { usageLimit } from "@/lib/ai/api-errors";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
@@ -87,7 +88,7 @@ function currentState(data: SatData) {
 }
 
 async function extractWith(model: string, data: SatData, text: string): Promise<Extraction> {
-  const response = await anthropic().beta.messages.parse({
+  const response = await withUsage({ purpose: "other" }, () => anthropic().beta.messages.parse({
     model,
     max_tokens: 8000,
     system: systemPrompt(data.type),
@@ -99,7 +100,7 @@ async function extractWith(model: string, data: SatData, text: string): Promise<
     ],
     output_config: { format: betaZodOutputFormat(extractionSchema(data.type)) },
     ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
-  });
+  }));
   if (response.stop_reason === "refusal" || response.stop_reason === "max_tokens" || !response.parsed_output) {
     throw new Error(`${model}: kein gültiges Ergebnis (${response.stop_reason})`);
   }

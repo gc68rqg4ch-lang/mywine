@@ -153,6 +153,9 @@ export const T = {
   /** Kontingent aufgebraucht: Lauf angehalten, Rest bleibt offen. */
   researchPaused: (open: string, random?: () => number) =>
     `${pick(["Mein Kontingent ist aufgebraucht – ich habe die Recherche angehalten.", "Oje, mein Kontingent ist aufgebraucht – die Recherche ruht vorerst."], random)} Noch ${open} offen; auf der Seite „Recherche“ kannst du später fortsetzen.`,
+  /** Monatsbudget der API erreicht (höchstens einmal pro Tag). */
+  budgetReached: (spent: string, budget: string, held: string) =>
+    `💸 Das Monatsbudget für meine Recherchen ist erreicht (USD ${spent} von ${budget}). ${held} warten, bis du das Budget auf der Seite „Recherche“ erhöhst oder der neue Monat beginnt. Fotos, Chat und Tagestext laufen weiter.`,
   here: "Bitte schön:",
 
   // --- Offene Rückfragen

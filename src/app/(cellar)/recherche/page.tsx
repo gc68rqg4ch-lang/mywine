@@ -23,6 +23,7 @@ import { loadOpenKeep } from "@/lib/fortified/store";
 import { BatchResearch, type BatchCandidate } from "./batch-research";
 import { BatchProgress } from "./batch-progress";
 import { AvatarRefresh } from "./avatar-refresh";
+import { ApiCosts } from "./api-costs";
 import { latestBatchRun } from "@/lib/research/jobs";
 import { runActive } from "@/lib/research/job-text";
 
@@ -127,6 +128,8 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
           nie. Dazu das Geschmacksprofil – nur mit Belegen aus Quellen zu genau diesem Wein; sonst lasse ich es leer.
         </p>
       </div>
+
+      <ApiCosts db={supabase} />
 
       {suggestions.length > 0 && (
         <section className="card stack" aria-labelledby="vorschlaege">

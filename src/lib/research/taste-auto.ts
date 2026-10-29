@@ -10,7 +10,7 @@ import "server-only";
 // wird auch, wenn der Jahrgang in den letzten 12 Monaten schon gesucht wurde.
 // Seiten aus Händler-Shops (zuerst der Händler der Flasche) gehen ebenfalls mit.
 
-import { later } from "@/lib/later";
+import { backgroundResearch } from "./background";
 import type { AdminClient } from "@/lib/supabase/admin";
 
 export type AutoTasteResult = "exists" | "recent" | "saved" | "suggested" | "unchanged" | "none" | "failed";
@@ -70,5 +70,5 @@ async function documentRows(db: AdminClient, wineId: string, year: number | null
 /** Nach dem Speichern einplanen (läuft nach der Antwort, blockiert nichts). */
 export function scheduleTasteProfile(wineId: string, year: number | null, options: AutoTasteOptions = {}) {
   // Admin-Client erst beim Ausführen laden (Umgebungsvariablen werden dort geprüft).
-  later(async () => autoTasteProfile((await import("@/lib/supabase/admin")).createAdminClient(), wineId, year, options));
+  backgroundResearch(wineId, "taste profile", (db) => autoTasteProfile(db, wineId, year, options));
 }

@@ -29,6 +29,83 @@ export type Database = {
         }
         Relationships: []
       }
+      api_budget: {
+        Row: {
+          extra_usd: number
+          month: string
+          notified_on: string | null
+          updated_at: string
+        }
+        Insert: {
+          extra_usd?: number
+          month: string
+          notified_on?: string | null
+          updated_at?: string
+        }
+        Update: {
+          extra_usd?: number
+          month?: string
+          notified_on?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      api_usage: {
+        Row: {
+          cache_read_tokens: number
+          cache_write_tokens: number
+          cost_usd: number
+          created_at: string
+          id: string
+          input_tokens: number
+          job_ref: string | null
+          model: string
+          output_tokens: number
+          purpose: string
+          web_fetches: number
+          web_searches: number
+          wine_id: string | null
+        }
+        Insert: {
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          cost_usd?: number
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          job_ref?: string | null
+          model: string
+          output_tokens?: number
+          purpose: string
+          web_fetches?: number
+          web_searches?: number
+          wine_id?: string | null
+        }
+        Update: {
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          cost_usd?: number
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          job_ref?: string | null
+          model?: string
+          output_tokens?: number
+          purpose?: string
+          web_fetches?: number
+          web_searches?: number
+          wine_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_usage_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_notes: {
         Row: {
           created_at: string
@@ -1807,6 +1884,15 @@ export type Database = {
       acquire_research_worker: {
         Args: { p_owner: string; p_seconds: number }
         Returns: boolean
+      }
+      api_cost_by_purpose: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          calls: number
+          cost_usd: number
+          purpose: string
+          web_searches: number
+        }[]
       }
       change_vintage: {
         Args: {

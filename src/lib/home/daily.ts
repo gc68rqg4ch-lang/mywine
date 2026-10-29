@@ -6,6 +6,7 @@ import "server-only";
 // einer schreibt), Daten laden, Claude fragen, „done“ bzw. „failed“ speichern. Beim API-Limit
 // „failed“ – bis morgen gibt es den Ersatztext, kein neuer Versuch.
 
+import { withUsage } from "@/lib/ai/usage";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
@@ -30,13 +31,15 @@ export type Generate = (system: string, prompt: string) => Promise<string>;
 
 /** Claude: Text mit Platzhaltern (strukturiert, Schema DailyNoteSchema). */
 export const claudeGenerate: Generate = async (system, prompt) => {
-  const response = await anthropic().beta.messages.parse({
-    model: DAILY_MODEL,
-    max_tokens: 2000,
-    system,
-    messages: [{ role: "user", content: prompt }],
-    output_config: { format: betaZodOutputFormat(DailyNoteSchema) },
-  });
+  const response = await withUsage({ purpose: "daily_note" }, () =>
+    anthropic().beta.messages.parse({
+      model: DAILY_MODEL,
+      max_tokens: 2000,
+      system,
+      messages: [{ role: "user", content: prompt }],
+      output_config: { format: betaZodOutputFormat(DailyNoteSchema) },
+    }),
+  );
   if (response.stop_reason === "refusal" || response.stop_reason === "max_tokens" || !response.parsed_output) {
     throw new Error(`${DAILY_MODEL}: kein gültiges Ergebnis (${response.stop_reason})`);
   }

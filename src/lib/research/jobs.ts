@@ -12,13 +12,16 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
 import { apiProblem } from "@/lib/ai/api-errors";
+import { budgetExceeded, budgetState, claimBudgetNotice } from "@/lib/ai/budget";
+import { withUsage } from "@/lib/ai/usage";
+import { todayIso } from "@/lib/format";
 import { later } from "@/lib/later";
 import { appBaseUrl } from "@/lib/telegram/config";
 import { researchDrinkWindowYears } from "./drink-window";
 import { researchOpenKeepJob } from "./open-keep";
 import { runPriceSearch } from "./price";
 import type { ResearchScope } from "./gaps";
-import { limitText, runDoneText, singleDoneText, type JobResult, type RunCounts } from "./job-text";
+import { budgetReachedText, limitText, runDoneText, singleDoneText, type JobResult, type RunCounts } from "./job-text";
 import { researchAndFillWine, type ResearchOutcome, type TasteMode } from "./wine";
 
 type Db = SupabaseClient<Database>;
@@ -167,8 +170,14 @@ const toResult = (o: ResearchOutcome): JobResult => ({
 });
 
 /** Einen Auftrag ausführen (wie bisher die Server Actions). Fehler kommen als status „error“ zurück. */
-export async function runJob(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "params">): Promise<ResearchOutcome> {
+export async function runJob(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "params"> & { id?: string }): Promise<ResearchOutcome> {
   const p = (job.params ?? {}) as JobParams;
+  // Verbrauchsprotokoll: Wein und Auftrag (Testlauf der Preissuche mit „:dry_run“).
+  const jobRef = `${job.id ?? job.kind}${p.dry_run === true ? ":dry_run" : ""}`;
+  return withUsage({ wineId: job.wine_id, jobRef }, () => runJobInner(db, job, p));
+}
+
+async function runJobInner(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "params">, p: JobParams): Promise<ResearchOutcome> {
   try {
     if (job.kind === "window") return await researchDrinkWindowYears(db, job.wine_id, p.years ?? []);
     if (job.kind === "keep") return await researchOpenKeepJob(db, job.wine_id);
@@ -190,7 +199,10 @@ export async function runJob(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "par
 export type WorkerResult =
   | { status: "unavailable" }
   | { status: "busy" }
-  | { status: "ok"; processed: number; halted: "usage_limit" | "temporary" | null; wines: string[] };
+  | { status: "ok"; processed: number; halted: "usage_limit" | "temporary" | "budget" | null; wines: string[] };
+
+/** Grund bei angehaltenen Aufträgen: Monatsbudget der API erreicht. */
+export const BUDGET_HOLD = "budget";
 
 /**
  * Aufträge nacheinander abarbeiten, solange Zeit bleibt (budgetMs). Nur mit der Sperre; ein
@@ -198,25 +210,45 @@ export type WorkerResult =
  */
 export async function processQueue(
   db: Db,
-  options: { budgetMs?: number; lockSeconds?: number; runner?: (job: JobRow) => Promise<ResearchOutcome>; now?: () => number } = {},
+  options: {
+    budgetMs?: number;
+    lockSeconds?: number;
+    runner?: (job: JobRow) => Promise<ResearchOutcome>;
+    now?: () => number;
+    /** Monatsbudget der API erreicht? (Standard: aus api_usage/api_budget) */
+    overBudget?: () => Promise<boolean>;
+  } = {},
 ): Promise<WorkerResult> {
   const now = options.now ?? Date.now;
   const started = now();
   const owner = randomUUID();
   const runner = options.runner ?? ((job: JobRow) => runJob(db, job));
+  const overBudget = options.overBudget ?? (() => budgetExceeded(db));
   const { data: locked, error } = await db.rpc("acquire_research_worker", { p_owner: owner, p_seconds: options.lockSeconds ?? WORKER_LOCK_SECONDS });
   if (missingSchema(error)) return { status: "unavailable" };
   if (error) throw error;
   if (!locked) return { status: "busy" };
 
   const wines: string[] = [];
-  let halted: "usage_limit" | "temporary" | null = null;
+  let halted: "usage_limit" | "temporary" | "budget" | null = null;
   try {
     // Abgebrochene Aufrufe (Zeitlimit): ihre „running“-Aufträge wieder einreihen – die Sperre haben jetzt wir.
     await db.from("research_jobs").update({ status: "queued", started_at: null }).eq("status", "running").lt("attempts", MAX_ATTEMPTS);
     await db.from("research_jobs").update({ status: "failed", error: "Abgebrochen (Zeitlimit)", finished_at: new Date().toISOString() }).eq("status", "running");
 
+    // Budget wieder frei (neuer Monat bzw. erhöht): wegen des Budgets angehaltene Aufträge freigeben.
+    let budgetChecked = false;
     while (now() - started < (options.budgetMs ?? WORKER_BUDGET_MS)) {
+      // Monatsbudget erreicht: alles Offene bleibt in der Warteschlange (hold „budget“), Meldung einmal pro Tag.
+      if (await overBudget()) {
+        await holdForBudget(db);
+        halted = "budget";
+        break;
+      }
+      if (!budgetChecked) {
+        budgetChecked = true;
+        await db.from("research_jobs").update({ hold: null, error: null }).eq("status", "queued").eq("hold", BUDGET_HOLD);
+      }
       const { data: claimed, error: claimError } = await db.rpc("claim_research_job", { p_owner: owner });
       if (claimError) throw claimError;
       const job = (Array.isArray(claimed) ? claimed[0] : claimed) as JobRow | undefined;
@@ -284,6 +316,28 @@ async function holdOpenRuns(db: Db, reason: string, currentRun: string) {
     if (!rows.length) continue;
     const link = rows.length === 1 && rows[0].kind === "page" ? `/wein/${rows[0].wine_id}` : "/recherche";
     await sendTo(db, rows[0].created_by, limitText(rows.length), link);
+  }
+}
+
+/** Monatsbudget erreicht: offene Aufträge anhalten (hold „budget“) und einmal pro Tag melden. */
+async function holdForBudget(db: Db) {
+  const { error } = await db.from("research_jobs").update({ hold: BUDGET_HOLD, error: "Monatsbudget der API erreicht" }).eq("status", "queued").is("hold", null);
+  if (error) throw error;
+  const { count } = await db.from("research_jobs").select("id", { count: "exact", head: true }).eq("status", "queued").eq("hold", BUDGET_HOLD);
+  // Nur melden, wenn wirklich etwas wartet.
+  if (count) await notifyBudget(db, count);
+}
+
+/** Antoine meldet „Budget erreicht“ höchstens einmal pro Tag (allen mit Telegram). Wirft nie. */
+export async function notifyBudget(db: Db, held: number) {
+  try {
+    const state = await budgetState(db);
+    if (!state) return;
+    if (!(await claimBudgetNotice(db, todayIso()))) return;
+    const { data } = await db.from("persons").select("id, telegram_user_id").not("telegram_user_id", "is", null);
+    for (const p of data ?? []) await sendTo(db, p.id, budgetReachedText(state.spent, state.budget, held), "/recherche");
+  } catch (error) {
+    console.error("budget notice failed", error instanceof Error ? error.message : error);
   }
 }
 

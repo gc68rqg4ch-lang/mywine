@@ -253,6 +253,18 @@ test("Direkte Shop-Suche findet den Preis; mit zwei exakten Händlern entfällt 
   assert.equal(diagnostics.verdict, "exact:page");
 });
 
+test("Ein exakter Treffer in den direkten Shop-Suchen genügt: keine Websuche (spart Kosten)", async () => {
+  web.clear();
+  claudeCalls = 0;
+  blocks = [];
+  web.set("https://www.drinks.ch/de/search?q=Lazzaroni+Amaretto", `<a href="https://www.drinks.ch/de/lazzaroni-amaretto-70cl.html">Lazzaroni Amaretto 70cl</a>`);
+  web.set(DRINKS, product("Lazzaroni Amaretto 70cl", "29.90"));
+  const { finding, diagnostics } = await researchPrice(LAZ, null, 700, null);
+  assert.equal(claudeCalls, 0);
+  assert.ok(finding.kind === "exact" && finding.amount === 29.9);
+  assert.equal(diagnostics.planned, undefined, "keine Websuche geplant");
+});
+
 test("Testlauf (dry_run): sucht, speichert nichts, sendet nichts – Ergebnis nur in result", async () => {
   web.clear();
   web.set(DRINKS, product("Lazzaroni Amaretto 70cl", "29.90"));

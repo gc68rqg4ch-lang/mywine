@@ -64,6 +64,11 @@ export function singleDoneText(name: string, result: JobResult | null, random?: 
 }
 
 /** Kontingent (API-Limit) aufgebraucht: Lauf angehalten, Rest bleibt offen. */
+/** Monatsbudget erreicht: „… 3 Recherchen pausiert …“. */
+export function budgetReachedText(spent: number, budget: number, held: number) {
+  return T.budgetReached(spent.toFixed(2), budget.toFixed(2), plural(held, "Recherche", "Recherchen"));
+}
+
 export function limitText(open: number, random?: () => number) {
   return T.researchPaused(plural(open, "Wein", "Weine"), random);
 }

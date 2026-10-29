@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
+import { budgetExceeded } from "@/lib/ai/budget";
 import type { ResearchScope } from "@/lib/research/gaps";
 import { decideSuggestion } from "@/lib/research/suggestions";
 import { researchAndFillWine, type ResearchOutcome, type TasteMode } from "@/lib/research/wine";
@@ -17,6 +18,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const TASTE_MODES: TasteMode[] = ["always", "missing", "only"];
 
+/** Monatsbudget der API erreicht: wie beim API-Limit anhalten (der Sammellauf in der Seite stoppt). */
+async function budgetStop(db: Parameters<typeof budgetExceeded>[0]): Promise<ResearchOutcome | null> {
+  if (!(await budgetExceeded(db))) return null;
+  return { status: "error", filled: [], suggested: 0, seconds: 0, error: { kind: "usage_limit", message: "Das Monatsbudget der API ist erreicht – auf dieser Seite kannst du es erhöhen." } };
+}
+
 /**
  * Ein Wein, vollständig (Sammellauf): alle leeren Angaben in einem Durchgang ergänzen, danach
  * das Geschmacksprofil (Sammellauf: nur wo es fehlt; „only“: nur das Profil).
@@ -31,6 +38,8 @@ export async function researchWine(
 ): Promise<ResearchOutcome> {
   const session = await getSession();
   if (!session.isMember || !UUID_RE.test(wineId)) return { status: "error", filled: [], suggested: 0, seconds: 0 };
+  const stopped = await budgetStop(session.supabase);
+  if (stopped) return stopped;
   try {
     const outcome = await researchAndFillWine(session.supabase, wineId, scope === "all" ? "all" : "cellar", {
       taste: TASTE_MODES.includes(taste) ? taste : "missing",
@@ -62,6 +71,8 @@ export async function researchWine(
 export async function researchDrinkWindows(wineId: string, years: (number | null)[]): Promise<ResearchOutcome> {
   const session = await getSession();
   if (!session.isMember || !UUID_RE.test(wineId)) return { status: "error", filled: [], suggested: 0, seconds: 0 };
+  const stopped = await budgetStop(session.supabase);
+  if (stopped) return stopped;
   const outcome = await researchDrinkWindowYears(session.supabase, wineId, years);
   if (outcome.filled.length || outcome.suggested) revalidatePath("/", "layout");
   return outcome;
@@ -71,6 +82,8 @@ export async function researchDrinkWindows(wineId: string, years: (number | null
 export async function researchOpenKeepAction(wineId: string): Promise<ResearchOutcome> {
   const session = await getSession();
   if (!session.isMember || !UUID_RE.test(wineId)) return { status: "error", filled: [], suggested: 0, seconds: 0 };
+  const stopped = await budgetStop(session.supabase);
+  if (stopped) return stopped;
   const outcome = await researchOpenKeepJob(session.supabase, wineId);
   if (outcome.filled.length) revalidatePath("/", "layout");
   return outcome;

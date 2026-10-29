@@ -544,7 +544,8 @@ export async function saveJob(job: IngestJob, chatId: number) {
     scheduleTasteProfile(wineId, state.proposal.vintage_year ?? null);
     // Spirituosen: kein Trinkfenster, dafür die fehlenden Angaben recherchieren.
     if (state.proposal.type === "spirit") scheduleSpiritResearch(wineId);
-    else scheduleDrinkWindow(wineId, state.proposal.vintage_year ?? null);
+    // Beim Einbuchen schon im Web gesucht (Quellen da, aber kein Trinkfenster): nur schätzen.
+    else scheduleDrinkWindow(wineId, state.proposal.vintage_year ?? null, { searched: (state.recognition?.sources?.length ?? 0) > 0 });
     // Likörwein bzw. Likör (Spirituose der Kategorie Likör): wie lange eine offene Flasche gut bleibt.
     if (state.proposal.type === "fortified" || state.proposal.type === "spirit") scheduleOpenKeep(wineId);
     // 🤷 (Preis suchen): Preis bei Schweizer Händlern suchen (Hintergrund); Antoine meldet das Ergebnis.

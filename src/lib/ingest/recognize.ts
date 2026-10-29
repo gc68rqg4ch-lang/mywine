@@ -5,6 +5,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { usageLimit } from "@/lib/ai/api-errors";
+import type { Purpose } from "@/lib/ai/cost";
+import { meteredFetch, withUsage } from "@/lib/ai/usage";
 import { strictSchemaProblems } from "@/lib/ai/schema-limits";
 import { SHOP_DOMAINS, shopSourceAllowed } from "@/lib/research/shops/match";
 import { hasCompletePercents, normalizeGrapeShares, type GrapeShare } from "@/lib/grapes/shares";
@@ -39,8 +41,9 @@ export const SONNET_FALLBACK: { betas: Anthropic.Beta.AnthropicBeta[]; fallbacks
 };
 
 let client: Anthropic | null = null;
+/** Claude-Client (liest ANTHROPIC_API_KEY); jeder Aufruf wird in api_usage protokolliert (meteredFetch). */
 export function anthropic() {
-  client ??= new Anthropic(); // liest ANTHROPIC_API_KEY
+  client ??= new Anthropic({ fetch: meteredFetch });
   return client;
 }
 
@@ -80,7 +83,7 @@ function imageBlocks(images: LabelImage[]): Anthropic.Beta.BetaContentBlockParam
 }
 
 async function recognizeWith(model: string, images: LabelImage[]): Promise<Recognition> {
-  const response = await anthropic().beta.messages.parse({
+  const response = await withUsage({ purpose: "recognize" }, () => anthropic().beta.messages.parse({
     model,
     max_tokens: 16000,
     system: RECOGNITION_SYSTEM,
@@ -95,7 +98,7 @@ async function recognizeWith(model: string, images: LabelImage[]): Promise<Recog
     ],
     output_config: { format: betaZodOutputFormat(RecognitionSchema) },
     ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
-  });
+  }));
 
   if (response.stop_reason === "refusal") {
     throw new RecognitionError(`${model} hat die Anfrage abgelehnt.`);
@@ -184,7 +187,8 @@ export function researchTools(options: {
   fetchShops?: boolean;
 }): Anthropic.Beta.BetaToolUnion[] {
   return [
-    { type: "web_search_20260209", name: "web_search", max_uses: options.maxSearches, user_location: SWISS_LOCATION },
+    // maxSearches 0: ohne Websuche (z. B. nur schätzen, wenn derselbe Wein eben schon gesucht wurde).
+    ...(options.maxSearches > 0 ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: options.maxSearches, user_location: SWISS_LOCATION }] : []),
     ...(options.fetchShops
       ? [{ type: "web_fetch_20260209" as const, name: "web_fetch" as const, max_uses: MAX_SHOP_FETCHES, allowed_domains: [...SHOP_DOMAINS] }]
       : []),
@@ -196,6 +200,25 @@ export function researchTools(options: {
     },
   ];
 }
+
+/** Zweck je Recherche-Tool (für api_usage). */
+const RESEARCH_PURPOSE: Record<string, Purpose> = {
+  report_wine_details: "research_wine",
+  report_spirit_details: "research_wine",
+  report_grape_shares: "research_wine",
+  report_taste_profile: "research_taste",
+  report_drink_window: "research_window",
+  report_open_keep: "research_keep",
+  report_price: "research_price",
+};
+
+/**
+ * Höchstens so viele Ausgabe-Tokens je Recherche-Runde (früher 16 000): die Antwort ist nur ein
+ * Tool-Aufruf (meist unter 2000 Tokens); Reserve für das Denken von Sonnet, damit nichts abbricht.
+ */
+export const RESEARCH_MAX_TOKENS = 6000;
+/** Höchstens so viele Runden der Suchschleife (pause_turn) – jede Runde schickt den Verlauf erneut. */
+export const RESEARCH_MAX_ROUNDS = 4;
 
 export async function webResearch<T>(options: {
   prompt: string;
@@ -214,6 +237,11 @@ export async function webResearch<T>(options: {
   /** Alle Inhaltsblöcke jeder Antwort (Suchen und Suchergebnisse – für die eigene Prüfung). */
   onContent?: (blocks: Anthropic.Beta.BetaContentBlock[]) => void;
 }): Promise<T | null> {
+  // Unbekanntes Tool: Zweck von aussen (sonst „other“).
+  return withUsage({ purpose: RESEARCH_PURPOSE[options.toolName] }, () => runWebResearch(options));
+}
+
+async function runWebResearch<T>(options: Parameters<typeof webResearch<T>>[0]): Promise<T | null> {
   const text = `${options.prompt}\nRufe am Ende genau einmal ${options.toolName} auf.`;
   const blocks: Anthropic.Beta.BetaRequestDocumentBlock[] = [
     ...(options.documents ?? []).map(
@@ -240,10 +268,10 @@ export async function webResearch<T>(options: {
   if (problems.length) throw new Error(`Schema für ${options.toolName} nicht strict-tauglich: ${problems.join(", ")}`);
   const tools = researchTools({ ...options, inputSchema });
 
-  for (let round = 0; round < (options.maxRounds ?? 4); round++) {
+  for (let round = 0; round < Math.min(options.maxRounds ?? RESEARCH_MAX_ROUNDS, 8); round++) {
     const response = await anthropic().beta.messages.create({
       model: FALLBACK_MODEL,
-      max_tokens: 16000,
+      max_tokens: RESEARCH_MAX_TOKENS,
       tools,
       tool_choice: { type: "auto" },
       messages,
@@ -448,14 +476,14 @@ export async function parseTextEntry(
   text: string,
 ): Promise<{ proposal: WineProposal; purchase: TextEntry["purchase"]; bestBefore: string | null; spirit: SpiritLabel | null }> {
   const run = async (model: string) => {
-    const response = await anthropic().beta.messages.parse({
+    const response = await withUsage({ purpose: "recognize" }, () => anthropic().beta.messages.parse({
       model,
       max_tokens: 8000,
       system: TEXT_SYSTEM,
       messages: [{ role: "user", content: text }],
       output_config: { format: betaZodOutputFormat(TextEntrySchema) },
       ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
-    });
+    }));
     if (response.stop_reason === "refusal" || !response.parsed_output) {
       throw new RecognitionError(`${model} hat den Text nicht erfasst.`);
     }
@@ -487,7 +515,7 @@ export async function applyCorrection(
   correction: string,
   bestBefore: string | null = null,
 ): Promise<WineProposal & { bestBefore: string | null }> {
-  const response = await anthropic().beta.messages.parse({
+  const response = await withUsage({ purpose: "recognize" }, () => anthropic().beta.messages.parse({
     model: RECOGNITION_MODEL,
     max_tokens: 16000,
     system:
@@ -499,7 +527,7 @@ export async function applyCorrection(
       },
     ],
     output_config: { format: betaZodOutputFormat(CorrectionSchema) },
-  });
+  }));
   if (response.stop_reason === "refusal" || !response.parsed_output) {
     throw new RecognitionError("Die Korrektur konnte nicht übernommen werden.");
   }
@@ -516,14 +544,14 @@ const TASTED_SYSTEM = (today: string) => `Du erfasst für eine private Weinsamml
 /** Freitext „verkostet“ → Wein + Angaben zum Eintrag (Haiku, bei Fehler oder Ablehnung Sonnet). */
 export async function parseTastedText(text: string, today: string): Promise<{ proposal: WineProposal; tasting: TastedText["tasting"] }> {
   const run = async (model: string) => {
-    const response = await anthropic().beta.messages.parse({
+    const response = await withUsage({ purpose: "recognize" }, () => anthropic().beta.messages.parse({
       model,
       max_tokens: 4000,
       system: TASTED_SYSTEM(today),
       messages: [{ role: "user", content: text }],
       output_config: { format: betaZodOutputFormat(TastedTextSchema) },
       ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
-    });
+    }));
     if (response.stop_reason === "refusal" || !response.parsed_output) {
       throw new RecognitionError(`${model} hat den Text nicht erfasst.`);
     }
