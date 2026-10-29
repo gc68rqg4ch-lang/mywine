@@ -19,7 +19,8 @@ import { apiProblem } from "@/lib/ai/api-errors";
 import { T } from "@/lib/bot/texts";
 import { formatMoney, todayIso } from "@/lib/format";
 import { later } from "@/lib/later";
-import { sendMessage } from "@/lib/telegram/api";
+import { escapeHtml, sendMessage } from "@/lib/telegram/api";
+import { typeEmoji } from "@/lib/chat/menu-view";
 import type { TgInlineKeyboard } from "@/lib/telegram/types";
 import { giftValueKeyboard, priceKeyboard, priceOfferKeyboard, regularPriceKeyboard } from "@/lib/ingest/messages";
 import type { IngestState, IngestStep, PriceOffer } from "@/lib/ingest/schema";
@@ -324,8 +325,25 @@ async function loadItem(db: Db, itemId: string): Promise<ItemRow | null> {
 }
 
 /**
+ * Die Flasche in jeder Preis-Meldung: „🥃 Marolo – Grappa di Barolo Riserva o. J., 70 cl (Geschenk
+ * von Dad)“ – damit klar ist, zu welcher Charge eine Frage gehört. HTML-sicher.
+ */
+export function bottleLabel(item: Pick<ItemRow, "vintage_year" | "bottle_size_ml" | "is_gift" | "gift_from" | "wine">) {
+  const w = item.wine;
+  const name = [w?.producer, w?.name].filter(Boolean).join(" – ") || "Flasche";
+  const gift = item.is_gift ? ` (Geschenk${item.gift_from ? ` von ${item.gift_from}` : ""})` : "";
+  const size = clSize(item.bottle_size_ml ?? standardSize(w?.type));
+  return `${typeEmoji(w?.type)} <b>${escapeHtml(name)}</b> ${item.vintage_year ?? "o. J."}${size ? `, ${size}` : ""}${escapeHtml(gift)}`;
+}
+
+/** Was eine Preis-Rückfrage fragt: nach der Suche ohne Fund, nach „Ändern“/„Selbst eingeben“ bzw. ein Angebot. */
+type Ask = "not_found" | "fix" | "offer";
+
+/**
  * Preis-Rückfrage als eigene kleine Erfassung zur schon gespeicherten Charge (ingest_jobs): die
  * Antworten laufen durch die normalen Preisschritte und ändern danach nur die Preise der Charge.
+ * held: zurückgehalten (Schritt „price_held“), solange eine andere Erfassung läuft – fängt dann
+ * keine Antworten ab und wird erst danach gestellt (releaseHeldPriceQuestions).
  */
 export async function startPriceFollowup(
   db: Db,
@@ -333,15 +351,17 @@ export async function startPriceFollowup(
   item: ItemRow,
   mode: PriceMode,
   step: IngestStep,
+  ask: Ask,
   extra: Partial<IngestState> = {},
+  held = false,
 ) {
   const state = {
-    step,
+    step: held ? "price_held" : step,
     source: "text",
     proposal: { name: item.wine?.name ?? "", producer: item.wine?.producer ?? null, vintage_year: item.vintage_year, type: item.wine?.type ?? null },
     recognition: { model: "", confidence: 1, notes: null, enriched_fields: [], sources: [] },
     quantity: item.quantity,
-    price_followup: { item_id: item.id },
+    price_followup: { item_id: item.id, label: bottleLabel(item), mode, ask, ...(held ? { held_step: step } : {}) },
     // Nur den Normalpreis: der bezahlte Preis bzw. das Geschenk bleibt, wie es ist.
     ...(mode === "regular" ? { price: item.purchase_price, ...(item.is_gift ? { is_gift: true, gift_from: item.gift_from } : {}) } : {}),
     ...extra,
@@ -357,23 +377,94 @@ export async function startPriceFollowup(
   return data.id as string;
 }
 
-/** Normale Preisfrage zur Charge stellen (nach „✏️ Ändern“, „Selbst eingeben“ bzw. ohne Fund). */
-export async function askPrice(db: Db, chatId: number, item: ItemRow, mode: PriceMode, text?: string) {
-  if (mode === "both") {
-    const jobId = await startPriceFollowup(db, chatId, item, mode, "price");
-    await sendMessage(chatId, text ?? T.pricePaid(item.quantity === 1 ? "1 Flasche" : `${item.quantity} Flaschen`), priceKeyboard(jobId, false));
+/** Frage zu einer (freigegebenen) Preis-Rückfrage senden – immer mit der Flasche. */
+async function sendPriceQuestion(chatId: number, jobId: string, state: IngestState) {
+  const f = state.price_followup!;
+  const label = f.label ?? "";
+  if (state.step === "price_offer" && state.price_offer) {
+    const o = state.price_offer;
+    const what = o.year !== state.proposal.vintage_year ? (o.year != null ? `Jahrgang ${o.year}` : "ohne Jahrgang") : clSize(o.size_ml) ?? "andere Grösse";
+    await sendMessage(chatId, T.priceOther(label, what, money(o.amount), o.merchant), priceOfferKeyboard(jobId));
     return;
   }
-  const jobId = await startPriceFollowup(db, chatId, item, mode, "regular_price");
-  const keyboard = item.is_gift ? giftValueKeyboard(jobId, false) : regularPriceKeyboard(jobId, null, false);
-  await sendMessage(chatId, text ?? (item.is_gift ? T.giftValueAsk() : T.regularPrice()), keyboard);
+  if (state.step === "price") {
+    const text = f.ask === "not_found" ? T.priceNotFound(label) : `${label}\n${T.pricePaid(state.quantity === 1 ? "1 Flasche" : `${state.quantity ?? 1} Flaschen`)}`;
+    await sendMessage(chatId, text, priceKeyboard(jobId, false));
+    return;
+  }
+  const keyboard = state.is_gift ? giftValueKeyboard(jobId, false) : regularPriceKeyboard(jobId, null, false);
+  const text = f.ask === "not_found" ? T.regularNotFound(label) : `${label}\n${state.is_gift ? T.giftValueAsk() : T.regularPrice()}`;
+  await sendMessage(chatId, text, keyboard);
 }
 
-/** „✏️ Ändern“ bzw. „Selbst eingeben“ für eine Charge. */
+type FlowRow = { id: string; source: string; status: string; extracted: unknown };
+
+/**
+ * Läuft im Chat gerade eine andere Erfassung (Foto, Text, Verkostet, Preis-Rückfrage …)? Nicht
+ * gezählt: zurückgehaltene Preis-Rückfragen, schon gespeicherte Verkostet-Einträge und
+ * Chat-Vorschläge mit Ja/Nein.
+ */
+async function otherFlowActive(db: Db, chatId: number) {
+  const { openFlows, isSavedTasted } = await import("@/lib/chat/pending");
+  const flows = (await openFlows(db as never, chatId)) as FlowRow[];
+  return flows.some((j) => j.source !== "telegram_edit" && !isHeld(j) && !isSavedTasted(j as never));
+}
+const isHeld = (j: { status: string; extracted: unknown }) => j.status === "needs_review" && (j.extracted as { step?: string } | null)?.step === "price_held";
+
+/** Preisfrage stellen – bzw. zurückhalten, solange eine andere Erfassung läuft. */
+async function askOrHold(db: Db, chatId: number, item: ItemRow, mode: PriceMode, step: IngestStep, ask: Ask, extra: Partial<IngestState> = {}) {
+  const held = await otherFlowActive(db, chatId);
+  const jobId = await startPriceFollowup(db, chatId, item, mode, step, ask, extra, held);
+  if (held) return;
+  const { data } = await db.from("ingest_jobs").select("extracted").eq("id", jobId).maybeSingle();
+  await sendPriceQuestion(chatId, jobId, data?.extracted as unknown as IngestState);
+}
+
+/**
+ * Zurückgehaltene Preis-Rückfragen stellen, sobald keine andere Erfassung mehr läuft – eine nach der
+ * anderen (die älteste zuerst; die nächste nach deren Antwort). Wirft nie.
+ */
+export async function releaseHeldPriceQuestions(db: Db, chatId: number) {
+  try {
+    if (await otherFlowActive(db, chatId)) return;
+    const { data, error } = await db
+      .from("ingest_jobs")
+      .select("id, extracted")
+      .eq("telegram_chat_id", chatId)
+      .eq("status", "needs_review")
+      .eq("extracted->>step", "price_held")
+      .order("created_at", { ascending: true })
+      .limit(1);
+    if (error) throw error;
+    const job = data?.[0];
+    if (!job) return;
+    const held = job.extracted as unknown as IngestState;
+    const next = { ...held, step: held.price_followup?.held_step ?? "price" } as IngestState;
+    const { data: updated, error: updateError } = await db
+      .from("ingest_jobs")
+      .update({ extracted: next as unknown as Json })
+      .eq("id", job.id)
+      .eq("extracted->>step", "price_held")
+      .select("id");
+    if (updateError) throw updateError;
+    if (updated?.length) await sendPriceQuestion(chatId, job.id, next);
+  } catch (error) {
+    console.error("release price question failed", error instanceof Error ? error.message : error);
+  }
+}
+
+/** Normale Preisfrage zur Charge stellen (nach „✏️ Ändern“, „Selbst eingeben“ bzw. ohne Fund). */
+export async function askPrice(db: Db, chatId: number, item: ItemRow, mode: PriceMode, ask: Ask = "fix") {
+  await askOrHold(db, chatId, item, mode, mode === "both" ? "price" : "regular_price", ask);
+}
+
+/** „✏️ Ändern“ bzw. „Selbst eingeben“ für eine Charge (die Person fragt selbst: sofort). */
 export async function askPriceForItem(db: Db, chatId: number, itemId: string, mode: PriceMode) {
   const item = await loadItem(db, itemId);
   if (!item) return false;
-  await askPrice(db, chatId, item, mode);
+  const jobId = await startPriceFollowup(db, chatId, item, mode, mode === "both" ? "price" : "regular_price", "fix");
+  const { data } = await db.from("ingest_jobs").select("extracted").eq("id", jobId).maybeSingle();
+  await sendPriceQuestion(chatId, jobId, data?.extracted as unknown as IngestState);
   return true;
 }
 
@@ -409,17 +500,16 @@ export async function runPriceSearch(db: Db, p: PriceJobParams): Promise<Researc
     if (finding.kind === "exact") {
       const saved = await storeFoundPrice(db, item.id, finding, p.mode);
       if (!saved) return done();
-      await sendMessage(p.chat_id, T.priceFound(money(finding.amount), offerDetails(finding), p.mode === "regular"), priceFixKeyboard(item.id, p.mode));
+      // Braucht keine Antwort: sofort, aber mit der Flasche.
+      await sendMessage(p.chat_id, T.priceFound(bottleLabel(item), money(finding.amount), offerDetails(finding), p.mode === "regular"), priceFixKeyboard(item.id, p.mode));
       return done([`${p.mode === "regular" ? "Normalpreis" : "Preis"} ${money(finding.amount)} (${offerDetails(finding)})`]);
     }
     if (finding.kind === "other") {
       const offer: PriceOffer = { amount: finding.amount, merchant: finding.merchant, url: finding.url, year: finding.year, size_ml: finding.sizeMl, mode: p.mode };
-      const jobId = await startPriceFollowup(db, p.chat_id, item, p.mode, "price_offer", { price_offer: offer });
-      const what = finding.year !== item.vintage_year ? (finding.year != null ? `Jahrgang ${finding.year}` : "ohne Jahrgang") : clSize(finding.sizeMl) ?? "andere Grösse";
-      await sendMessage(p.chat_id, T.priceOther(what, money(finding.amount), finding.merchant), priceOfferKeyboard(jobId));
+      await askOrHold(db, p.chat_id, item, p.mode, "price_offer", "offer", { price_offer: offer });
       return done();
     }
-    await askPrice(db, p.chat_id, item, p.mode, p.mode === "both" ? T.priceNotFound : T.regularNotFound);
+    await askPrice(db, p.chat_id, item, p.mode, "not_found");
     return done();
   } catch (error) {
     const problem = apiProblem(error);

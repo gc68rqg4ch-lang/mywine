@@ -107,7 +107,7 @@ import {
   setVintage,
   startTextIngest,
 } from "./flow";
-import { askPriceForItem, isPriceCallback, offerDetails, parsePriceCallback, storeFoundPrice } from "@/lib/research/price";
+import { askPriceForItem, isPriceCallback, offerDetails, parsePriceCallback, releaseHeldPriceQuestions, storeFoundPrice } from "@/lib/research/price";
 import { chooseMainCategory, chooseSubCategory, kindPatch } from "./spirit-flow";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Grenze der Claude API pro Bild
@@ -134,6 +134,8 @@ export async function handleUpdate(update: TgUpdate) {
     }
     if (cb.message) await preflight(cb.message.chat.id);
     await handleCallback(cb, actor);
+    // Erst danach: zurückgehaltene Preis-Rückfragen, falls keine andere Erfassung mehr läuft.
+    if (cb.message) await releaseHeldPriceQuestions(createAdminClient(), cb.message.chat.id);
     return;
   }
 
@@ -155,6 +157,9 @@ export async function handleUpdate(update: TgUpdate) {
   } else if (msg.text) {
     await handleText(msg, actor);
   }
+  // Erst nach der Antwort (ein getippter Betrag gehört zur laufenden Erfassung): zurückgehaltene
+  // Preis-Rückfragen stellen, falls keine andere Erfassung mehr läuft (verworfen, verfallen, fertig).
+  await releaseHeldPriceQuestions(createAdminClient(), msg.chat.id);
 }
 
 /**
@@ -551,7 +556,9 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       await clearKeyboard(chatId, messageId);
       if (!(await advanceJob(db, job, "price_offer", { step: "done" }, { status: "confirmed" }))) return;
       const saved = await storeFoundPrice(db, itemId, offer, offer.mode);
-      await sendMessage(chatId, saved ? T.priceFound(formatMoney(offer.amount, "CHF")!, offerDetails(offer), offer.mode === "regular") : T.alreadyDone);
+      const label = state.price_followup?.label ?? "";
+      await sendMessage(chatId, saved ? T.priceFound(label, formatMoney(offer.amount, "CHF")!, offerDetails(offer), offer.mode === "regular") : T.alreadyDone);
+      await releaseHeldPriceQuestions(db, chatId);
       return;
     }
 
@@ -568,7 +575,10 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       await answerCallback(cb.id);
       if (state.step !== "price_offer") return;
       await clearKeyboard(chatId, messageId);
-      if (await advanceJob(db, job, "price_offer", { step: "done" }, { status: "confirmed" })) await sendMessage(chatId, T.priceLeftEmpty);
+      if (await advanceJob(db, job, "price_offer", { step: "done" }, { status: "confirmed" })) {
+        await sendMessage(chatId, T.priceSaved(state.price_followup?.label ?? "", null));
+        await releaseHeldPriceQuestions(db, chatId);
+      }
       return;
     }
 

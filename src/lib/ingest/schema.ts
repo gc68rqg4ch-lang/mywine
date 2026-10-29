@@ -145,6 +145,8 @@ export type IngestStep =
   | "regular_price"
   /** Preissuche fand nur einen anderen Jahrgang bzw. eine andere Grösse: „Übernehmen?“ */
   | "price_offer"
+  /** Preis-Rückfrage zurückgehalten, solange eine andere Erfassung läuft (fängt keine Antworten ab). */
+  | "price_held"
   | "vendor"
   | "vendor_new"
   /** Wein oder Spirituose? (Erkennung unsicher) */
@@ -232,7 +234,16 @@ export type IngestState = {
    * Preis-Rückfrage nach der Suche (eigene kleine Erfassung zur schon gespeicherten Charge):
    * Antworten ändern nur deren Preise (price_source manual), nichts wird neu eingebucht.
    */
-  price_followup?: { item_id: string };
+  price_followup?: {
+    item_id: string;
+    /** Die Flasche (HTML), in jeder Meldung dieser Rückfrage. */
+    label?: string;
+    mode?: "both" | "regular";
+    /** not_found = Suche ohne Fund, fix = „Ändern“/„Selbst eingeben“, offer = anderer Jahrgang/Grösse. */
+    ask?: "not_found" | "fix" | "offer";
+    /** Zurückgehalten (Schritt „price_held“): dieser Schritt kommt nach der Freigabe. */
+    held_step?: IngestStep;
+  };
   /** Preissuche: nur anderer Jahrgang bzw. andere Grösse gefunden – Angebot zum Übernehmen. */
   price_offer?: PriceOffer;
   /** Händler-IDs in der Reihenfolge der Buttons (callback_data enthält nur den Index). */

@@ -39,6 +39,9 @@ export const isEmptyNewWine = (job: Pick<Job, "extracted">) => (job.extracted as
 /** Preis-Rückfrage nach der Suche (Charge schon gespeichert): verfällt still, der Preis bleibt leer. */
 export const isPriceFollowup = (job: Pick<Job, "extracted">) => Boolean((job.extracted as { price_followup?: unknown } | null)?.price_followup);
 
+/** Zurückgehaltene Preis-Rückfrage (wartet, bis keine andere Erfassung mehr läuft). */
+export const isHeldPrice = (job: Pick<Job, "extracted">) => (job.extracted as Extracted | null)?.step === "price_held";
+
 /** Worum es im Ablauf ging – für „Den angefangenen Pintia 2019 lasse ich mal beiseite.“ */
 export function flowSubject(job: Pick<Job, "source" | "extracted">): FlowSubject {
   const x = (job.extracted ?? {}) as Extracted;
@@ -110,9 +113,21 @@ export type Supersede = "photo" | "menu" | "command" | "text";
  * Ja/Nein fangen keine Nachrichten ab und bleiben stehen (bis sie ablaufen).
  */
 export async function supersede(db: AdminClient, chatId: number, reason: Supersede, keep: string[] = []) {
-  const flows = (await openFlows(db, chatId)).filter(
+  const open = await openFlows(db, chatId);
+  // Preis-Rückfragen zu schon gespeicherten Flaschen: nicht verwerfen, sondern zurückhalten – sie
+  // kommen nach der neuen Erfassung wieder (releaseHeldPriceQuestions).
+  for (const job of open.filter((j) => j.status === "needs_review" && isPriceFollowup(j) && !keep.includes(j.id) && !isHeldPrice(j))) {
+    const x = job.extracted as { step?: string; price_followup?: Record<string, unknown> };
+    await db
+      .from("ingest_jobs")
+      .update({ extracted: { ...x, step: "price_held", price_followup: { ...x.price_followup, held_step: x.step } } as Json })
+      .eq("id", job.id)
+      .eq("status", "needs_review");
+  }
+  const flows = open.filter(
     (j) =>
       j.status === "needs_review" &&
+      !isPriceFollowup(j) &&
       !keep.includes(j.id) &&
       j.source !== "telegram_edit" &&
       // Das Foto gehört zu „📷 Foto“ bzw. zur Ankündigung „wir verkosten einen Wein“.

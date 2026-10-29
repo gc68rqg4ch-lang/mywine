@@ -87,6 +87,8 @@ const press = (label: string) => {
 };
 const say = (text: string) => handleUpdate({ update_id: 1, message: { message_id: 5, from: { id: 111, is_bot: false, first_name: "M" }, chat: { id: 111, type: "private" }, date: 0, text } } as never);
 const items = () => net.tables.inventory_items;
+/** Jede Preis-Meldung nennt die Flasche. */
+const PINTIA = "🍷 <b>Vega Sicilia – Pintia</b> 2019, 75 cl\n";
 const item = () => items()[0];
 
 /** Text-Erfassung bis zur Preisfrage (Händler Mövenpick schon genannt). */
@@ -138,7 +140,7 @@ test("„🔎 Such du“ bei „bezahlt?“: kein Normalpreis, weiter zum Speich
   assert.equal(priceCalls, 1);
   assert.deepEqual([item().purchase_price, item().regular_price, item().price_source], [66, 66, "research"]);
   assert.match(String(item().price_note), /^Mövenpick · 2019 · 75 cl · \d\d\.\d\d\.\d{4} · https:\/\/www\.moevenpick-wein\.com\//);
-  assert.equal(lastText(), "💰 Preis gefunden: CHF 66.00 pro Flasche (Mövenpick, 2019, 75 cl) – gespeichert.");
+  assert.equal(lastText(), PINTIA + "💰 Preis gefunden: CHF 66.00 pro Flasche (Mövenpick, 2019, 75 cl) – gespeichert.");
   assert.deepEqual(buttons().map((b) => b.text), ["✏️ Ändern"]);
   assert.match(String(priceNoteHint(String(item().price_note))), /^Preis recherchiert: Mövenpick, \d\d\.\d\d\.\d{4}$/);
 
@@ -151,7 +153,7 @@ test("„🔎 Such du“ bei „bezahlt?“: kein Normalpreis, weiter zum Speich
   await runLater();
   assert.equal(items().length, 1, "nichts neu eingebucht");
   assert.deepEqual([item().purchase_price, item().regular_price, item().price_source, item().price_note], [70, 70, "manual", null]);
-  assert.match(lastText(), /✅ Gespeichert: CHF 70\.00\./);
+  assert.equal(lastText(), PINTIA + "✅ Gespeichert: CHF 70.00.");
 });
 
 test("„🔎 Such du“ beim Normalpreis: bezahlt bleibt, nur der Normalpreis wird gesucht (Aktion → Normalpreis)", async () => {
@@ -163,7 +165,7 @@ test("„🔎 Such du“ beim Normalpreis: bezahlt bleibt, nur der Normalpreis w
   priceAnswer = offer({ price: 39, regular_price: 45, quote: "CHF 39.00 statt 45.00" });
   await runPriceJob();
   assert.deepEqual([item().purchase_price, item().regular_price], [38, 45], "Normalpreis gilt, bezahlt bleibt");
-  assert.equal(lastText(), "💰 Normalpreis gefunden: CHF 45.00 pro Flasche (Mövenpick, 2019, 75 cl) – gespeichert.");
+  assert.equal(lastText(), PINTIA + "💰 Normalpreis gefunden: CHF 45.00 pro Flasche (Mövenpick, 2019, 75 cl) – gespeichert.");
 });
 
 test("Geschenk: „🔎 Such du“ beim Wert sucht nur den Normalpreis, bezahlt bleibt 0", async () => {
@@ -186,7 +188,7 @@ test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst
     priceAnswer = offer({ vintage: 2020, price: 64, url: "https://www.moevenpick-wein.com/de/2020-pintia.html" });
     await runPriceJob();
     assert.deepEqual([item().purchase_price, item().regular_price], [null, null], "nichts gespeichert");
-    assert.equal(lastText(), "Nur Jahrgang 2020 gefunden: CHF 64.00 (Mövenpick). Übernehmen?");
+    assert.equal(lastText(), PINTIA + "Nur Jahrgang 2020 gefunden: CHF 64.00 (Mövenpick). Übernehmen?");
     assert.deepEqual(buttons().map((b) => b.text), ["✅ Übernehmen", "✏️ Selbst eingeben", "Leer lassen"]);
     await press(choice);
     if (choice === "✅ Übernehmen") {
@@ -194,7 +196,7 @@ test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst
       assert.match(String(item().price_note), /^Mövenpick · 2020 · 75 cl/);
     } else if (choice === "Leer lassen") {
       assert.deepEqual([item().purchase_price, item().regular_price], [null, null]);
-      assert.equal(lastText(), "Gut, der Preis bleibt leer.");
+      assert.equal(lastText(), PINTIA + "✅ Gut, der Preis bleibt leer.");
     } else {
       assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\?/);
       await say("50");
@@ -210,7 +212,7 @@ test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst
   await save();
   priceAnswer = offer({ size_ml: 1500, price: 140 });
   await runPriceJob();
-  assert.equal(lastText(), "Nur 150 cl gefunden: CHF 140.00 (Mövenpick). Übernehmen?");
+  assert.equal(lastText(), PINTIA + "Nur 150 cl gefunden: CHF 140.00 (Mövenpick). Übernehmen?");
 });
 
 test("Nichts gefunden: Antoine fragt nach dem Preis; ein Betrag läuft wie die normale Preisangabe", async () => {
@@ -219,7 +221,7 @@ test("Nichts gefunden: Antoine fragt nach dem Preis; ein Betrag läuft wie die n
   await save();
   priceAnswer = NOTHING;
   await runPriceJob();
-  assert.equal(lastText(), "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
+  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
   assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
   await say("39");
   assert.match(lastText(), /Ist das auch der Normalpreis\?/, "Normalpreis-Frage wie gewohnt");
@@ -272,4 +274,83 @@ test("Shop-Seiten liefern den Preis mit (Magento, schema.org)", () => {
   );
   assert.deepEqual(htmlPriceLines('<meta itemprop="price" content="34.80">'), ["Preis: CHF 34.80"]);
   assert.deepEqual(htmlPriceLines("<p>kein Preis</p>"), []);
+});
+
+test("Suche endet während einer neuen Erfassung: Rückfrage erst danach, mit Flasche (Geschenk von …); Betrag gehört zur neuen Erfassung", async () => {
+  // Pintia als Geschenk von Dad, Wert: „🔎 Such du“
+  await start();
+  await press("🎁 Geschenk");
+  await say("Dad");
+  assert.equal(state().step, "regular_price");
+  await press("🔎 Such du");
+  await save();
+  // Während die Suche läuft: neue Erfassung (Grappa Fass 13) bis zur Preisfrage
+  const JOB2 = "aaaaaaaa-0000-4000-8000-0000000000b2";
+  net.tables.ingest_jobs.push({ id: JOB2, source: "text", telegram_chat_id: 111, status: "processing", extracted: { step: "researching", source: "text" }, photo_paths: [], created_at: minutesAgo(0), updated_at: minutesAgo(0) });
+  parseResult = {
+    name: "Grappa Fass 13", producer: "Brennerei Muster", vintage_year: 2015, country: null, region: null, appellation: null, type: null,
+    grape_shares: [], alcohol_content: null, bottle_size_ml: null,
+    purchase: { quantity: 1, storage_room: "Weinkeller", price: 0, regular_price: 0, vendor: "Mövenpick", gift: false, gift_from: "" },
+  };
+  await processTextJob(JOB2, 111, "Grappa Fass 13 2015, 1 Flasche, Weinkeller, bei Mövenpick");
+  const job2 = () => net.tables.ingest_jobs.find((j) => j.id === JOB2)!;
+  assert.equal((job2().extracted as IngestState).step, "price");
+
+  // Suche ohne Fund → Rückfrage zurückgehalten (nichts gesendet, fängt keine Antwort ab)
+  priceAnswer = NOTHING;
+  const before = texts().length;
+  await runPriceJob();
+  assert.equal(texts().length, before, "keine Frage, solange die neue Erfassung läuft");
+  const held = net.tables.ingest_jobs.find((j) => (j.extracted as IngestState).step === "price_held");
+  assert.ok(held, "Rückfrage zurückgehalten");
+
+  // „29“ gehört zur laufenden Erfassung (Grappa), nicht zum Pintia
+  await say("29");
+  assert.equal((job2().extracted as IngestState).price, 29);
+  assert.equal(item().regular_price, null);
+  assert.match(lastText(), /Ist das auch der Normalpreis\?/);
+  assert.doesNotMatch(lastText(), /Pintia/);
+  await press("✅ Ja, gleich");
+  assert.equal((job2().extracted as IngestState).step, "confirm");
+
+  // Grappa speichern → erst jetzt die Rückfrage zum Pintia, mit Flasche und „Geschenk von Dad“
+  job2().extracted = { ...(job2().extracted as IngestState), step: "saving" };
+  await saveJob(job2() as never, 111);
+  assert.equal(lastText(), "🍷 <b>Vega Sicilia – Pintia</b> 2019, 75 cl (Geschenk von Dad)\nKeinen Normalpreis bei Schweizer Händlern gefunden. Was kostet eine Flasche normalerweise? Schreib mir den Betrag.");
+  await say("45");
+  await runLater();
+  assert.deepEqual([item().purchase_price, item().regular_price, item().is_gift], [0, 45, true]);
+  assert.equal(lastText(), "🍷 <b>Vega Sicilia – Pintia</b> 2019, 75 cl (Geschenk von Dad)\n✅ Gespeichert: Geschenk von Dad · Normalpreis CHF 45.00.");
+  const grappa = items().find((i) => i.id !== item().id)!;
+  assert.deepEqual([grappa.purchase_price, grappa.regular_price], [29, 29], "Grappa mit seinem eigenen Preis");
+});
+
+test("Neues Foto während einer offenen Preis-Rückfrage: sie wird zurückgehalten statt verworfen", async () => {
+  await start();
+  await press("🔎 Such du");
+  await save();
+  priceAnswer = NOTHING;
+  await runPriceJob();
+  assert.match(lastText(), /Keinen Preis bei Schweizer Händlern gefunden/);
+  const followup = net.tables.ingest_jobs.find((j) => (j.extracted as IngestState).price_followup)!;
+  const { supersede } = await import("@/lib/chat/pending");
+  await supersede(db, 111, "photo");
+  assert.equal(followup.status, "needs_review");
+  assert.deepEqual([(followup.extracted as IngestState).step, (followup.extracted as IngestState).price_followup?.held_step], ["price_held", "price"]);
+  // Keine andere Erfassung mehr: wieder gestellt
+  const { releaseHeldPriceQuestions } = await import("@/lib/research/price");
+  await releaseHeldPriceQuestions(db, 111);
+  assert.equal((followup.extracted as IngestState).step, "price");
+  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
+});
+
+test("Flasche in Preis-Meldungen: Symbol der Art, Produzent – Name, Jahrgang bzw. o. J., Grösse, Geschenk", async () => {
+  const { bottleLabel } = await import("@/lib/research/price");
+  const wine = (type: string) => ({ name: "Grappa di Barolo Riserva", producer: "Marolo", type, country: null, region: null, appellation: null });
+  assert.equal(
+    bottleLabel({ vintage_year: null, bottle_size_ml: 700, is_gift: true, gift_from: "Dad", wine: wine("spirit") }),
+    "🥃 <b>Marolo – Grappa di Barolo Riserva</b> o. J., 70 cl (Geschenk von Dad)",
+  );
+  assert.equal(bottleLabel({ vintage_year: 2019, bottle_size_ml: null, is_gift: false, gift_from: null, wine: wine("red") }), "🍷 <b>Marolo – Grappa di Barolo Riserva</b> 2019, 75 cl");
+  assert.equal(bottleLabel({ vintage_year: null, bottle_size_ml: 500, is_gift: true, gift_from: null, wine: wine("sweet") }), "🍯 <b>Marolo – Grappa di Barolo Riserva</b> o. J., 50 cl (Geschenk)");
 });

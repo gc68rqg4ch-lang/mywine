@@ -54,7 +54,7 @@ import { enrichFromWeb, parseTextEntry, type RecognitionResult } from "./recogni
 import { mainOptions, spiritStart, storeSpiritFields } from "./spirit-flow";
 import { scheduleSpiritResearch } from "@/lib/research/spirit-auto";
 import { scheduleOpenKeep } from "@/lib/research/open-keep-auto";
-import { schedulePriceSearch, updateItemPrices } from "@/lib/research/price";
+import { releaseHeldPriceQuestions, schedulePriceSearch, updateItemPrices } from "@/lib/research/price";
 import type { SpiritCategory } from "@/lib/spirits/categories";
 import { needsVintage, type IngestState, type IngestStep, type WineProposal } from "./schema";
 import { completeWineName } from "./wine-names";
@@ -297,6 +297,8 @@ export async function advanceTo(
 
 async function askFor(job: IngestJob, chatId: number, vendors: { id: string; name: string }[], mains: SpiritCategory[] = []) {
   const state = jobState(job)!;
+  // Preis-Rückfrage zu einer gespeicherten Flasche: jede Frage nennt die Flasche.
+  const of = (text: string) => (state.price_followup?.label ? `${state.price_followup.label}\n${text}` : text);
   switch (state.step) {
     case "kind":
       await sendMessage(chatId, T.kindAsk(), kindKeyboard(job.id));
@@ -326,19 +328,19 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
     case "price":
       await sendMessage(
         chatId,
-        T.pricePaid(formatBottles(state.quantity ?? 1)),
+        of(T.pricePaid(formatBottles(state.quantity ?? 1))),
         priceKeyboard(job.id, !state.price_followup),
       );
       return;
     case "gift_from":
-      await sendMessage(chatId, T.giftFromAsk(), giftFromKeyboard(job.id));
+      await sendMessage(chatId, of(T.giftFromAsk()), giftFromKeyboard(job.id));
       return;
     case "regular_price":
       // Preis-Rückfrage nach der Suche: ohne „🔎 Such du“ (sie hat ja nichts gefunden).
-      if (state.is_gift) await sendMessage(chatId, T.giftValueAsk(), giftValueKeyboard(job.id, !state.price_followup));
+      if (state.is_gift) await sendMessage(chatId, of(T.giftValueAsk()), giftValueKeyboard(job.id, !state.price_followup));
       // Nach einem Betrag: „Ist das auch der Normalpreis?“; ohne Betrag: nach dem Normalpreis fragen.
-      else if (state.price != null) await sendMessage(chatId, T.sameAsRegular(), regularPriceKeyboard(job.id, state.price, !state.price_followup));
-      else await sendMessage(chatId, T.regularPrice(), regularPriceKeyboard(job.id, null, !state.price_followup));
+      else if (state.price != null) await sendMessage(chatId, of(T.sameAsRegular()), regularPriceKeyboard(job.id, state.price, !state.price_followup));
+      else await sendMessage(chatId, of(T.regularPrice()), regularPriceKeyboard(job.id, null, !state.price_followup));
       return;
     case "vendor":
       await sendMessage(
@@ -539,6 +541,8 @@ export async function saveJob(job: IngestJob, chatId: number) {
     if (state.proposal.type === "fortified" || state.proposal.type === "spirit") scheduleOpenKeep(wineId);
     // „🔎 Such du“: Preis bei Schweizer Händlern suchen (Hintergrund); Antoine meldet das Ergebnis.
     if (state.price_search) await schedulePriceSearch(db, { wineId, itemId, chatId, mode: state.price_search, personId: actor?.personId ?? null });
+    // Diese Erfassung ist fertig: zurückgehaltene Preis-Rückfragen anderer Flaschen jetzt stellen.
+    await releaseHeldPriceQuestions(db, chatId);
   } catch (error) {
     await failJob(db, job.id, chatId, "Das Speichern ist mir nicht gelungen", error, state.source === "text");
   }
@@ -561,7 +565,8 @@ async function savePriceFollowup(db: AdminClient, job: IngestJob, chatId: number
     const line = state.is_gift
       ? [cleanGiftFrom(state.gift_from) ? `Geschenk von ${cleanGiftFrom(state.gift_from)}` : "Geschenk", state.regular_price != null ? `Normalpreis ${formatMoney(state.regular_price, "CHF")}` : null].filter(Boolean).join(" · ")
       : priceLine(state.price, state.regular_price);
-    await sendMessage(chatId, T.priceSaved(line));
+    await sendMessage(chatId, T.priceSaved(state.price_followup?.label ?? "", line));
+    await releaseHeldPriceQuestions(db, chatId);
   } catch (error) {
     await failJob(db, job.id, chatId, "Das Speichern des Preises ist mir nicht gelungen", error, true);
   }
