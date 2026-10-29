@@ -9,7 +9,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { T } from "@/lib/bot/texts";
-import { CODE_TTL_MS, MAX_ATTEMPTS, checkCode, checkMessage, generateCode, hashCode, rateLimited, type CodeRow } from "./code";
+import { CODE_TTL_MS, MAX_ATTEMPTS, checkCode, cleanEmail, checkMessage, generateCode, hashCode, rateLimited, type CodeRow } from "./code";
 
 type Db = SupabaseClient<Database>;
 
@@ -21,7 +21,7 @@ const missingTable = (error: { code?: string; message?: string } | null) =>
 
 /** Mitglied mit Telegram zu dieser E-Mail (Gross/Klein egal) – sonst null. */
 export async function findMember(admin: Db, email: string): Promise<Member | null> {
-  const wanted = email.trim().toLowerCase();
+  const wanted = cleanEmail(email);
   if (!wanted) return null;
   const { data: persons, error } = await admin.from("persons").select("user_id, telegram_user_id").not("user_id", "is", null).not("telegram_user_id", "is", null);
   if (error) throw error;
@@ -32,7 +32,7 @@ export async function findMember(admin: Db, email: string): Promise<Member | nul
   for (const m of members ?? []) {
     const { data, error: userError } = await admin.auth.admin.getUserById(m.user_id);
     if (userError || !data.user?.email) continue;
-    if (data.user.email.toLowerCase() === wanted) {
+    if (cleanEmail(data.user.email) === wanted) {
       const person = (persons ?? []).find((p) => p.user_id === m.user_id)!;
       return { userId: m.user_id, email: data.user.email, telegramId: Number(person.telegram_user_id) };
     }

@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { CODE_SENT_TEXT, loginCodeSecret, normalizeCode } from "@/lib/login/code";
+import { CODE_SENT_TEXT, cleanEmail, loginCodeSecret, normalizeCode } from "@/lib/login/code";
 import { requestLoginCode, startSession, verifyLoginCode } from "@/lib/login/service";
 import { safeNextPath } from "@/lib/safe-next";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -22,7 +22,7 @@ async function siteUrl() {
 }
 
 export async function sendMagicLink(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const email = cleanEmail(String(formData.get("email") ?? ""));
   const next = safeNextPath(String(formData.get("next") ?? ""));
 
   if (!EMAIL_RE.test(email)) {
@@ -59,7 +59,7 @@ export type CodeRequestState = { ok: true; message: string } | { ok: false; erro
  * herauskommt, welche Adressen es gibt. Ohne Secret bzw. ohne Migration: Hinweis auf den Link.
  */
 export async function requestCodeAction(email: string): Promise<CodeRequestState> {
-  const address = String(email ?? "").trim().toLowerCase();
+  const address = cleanEmail(email);
   if (!EMAIL_RE.test(address)) return { ok: false, error: "Bitte eine gültige E-Mail-Adresse eingeben." };
   const secret = loginCodeSecret();
   if (!secret) return { ok: false, error: "Der Code per Telegram ist gerade nicht verfügbar – bitte den Link per E-Mail nutzen." };
@@ -78,7 +78,7 @@ export type CodeVerifyState = { error: string } | undefined;
 
 /** Code prüfen; richtig → Sitzung (Cookies) und weiter wie beim Link (next). */
 export async function verifyCodeAction(email: string, code: string, nextPath: string): Promise<CodeVerifyState> {
-  const address = String(email ?? "").trim().toLowerCase();
+  const address = cleanEmail(email);
   const digits = normalizeCode(String(code ?? ""));
   if (!digits) return { error: "Bitte die 6 Ziffern aus der Nachricht von Antoine eingeben." };
   const secret = loginCodeSecret();

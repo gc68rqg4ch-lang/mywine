@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState, useTransition } from "react";
-import { RESEND_SECONDS } from "@/lib/login/code-limits";
+import { CODE_HINT_TEXT, RESEND_SECONDS } from "@/lib/login/code-limits";
 import { requestCodeAction, sendMagicLink, verifyCodeAction, type LoginState } from "./actions";
 
 /**
@@ -70,9 +70,10 @@ export function LoginForm({ next, codeEnabled = false }: { next: string; codeEna
         }}
       >
         {message && (
-          <p className="notice notice-ok" role="status">
-            {message}
-          </p>
+          <div className="notice notice-ok" role="status">
+            <p>{message}</p>
+            <p className="muted small">{CODE_HINT_TEXT}</p>
+          </div>
         )}
         <label className="field">
           <span>Code aus Telegram</span>

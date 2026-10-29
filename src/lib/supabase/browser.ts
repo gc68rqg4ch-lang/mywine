@@ -10,5 +10,8 @@ import { supabasePublishableKey, supabaseUrl } from "./env";
  * RLS gilt wie überall: nur Mitglieder dürfen hochladen.
  */
 export function createBrowserSupabase() {
-  return createBrowserClient<Database>(supabaseUrl, supabasePublishableKey);
+  // Keine Erneuerung im Hintergrund: die macht nur der Proxy (sonst erneuern Browser und Server
+  // gleichzeitig mit demselben Refresh Token). Vor dem Upload läuft eine Server Action
+  // (prepareDocumentUpload) – die frischt die Cookies auf.
+  return createBrowserClient<Database>(supabaseUrl, supabasePublishableKey, { auth: { autoRefreshToken: false } });
 }

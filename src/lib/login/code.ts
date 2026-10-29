@@ -48,6 +48,20 @@ export const rateLimited = (createdAt: string[], now: number) => createdAt.filte
 
 /** Antwort an die Seite – immer gleich, ob die Adresse bekannt ist oder nicht. */
 export const CODE_SENT_TEXT = "Falls die Adresse bekannt ist, hat Antoine dir einen Code per Telegram geschickt.";
+export { CODE_HINT_TEXT } from "./code-limits";
+
+/**
+ * E-Mail für den Vergleich: unsichtbare Zeichen (Zero-Width, Richtungszeichen, weiches
+ * Trennzeichen, BOM – z. B. aus Kopieren/Einfügen oder der Autokorrektur) entfernen, Unicode
+ * vereinheitlichen, ohne Leerzeichen am Rand, klein.
+ */
+export function cleanEmail(email: string) {
+  return String(email ?? "")
+    .normalize("NFKC")
+    .replace(/[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g, "")
+    .trim()
+    .toLowerCase();
+}
 
 /** Meldungen bei der Eingabe des Codes. */
 export function checkMessage(result: Exclude<CheckResult, "ok">, attemptsLeft: number) {
