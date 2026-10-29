@@ -143,7 +143,7 @@ test("„🔎 Such du“ bei „bezahlt?“: kein Normalpreis, weiter zum Speich
 
   // „✏️ Ändern“ → normale Preisfragen (ohne „Such du“), danach von Hand
   await press("✏️ Ändern");
-  assert.match(lastText(), /Was hast du pro Flasche bezahlt\?/);
+  assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\?/);
   assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
   await say("70");
   await press("✅ Ja, gleich");
@@ -195,7 +195,7 @@ test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst
       assert.deepEqual([item().purchase_price, item().regular_price], [null, null]);
       assert.equal(lastText(), "Gut, der Preis bleibt leer.");
     } else {
-      assert.match(lastText(), /Was hast du pro Flasche bezahlt\?/);
+      assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\?/);
       await say("50");
       await press("🤷 Weiss ich nicht");
       await runLater();
