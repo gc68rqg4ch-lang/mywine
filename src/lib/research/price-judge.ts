@@ -2,7 +2,7 @@ import "server-only";
 
 // Preissuche – Abgleich „gleiches Produkt?“ mit einem einzigen Haiku-Aufruf (strukturierte
 // Ausgabe) statt Wortregeln: je Google-Shopping-Kandidat yes / variant / no mit Grund sowie
-// erkannter Grösse und Jahrgang. Danach im Code hart: Grösse und Jahrgang müssen passen, sonst
+// erkanntem Jahrgang. Danach im Code hart: Grösse (aus dem Titel, in ml) und Jahrgang müssen passen, sonst
 // höchstens variant; bei Gattungsnamen muss der Produzent passen, sonst no. Die Preiswahl nimmt nur yes-Kandidaten (siehe pickBest).
 
 import { z } from "zod";
@@ -10,7 +10,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { anthropic, RECOGNITION_MODEL } from "@/lib/ingest/recognize";
 import { withUsage } from "@/lib/ai/usage";
 import type { ShoppingCandidate } from "./serpapi";
-import { brandFromProducer, brandInName, genericName } from "./price-match";
+import { brandFromProducer, brandInName, genericName, sizeFromText } from "./price-match";
 
 export const JUDGE_MODEL = RECOGNITION_MODEL;
 
@@ -20,7 +20,6 @@ export const JudgeSchema = z.object({
       index: z.number().describe("Nummer des Kandidaten wie in der Liste"),
       same_product: z.enum(["yes", "variant", "no"]),
       reason: z.string().describe("Ein kurzer Grund auf Deutsch, z. B. „gleiches Produkt“, „Riserva statt normal“, „andere Marke“"),
-      size_ml: z.number().describe("Flaschengrösse laut Titel in ml (70 cl = 700); 0 = nicht genannt"),
       vintage: z.number().describe("Jahrgang laut Titel; 0 = keiner genannt"),
     }),
   ),
@@ -42,10 +41,11 @@ export type JudgeBottle = {
 export const JUDGE_SYSTEM = `Du prüfst für eine private Weinsammlung in der Schweiz, welche Angebote aus Google Shopping genau diese Flasche sind.
 Je Kandidat same_product:
 - yes: dasselbe Produkt. Werbewörter („Top-Angebot“, „Aktion“), Schreibweisen, Apostrophe, Gross-/Kleinschreibung, Reihenfolge von Marke und Name und zusätzliche Beschreibungen (Kategorie, Herkunft, Alkohol) sind egal. Fehlt die Firma (z. B. Destillerie) im Titel, ist das egal, solange Marke bzw. Name stimmen.
-- variant: dasselbe Produkt in anderer Ausführung – Riserva/Reserva/Reservado statt normal (oder umgekehrt), anderes Alter bzw. andere Reifezeit, Cask Strength, Single Cask, XO/VSOP/VS, Sonderedition, anderer Jahrgang, andere Grösse, Geschenkset/mit Gläsern, Mehrfachpackung.
+- variant: dasselbe Produkt in anderer Ausführung – Riserva/Reserva/Reservado statt normal (oder umgekehrt), anderes Alter bzw. andere Reifezeit, Cask Strength, Single Cask, XO/VSOP/VS, Sonderedition, anderer Jahrgang, Geschenkset/mit Gläsern, Mehrfachpackung.
+- Die Flaschengrösse prüft der Code (je Kandidat schon in ml umgerechnet): bewerte sie nicht – auch nicht „50 cl“ gegen „500 ml“.
 - no: anderer Produzent bzw. andere Marke oder anderes Produkt (auch gleiche Gattung wie „Amaretto“ einer anderen Marke), Zubehör, Gutscheine.
 Bei Gattungsnamen (gattungsname: true – z. B. Pflaumenbrand, Amaretto, Grappa, Kirsch) muss der Produzent bzw. die Marke im Titel oder beim Händler stehen, sonst no.
-Gib size_ml und vintage so an, wie sie im Titel stehen (0 = nicht genannt). Bewerte jeden Kandidaten genau einmal, mit seiner Nummer.`;
+Gib vintage so an, wie er im Titel steht (0 = nicht genannt). Bewerte jeden Kandidaten genau einmal, mit seiner Nummer.`;
 
 /** Prompt mit Flasche und nummerierten Kandidaten (rein). */
 export function judgePrompt(bottle: JudgeBottle, candidates: Pick<ShoppingCandidate, "title" | "source" | "price">[]) {
@@ -61,7 +61,12 @@ export function judgePrompt(bottle: JudgeBottle, candidates: Pick<ShoppingCandid
     alter_jahre: bottle.age ?? null,
     fass: bottle.cask ?? null,
   };
-  const list = candidates.map((c, i) => `${i}. ${c.title} – ${c.source} – CHF ${c.price.toFixed(2)}`).join("\n");
+  const list = candidates
+    .map((c, i) => {
+      const ml = sizeFromText(c.title);
+      return `${i}. ${c.title} – ${c.source} – CHF ${c.price.toFixed(2)}${ml ? ` – ${ml} ml` : ""}`;
+    })
+    .join("\n");
   return `Gesuchte Flasche: ${JSON.stringify(b)}\n\nKandidaten:\n${list}`;
 }
 
@@ -73,7 +78,7 @@ export type CandidateVerdict = { verdict: Verdict; reason: string; sizeMl: numbe
  * Grösse nicht genannt: Standardflasche angenommen. Jahrgang gesucht, aber nicht genannt: variant
  * (nicht belegt). Wein ohne Jahrgang, Angebot mit Jahrgang: variant.
  */
-export function hardCheck(bottle: Pick<JudgeBottle, "year" | "sizeMl">, j: Pick<Judged, "same_product" | "reason" | "size_ml" | "vintage">): CandidateVerdict {
+export function hardCheck(bottle: Pick<JudgeBottle, "year" | "sizeMl">, j: Pick<Judged, "same_product" | "reason" | "vintage"> & { size_ml: number }): CandidateVerdict {
   const sizeMl = j.size_ml > 0 ? Math.round(j.size_ml) : null;
   const year = j.vintage >= 1900 && j.vintage <= 2100 ? Math.round(j.vintage) : null;
   const base = { sizeMl, year };
@@ -110,6 +115,7 @@ export async function judgeCandidates(bottle: JudgeBottle, candidates: ShoppingC
   const judged = response.parsed_output?.candidates ?? [];
   return candidates.map((_, i) => {
     const j = judged.find((x) => x.index === i);
-    return j ? producerCheck(bottle, candidates[i], hardCheck(bottle, j)) : { verdict: "no", reason: "nicht bewertet", sizeMl: null, year: null };
+    // Grösse allein aus dem Titel (im Code in ml umgerechnet), nicht aus dem Urteil.
+    return j ? producerCheck(bottle, candidates[i], hardCheck(bottle, { ...j, size_ml: sizeFromText(candidates[i].title) ?? 0 })) : { verdict: "no", reason: "nicht bewertet", sizeMl: null, year: null };
   });
 }

@@ -22,6 +22,8 @@ const SEED = (() => {
   return [...sql.matchAll(/\('([^']+)', '([^']+)', '([^']+)', (true|false), '(known)'\)/g)].map((m) => ({ name_key: m[1], display_name: m[2], domain: m[3], swiss: m[4] === "true", source: m[5] }));
 })();
 import { researchPrice, serpQueriesAllowed, type PriceWine } from "@/lib/research/price";
+import { googleQueries } from "@/lib/research/price-search";
+import { sizeFromText } from "@/lib/research/price-match";
 import { costUsd } from "@/lib/ai/cost";
 
 /** Händlername → Domain fürs Nachbilden: ohne Punkt als Schweizer .ch-Shop („Coop“ → coop.ch). */
@@ -204,7 +206,7 @@ for (const provider of ["serpapi", "serper"] as const) {
     judge = { "Lazzaroni Amaretto 70": { v: "yes", size: 700 }, "Lazzaroni Amaretto Classico": { v: "yes", size: 700 }, "Lazzaroni Amaretto 1 l": { v: "yes", size: 1000 }, "Amaretto Liquor": { v: "no", reason: "andere Marke" } };
     const { finding, diagnostics } = await researchPrice(spirit("Amaretto", "Paolo Lazzaroni & Figli"), null, 700, "Galaxus", { db, ...keys(provider) });
     assert.ok(finding.kind === "exact" && finding.amount === 30 && finding.merchants === 3, JSON.stringify(finding));
-    assert.deepEqual(calls, [{ provider, q: "Lazzaroni Amaretto 70cl" }], "5 Treffer: keine zweite Abfrage");
+    assert.deepEqual(calls, [{ provider, q: "Amaretto 70cl" }, { provider, q: "Lazzaroni Amaretto 70cl" }], "ohne Marke keine Treffer: zweite Abfrage mit Marke");
     assert.equal(judgeCalls, 1);
     assert.equal(sonnetCalls, 0, "keine Claude-Websuche");
     const s = diagnostics.shopping!;
@@ -215,9 +217,9 @@ for (const provider of ["serpapi", "serper"] as const) {
     assert.deepEqual(s.chosen, { amount: 30, merchant: "casadeltequila.ch", merchants: 3 });
     assert.equal(diagnostics.verdict, "exact:shopping");
     const rows = net.tables.api_usage;
-    // 1 Shopping-Abfrage + 2 Such-Abfragen (site:.ch, keine Schweizer Treffer → ohne Grösse)
-    assert.deepEqual(rows.filter((x) => x.model === provider).map((x) => [x.purpose, x.web_searches, x.cost_usd]), Array(3).fill(["research_price", 1, provider === "serper" ? 0.001 : 0]));
-    assert.deepEqual(searchCalls.map((c) => c.q), ["Lazzaroni Amaretto 70cl site:.ch", "Lazzaroni Amaretto site:.ch"]);
+    // 2 Shopping-Abfragen + 2 Such-Abfragen (site:.ch zuerst mit Marke, dann die andere Variante)
+    assert.deepEqual(rows.filter((x) => x.model === provider).map((x) => [x.purpose, x.web_searches, x.cost_usd]), Array(4).fill(["research_price", 1, provider === "serper" ? 0.001 : 0]));
+    assert.deepEqual(searchCalls.map((c) => c.q), ["Lazzaroni Amaretto 70cl site:.ch", "Amaretto 70cl site:.ch"]);
     assert.ok(rows.some((x) => x.model === "claude-haiku-5-5" && x.purpose === "research_price"));
   });
 
@@ -252,7 +254,7 @@ for (const provider of ["serpapi", "serper"] as const) {
     const { finding } = await researchPrice(spirit("Grappa di Barolo Riserva", "Distilleria Marolo"), 1991, 700, null, { db, ...keys(provider) });
     assert.notEqual(finding.kind, "exact");
     if (finding.kind === "other") assert.match(String(finding.why), /Jahrgang|Riserva|9 Jahre/);
-    assert.deepEqual(qs(), ["Grappa di Barolo Riserva 1991 70cl", "Grappa di Barolo Riserva 1991"], "wenig Treffer: zweite Abfrage ohne Grösse");
+    assert.deepEqual(qs(), ["Grappa di Barolo Riserva 1991 70cl", "Marolo Grappa di Barolo Riserva 1991 70cl"], "wenig Treffer: zweite Abfrage mit Marke");
     assert.equal(sonnetCalls, 0);
   });
 
@@ -260,11 +262,11 @@ for (const provider of ["serpapi", "serper"] as const) {
     reset();
     const { finding, diagnostics } = await researchPrice(spirit("Creanza", "Moreno Wildhaber"), null, 500, null, { db, ...keys(provider) });
     assert.deepEqual(finding, { kind: "none", reason: "not_found" });
-    assert.deepEqual(qs(), ["Creanza 50cl", "Creanza"]);
+    assert.deepEqual(qs(), ["Creanza 50cl", "Moreno Wildhaber Creanza 50cl"]);
     assert.equal(judgeCalls, 0);
     assert.equal(sonnetCalls, 0);
     assert.equal(diagnostics.verdict, "not_found:shopping");
-    assert.deepEqual(searchCalls.map((c) => c.q), ["Creanza 50cl site:.ch", "Creanza site:.ch"], "keine Shop-Treffer: noch einmal ohne Grösse");
+    assert.deepEqual(searchCalls.map((c) => c.q), ["Moreno Wildhaber Creanza 50cl site:.ch", "Creanza 50cl site:.ch"], "keine Shop-Treffer: die andere Variante");
     assert.equal(calls.length + searchCalls.length, 4, "höchstens 4 Abfragen pro Flasche");
     assert.ok(diagnostics.direct, "direkte Shop-Suchen als Ergänzung gelaufen");
   });
@@ -415,7 +417,7 @@ for (const provider of ["serpapi", "serper"] as const) {
     assert.deepEqual(s.candidates.filter((c) => c.origin === "direct").map((c) => [c.domain, c.price, c.verdict]), [["drinks.ch", 86.9, "yes"], ["bringts.ch", 85.25, "yes"]]);
     assert.deepEqual(s.candidates.filter((c) => !c.swiss).map((c) => [c.source, c.verdict]), [["vinecatas", "foreign"], ["Whisky.de", "foreign"], ["Versus Vins & Spiritueux", "foreign"], ["Bourbon Blackpool", "foreign"]]);
     assert.ok(s.candidates.every((c) => typeof c.link === "string" && "domain" in c));
-    assert.deepEqual(qs(), ["Noah's Mill 70cl", "Noah's Mill"], "keine Schweizer Google-Treffer: zweite Abfrage");
+    assert.deepEqual(qs(), ["Noah's Mill 70cl", "Willett Noah's Mill 70cl"], "keine Schweizer Google-Treffer: zweite Abfrage mit Marke");
   });
 }
 
@@ -499,7 +501,7 @@ for (const provider of ["serpapi", "serper"] as const) {
     assert.deepEqual(s.candidates.filter((c) => !c.swiss).map((c) => c.verdict), ["foreign", "foreign", "foreign"]);
     assert.ok(!s.search?.pages.some((u) => /wikipedia/.test(u)), "keine .ch-Domain: nicht gelesen");
     assert.equal(diagnostics.pages.find((p) => p.url.includes("local.ch"))?.result, "no_price", "Verzeichnis: keine Produktseite");
-    assert.deepEqual(searchCalls.map((c) => c.q), ["Noah's Mill 70cl site:.ch"], "3 Schweizer Treffer: keine zweite Suche");
+    assert.deepEqual(searchCalls.map((c) => c.q), ["Willett Noah's Mill 70cl site:.ch", "Noah's Mill 70cl site:.ch"], "mit Marke nichts: die andere Variante");
     assert.ok(calls.length + searchCalls.length <= 4, "höchstens 4 Abfragen");
     // Shopnamen gelernt
     assert.deepEqual(net.tables.merchants.filter((m) => m.source === "page").map((m) => [m.name_key, m.domain, m.swiss]), [["drinks ch", "drinks.ch", true], ["bringts ch", "bringts.ch", true]]);
@@ -549,6 +551,59 @@ test("Seite nicht lesbar (403) mit Rich-Snippet-Preis → verwendet; ohne Preis 
   assert.ok(finding.kind === "exact" && finding.amount === 34.5 && finding.merchant === "weinshop-x.ch", JSON.stringify(finding));
   const pages = Object.fromEntries(diagnostics.pages.map((p) => [new URL(p.url).hostname, p.result]));
   assert.deepEqual(pages, { "www.weinshop-x.ch": "unreadable:snippet", "www.weinshop-y.ch": "unreadable", "www.moneyhouse.ch": "no_price" });
-  assert.deepEqual([calls.length, searchCalls.length], [2, 1], "3 Schweizer Treffer: eine Suche");
+  assert.deepEqual([calls.length, searchCalls.length], [2, 2]);
   assert.deepEqual(diagnostics.shopping!.candidates.map((c) => [c.origin, c.domain]), [["search", "weinshop-x.ch"]]);
+});
+
+// --- Marke in einer der Abfragen, Grösse im Code
+
+test("Abfragen: Shopping mit dem Namen, site:.ch mit Marke (falls nicht im Namen); zweite Abfrage die andere Variante", () => {
+  assert.deepEqual(googleQueries({ name: "Very Special", producer: "Hennessy", sizeMl: 700 }), {
+    shopping: ["Very Special 70cl", "Hennessy Very Special 70cl"],
+    search: ["Hennessy Very Special 70cl site:.ch", "Very Special 70cl site:.ch"],
+    brand: "Hennessy",
+  });
+  const noah = googleQueries({ name: "Noah's Mill", producer: "Willett Distillery", sizeMl: 700 });
+  assert.equal(noah.shopping[0], "Noah's Mill 70cl", "eine Abfrage ohne «Willett»");
+  assert.equal(noah.search[0], "Willett Noah's Mill 70cl site:.ch");
+  // Marke schon im Namen: wie bisher (zweite Abfrage ohne Grösse)
+  assert.deepEqual(googleQueries({ name: "Disaronno Originale", producer: "Illva Saronno", sizeMl: 700 }), {
+    shopping: ["Disaronno Originale 70cl", "Disaronno Originale"],
+    search: ["Disaronno Originale 70cl site:.ch", "Disaronno Originale site:.ch"],
+    brand: null,
+  });
+  assert.deepEqual(googleQueries({ name: "Pintia", producer: null, year: 2019, sizeMl: 750 }).shopping, ["Pintia 2019 75cl", "Pintia 2019"]);
+});
+
+test("Grösse: 50 cl = 500 ml = 0,5 l; «0,7» und «70cl.» = 700 ml", () => {
+  for (const t of ["Pflümli 50 cl", "Pflümli 500 ml", "Pflümli 0,5 l", "Pflümli 0.5 Liter", "Pflümli 500ml"]) assert.equal(sizeFromText(t), 500, t);
+  for (const t of ["Hennessy VS 0,7", "Hennessy VS 70cl.", "Hennessy VS (0,7)", "Hennessy VS 0.7l"]) assert.equal(sizeFromText(t), 700, t);
+  assert.equal(sizeFromText("Rum 40,5% Vol."), null);
+  assert.equal(sizeFromText("Grappa 1,5"), 1500);
+  // Abgleich: Grösse im Prompt schon in ml, harte Prüfung allein im Code
+  const p = judgePrompt({ name: "Vieille Prune", producer: "Studer", type: "spirit", year: null, sizeMl: 500 }, [{ title: "Studer Vieille Prune 50 cl", source: "pepillo.ch", price: 49 }]);
+  assert.match(p, /CHF 49\.00 – 500 ml/);
+});
+
+test("pepillo.ch «50 cl» bei 500 ml: gleiche Grösse, auch wenn Haiku anders meint", async () => {
+  reset();
+  answers.set("Vieille Prune 50cl", [g("Studer Vieille Prune 50 cl", "pepillo.ch", 49), g("Studer Vieille Prune 500 ml", "Drinks.ch", 51), g("Studer Vieille Prune 0,35 l", "galaxus.ch", 32)]);
+  judge = { "Studer Vieille Prune": { v: "yes", size: 700 } };
+  const { finding, diagnostics } = await researchPrice(spirit("Vieille Prune", "Studer"), null, 500, null, { db, ...keys("serper") });
+  assert.ok(finding.kind === "exact" && finding.amount === 51 && finding.merchants === 2, JSON.stringify(finding));
+  const v = Object.fromEntries(diagnostics.shopping!.candidates.map((c) => [c.source, c.verdict]));
+  assert.deepEqual(v, { "pepillo.ch": "yes", "Drinks.ch": "yes", "galaxus.ch": "variant" });
+});
+
+test("Hennessy «Very Special»: Google-Suche mit «Hennessy Very Special 70cl», andere Marken bleiben no", async () => {
+  reset();
+  answers.set("Very Special 70cl", [g("Camus VS Very Special Cognac 70cl", "galaxus.ch", 39), g("Davidoff VS Very Special Cognac 40° 70cl", "bottlebutler.ch", 35), g("Baron Otard VS Very Special 70cl", "coop.ch", 36), g("3x Hennessy Very Special 70cl", "gustero.ch", 129)]);
+  answers.set("Hennessy Very Special 70cl", [g("Hennessy Very Special Cognac 70cl", "coop.ch", 44.95)]);
+  searchAnswers.set("Hennessy Very Special 70cl site:.ch", [{ link: "https://www.drinks.ch/de/hennessy-very-special-70cl.html", title: "Hennessy Very Special 70cl | Drinks.ch" }]);
+  shopPages.set("https://www.drinks.ch/de/hennessy-very-special-70cl.html", ld("Hennessy Very Special Cognac 70cl", "45.90", "Drinks.ch"));
+  judge = { "Hennessy Very Special Cognac": { v: "yes" }, "3x Hennessy": { v: "variant", reason: "Mehrfachpackung" } };
+  const { finding } = await researchPrice(spirit("Very Special", "Hennessy"), null, 700, null, { db, ...keys("serper") });
+  assert.ok(finding.kind === "exact" && finding.amount >= 44.95 && finding.amount <= 45.9 && finding.merchants === 2, JSON.stringify(finding));
+  assert.ok([...calls, ...searchCalls].some((c) => c.q.startsWith("Hennessy Very Special 70cl")));
+  assert.ok(calls.length + searchCalls.length <= 4);
 });

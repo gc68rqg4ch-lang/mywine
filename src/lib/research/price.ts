@@ -28,10 +28,9 @@ import { giftValueKeyboard, priceKeyboard, priceOfferKeyboard, regularPriceKeybo
 import type { IngestState, IngestStep, PriceOffer } from "@/lib/ingest/schema";
 import { createGetter, findShopPages, shopDocuments, shopPagesNote } from "./shops";
 import type { Get } from "./shops/adapters";
-import { offerFromShopify, productPage, qualifierMismatch, sameProduct, shopifyDataUrl, sizeFromText, swissPage, yearFromText, type Mismatch, type PageRead, type ProductOffer } from "./price-match";
+import { brandInName, offerFromShopify, productPage, qualifierMismatch, sameProduct, shopifyDataUrl, sizeFromText, swissPage, yearFromText, type Mismatch, type PageRead, type ProductOffer } from "./price-match";
 import {
   brandPageHits,
-  clTerm,
   compactSearches,
   directShopsFor,
   duplicateQueries,
@@ -40,6 +39,7 @@ import {
   pickBest,
   priceQueries,
   productTerm,
+  googleQueries,
   rankHits,
   searchLog,
   searchTitles,
@@ -670,15 +670,17 @@ export async function researchPriceShopping(
   const providers = await shoppingProviders(options);
   if (!providers.length) return null;
   const size = sizeMl ?? standardSize(wine.type);
-  const term = `${productTerm(wine)}${year != null ? ` ${year}` : ""}`;
+  const q = googleQueries({ name: wine.name, producer: wine.producer, year, sizeMl: size });
   const want = { name: wine.name, producer: wine.producer, year };
   const known = await loadMerchants(options.db);
   const get = options.get ?? createGetter({ maxRequests: 60, timeoutMs: DIRECT_TIMEOUT_MS });
   // Alles parallel: direkte Shops (wirft nie), Shopping, Google-Suche site:.ch.
   const directTask = searchShops({ name: wine.name, producer: wine.producer, year, sizeMl: size, type: wine.type }, get);
-  const swissEnough = (c: ShoppingCandidate) => c.swiss === true || merchantOf(c.source, c.link, known).swiss;
-  const shoppingTask = runShopping(providers, [`${term} ${clTerm(size)}`, term], swissEnough);
-  const searchTask = runSiteSearch(providers, [`${term} ${clTerm(size)} site:.ch`, `${term} site:.ch`], want);
+  // Genug Treffer für keine zweite Shopping-Abfrage: Schweizer Händler, mit Marke im Titel, falls die Abfrage ohne Marke war.
+  const swissEnough = (c: ShoppingCandidate) =>
+    (c.swiss === true || merchantOf(c.source, c.link, known).swiss) && (!q.brand || brandInName(q.brand, `${c.title} ${c.source}`));
+  const shoppingTask = runShopping(providers, q.shopping, swissEnough);
+  const searchTask = runSiteSearch(providers, q.search, want);
   const [shopping, search, direct] = await Promise.all([shoppingTask, searchTask, directTask]);
   const { shop, failed } = shopping;
   if (!shop) {

@@ -80,7 +80,7 @@ const NAME_GENERIC = new Set(
 const AGE_RE = /(\d{1,3})\s*(mesi|mese|monate|monat|months?|anni|anno|jahre|jahr|years?|yo|ans|ani|anos|años)\b/g;
 const ageOf = (s: string) => [...fold(s).matchAll(AGE_RE)].map((m) => `${Number(m[1])}${/^(mesi|mese|monate|monat|month)/.test(m[2]) ? "m" : "y"}`);
 
-/** Grösse aus dem Titel: „70 cl.“, „0,7 l“, „700 ml“, „1.5 L“ → ml; sonst null. */
+/** Grösse aus dem Titel: „70 cl.“, „70cl.“, „0,7 l“, „0,7“, „700 ml“, „1.5 L“ → ml; sonst null. */
 export function sizeFromText(text: string | null | undefined): number | null {
   const t = fold(text).replace(/,/g, ".");
   const cl = t.match(/(\d+(?:\.\d+)?)\s*cl\b/);
@@ -89,6 +89,9 @@ export function sizeFromText(text: string | null | undefined): number | null {
   if (ml) return Number(ml[1]);
   const l = t.match(/(\d+(?:\.\d+)?)\s*(?:l|lt|ltr|liter|litre)\b/);
   if (l && Number(l[1]) > 0 && Number(l[1]) <= 6) return Math.round(Number(l[1]) * 1000);
+  // Liter ohne Einheit („Hennessy VS 0,7“, „… 0.5“) – nur übliche Flaschengrössen, nicht vor „%“.
+  const bare = t.match(/(?:^|[\s(])(0\.(?:2|25|35|375|5|7|75)|1\.5|1\.75)(?=$|[\s),])/);
+  if (bare) return Math.round(Number(bare[1]) * 1000);
   return null;
 }
 
