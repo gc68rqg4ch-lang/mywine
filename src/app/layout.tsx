@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
+import { ZoomReset } from "@/components/zoom-reset";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -27,7 +28,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="de-CH" className={geistSans.variable}>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* Hineingezoomt aus dem Zwischenspeicher zurück: auf Zoomstufe 1 (alle Seiten). */}
+        <ZoomReset />
+      </body>
     </html>
   );
 }
