@@ -14,21 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      app_members: {
-        Row: {
-          created_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       api_budget: {
         Row: {
           extra_usd: number
@@ -101,10 +86,46 @@ export type Database = {
             foreignKeyName: "api_usage_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "api_usage_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "api_usage_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "api_usage_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
         ]
+      }
+      app_members: {
+        Row: {
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       daily_notes: {
         Row: {
