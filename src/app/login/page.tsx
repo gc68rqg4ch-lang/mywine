@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { safeNextPath } from "@/lib/safe-next";
 import { createClient } from "@/lib/supabase/server";
 import { LoginForm } from "./login-form";
+import { ExpiredLinkNotice } from "@/components/auth-url-cleanup";
+import { EXPIRED_LINK_TEXT } from "@/lib/auth-url";
 
 export const metadata: Metadata = { title: "Anmelden" };
 
@@ -19,10 +21,13 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       <div className="card login-card">
         <h1 className="brand">MyWine</h1>
         <p className="muted">Deine persönliche Weinsammlung. Melde dich per Magic Link an.</p>
-        {params.fehler && (
+        {params.fehler ? (
           <p className="notice notice-error" role="alert">
-            Der Login-Link ist ungültig oder abgelaufen. Bitte fordere einen neuen an.
+            {EXPIRED_LINK_TEXT}
           </p>
+        ) : (
+          // Fehler im Hash (#error=…) sieht nur der Browser.
+          <ExpiredLinkNotice />
         )}
         <LoginForm next={next} />
       </div>

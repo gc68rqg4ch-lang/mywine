@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { ZoomReset } from "@/components/zoom-reset";
+import { AuthUrlCleanup } from "@/components/auth-url-cleanup";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,6 +33,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {children}
         {/* Hineingezoomt aus dem Zwischenspeicher zurück: auf Zoomstufe 1 (alle Seiten). */}
         <ZoomReset />
+        {/* Abgelaufener Login-Link (#error=… bzw. ?error=…): aus der Adresse entfernen. */}
+        <AuthUrlCleanup />
       </body>
     </html>
   );
