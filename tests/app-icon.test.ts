@@ -49,7 +49,9 @@ test("Dateien: icon.svg (abgerundet), favicon.ico (16+32), apple-icon 180, Manif
 test("Name auf dem Home-Bildschirm „MyWine“, ohne Standalone", () => {
   const layout = readFileSync("src/app/layout.tsx", "utf8");
   assert.match(layout, /"apple-mobile-web-app-title": "MyWine"/);
-  assert.doesNotMatch(layout, /appleWebApp|capable/, "kein mobile-web-app-capable (sonst eigene Sitzung)");
+  // Nicht als Einstellung (Kommentare dürfen es erwähnen): appleWebApp setzt mobile-web-app-capable.
+  assert.doesNotMatch(layout, /^\s*appleWebApp:/m, "kein mobile-web-app-capable (sonst eigene Sitzung)");
+  assert.doesNotMatch(layout, /"(apple-)?mobile-web-app-capable":/);
 });
 
 test("Proxy: Symbole und Manifest ohne Anmeldung (nicht auf /login umgeleitet)", () => {
