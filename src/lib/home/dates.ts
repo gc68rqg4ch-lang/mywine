@@ -1,4 +1,4 @@
-// Datum und Zeit in Europe/Zurich (rein): Monats-/Jahresgrenzen, Tageszeit, Wochentag, Jahreszeit.
+// Datum und Zeit in Europe/Zurich (rein): Monats-/Jahresgrenzen, Wochentag, Jahreszeit.
 
 const TZ = "Europe/Zurich";
 
@@ -32,16 +32,6 @@ export function sameZurichMonth(at: string | null | undefined, now: Date | numbe
 export function sameZurichYear(at: string | null | undefined, year: number) {
   const d = zurichDay(at);
   return d != null && Number(d.slice(0, 4)) === year;
-}
-
-/** Tageszeit für Antoine. */
-export type Daypart = "Morgen" | "Mittag" | "Nachmittag" | "Abend" | "Nacht";
-export function daypart(hour: number): Daypart {
-  if (hour >= 5 && hour < 11) return "Morgen";
-  if (hour >= 11 && hour < 14) return "Mittag";
-  if (hour >= 14 && hour < 18) return "Nachmittag";
-  if (hour >= 18 && hour < 23) return "Abend";
-  return "Nacht";
 }
 
 export type Season = "Frühling" | "Sommer" | "Herbst" | "Winter";

@@ -14,6 +14,7 @@ import { generateDailyNote, PENDING_STALE_MS } from "@/lib/home/daily";
 import { loadHomeData } from "@/lib/home/data";
 import { currentTime, zurichParts } from "@/lib/home/dates";
 import { fallbackNote } from "@/lib/home/fallback";
+import { greetingText, stripGreeting } from "@/lib/home/greeting";
 import { renderNote, wineLabel } from "@/lib/home/note";
 import { legacyListTarget } from "@/lib/home/redirect";
 import { drunkByType, openBottles, ratingSummary, readiness, recentPurchases, spending, stockTotals, stockUnits, unitKey } from "@/lib/home/summary";
@@ -51,7 +52,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   const context = noteContext(data, person?.name ?? null, now);
   const note = today?.status === "done" && today.text ? { text: today.text, refs: today.wines } : fallbackNote(context.fallback);
   const inStock = new Set(context.fallback.units.map((u) => unitKey(u.wineId, u.year)));
-  const { segments, errors } = renderNote(note.text, note.refs, inStock);
+  // Ältere gespeicherte Texte begrüssen noch selbst – die Begrüssung setzt jetzt die App davor.
+  const { segments, errors } = renderNote(stripGreeting(note.text), note.refs, inStock);
   if (errors.length) console.warn("daily note: wines", errors.join(", "));
 
   // Kacheln zum Bestand im gewählten Lagerort (wie die Bestand-Seite).
@@ -67,7 +69,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
 
   return (
     <div className="stack-lg">
-      <AntoineNote photo={avatar?.url ?? null} segments={segments} />
+      <AntoineNote photo={avatar?.url ?? null} segments={segments} person={person?.name ?? null} greeting={greetingText(person?.name ?? null, now)} />
 
       {selected && <p className="muted small">Lagerort: {selected.label}</p>}
 

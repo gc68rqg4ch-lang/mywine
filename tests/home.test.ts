@@ -14,7 +14,9 @@ import { buildRefs, placeholdersIn, plainNote, renderNote, type WineRef } from "
 import { fallbackNote, type FallbackInput } from "@/lib/home/fallback";
 import { recentNotes, dailyPrompt, DailyNoteSchema } from "@/lib/home/prompt";
 import { previousTexts, noteContext } from "@/lib/home/compose";
-import { daypart, zurichParts } from "@/lib/home/dates";
+import { greetingSlot, greetingText, stripGreeting } from "@/lib/home/greeting";
+import { zurichParts } from "@/lib/home/dates";
+import { DAILY_SYSTEM } from "@/lib/home/prompt";
 import { drunkByType, spending, stockUnits, unitKey, type DrunkItem, type Purchase, type StockItem } from "@/lib/home/summary";
 import { generateAllDailyNotes, generateDailyNote, USAGE_LIMIT_ERROR } from "@/lib/home/daily";
 import { DAILY_SECRET_HEADER, workerSecretFrom } from "@/lib/secret";
@@ -96,20 +98,19 @@ const base = (over: Partial<FallbackInput> = {}): FallbackInput => ({
   person: "Michel", now: NOW, units: [], open: [], recent: [], drunkThisMonth: 0, pendingSuggestions: 0, ...over,
 });
 
-test("Ersatztext: Tageszeit, Person, Einzahl/Mehrzahl, keine Aussage ohne Daten", () => {
-  assert.equal(daypart(zurichParts(NOW).hour), "Morgen");
-  assert.equal(daypart(zurichParts(Date.parse("2026-10-29T19:00:00Z")).hour), "Abend");
-  // Ohne Daten: nur Gruss, leerer Keller, Abschluss – keine Zahlen, kein Höhepunkt, keine Weine.
+test("Ersatztext: ohne Begrüssung und Tageszeit, Einzahl/Mehrzahl, keine Aussage ohne Daten", () => {
+  // Ohne Daten: nur leerer Keller und Abschluss – keine Zahlen, kein Höhepunkt, keine Weine.
   const empty = fallbackNote(base());
-  assert.match(empty.text, /Michel/);
-  assert.match(empty.text, /Morgen/);
   assert.doesNotMatch(empty.text, /\d|Höhepunkt|getrunken|Vorschl|offen|\{\{/);
   assert.deepEqual(empty.refs, []);
-  // Ohne Person: kein Name.
-  assert.doesNotMatch(fallbackNote(base({ person: null })).text, /Michel|undefined|null/);
-  // Abends ein anderer Gruss.
-  assert.match(fallbackNote(base({ now: Date.parse("2026-10-29T19:00:00Z") })).text, /Abend/);
-
+  // Keine eigene Begrüssung (die setzt die App davor) – morgens wie abends, mit und ohne Person.
+  for (const now of [NOW, Date.parse("2026-10-29T19:00:00Z"), Date.parse("2026-10-29T23:30:00Z")]) {
+    for (const person of ["Michel", null]) {
+      const t = fallbackNote(base({ now, person })).text;
+      assert.doesNotMatch(t, /Guten|Hallo|Grüezi|Morgen|Mittag|Nachmittag|Abend|Nacht|Michel|undefined|null/, t);
+      assert.equal(stripGreeting(t), t);
+    }
+  }
   // Einzahl: eine Flasche, ein Wein, eine über dem Höhepunkt, eine getrunken, ein Vorschlag.
   const one = fallbackNote(
     base({
@@ -277,7 +278,7 @@ test("API-Limit: Ersatztext, kein neuer Versuch bis zum nächsten Tag, die ander
   // Die Startseite zeigt beim Limit den Ersatztext: aus denselben Daten, mit Links.
   const ctx = noteContext({ stock: [item({ quantity: 2, drinkFrom: 2018, drinkUntil: 2024 })], drunk: [], purchases: [], tastedThisMonth: 0, ratings: [], pendingSuggestions: 0 }, "Michel", NOW);
   const fb = fallbackNote(ctx.fallback);
-  assert.match(fb.text, /Michel/);
+  assert.doesNotMatch(fb.text, /Michel|Guten/);
   assert.equal(renderNote(fb.text, fb.refs, new Set([unitKey(PINTIA, 2019)])).segments.filter((s) => s.kind === "wine" && s.href).length, 1);
   claude = () => claudeText({ text: "Guten Morgen, Michel. Heute würde ich {{W1}} öffnen." });
 });
@@ -364,4 +365,68 @@ test("Kopf der Startseite: Text fliesst um das runde Foto, Karte mindestens so h
   // Der Text darf unter dem Foto weiterlaufen: kein Flex mehr, die Textspalte ist kein eigener Block.
   assert.doesNotMatch(head, /display: flex;\s*align-items: flex-start/);
   assert.doesNotMatch(css, /\.antoine-body \{/);
+});
+
+test("Begrüssung nach der Uhrzeit in Europe/Zurich, mit Vorname – Grenzen", () => {
+  // 29. Oktober 2026: Winterzeit (UTC+1). Zürich-Zeit → UTC minus 1 Stunde.
+  const at = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return Date.UTC(2026, 9, 29, h - 1, m);
+  };
+  const cases: [string, string, RegExp][] = [
+    ["04:59", "late", /^Hallo, Michel[.!]?/],
+    ["05:00", "morning", /^(Schönen guten|Guten) Morgen, Michel/],
+    ["10:59", "morning", /Guten Morgen, Michel|guten Morgen, Michel/],
+    ["11:00", "day", /^Guten Tag, Michel/],
+    ["16:59", "day", /^Guten Tag, Michel/],
+    ["17:00", "evening", /^(Schönen guten|Guten) Abend, Michel/],
+    ["21:59", "evening", /[Gg]uten Abend, Michel/],
+    ["22:00", "late", /^Hallo, Michel/],
+    ["00:30", "late", /^Hallo, Michel/],
+  ];
+  for (const [time, slot, text] of cases) {
+    assert.equal(greetingSlot(zurichParts(at(time)).hour), slot, time);
+    assert.match(greetingText("Michel", at(time)), text, time);
+  }
+  // Sommerzeit (UTC+2): 05:00 in Zürich = 03:00 UTC.
+  assert.equal(greetingSlot(zurichParts(Date.UTC(2026, 6, 1, 3, 0)).hour), "morning");
+  assert.equal(greetingSlot(zurichParts(Date.UTC(2026, 6, 1, 2, 59)).hour), "late");
+  // Ohne Person: ohne Namen; gleiche Variante für denselben Tag (Server und Browser).
+  assert.equal(greetingText(null, at("18:00")), "Guten Abend.");
+  assert.equal(greetingText("Sara", at("08:00")), greetingText("Sara", at("10:30")));
+  // Keine Nacht-Begrüssung.
+  for (let h = 0; h < 24; h++) assert.doesNotMatch(greetingText("Michel", Date.UTC(2026, 9, 29, h, 0)), /Nacht/);
+});
+
+test("gespeicherte Texte: führende Begrüssung entfernen, sonst nichts", () => {
+  assert.equal(stripGreeting("Guten Morgen Michel, die Pintia wartet."), "Die Pintia wartet.");
+  assert.equal(stripGreeting("Guten Morgen, Michel. Der Herbst ist da."), "Der Herbst ist da.");
+  assert.equal(stripGreeting("Schönen guten Abend, Sara! Im Keller {{W1}}."), "Im Keller {{W1}}.");
+  assert.equal(stripGreeting("Hallo Sara – der Herbst ist da."), "Der Herbst ist da.");
+  assert.equal(stripGreeting("Grüezi Michel! Im Keller liegen 4 Flaschen."), "Im Keller liegen 4 Flaschen.");
+  assert.equal(stripGreeting("Hoi Sara, schau mal."), "Schau mal.");
+  assert.equal(stripGreeting("Guten Tag! Im Keller."), "Im Keller.");
+  // Kein Gruss am Anfang bzw. kein Name: bleibt.
+  assert.equal(stripGreeting("Morgen, am Freitag, wäre {{W1}} schön."), "Morgen, am Freitag, wäre {{W1}} schön.");
+  assert.equal(stripGreeting("Guten Morgen die Pintia, ist gut."), "Guten Morgen die Pintia, ist gut.");
+  assert.equal(stripGreeting("Im Keller liegen 4 Flaschen. Guten Abend!"), "Im Keller liegen 4 Flaschen. Guten Abend!");
+  // Beim Anzeigen (Startseite) angewendet, die Begrüssung kommt aus der App.
+  const page = readFileSync("src/app/(cellar)/page.tsx", "utf8");
+  assert.match(page, /renderNote\(stripGreeting\(note\.text\)/);
+  assert.match(page, /greeting=\{greetingText\(/);
+  assert.match(readFileSync("src/components/home/greeting.tsx", "utf8"), /greetingText\(person, Date\.now\(\)\)/);
+});
+
+test("Prompt: keine Begrüssung, keine Tageszeit, neutrale Trinkvorschläge", () => {
+  assert.match(DAILY_SYSTEM, /Keine Begrüssung und keine Tageszeit/);
+  assert.match(DAILY_SYSTEM, /kein „Guten Morgen“, „Guten Tag“, „Guten Abend“/);
+  assert.match(DAILY_SYSTEM, /beginne direkt mit dem Inhalt/);
+  assert.match(DAILY_SYSTEM, /„heute Morgen“, „heute Nachmittag“, „heute Abend“/);
+  assert.match(DAILY_SYSTEM, /für einen der nächsten Abende/);
+  assert.doesNotMatch(DAILY_SYSTEM, /Bezug auf Tageszeit|begrüsse/);
+  // Die Eingabe nennt keine Tageszeit mehr (nur Wochentag, Datum, Jahreszeit).
+  const ctx = noteContext({ stock: [item({})], drunk: [], purchases: [], tastedThisMonth: 0, ratings: [], pendingSuggestions: 0 }, "Sara", NOW);
+  const text = dailyPrompt({ ...ctx.prompt, person: "Sara", refs: ctx.refs, previous: [] });
+  assert.match(text, /^Heute: Donnerstag, 29\. Oktober 2026, Herbst$/m);
+  assert.doesNotMatch(text, /Morgen|Mittag|Nachmittag|Abend|Nacht/);
 });

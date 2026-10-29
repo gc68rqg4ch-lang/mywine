@@ -356,19 +356,22 @@ export const T = {
  */
 const fl = (n: number) => (n === 1 ? "1 Flasche" : `${n} Flaschen`);
 export const HOME_TEXTS = {
+  /**
+   * Begrüssung vor Antoines Text – setzt die App beim Anzeigen nach der aktuellen Uhrzeit
+   * (Europe/Zurich): 05–11 Morgen, 11–17 Tag, 17–22 Abend, 22–05 spät. Der Text selbst (Claude
+   * und Ersatztext) hat keine Begrüssung und keine Tageszeit.
+   */
   greeting: {
-    Morgen: [(name: string) => `Guten Morgen, ${name}.`, (name: string) => `Schönen guten Morgen, ${name}!`, (name: string) => `Morgen, ${name} – schön, dass du reinschaust.`],
-    Mittag: [(name: string) => `Hallo ${name}, schöne Mittagszeit!`, (name: string) => `Grüezi ${name} – Zeit für eine kleine Pause.`],
-    Nachmittag: [(name: string) => `Hallo ${name}, schönen Nachmittag!`, (name: string) => `Grüezi ${name}.`],
-    Abend: [(name: string) => `Guten Abend, ${name}.`, (name: string) => `Schönen Abend, ${name}!`, (name: string) => `Hallo ${name} – der Abend gehört dem Wein.`],
-    Nacht: [(name: string) => `Noch wach, ${name}?`, (name: string) => `Hallo ${name}, spät geworden heute.`],
+    morning: [(name: string) => `Guten Morgen, ${name}.`, (name: string) => `Schönen guten Morgen, ${name}!`],
+    day: [(name: string) => `Guten Tag, ${name}.`, (name: string) => `Guten Tag, ${name} – schön, dass du reinschaust.`],
+    evening: [(name: string) => `Guten Abend, ${name}.`, (name: string) => `Schönen guten Abend, ${name}!`],
+    late: [(name: string) => `Hallo, ${name}.`, (name: string) => `Hallo, ${name} – schön, dass du noch reinschaust.`],
   },
   greetingAnonymous: {
-    Morgen: ["Guten Morgen.", "Schönen guten Morgen!"],
-    Mittag: ["Hallo, schöne Mittagszeit!"],
-    Nachmittag: ["Hallo, schönen Nachmittag!"],
-    Abend: ["Guten Abend.", "Schönen Abend!"],
-    Nacht: ["Noch wach?"],
+    morning: ["Guten Morgen."],
+    day: ["Guten Tag."],
+    evening: ["Guten Abend."],
+    late: ["Hallo."],
   },
   stock: [
     (bottles: number, wines: number) => `Im Keller liegen gerade ${fl(bottles)} von ${wines === 1 ? "einem Wein" : `${wines} Weinen`}.`,

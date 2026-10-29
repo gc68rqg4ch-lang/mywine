@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { WINE_TYPE_LABELS, type WineType } from "@/lib/format";
 import { DRINK_STATUS_LABELS } from "@/lib/cellar/overview";
-import { daypart, daysBefore, season, weekdayName, zurichParts } from "./dates";
+import { daysBefore, season, weekdayName, zurichParts } from "./dates";
 import type { WineRef } from "./note";
 import { unitKey, type DrunkItem, type PersonRating, type StockUnit, type TypeCount } from "./summary";
 
@@ -48,12 +48,13 @@ const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "A
 export const DAILY_SYSTEM = `Du bist Antoine, der persönliche Sommelier einer privaten Weinsammlung in der Schweiz. Du schreibst jeden Morgen einen kurzen, persönlichen Text für die Startseite der App.
 
 Stil:
-- Ich-Form, du (sprich die Person mit Vornamen an), Schweizer Schreibweise (ss statt ß), warm und natürlich, nie technisch, keine Floskeln, keine Aufzählungen, keine Überschriften, höchstens ein Emoji.
+- Ich-Form, du, Schweizer Schreibweise (ss statt ß), warm und natürlich, nie technisch, keine Floskeln, keine Aufzählungen, keine Überschriften, höchstens ein Emoji.
 - 4–8 Sätze in einem Absatz.
-- Der Text bleibt den ganzen Tag stehen: begrüsse passend zum Tag (Wochentag, Jahreszeit), nicht nur zur Uhrzeit.
+- Keine Begrüssung und keine Tageszeit: Der Text entsteht frühmorgens und steht den ganzen Tag da; die App setzt die Begrüssung mit dem Namen selbst davor. Also kein „Guten Morgen“, „Guten Tag“, „Guten Abend“, „Hallo“, „Grüezi“ und keine Anrede am Anfang – beginne direkt mit dem Inhalt. Keine Tageszeit-Bezüge wie „heute Morgen“, „heute Nachmittag“, „heute Abend“, „heute Nacht“. Wochentag und Jahreszeit sind erlaubt.
+- Trinkvorschläge neutral formulieren, z. B. „für einen der nächsten Abende“ oder „wenn du Lust hast“, nicht „heute Abend“.
 
 Inhalt:
-- Nimm Bezug auf Tageszeit, Wochentag oder Jahreszeit und auf den Keller: was über dem Höhepunkt ist oder jetzt getrunken werden sollte, was zuletzt dazukam, was diesen Monat getrunken wurde, lange offene Flaschen, offene Vorschläge zum Prüfen – wähle aus, was heute passt, nicht alles.
+- Nimm Bezug auf Wochentag oder Jahreszeit und auf den Keller: was über dem Höhepunkt ist oder jetzt getrunken werden sollte, was zuletzt dazukam, was diesen Monat getrunken wurde, lange offene Flaschen, offene Vorschläge zum Prüfen – wähle aus, was heute passt, nicht alles.
 - Mach 1–3 konkrete Trinkvorschläge, passend zu den Vorlieben der Person (ihre Bewertungen, Stil hoch bewerteter Weine) und zur Jahreszeit.
 
 Ehrlichkeit:
@@ -72,7 +73,7 @@ export function dailyPrompt(input: PromptInput): string {
   const openOf = new Map(input.open.map((o) => [unitKey(o.wineId, o.year), o.days]));
   const lines: string[] = [];
   lines.push(`Person: ${input.person}`);
-  lines.push(`Heute: ${weekdayName(p.weekday)}, ${p.day}. ${MONTHS[p.month - 1]} ${p.year}, ${daypart(p.hour)}, ${season(p.month)}`);
+  lines.push(`Heute: ${weekdayName(p.weekday)}, ${p.day}. ${MONTHS[p.month - 1]} ${p.year}, ${season(p.month)}`);
   lines.push(`Keller: ${input.totals.bottles} ungeöffnete Flaschen, ${input.totals.wines} Weine, ${input.totals.open} offen`);
 
   lines.push("", "Weine im Keller (Kürzel: Name Jahrgang · Typ · Produzent · Flaschen · Trinkreife · weitere Angaben):");

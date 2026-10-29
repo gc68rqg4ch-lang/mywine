@@ -1,11 +1,13 @@
 // Ersatztext für Antoine auf der Startseite (rein): ohne Claude, aus kurzen Bausteinen
 // (src/lib/bot/texts.ts) und den Daten zusammengesetzt – vor dem ersten Lauf, beim API-Limit
-// oder bei einem Fehler. Jeder Satz nur, wenn die Daten ihn hergeben. Weine als Platzhalter
+// oder bei einem Fehler. Jeder Satz nur, wenn die Daten ihn hergeben. Ohne Begrüssung – die setzt
+// die App beim Anzeigen nach der Uhrzeit davor (greeting.ts). Weine als Platzhalter
 // {{W1}} … wie im Text von Claude (gleiche Anzeige mit Links). Die Varianten hängen vom Tag
 // und der Person ab: beim Neuladen bleibt der Text gleich.
 
 import { HOME_TEXTS, pick } from "@/lib/bot/texts";
-import { daypart, zurichParts } from "./dates";
+import { zurichParts } from "./dates";
+import { seededRandom } from "./random";
 import { wineLabel, type WineRef } from "./note";
 import { readiness, unitKey, type StockUnit } from "./summary";
 
@@ -21,20 +23,9 @@ export type FallbackInput = {
   pendingSuggestions: number;
 };
 
-/** Zufall aus einem Text (gleicher Tag + Person → gleiche Varianten). */
-export function seededRandom(seed: string) {
-  let h = 2166136261;
-  for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-  return () => {
-    h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909);
-    return ((h ^= h >>> 16) >>> 0) / 4294967296;
-  };
-}
-
 export function fallbackNote(input: FallbackInput): { text: string; refs: WineRef[] } {
   const parts = zurichParts(input.now);
   const random = seededRandom(`${parts.date}|${input.person ?? ""}`);
-  const part = daypart(parts.hour);
   const refs: WineRef[] = [];
   const byKey = new Map(input.units.map((u) => [unitKey(u.wineId, u.year), u]));
   const mentioned = new Set<string>();
@@ -53,8 +44,6 @@ export function fallbackNote(input: FallbackInput): { text: string; refs: WineRe
   };
 
   const sentences: string[] = [];
-  sentences.push(input.person ? pick(HOME_TEXTS.greeting[part], random)(input.person) : pick(HOME_TEXTS.greetingAnonymous[part], random));
-
   const sealed = input.units.filter((u) => u.sealed > 0);
   const bottles = sealed.reduce((n, u) => n + u.sealed, 0);
   const wines = new Set(sealed.map((u) => u.wineId)).size;
