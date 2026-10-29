@@ -2768,14 +2768,6 @@ a.doc-clip-name:hover {
   flex: 1;
   min-width: 0;
 }
-.antoine-name {
-  margin: 0 0 4px;
-  font-size: 0.85rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
 .antoine-text {
   margin: 0;
   font-size: 1.05rem;

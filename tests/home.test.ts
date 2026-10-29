@@ -344,3 +344,12 @@ test("Antoines Foto liegt unter app-assets/ und gilt nie als verwaist", async ()
   const orphans = await findOrphanFiles(db, { now: NOW });
   assert.deepEqual(orphans.map((o) => o.path), ["lost.jpg"]);
 });
+
+test("Kopf der Startseite: ohne Überschrift „ANTOINE“, Screenreader erfahren trotzdem, wer spricht", () => {
+  const src = readFileSync("src/components/home/antoine-note.tsx", "utf8");
+  assert.doesNotMatch(src, /antoine-name|>Antoine</);
+  assert.match(src, /<section className="antoine" aria-label="Antoine">/);
+  assert.match(src, /alt="Antoine"/);
+  assert.match(src, /antoine-placeholder" role="img" aria-label="Antoine"/);
+  assert.doesNotMatch(readFileSync("src/app/globals.css", "utf8"), /\.antoine-name/);
+});

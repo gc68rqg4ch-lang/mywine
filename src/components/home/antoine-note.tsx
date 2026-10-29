@@ -18,7 +18,6 @@ export function AntoineNote({ photo, segments }: { photo: string | null; segment
         </span>
       )}
       <div className="antoine-body">
-        <p className="antoine-name">Antoine</p>
         <p className="antoine-text">
           {segments.map((s, i) =>
             s.kind === "text" ? (
