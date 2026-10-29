@@ -34,7 +34,8 @@ export type PromptInput = {
   totals: { bottles: number; wines: number; open: number };
   drunkMonth: { total: number; byType: TypeCount[]; wines: DrunkItem[] };
   drunkYear: number;
-  open: { wineId: string; year: number | null; days: number | null }[];
+  /** keep: Likörwein „offen gut bis 25.11. · bald trinken“. */
+  open: { wineId: string; year: number | null; days: number | null; keep?: string | null }[];
   recent: { wineId: string | null; year: number | null; at: string; name: string | null }[];
   ratings: PersonRating[];
   tastedThisMonth: number;
@@ -54,7 +55,7 @@ Stil:
 - Trinkvorschläge neutral formulieren, z. B. „für einen der nächsten Abende“ oder „wenn du Lust hast“, nicht „heute Abend“.
 
 Inhalt:
-- Nimm Bezug auf Wochentag oder Jahreszeit und auf den Keller: was über dem Höhepunkt ist oder jetzt getrunken werden sollte, was zuletzt dazukam, was diesen Monat getrunken wurde, lange offene Flaschen, offene Vorschläge zum Prüfen – wähle aus, was heute passt, nicht alles.
+- Nimm Bezug auf Wochentag oder Jahreszeit und auf den Keller: was über dem Höhepunkt ist oder jetzt getrunken werden sollte, was zuletzt dazukam, was diesen Monat getrunken wurde, lange offene Flaschen, Likörweine, die offen bald über der Zeit sind („offen gut bis …“, „bald trinken“, „über der Zeit“), offene Vorschläge zum Prüfen – wähle aus, was heute passt, nicht alles.
 - Mach 1–3 konkrete Trinkvorschläge, passend zu den Vorlieben der Person (ihre Bewertungen, Stil hoch bewerteter Weine) und zur Jahreszeit.
 
 Ehrlichkeit:
@@ -71,6 +72,7 @@ export function dailyPrompt(input: PromptInput): string {
   const refOf = new Map(input.refs.map((r) => [unitKey(r.wine_id, r.vintage_year), r.ref]));
   const ratingOf = new Map(input.ratings.map((r) => [unitKey(r.wineId, r.year), r]));
   const openOf = new Map(input.open.map((o) => [unitKey(o.wineId, o.year), o.days]));
+  const keepOf = new Map(input.open.map((o) => [unitKey(o.wineId, o.year), o.keep ?? null]));
   const lines: string[] = [];
   lines.push(`Person: ${input.person}`);
   lines.push(`Heute: ${weekdayName(p.weekday)}, ${p.day}. ${MONTHS[p.month - 1]} ${p.year}, ${season(p.month)}`);
@@ -82,7 +84,8 @@ export function dailyPrompt(input: PromptInput): string {
     if (!u) continue;
     const bits = [typeName(u.type), u.producer, u.sealed ? `${u.sealed} Fl. ungeöffnet` : null, DRINK_STATUS_LABELS[u.status]];
     const days = openOf.get(unitKey(u.wineId, u.year));
-    if (u.open) bits.push(`offen${days != null ? ` seit ${days} Tagen` : ""}`);
+    const keep = keepOf.get(unitKey(u.wineId, u.year));
+    if (u.open) bits.push(`offen${days != null ? ` seit ${days} Tagen` : ""}${keep ? ` (${keep})` : ""}`);
     if (u.lastPurchase) bits.push(`gekauft ${u.lastPurchase}`);
     const rating = ratingOf.get(unitKey(u.wineId, u.year));
     if (rating) bits.push(`${input.person}: ${rating.rating} von 5`);

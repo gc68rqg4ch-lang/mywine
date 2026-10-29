@@ -39,6 +39,9 @@ import { SPIRIT_DETAIL_FIELDS, WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, gift
 import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { SpiritBottle } from "./spirit-bottle";
+import { KeepEdit } from "./keep-edit";
+import { KeepBadge } from "@/components/keep-badge";
+import { KEEP_SOURCE_LABELS, asKeepSource, keepStatus, keepText } from "@/lib/fortified/keep";
 import { DocumentClip } from "./documents";
 import { BatchForm, WineCardForm, type EditBatch } from "./edit-sections";
 import { NotesField } from "./notes-field";
@@ -215,6 +218,19 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const spirit = wine.type === "spirit";
   const spiritFields = toSpiritFields(wine as unknown as Record<string, unknown>);
   const spiritCategory = spirit ? categoryLabel(categoryPath(await loadSpiritCategories(supabase), spiritFields.categoryId)) : null;
+  // Likörwein: Haltbarkeit offen (vor der Migration fehlen die Spalten – dann keine).
+  const fortified = wine.type === "fortified";
+  const keepRow = wine as { open_keep_days?: number | null; open_keep_source?: string | null; open_keep_note?: string | null };
+  const keepDays = fortified ? (keepRow.open_keep_days ?? null) : null;
+  const keepSource = asKeepSource(keepRow.open_keep_source);
+  // „offen ca. 4 Wochen, Quelle: …“, „offen ≈ 4 Wochen (Schätzung nach Stil: Tawny)“, „…, von Hand“.
+  const keepLabel = keepDays
+    ? `${keepText(keepDays, keepSource)}${
+        keepSource === "estimate"
+          ? keepRow.open_keep_note ? ` (${keepRow.open_keep_note})` : ", geschätzt"
+          : keepSource === "manual" ? `, ${KEEP_SOURCE_LABELS.manual}` : keepRow.open_keep_note ? `, Quelle: ${keepRow.open_keep_note}` : ""
+      }`
+    : null;
   const emptyWine = leavesEmpty ? { encounterId: encounters[0].id, wineId: wine.id, name: wine.name, question: EMPTY_WINE_QUESTION } : null;
 
   const sealed = inVintage.filter((i) => i.status === "sealed" && i.quantity > 0);
@@ -292,6 +308,12 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                     .join(" · "),
                 }}
               />
+              {/* Likörwein: gut bis = Öffnungsdatum + Haltbarkeit (rechnet bei neuem Datum mit). */}
+              {fortified && keepStatus(o.date_opened, keepDays, today) && (
+                <p className="small">
+                  <KeepBadge status={keepStatus(o.date_opened, keepDays, today)} />
+                </p>
+              )}
             </EditUnit>
           ))}
         </section>
@@ -424,6 +446,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             <Detail key={f} label={f} value={details[f]} />
           ))}
           {!spirit && <Detail label="Laut Verkostung" value={latestReadiness} />}
+          {fortified && <Detail label="Haltbarkeit offen" value={<KeepEdit wineId={wine.id} days={keepDays} text={keepLabel} />} />}
           <Detail label="Jahrgang" value={vintage?.vintage_rating ?? inVintage.find((i) => i.vintage_rating)?.vintage_rating} />
           <Detail label="Notiz" value={vintage?.notes} />
         </dl>

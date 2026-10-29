@@ -9,6 +9,7 @@ import { noProfileText } from "@/lib/taste/profile";
 import { researchSummary } from "@/lib/research/summary";
 import { apiProblem } from "@/lib/ai/api-errors";
 import { researchDrinkWindowYears } from "@/lib/research/drink-window";
+import { researchOpenKeepJob } from "@/lib/research/open-keep";
 import type { ActionState } from "./actions";
 import { cancelRun, enqueueRun, kickWorker, resumeRun, type NewJob } from "@/lib/research/jobs";
 
@@ -66,6 +67,15 @@ export async function researchDrinkWindows(wineId: string, years: (number | null
   return outcome;
 }
 
+/** Sammellauf „Haltbarkeit offen fehlt“ (Likörwein): Quelle, sonst Schätzung nach Stil; von Hand bleibt. */
+export async function researchOpenKeepAction(wineId: string): Promise<ResearchOutcome> {
+  const session = await getSession();
+  if (!session.isMember || !UUID_RE.test(wineId)) return { status: "error", filled: [], suggested: 0, seconds: 0 };
+  const outcome = await researchOpenKeepJob(session.supabase, wineId);
+  if (outcome.filled.length) revalidatePath("/", "layout");
+  return outcome;
+}
+
 /** Jahrgang aus dem Formular: leer → undefined (Recherche wählt), „nv“ → null. */
 function formYear(formData: FormData) {
   const raw = String(formData.get("year") ?? "").trim();
@@ -112,7 +122,7 @@ export type BatchStart = { runId: string } | { unavailable: true } | { error: st
  * Hintergrund). unavailable: Migration fehlt – dann läuft der Sammellauf wie bisher in der Seite.
  */
 export async function startBatchResearch(input: {
-  mode: "research" | "window";
+  mode: "research" | "window" | "keep";
   scope: ResearchScope;
   taste: TasteMode;
   skipRecent: boolean;
@@ -126,8 +136,10 @@ export async function startBatchResearch(input: {
   const jobs: NewJob[] = input.candidates
     .filter((c) => UUID_RE.test(c.wineId))
     .slice(0, 500)
-    .map((c) =>
-      input.mode === "window"
+    .map((c): NewJob =>
+      input.mode === "keep"
+        ? { wineId: c.wineId, kind: "keep", params: {} }
+        : input.mode === "window"
         ? { wineId: c.wineId, kind: "window", params: { years: (c.windowYears ?? []).filter(validYear).slice(0, 20) }, vintageYear: (c.windowYears ?? []).find((y) => y != null) ?? null }
         : { wineId: c.wineId, kind: "research", params: { scope, taste, skipRecent: input.skipRecent !== false, ...(validYear(c.tasteYear) ? { year: c.tasteYear } : {}) } },
     );
@@ -140,6 +152,8 @@ export async function startBatchResearch(input: {
     }
     return queued;
   } catch (error) {
+    // Auftragsart „keep“ vor der Migration (Check): wie bisher in der Seite.
+    if (input.mode === "keep" && (error as { code?: string } | null)?.code === "23514") return { unavailable: true };
     console.error("research batch enqueue failed", error);
     return { error: "Der Sammellauf liess sich nicht starten." };
   }

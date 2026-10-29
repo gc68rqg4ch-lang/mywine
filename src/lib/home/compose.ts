@@ -1,5 +1,6 @@
 // Startseite (rein): aus den geladenen Daten die Teile für Kacheln, Ersatztext und Prompt.
 
+import { keepLine } from "@/lib/fortified/keep";
 import { sameZurichMonth, zurichParts } from "./dates";
 import type { FallbackInput } from "./fallback";
 import { buildRefs, plainNote, type WineRef } from "./note";
@@ -15,7 +16,8 @@ export function noteContext(data: HomeInput, person: string | null, now: Date | 
   const wineStock = data.stock.filter((s) => s.type !== "spirit");
   const units = stockUnits(wineStock, p.year);
   const totals = stockTotals(data.stock);
-  const open = openBottles(wineStock, p.date).map((o) => ({ wineId: o.wineId, year: o.year, days: o.days }));
+  // Likörweine: „offen gut bis …“ (mit „bald trinken“ bzw. „über der Zeit“).
+  const open = openBottles(wineStock, p.date).map((o) => ({ wineId: o.wineId, year: o.year, days: o.days, keep: keepLine(o.keep) }));
   const recent = recentPurchases(data.purchases, 5);
   const drunk = drunkByType(data.drunk, now);
   const monthWines = data.drunk.filter((d) => sameZurichMonth(d.drunkAt, now));

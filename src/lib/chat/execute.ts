@@ -6,6 +6,8 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import type { Proposal } from "./proposals";
 import { T } from "@/lib/bot/texts";
 import { emptySpiritBottle, setSpiritFill } from "@/lib/spirits/bottles";
+import { keepUntil, shortDate } from "@/lib/fortified/keep";
+import { keepOnOpen } from "@/lib/research/open-keep-auto";
 
 export type ExecuteResult = { ok: boolean; text: string; itemId?: string };
 
@@ -69,8 +71,9 @@ export async function executeProposal(db: AdminClient, p: Proposal): Promise<Exe
     }
     case "open": {
       // Spirituosen: kein „öffnen“ – es gibt immer eine aktuelle Flasche.
-      const { data: batch } = await db.from("inventory_items").select("wine:wines(type)").eq("id", p.itemId).maybeSingle();
-      if ((batch?.wine as { type?: string } | null)?.type === "spirit") return { ok: false, text: plain(T.spiritNoOpen) };
+      const { data: batch } = await db.from("inventory_items").select("wine_id, wine:wines(type)").eq("id", p.itemId).maybeSingle();
+      const type = (batch?.wine as { type?: string } | null)?.type;
+      if (type === "spirit") return { ok: false, text: plain(T.spiritNoOpen) };
       const { data: openId, error } = await db.rpc("open_bottle", {
         p_item_id: p.itemId,
         p_fill_level_percent: 100,
@@ -84,7 +87,9 @@ export async function executeProposal(db: AdminClient, p: Proposal): Promise<Exe
         throw error;
       }
       const item = openId ? await openItem(db, openId) : null;
-      return { ok: true, text: `Ich habe ${item ? label(item) : "die Flasche"} geöffnet.`, itemId: openId ?? undefined };
+      // Likörwein: „offen gut bis 25.11.“ (Haltbarkeit fehlt noch → Schätzung nach Stil, Recherche ersetzt sie).
+      const until = type === "fortified" && batch?.wine_id ? keepUntil(todayIso(), await keepOnOpen(db, batch.wine_id)) : null;
+      return { ok: true, text: `Ich habe ${item ? label(item) : "die Flasche"} geöffnet${until ? ` – offen gut bis ${shortDate(until)}` : ""}.`, itemId: openId ?? undefined };
     }
     case "rate": {
       const { data: persons, error } = await db.from("persons").select("id, name");

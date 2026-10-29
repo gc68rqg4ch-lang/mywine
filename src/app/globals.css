@@ -2913,3 +2913,13 @@ a.doc-clip-name:hover {
     grid-column: 1 / -1;
   }
 }
+
+/* Likörwein: Haltbarkeit offen (Weinseite) */
+.keep-edit {
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.keep-edit input.keep-days {
+  width: 6.5em;
+}

@@ -7,6 +7,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
+import { loadOpenKeep } from "@/lib/fortified/store";
 import { daysBefore, zurichParts } from "./dates";
 import type { NoteRow } from "./prompt";
 import type { WineRef } from "./note";
@@ -74,6 +75,8 @@ export async function loadHomeData(db: Db, personId: string | null, now: Date | 
     personId ? loadNotes(db, personId, p.date) : Promise.resolve(null),
   ]);
   for (const r of [stock, drunk, purchases, ratings]) if (r.error) throw r.error;
+  // Likörweine: Haltbarkeit offen („offen gut bis“).
+  const keep = await loadOpenKeep(db, (stock.data ?? []).filter((s) => s.status === "open" && s.type === "fortified").flatMap((s) => (s.wine_id ? [s.wine_id] : [])));
 
   const stockItems: StockItem[] = (stock.data ?? []).flatMap((s) =>
     s.wine_id && s.inventory_item_id && (s.status === "sealed" || s.status === "open")
@@ -91,6 +94,7 @@ export async function loadHomeData(db: Db, personId: string | null, now: Date | 
             paid: s.stock_value,
             regular: s.stock_value_regular,
             dateOpened: s.date_opened,
+            ...(s.type === "fortified" ? { keepDays: keep.get(s.wine_id)?.days ?? null } : {}),
             purchasedAt: s.purchased_at,
             drinkFrom: s.drink_from_year,
             drinkUntil: s.drink_until_year,

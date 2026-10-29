@@ -1,3 +1,4 @@
+import { KeepBadge } from "@/components/keep-badge";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -151,8 +152,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
             <p key={o.itemId} className="tile-line tile-open">
               <WineTypeIcon type={o.type} size={16} />
               <span className="tile-open-name">{wineLabel(o.name, o.year)}</span>
-              {/* Spirituosen: keine „schon lange offen“-Hinweise. */}
-              <span className="muted">{o.type === "spirit" ? "" : o.days == null ? "–" : `${o.days} T.`}</span>
+              {/* Spirituosen: keine „schon lange offen“-Hinweise; Likörweine: „gut bis“. */}
+              {o.keep ? <KeepBadge status={o.keep} compact /> : <span className="muted">{o.type === "spirit" ? "" : o.days == null ? "–" : `${o.days} T.`}</span>}
             </p>
           ))}
           {open.length === 0 && <p className="tile-line muted">Keine offen</p>}

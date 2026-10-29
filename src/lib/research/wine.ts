@@ -21,6 +21,7 @@ import type { EnrichableField } from "@/lib/ingest/schema";
 import { grapesOnlyAddPercent, sameGrapes, sameValue, sourceNote, type SuggestionField } from "./compare";
 import { loadResearchDocuments, documentsNote, type ResearchDocument } from "./documents";
 import { researchAndFillSpirit } from "./spirit";
+import { findAndStoreOpenKeep, openKeepFilled } from "./open-keep";
 import { loadShopPages, shopDocuments, shopFetchNote, shopPagesNote, type ShopPage } from "./shops";
 import { TASTED, profileKey, type DocumentRow, tasteTargets, wineGaps, type GapItem, type GapShare, type GapVintage, type GapWine, type ResearchScope, type WineGaps } from "./gaps";
 
@@ -178,6 +179,11 @@ export async function researchAndFillWine(
     const spirit = await researchAndFillSpirit(db, wine, researchPages(pages, gaps.vintages.map((v) => v.year), wine));
     filled.push(...spirit.filled);
     suggested += spirit.suggested;
+  }
+  // Likörwein: Haltbarkeit offen (fehlt bzw. nur geschätzt → Quelle suchen; von Hand bleibt).
+  if (wine.type === "fortified") {
+    const keep = await findAndStoreOpenKeep(db, wineId, { onlyIfEmpty: false });
+    if (keep.result === "set" && keep.keep) filled.push(openKeepFilled(keep.keep));
   }
   const found = wine.type === "spirit" ? null : await researchWineWeb({
     wine: {

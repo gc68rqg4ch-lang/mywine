@@ -15,6 +15,7 @@ import { chatTools } from "@/lib/chat/tools";
 import { tasteResearchSchema } from "@/lib/research/taste";
 import { DrinkWindowSchema } from "@/lib/research/drink-window";
 import { spiritResearchSchema } from "@/lib/spirits/research";
+import { OpenKeepSchema } from "@/lib/research/open-keep";
 
 // Zähler selbst: nullable und anyOf zählen, verschachtelt auch
 assert.equal(countUnionParams({ type: "object", properties: { a: { type: ["string", "null"] }, b: { anyOf: [{ type: "string" }, { type: "null" }] }, c: { type: "object", properties: { d: { type: ["number", "null"] } } } } }), 3);
@@ -29,6 +30,7 @@ const counts: [string, number][] = [
   ["Websuche Stammdaten (strict)", countUnionParams(toolInputSchema(EnrichmentSchema))],
   ["Websuche Rebsorten (strict)", countUnionParams(toolInputSchema(GrapeResearchSchema))],
   ["Websuche Trinkfenster (strict)", countUnionParams(toolInputSchema(DrinkWindowSchema))],
+  ["Websuche Haltbarkeit offen (strict)", countUnionParams(toolInputSchema(OpenKeepSchema))],
   // Geschmacksprofil: eigener Aufruf, Merkmale als enum mit „unbekannt“ – ganz ohne Unions.
   ...SAT_TYPES.map(({ type }) => [`Websuche Geschmacksprofil ${type} (strict)`, countUnionParams(toolInputSchema(tasteResearchSchema(type)))] as [string, number]),
   ["Chat-Tools gesamt", chatTools({} as never, []).reduce((s, t) => s + countUnionParams((t as { input_schema?: unknown }).input_schema), 0)],
@@ -49,6 +51,7 @@ const strictSchemas: [string, unknown][] = [
   ["Websuche Stammdaten (strict Tool)", toolInputSchema(EnrichmentSchema)],
   ["Websuche Rebsorten (strict Tool)", toolInputSchema(GrapeResearchSchema)],
   ["Websuche Trinkfenster (strict Tool)", toolInputSchema(DrinkWindowSchema)],
+  ["Websuche Haltbarkeit offen (strict Tool)", toolInputSchema(OpenKeepSchema)],
   ...SAT_TYPES.map(({ type }) => [`Websuche Geschmacksprofil ${type} (strict Tool)`, toolInputSchema(tasteResearchSchema(type))] as [string, unknown]),
   ...SAT_TYPES.map(({ type }) => [`Verkostung ${type} (strukturierte Ausgabe)`, outputFormat(extractionSchema(type))] as [string, unknown]),
   ["Foto-Erkennung (strukturierte Ausgabe)", outputFormat(RecognitionSchema)],

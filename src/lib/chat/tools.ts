@@ -17,6 +17,8 @@ import { loadSpirits } from "@/lib/spirits/load";
 import { T } from "@/lib/bot/texts";
 import { currentFills, withSpiritTags } from "@/lib/spirits/tag";
 import { WINE_TYPES, daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
+import { keepLine, keepStatus } from "@/lib/fortified/keep";
+import { loadOpenKeep } from "@/lib/fortified/store";
 import { isValidRating } from "@/lib/ratings";
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { Edit, EditPreview } from "@/lib/edit/types";
@@ -193,7 +195,7 @@ export function chatTools(
     betaZodTool({
       name: "list_open_bottles",
       description:
-        "Alle offenen Weinflaschen mit inventory_item_id, Füllstand in %, Flaschengrösse, Tagen seit dem Öffnen und Lagerort. Spirituosen sind nicht dabei (sie haben eine aktuelle Flasche – siehe search_cellar, propose_spirit_bottle).",
+        "Alle offenen Weinflaschen mit inventory_item_id, Füllstand in %, Flaschengrösse, Tagen seit dem Öffnen und Lagerort; Likörweine zusätzlich „offen gut bis“ (open_good_until, mit „bald trinken“ bzw. „über der Zeit“). Spirituosen sind nicht dabei (sie haben eine aktuelle Flasche – siehe search_cellar, propose_spirit_bottle).",
       inputSchema: z.object({}),
       run: async () => {
         const { data, error } = await db
@@ -204,6 +206,10 @@ export function chatTools(
           .or("type.is.null,type.neq.spirit")
           .order("date_opened", { ascending: true, nullsFirst: false });
         if (error) throw error;
+        // Likörweine: „offen gut bis …“ aus Öffnungsdatum + Haltbarkeit offen.
+        const keep = await loadOpenKeep(db, (data ?? []).filter((r) => r.type === "fortified" && r.wine_id).map((r) => r.wine_id!));
+        const today = todayIso();
+        const keepOf = (r: (typeof data)[number]) => (r.type === "fortified" && r.wine_id ? keepStatus(r.date_opened, keep.get(r.wine_id)?.days, today) : null);
         return json(
           (data ?? []).map((r) => ({
             inventory_item_id: r.inventory_item_id,
@@ -219,6 +225,7 @@ export function chatTools(
                 fill: r.fill_level_percent,
                 days: daysSince(r.date_opened),
                 room: r.storage_room,
+                keep: keepLine(keepOf(r)),
               },
               `${r.name ?? ""} ${r.vintage_year ?? "o. J."}`,
             ),
@@ -228,6 +235,7 @@ export function chatTools(
             bottle_size_ml: r.bottle_size_ml ?? (r.type === "spirit" ? 700 : 750),
             fill_level_percent: r.fill_level_percent,
             days_open: daysSince(r.date_opened),
+            ...(keepOf(r) ? { open_good_until: keepOf(r)!.until, open_good_until_text: keepLine(keepOf(r)) } : {}),
             room: place(r),
           })),
         );

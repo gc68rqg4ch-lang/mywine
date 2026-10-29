@@ -10,6 +10,8 @@ import { NOTHING } from "@/lib/edit/helpers";
 import { cleanNotes } from "@/lib/edit/notes";
 import { todayIso } from "@/lib/format";
 import { emptySpiritBottle, setSpiritFill } from "@/lib/spirits/bottles";
+import { saveManualKeep } from "@/lib/fortified/store";
+import { keepOnOpen } from "@/lib/research/open-keep-auto";
 
 export type ActionState = { error?: string; ok?: string; link?: { href: string; label: string } } | undefined;
 
@@ -57,9 +59,11 @@ export async function openBottle(_prev: ActionState, formData: FormData): Promis
 
   const { data: opened } = await session.supabase
     .from("inventory_items")
-    .select("wine_id, vintage_year")
+    .select("wine_id, vintage_year, wine:wines(type)")
     .eq("id", openId)
     .single();
+  // Likörwein: Haltbarkeit offen sicherstellen („offen gut bis“).
+  if (opened && (opened.wine as { type?: string } | null)?.type === "fortified") await keepOnOpen(session.supabase, opened.wine_id);
 
   revalidatePath("/", "layout");
   redirect(opened ? wineHref(opened.wine_id, opened.vintage_year, { geoeffnet: "1" }) : "/offen");
@@ -145,6 +149,25 @@ export async function saveSpiritFill(wineId: string, percent: number): Promise<{
   const result = await setSpiritFill(session.supabase, wineId, percent);
   if (!result.ok) return result;
   return { ok: true, fill: result.fill };
+}
+
+/**
+ * Likörwein: Haltbarkeit offen von Hand (Weinseite) – in Tagen (1–3650), leer = zurücksetzen.
+ * Gilt danach als „von Hand“ und wird nie automatisch überschrieben.
+ */
+export async function saveOpenKeepAction(wineId: string, days: number | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await memberSession();
+  if (!session) return { ok: false, error: "Kein Zugriff." };
+  if (!UUID_RE.test(wineId)) return { ok: false, error: "Ungültiger Wein." };
+  if (days != null && (!Number.isInteger(days) || days < 1 || days > 3650)) return { ok: false, error: "Bitte 1 bis 3650 Tage." };
+  try {
+    if (!(await saveManualKeep(session.supabase, wineId, days))) return { ok: false, error: "Nur bei Likörweinen – nichts geändert." };
+  } catch (error) {
+    console.error("save open keep failed", wineId, error);
+    return { ok: false, error: "Das hat leider nicht geklappt – ich habe nichts geändert." };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
 }
 
 /** Spirituose: aktuelle Flasche leer – getrunken, die nächste volle wird aktuell (100 %). */

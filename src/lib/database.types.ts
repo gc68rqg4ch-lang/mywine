@@ -1491,6 +1491,9 @@ export type Database = {
           id: string
           name: string
           notes: string | null
+          open_keep_days: number | null
+          open_keep_note: string | null
+          open_keep_source: string | null
           producer: string | null
           region: string | null
           researched_at: string | null
@@ -1511,6 +1514,9 @@ export type Database = {
           id?: string
           name: string
           notes?: string | null
+          open_keep_days?: number | null
+          open_keep_note?: string | null
+          open_keep_source?: string | null
           producer?: string | null
           region?: string | null
           researched_at?: string | null
@@ -1531,6 +1537,9 @@ export type Database = {
           id?: string
           name?: string
           notes?: string | null
+          open_keep_days?: number | null
+          open_keep_note?: string | null
+          open_keep_source?: string | null
           producer?: string | null
           region?: string | null
           researched_at?: string | null

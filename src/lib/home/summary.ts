@@ -3,6 +3,7 @@
 
 import { drinkStatus, type DrinkStatus } from "@/lib/cellar/overview";
 import type { WineType } from "@/lib/format";
+import { keepStatus } from "@/lib/fortified/keep";
 import { sameZurichMonth, sameZurichYear, zurichDay, zurichParts } from "./dates";
 
 /** Flasche bzw. Charge im Bestand (ungeöffnet oder offen) – aus cellar_overview. */
@@ -21,6 +22,8 @@ export type StockItem = {
   purchasedAt: string | null;
   drinkFrom: number | null;
   drinkUntil: number | null;
+  /** Likörwein: Haltbarkeit offen in Tagen (gut bis = Öffnungsdatum + Tage). */
+  keepDays?: number | null;
   /** Lagerort (für den gewählten Lagerort in den Kacheln). */
   house?: string | null;
   room?: string | null;
@@ -145,11 +148,15 @@ export function readiness(units: StockUnit[]) {
   return { overdue, now, overdueBottles: bottles(overdue), nowBottles: bottles(now) };
 }
 
-/** Offene Flaschen, älteste zuerst (Tage offen). */
+/** Offene Flaschen, älteste zuerst (Tage offen; Likörwein: „offen gut bis“). */
 export function openBottles(stock: StockItem[], today: string) {
   return stock
     .filter((s) => s.status === "open")
-    .map((s) => ({ ...s, days: s.dateOpened ? Math.max(0, Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${zurichDay(s.dateOpened)}T12:00:00Z`)) / 86_400_000)) : null }))
+    .map((s) => ({
+      ...s,
+      days: s.dateOpened ? Math.max(0, Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${zurichDay(s.dateOpened)}T12:00:00Z`)) / 86_400_000)) : null,
+      keep: s.type === "fortified" ? keepStatus(s.dateOpened ? zurichDay(s.dateOpened) : null, s.keepDays, today) : null,
+    }))
     .sort((a, b) => (a.dateOpened ?? "9999").localeCompare(b.dateOpened ?? "9999"));
 }
 

@@ -14,7 +14,9 @@ import {
   formatVintages,
   type DrinkStatus,
 } from "@/lib/cellar/overview";
-import { asWineType, daysSince, formatBottleSize, formatDate, wineName, zurichDate } from "@/lib/format";
+import { asWineType, daysSince, formatBottleSize, formatDate, todayIso, wineName, zurichDate } from "@/lib/format";
+import { keepLine, keepStatus } from "@/lib/fortified/keep";
+import { loadOpenKeep } from "@/lib/fortified/store";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { answerCallback, editMessage, escapeHtml, sendMessage, tg } from "@/lib/telegram/api";
 import { appBaseUrl } from "@/lib/telegram/config";
@@ -98,8 +100,11 @@ async function loadOpenBottles(db: AdminClient): Promise<OpenBottleRow[]> {
     .order("date_opened", { ascending: true, nullsFirst: false });
   if (error) throw error;
   // Spirituosen haben kein „offen“ (eine aktuelle Flasche im Bestand) – nur Wein.
-  return (data ?? [])
-    .filter((r) => r.inventory_item_id && r.wine_id && r.type !== "spirit")
+  const rows = (data ?? []).filter((r) => r.inventory_item_id && r.wine_id && r.type !== "spirit");
+  // Likörweine: „offen gut bis …“.
+  const keep = await loadOpenKeep(db, rows.filter((r) => r.type === "fortified").map((r) => r.wine_id!));
+  const today = todayIso();
+  return rows
     .map((r) => ({
       itemId: r.inventory_item_id!,
       wineId: r.wine_id!,
@@ -110,6 +115,7 @@ async function loadOpenBottles(db: AdminClient): Promise<OpenBottleRow[]> {
       fill: r.fill_level_percent,
       days: daysSince(r.date_opened),
       room: r.storage_room,
+      keep: r.type === "fortified" ? keepLine(keepStatus(r.date_opened, keep.get(r.wine_id!)?.days, today)) : null,
     }));
 }
 
@@ -481,7 +487,8 @@ async function itemScreen(db: AdminClient, itemId: string, back: ListRef, status
   }
   const ratings = await ratingsLine(db, item.wine_id, item.vintage_year);
   const size = item.bottle_size_ml && item.bottle_size_ml !== 750 ? formatBottleSize(item.bottle_size_ml) : null;
-  const facts = [item.fill_level_percent != null ? `${item.fill_level_percent} %` : null, daysLabel(daysSince(item.date_opened)), size]
+  const keep = item.type === "fortified" ? keepLine(keepStatus(item.date_opened, (await loadOpenKeep(db, [item.wine_id])).get(item.wine_id)?.days, todayIso())) : null;
+  const facts = [item.fill_level_percent != null ? `${item.fill_level_percent} %` : null, daysLabel(daysSince(item.date_opened)), size, keep]
     .filter(Boolean)
     .join(" · ");
   const subject: Subject = { kind: "item", itemId };

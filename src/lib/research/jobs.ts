@@ -15,13 +15,14 @@ import { apiProblem } from "@/lib/ai/api-errors";
 import { later } from "@/lib/later";
 import { appBaseUrl } from "@/lib/telegram/config";
 import { researchDrinkWindowYears } from "./drink-window";
+import { researchOpenKeepJob } from "./open-keep";
 import type { ResearchScope } from "./gaps";
 import { limitText, runDoneText, singleDoneText, type JobResult, type RunCounts } from "./job-text";
 import { researchAndFillWine, type ResearchOutcome, type TasteMode } from "./wine";
 
 type Db = SupabaseClient<Database>;
 export type JobRow = Database["public"]["Tables"]["research_jobs"]["Row"];
-export type JobKind = "page" | "research" | "window";
+export type JobKind = "page" | "research" | "window" | "keep";
 
 /** Angaben für die Recherche – wie bisher an researchAndFillWine bzw. das Trinkfenster übergeben. */
 export type JobParams = {
@@ -157,6 +158,7 @@ export async function runJob(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "par
   const p = (job.params ?? {}) as JobParams;
   try {
     if (job.kind === "window") return await researchDrinkWindowYears(db, job.wine_id, p.years ?? []);
+    if (job.kind === "keep") return await researchOpenKeepJob(db, job.wine_id);
     const year = "year" in p ? { year: p.year ?? null } : {};
     if (job.kind === "page") return await researchAndFillWine(db, job.wine_id, "all", { taste: "always", ...year });
     return await researchAndFillWine(db, job.wine_id, p.scope === "all" ? "all" : "cellar", { taste: p.taste ?? "missing", ...year, skipRecent: p.skipRecent !== false });

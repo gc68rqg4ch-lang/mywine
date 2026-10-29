@@ -8,7 +8,7 @@ import { runBatch } from "@/lib/research/batch";
 import type { ResearchScope } from "@/lib/research/gaps";
 import type { ResearchOutcome, TasteMode } from "@/lib/research/wine";
 import { noProfileText } from "@/lib/taste/profile";
-import { researchDrinkWindows, researchWine, startBatchResearch } from "../research-actions";
+import { researchDrinkWindows, researchOpenKeepAction, researchWine, startBatchResearch } from "../research-actions";
 
 export type BatchCandidate = {
   wineId: string;
@@ -60,8 +60,8 @@ export function BatchResearch({
   skipRecent?: boolean;
   /** In den letzten 12 Monaten recherchiert – nicht in candidates. */
   skipped?: number;
-  /** „window“: nur das Trinkfenster der fehlenden Jahrgänge (Option „Trinkfenster fehlt“). */
-  mode?: "research" | "window";
+  /** „window“: nur das Trinkfenster der fehlenden Jahrgänge (Option „Trinkfenster fehlt“); „keep“: nur die Haltbarkeit offen (Likörweine). */
+  mode?: "research" | "window" | "keep";
 }) {
   const router = useRouter();
   // Liste beim Laden festhalten: nach dem Lauf lädt die Seite neu, frisch geprüfte Weine
@@ -107,7 +107,9 @@ export function BatchResearch({
     setPhase("running");
     // Nacheinander; API-Limit: sofort aufhören; andere Fehler: nach 3 in Folge.
     const research = (c: BatchCandidate) =>
-      mode === "window" ? researchDrinkWindows(c.wineId, c.windowYears ?? []) : researchWine(c.wineId, scope, taste, c.tasteYear, skipRecent);
+      mode === "keep"
+        ? researchOpenKeepAction(c.wineId)
+        : mode === "window" ? researchDrinkWindows(c.wineId, c.windowYears ?? []) : researchWine(c.wineId, scope, taste, c.tasteYear, skipRecent);
     const result = await runBatch(todo, research, {
       stop: () => stop.current,
       onStart: (c) => setRows((r) => ({ ...r, [c.wineId]: { state: "running" } })),
@@ -123,7 +125,9 @@ export function BatchResearch({
       <p className="empty">
         {skipped
           ? `Nichts zu tun – ${skipped === 1 ? "1 Wein wurde" : `${skipped} Weine wurden`} in den letzten 12 Monaten schon recherchiert.`
-          : mode === "window"
+          : mode === "keep"
+            ? "Alle Likörweine im Bestand haben eine Haltbarkeit offen. 🎉"
+            : mode === "window"
             ? "Alle Jahrgänge im Bestand haben ein Trinkfenster. 🎉"
             : taste === "only"
             ? "Alle Weine haben ein Geschmacksprofil. 🎉"
@@ -263,7 +267,9 @@ export function BatchResearch({
                           .filter(Boolean)
                           .join(" · ")
                       : row.status === "nothing"
-                        ? mode === "window"
+                        ? mode === "keep"
+                          ? "Keine Haltbarkeit gefunden"
+                          : mode === "window"
                           ? "Kein Trinkfenster gefunden"
                           : taste === "only" || row.taste === "none"
                           ? noProfileText(row.tasteYear ?? null)

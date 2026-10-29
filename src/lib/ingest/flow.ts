@@ -55,6 +55,7 @@ import { enrichFromWeb, parseTextEntry, type RecognitionResult } from "./recogni
 import { mainOptions, spiritStart, storeSpiritFields } from "./spirit-flow";
 import { ensureSpiritCurrent } from "@/lib/spirits/bottles";
 import { scheduleSpiritResearch } from "@/lib/research/spirit-auto";
+import { scheduleOpenKeep } from "@/lib/research/open-keep-auto";
 import type { SpiritCategory } from "@/lib/spirits/categories";
 import { needsVintage, type IngestState, type IngestStep, type WineProposal } from "./schema";
 import { completeWineName } from "./wine-names";
@@ -531,6 +532,8 @@ export async function saveJob(job: IngestJob, chatId: number) {
     // Spirituosen: kein Trinkfenster, dafür die fehlenden Angaben recherchieren.
     if (state.proposal.type === "spirit") scheduleSpiritResearch(wineId);
     else scheduleDrinkWindow(wineId, state.proposal.vintage_year ?? null);
+    // Likörwein: wie lange eine offene Flasche gut bleibt.
+    if (state.proposal.type === "fortified") scheduleOpenKeep(wineId);
   } catch (error) {
     await failJob(db, job.id, chatId, "Das Speichern ist mir nicht gelungen", error, state.source === "text");
   }

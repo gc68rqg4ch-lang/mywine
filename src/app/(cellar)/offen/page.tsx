@@ -11,7 +11,10 @@ import { FillGauge } from "@/components/fill-gauge";
 import { getMemberSession } from "@/lib/auth";
 import { BASE_GROUPINGS, currentYear, drinkBadges, originLabel } from "@/lib/cellar/overview";
 import { openTotals, toOpenEntry } from "@/lib/cellar/lists";
-import { asWineType, formatBottleSize, formatDaysSince } from "@/lib/format";
+import { asWineType, formatBottleSize, formatDaysSince, todayIso } from "@/lib/format";
+import { KeepBadge } from "@/components/keep-badge";
+import { keepStatus } from "@/lib/fortified/keep";
+import { loadOpenKeep } from "@/lib/fortified/store";
 import { loadLabelPhotos } from "@/lib/media/store";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { loadGrapeNames } from "@/lib/grapes/store";
@@ -55,13 +58,16 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
   const entries = rows.map((r) => toOpenEntry(r, grapes.get(r.wine_id) ?? []));
   const thisYear = currentYear();
   // Notizen für die Suche (im Browser) gleich mit.
-  const [ratings, photo, windows, notes, spirits] = await Promise.all([
+  const [ratings, photo, windows, notes, spirits, keep] = await Promise.all([
     loadRatingsByWine(supabase, entries.map((e) => e.wine_id)),
     loadLabelPhotos(supabase, entries.map((e) => e.wine_id)),
     loadDrinkWindows(supabase, entries.map((e) => e.wine_id)),
     loadWineNotes(supabase, entries.map((e) => e.wine_id)),
     loadSpirits(supabase, entries.filter((e) => e.type === "spirit").map((e) => e.wine_id)),
+    // Likörweine: Haltbarkeit offen („offen gut bis“).
+    loadOpenKeep(supabase, entries.filter((e) => e.type === "fortified").map((e) => e.wine_id)),
   ]);
+  const today = todayIso();
   // Herkunft der Trinkfenster (Schätzungen mit „≈“).
   const withRatings = withSpiritTags(withDrinkWindows(entries, windows, (e) => e.wine_id), (e) => e.wine_id, spirits).map((e) => ({
     ...e,
@@ -132,6 +138,7 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
               wine.bottleSizeMl && wine.bottleSizeMl !== (wine.type === "spirit" ? 700 : 750) ? formatBottleSize(wine.bottleSizeMl) : null,
               originLabel(wine),
             ]}
+            extra={wine.type === "fortified" ? <KeepBadge status={keepStatus(wine.dateOpened, keep.get(wine.wine_id)?.days, today)} /> : undefined}
             drink={drinkBadges(wine, wine.vintages, thisYear)}
             aside={<FillGauge percent={wine.fill} />}
             photo={photo(wine.wine_id, wine.vintages[0])}

@@ -392,6 +392,8 @@ export type OpenBottleRow = {
   fill: number | null;
   days: number | null;
   room: string | null;
+  /** Likörwein: „offen gut bis 25.11.“ (ggf. mit „bald trinken“ / „über der Zeit“). */
+  keep?: string | null;
 };
 
 /**
@@ -430,6 +432,7 @@ export function openBottleLine(row: OpenBottleRow, name: string) {
     row.fill != null ? `${row.fill} %` : null,
     // Spirituosen: keine „seit … T.“ (halten offen lange).
     row.type === "spirit" ? null : daysLabel(row.days),
+    row.keep ?? null,
   ]
     .filter(Boolean)
     .join(" · ");

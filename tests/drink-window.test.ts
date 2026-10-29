@@ -204,7 +204,7 @@ test("Sammellauf „Trinkfenster fehlt“: nur Jahrgänge mit Flaschen (ungeöff
   const g = wineGaps(data.wines[0], data, "cellar")!;
   assert.deepEqual(windowTargets(g, data), [2019, 2016, null], "2018 hat schon „ab“, 2010 ist getrunken");
   const page = readFileSync("src/app/(cellar)/recherche/page.tsx", "utf8");
-  assert.ok(page.includes('params.fenster === "1"') && page.includes('mode={windowMode ? "window" : "research"}'));
+  assert.ok(page.includes('params.fenster === "1"') && page.includes('mode={keepMode ? "keep" : windowMode ? "window" : "research"}'));
 });
 
 test("API-Limit → nichts gesetzt (kein Trinkfenster, keine Herkunft), Fehler wird gemeldet", async () => {
