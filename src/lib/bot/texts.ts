@@ -121,6 +121,9 @@ export const T = {
   apiLimitText: (until: string | null, random?: () => number) =>
     `${pick(["Mein Kontingent für heute ist aufgebraucht – ich kann den Wein gerade nicht nachschlagen.", "Oje, mein Kontingent ist aufgebraucht – nachschlagen kann ich gerade nicht."], random)} Versuch es später nochmals${until ? ` (ab ${until} geht es wieder)` : ""} – ich habe nichts gespeichert.`,
   thinkingResearch: "🔎 Ich recherchiere den Wein und melde mich gleich.",
+  /** Login-Code für die App (nicht im Gesprächsgedächtnis). */
+  loginCode: (code: string, random?: () => number) =>
+    `${pick(["🔑 Dein Code für die Anmeldung in der App:", "🔑 Hier ist dein Code für MyWine:", "🔑 Damit kommst du in die App:"], random)} <b><code>${e(code)}</code></b>\nEr gilt 10 Minuten. Hast du das nicht angefordert? Dann ignoriere die Nachricht.`,
   /** Recherche im Hintergrund: Sammellauf fertig (zusammen mit den Zahlen aus job-text.ts). */
   researchRunDone: (counts: string, extra: string | null, random?: () => number) =>
     `🔎 Recherche fertig: ${counts}.${extra ? ` (${extra})` : ""} ${pick(["Die Vorschläge findest du in der App unter „Recherche“.", "Schau dir die Vorschläge in Ruhe in der App an.", "Was abweicht, liegt in der App unter „Recherche“ für dich bereit."], random)}`,

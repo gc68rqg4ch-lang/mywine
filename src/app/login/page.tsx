@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { LoginForm } from "./login-form";
 import { ExpiredLinkNotice } from "@/components/auth-url-cleanup";
 import { EXPIRED_LINK_TEXT } from "@/lib/auth-url";
+import { loginCodeSecret } from "@/lib/login/code";
 
 export const metadata: Metadata = { title: "Anmelden" };
 
@@ -15,12 +16,17 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   if (data?.claims?.sub) redirect(next);
+  // Ohne LOGIN_CODE_SECRET kein „Code per Telegram“ – der Mail-Link geht weiter.
+  const codeEnabled = loginCodeSecret() != null;
 
   return (
     <main className="login">
       <div className="card login-card">
         <h1 className="brand">MyWine</h1>
-        <p className="muted">Deine persönliche Weinsammlung. Melde dich per Magic Link an.</p>
+        <p className="muted">
+          Deine persönliche Weinsammlung.{" "}
+          {codeEnabled ? "Melde dich mit einem Code von Antoine (Telegram) oder per Link an." : "Melde dich per Magic Link an."}
+        </p>
         {params.fehler ? (
           <p className="notice notice-error" role="alert">
             {EXPIRED_LINK_TEXT}
@@ -29,7 +35,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           // Fehler im Hash (#error=…) sieht nur der Browser.
           <ExpiredLinkNotice />
         )}
-        <LoginForm next={next} />
+        <LoginForm next={next} codeEnabled={codeEnabled} />
       </div>
     </main>
   );

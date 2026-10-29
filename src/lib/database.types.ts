@@ -363,6 +363,39 @@ export type Database = {
           },
         ]
       }
+      login_codes: {
+        Row: {
+          attempts: number
+          code_hash: string
+          created_at: string
+          expires_at: string
+          id: string
+          invalidated_at: string | null
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          attempts?: number
+          code_hash: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          invalidated_at?: string | null
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          attempts?: number
+          code_hash?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          invalidated_at?: string | null
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       open_bottle_details: {
         Row: {
           created_at: string
@@ -1647,6 +1680,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      cleanup_login_codes: { Args: never; Returns: number }
       cleanup_research_jobs: { Args: never; Returns: number }
       delete_bottles: {
         Args: { p_item_id: string; p_quantity?: number }

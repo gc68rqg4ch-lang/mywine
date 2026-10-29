@@ -2702,3 +2702,11 @@ a.doc-clip-name:hover {
   font: 11px/1.35 ui-monospace, Menlo, monospace;
   pointer-events: none;
 }
+
+/* Login: 6-stelliger Code von Antoine. */
+.login-code {
+  font-size: 1.4rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
