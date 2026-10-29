@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useId, useState } from "react";
+import { useActionState, useId, useState, type ReactNode } from "react";
 import { FillGauge } from "@/components/fill-gauge";
 import { markDrunk, openBottle, updateFillLevel, type ActionState } from "../../actions";
 import { PriceLine, type PriceInfo } from "./price-card";
@@ -112,13 +112,12 @@ export function OpenBottleForm({ charges, today }: { charges: Charge[]; today: s
 export type OpenBottleInfo = {
   itemId: string;
   fillLevel: number | null;
-  price: PriceInfo;
   /** z. B. „Offen seit 12. Okt. 2026 (seit 15 Tagen) · Wohnzimmer“ */
   label: string;
 };
 
 /** Eine offene Flasche: Füllstand ändern oder als ausgetrunken markieren. */
-export function OpenBottleControls({ bottle }: { bottle: OpenBottleInfo }) {
+export function OpenBottleControls({ bottle, price }: { bottle: OpenBottleInfo; /** Preis, Händler, Geschenk (vom Server). */ price?: ReactNode }) {
   const [fillState, fillAction, fillPending] = useActionState(updateFillLevel, undefined);
   const [drunkState, drunkAction, drunkPending] = useActionState(markDrunk, undefined);
   const [fill, setFill] = useState(bottle.fillLevel ?? 100);
@@ -130,7 +129,7 @@ export function OpenBottleControls({ bottle }: { bottle: OpenBottleInfo }) {
         <FillGauge percent={bottle.fillLevel} />
         <div className="stack-sm">
           <span className="muted small">{bottle.label}</span>
-          <PriceLine {...bottle.price} />
+          {price}
         </div>
       </div>
       <form action={fillAction} className="stack-sm">

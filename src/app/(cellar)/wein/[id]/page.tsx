@@ -35,7 +35,7 @@ import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { EditUnit, EditUnits } from "@/components/edit-unit";
-import { SPIRIT_DETAIL_FIELDS, WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, giftLabel, grapeLine, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
+import { SPIRIT_DETAIL_FIELDS, WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, grapeLine, priceDetails, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
 import { botChatUrl } from "@/lib/telegram/bot-link";
 import { OpenBottleControls, OpenBottleForm, type Charge } from "./bottle-actions";
 import { SpiritBottle, SpiritOpen } from "./spirit-bottle";
@@ -175,9 +175,20 @@ function Detail({ label, value }: { label: string; value: ReactNode }) {
 }
 
 /** „🎁 Geschenk von Anna“ bzw. „🎁 Geschenk“ unter der Preiszeile einer Charge. */
-function GiftLine({ item }: { item: { is_gift: boolean | null; gift_from: string | null } }) {
-  const label = giftLabel(item.is_gift, item.gift_from);
-  return label ? <p className="muted small gift-line">🎁 {label}</p> : null;
+/**
+ * Preis einer Flasche bzw. Charge – gleich bei ungeöffneten, offenen und getrunkenen: bezahlt ·
+ * normal, Händler, Geschenk von …, „Preis recherchiert: …“. Geändert wird über das ✏️ der Einheit.
+ */
+function ItemPrice({ item }: { item: PriceInfo & { vendor_name: string | null; is_gift: boolean | null; gift_from: string | null; price_hint: string | null } }) {
+  const { vendor, gift, hint } = priceDetails(item);
+  return (
+    <div className="item-price stack-sm">
+      <PriceLine itemId={item.itemId} purchasePrice={item.purchasePrice} regularPrice={item.regularPrice} currency={item.currency} />
+      {vendor && <p className="muted small">{vendor}</p>}
+      {hint && <p className="muted small">{hint}</p>}
+      {gift && <p className="muted small gift-line">🎁 {gift}</p>}
+    </div>
+  );
 }
 
 const sizeSuffix = (ml: number | null) => (ml && ml !== 750 ? ` · ${formatBottleSize(ml)}` : "");
@@ -255,6 +266,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     regularPrice: i.regular_price,
     currency: i.currency,
   });
+  const itemPrice = (i: (typeof inVintage)[number]) => <ItemPrice item={{ ...priceOf(i), vendor_name: i.vendor_name, is_gift: i.is_gift, gift_from: i.gift_from, price_hint: i.price_hint }} />;
   const charges: Charge[] = sealed.map((i) => ({
     itemId: i.inventory_item_id,
     label: `${place(i)} · ${i.quantity} Fl.${sizeSuffix(i.bottle_size_ml)}`,
@@ -292,6 +304,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
               fill={o.fill_level_percent}
               openedOn={[o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)}` : null, place(o)].filter(Boolean).join(" · ") || null}
               keep={fortified && keepStatus(o.date_opened, keepDays, today) ? <KeepBadge status={keepStatus(o.date_opened, keepDays, today)} /> : undefined}
+              price={itemPrice(o)}
             />
           </EditUnit>
         ))}
@@ -317,16 +330,15 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 bottle={{
                   itemId: o.inventory_item_id,
                   fillLevel: o.fill_level_percent,
-                  price: priceOf(o),
                   label: [
                     o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)}${spirit ? "" : ` (${formatDaysSince(o.date_opened)})`}` : "Offen",
                     place(o),
                     o.bottle_size_ml && o.bottle_size_ml !== 750 ? formatBottleSize(o.bottle_size_ml) : null,
-                    giftLabel(o.is_gift, o.gift_from),
                   ]
                     .filter(Boolean)
                     .join(" · "),
                 }}
+                price={itemPrice(o)}
               />
               {/* Likörwein: gut bis = Öffnungsdatum + Haltbarkeit (rechnet bei neuem Datum mit). */}
               {fortified && keepStatus(o.date_opened, keepDays, today) && (
@@ -351,9 +363,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 title={<strong>{bottleTitle(b)}</strong>}
                 form={batchForm(b)}
               >
-                <PriceLine {...priceOf(b)} />
-                {b.price_hint && <p className="muted small">{b.price_hint}</p>}
-                <GiftLine item={b} />
+                {itemPrice(b)}
               </EditUnit>
             ))}
           </ul>
@@ -385,9 +395,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 }
                 form={batchForm(d)}
               >
-                <PriceLine {...priceOf(d)} />
-                {d.price_hint && <p className="muted small">{d.price_hint}</p>}
-                <GiftLine item={d} />
+                {itemPrice(d)}
               </EditUnit>
             ))}
           </ul>

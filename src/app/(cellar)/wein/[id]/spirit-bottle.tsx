@@ -16,6 +16,7 @@ export function SpiritBottle({
   fill,
   openedOn,
   keep,
+  price,
 }: {
   wineId: string;
   itemId: string;
@@ -23,6 +24,8 @@ export function SpiritBottle({
   /** „Geöffnet am 12. Aug. 2026 · Keller“ */
   openedOn: string | null;
   keep?: ReactNode;
+  /** Preis, Händler, Geschenk (vom Server) – wie bei „Im Bestand“. */
+  price?: ReactNode;
 }) {
   const router = useRouter();
   const start = Math.max(10, Math.round((fill ?? 100) / 10) * 10);
@@ -74,6 +77,7 @@ export function SpiritBottle({
         {openedOn && <span className="muted small">{openedOn}</span>}
       </div>
       {keep && <p className="small">{keep}</p>}
+      {price}
       <label className="field">
         <span>
           Füllstand: <strong>{value} %</strong>

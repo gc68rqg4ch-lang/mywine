@@ -88,6 +88,20 @@ export function encounterRows<T extends Parameters<typeof encounterLine>[0] & { 
 
 export const BUY_MARK = "🛒\u00a0kaufen";
 
+/**
+ * Preisangaben einer Flasche bzw. Charge – gleich für ungeöffnete, offene und getrunkene: Händler
+ * („bei Mövenpick“, nicht bei Geschenken), Geschenk („Geschenk von Anna“) und der Hinweis „Preis
+ * recherchiert: …“. Fehlendes fällt weg.
+ */
+export function priceDetails(item: { vendor_name?: string | null; is_gift?: boolean | null; gift_from?: string | null; price_hint?: string | null }) {
+  const vendor = item.vendor_name?.trim();
+  return {
+    vendor: vendor && !item.is_gift ? `bei ${vendor}` : null,
+    gift: giftLabel(item.is_gift, item.gift_from),
+    hint: item.price_hint ?? null,
+  };
+}
+
 /** Charge: „Geschenk von Anna“, ohne Name „Geschenk“, sonst nichts. */
 export function giftLabel(isGift: boolean | null | undefined, giftFrom: string | null | undefined) {
   if (!isGift) return null;
