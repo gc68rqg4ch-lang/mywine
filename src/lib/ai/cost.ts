@@ -5,7 +5,7 @@
 // Input (5-Minuten-Cache), Cache lesen laut Liste. Websuche: 10 USD pro 1000 Suchen; Web-Abruf
 // (web_fetch) kostet nur die Tokens. Haiku 5.5: über 100 000 Input-Tokens gilt der höhere Satz.
 
-export type ModelPrice = { input: number; output: number; cacheRead: number; cacheWrite: number; long?: { above: number; input: number; output: number } };
+export type ModelPrice = { input: number; output: number; cacheRead: number; cacheWrite: number; long?: { above: number; input: number; output: number }; /** USD je Websuche (Standard WEB_SEARCH_USD) */ webSearch?: number };
 
 export const MODEL_PRICES: Record<string, ModelPrice> = {
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, long: { above: 100_000, input: 0.5, output: 2.5 } },
@@ -14,6 +14,8 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
   "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  // SerpApi (Google Shopping) im Gratis-Plan: Abfragen werden gezählt (web_searches), kosten nichts.
+  serpapi: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearch: 0 },
 };
 /** Unbekanntes Modell (z. B. eine Ausweichstufe): vorsichtig wie Opus 5.5 rechnen. */
 export const FALLBACK_PRICE = MODEL_PRICES["claude-opus-5-5"];
@@ -73,7 +75,7 @@ export function costUsd(model: string, usage: ApiUsage | UsageCounts | null | un
   const p = priceOf(model);
   const prompt = u.input + u.cacheRead + u.cacheWrite;
   const rates = p.long && prompt > p.long.above ? { ...p, input: p.long.input, output: p.long.output } : p;
-  const usd = (u.input * rates.input + u.output * rates.output + u.cacheRead * p.cacheRead + u.cacheWrite * p.cacheWrite) / 1_000_000 + u.webSearches * WEB_SEARCH_USD;
+  const usd = (u.input * rates.input + u.output * rates.output + u.cacheRead * p.cacheRead + u.cacheWrite * p.cacheWrite) / 1_000_000 + u.webSearches * (p.webSearch ?? WEB_SEARCH_USD);
   return Math.round(usd * 1_000_000) / 1_000_000;
 }
 

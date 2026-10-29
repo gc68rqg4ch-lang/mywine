@@ -2,9 +2,10 @@ import "server-only";
 
 // Preis beim Einbuchen suchen (🤷 (Preis suchen) bei Antoine): Preis pro Flasche in CHF bei Schweizer
 // Händlern – genau dieser Wein bzw. diese Spirituose, gleicher Jahrgang, gleiche Flaschengrösse.
-// Ablauf: direkte Suchen in Schweizer Shops (parallel, DIRECT_SHOPS) → Websuche mit Standort Schweiz
-// und festen Suchbegriffen (Marke + Name, price-search.ts) → eigene Prüfung der Produktseiten aus
-// allen Suchergebnissen, auch ohne Zusage des Modells. Zeigt ein Shop Aktions- und Normalpreis, gilt
+// Ablauf: Google Shopping Schweiz über SerpApi (serpapi.ts) und ein Haiku-Abgleich je Kandidat
+// (price-judge.ts), direkte Shop-Suchen nur als Ergänzung ohne yes-Treffer. Ohne Schlüssel, ohne
+// Kontingent oder bei Fehler die bisherige Suche: direkte Shops (DIRECT_SHOPS) → Websuche mit
+// Standort Schweiz und festen Suchbegriffen (price-search.ts) → eigene Prüfung der Produktseiten. Zeigt ein Shop Aktions- und Normalpreis, gilt
 // der Normalpreis; mehrere Händler mit exaktem Treffer → häufigster bzw. mittlerer Preis.
 //   Treffer (Jahrgang und Grösse gleich) → direkt in die Charge (nur leere Felder; price_source
 //     research, price_note), Antoine meldet ihn mit „✏️ Ändern“.
@@ -30,6 +31,7 @@ import type { Get } from "./shops/adapters";
 import { offerFromShopify, productPage, qualifierMismatch, sameProduct, shopifyDataUrl, sizeFromText, swissPage, yearFromText, type Mismatch, type PageRead, type ProductOffer } from "./price-match";
 import {
   brandPageHits,
+  clTerm,
   compactSearches,
   directShopsFor,
   duplicateQueries,
@@ -47,9 +49,14 @@ import {
   swissMerchantUrl,
   swissResultUrls,
   type DirectShop,
+  type Found,
   type SearchLog,
 } from "./price-search";
 import { SHOP_DOMAINS } from "./shops/match";
+import { MAX_CANDIDATES, SERPAPI_MONTHLY_LIMIT, SERPAPI_SOFT_LIMIT, searchShopping, type ShoppingCandidate } from "./serpapi";
+import { judgeCandidates } from "./price-judge";
+import { zurichMonth } from "@/lib/ai/cost";
+import { currentUsageContext, recordUsage } from "@/lib/ai/usage";
 import type { ResearchOutcome } from "./wine";
 export { priceNoteHint } from "./price-note";
 export { swissMerchantUrl } from "./price-search";
@@ -208,6 +215,8 @@ export type PriceDiagnostics = {
   merchants?: number;
   /** Testlauf (dry_run): Ergebnis, ohne zu speichern oder zu senden. */
   finding?: PriceFinding;
+  /** Google Shopping (SerpApi): Abfragen, Kandidaten mit Urteil und Grund, gewählter Preis. */
+  shopping?: ShoppingDiagnostics;
 };
 
 /**
@@ -306,7 +315,19 @@ export async function searchShops(want: { name: string; producer: string | null;
   return Promise.all(directShopsFor(want.type).map((shop) => searchShop(shop, want, get)));
 }
 
-export type PriceWine = { name: string; producer: string | null; type: string | null; country: string | null; region: string | null; appellation: string | null };
+export type PriceWine = {
+  name: string;
+  producer: string | null;
+  type: string | null;
+  country: string | null;
+  region: string | null;
+  appellation: string | null;
+  /** Für den Abgleich (Google Shopping): Alkohol, Alter, Fass, Kategorie der Spirituose. */
+  alcohol_content?: number | null;
+  age_years?: number | null;
+  cask?: string | null;
+  spirit_category_id?: string | null;
+};
 
 /** So viele Websuchen darf das Modell für die Preissuche machen (die direkten Shop-Suchen liefern das meiste). */
 export const PRICE_MAX_SEARCHES = 6;
@@ -324,10 +345,28 @@ export async function researchPrice(
   year: number | null,
   sizeMl: number | null,
   vendor: string | null,
+  options: { get?: Get; db?: Db; serpApiKey?: string | null } = {},
+): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics }> {
+  if (!wine.name) return { finding: { kind: "none", reason: "no_name" }, diagnostics: { raw: null, verdict: "no_name", pages: [] } };
+  // Zuerst Google Shopping (SerpApi) + Haiku; ohne Schlüssel, ohne Kontingent oder bei Fehler die bisherige Suche.
+  const shopping = await researchPriceShopping(wine, year, sizeMl, options).catch((error) => {
+    if (apiProblem(error)?.kind === "usage_limit") throw error;
+    console.error("shopping price search failed", error instanceof Error ? error.message : error);
+    return null;
+  });
+  if (shopping) return shopping;
+  return researchPriceLegacy(wine, year, sizeMl, vendor, options);
+}
+
+/** Bisherige Preissuche (direkte Shops, Claude-Websuche, eigene Seitenprüfung) – Rückfall. */
+async function researchPriceLegacy(
+  wine: PriceWine,
+  year: number | null,
+  sizeMl: number | null,
+  vendor: string | null,
   options: { get?: Get } = {},
 ): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics }> {
   const diagnostics: PriceDiagnostics = { raw: null, verdict: "no_name", pages: [] };
-  if (!wine.name) return { finding: { kind: "none", reason: "no_name" }, diagnostics };
   const size = sizeMl ?? standardSize(wine.type);
   const want: PriceWant & { name: string } = { year, sizeMl: size, type: wine.type, name: wine.name, producer: wine.producer };
   // Eigenes Abruf-Budget (Shop-Suchen, Produktseiten); die Shop-Adapter haben ihr eigenes.
@@ -394,6 +433,108 @@ export async function researchPrice(
   const result = evaluatePrice(raw, want);
   diagnostics.verdict = result.kind === "none" ? (result.reason ?? "none") : result.kind === "other" && result.reason ? `not_exact:${result.reason}` : `${result.kind}:answer`;
   return { finding: result, diagnostics };
+}
+
+/** SerpApi-Abfragen im laufenden Monat (aus api_usage, model „serpapi“). Ohne Migration bzw. Fehler: 0. */
+export async function serpApiQueriesThisMonth(db: Db, now = new Date()) {
+  const { from, to } = zurichMonth(now);
+  const { count, error } = await db.from("api_usage").select("id", { count: "exact", head: true }).eq("model", "serpapi").gte("created_at", from).lt("created_at", to);
+  return error ? 0 : (count ?? 0);
+}
+
+/** Wie viele Abfragen dürfen es für diese Flasche sein? 2, ab 230 im Monat 1, ab 250 keine (rein). */
+export const serpQueriesAllowed = (used: number) => (used >= SERPAPI_MONTHLY_LIMIT ? 0 : used >= SERPAPI_SOFT_LIMIT ? 1 : 2);
+
+export type ShoppingDiagnostics = {
+  queries: string[];
+  used_this_month: number;
+  candidates: { title: string; price: number; source: string; verdict: string; reason: string }[];
+  chosen: { amount: number; merchant: string; merchants: number } | null;
+};
+
+/**
+ * Preis über Google Shopping Schweiz (SerpApi) und einen Haiku-Abgleich: höchstens 2 Abfragen
+ * („<Name> <Grösse>“, bei wenig Treffern ohne Grösse), Kandidaten in CHF ohne Marktplätze, je
+ * Kandidat yes/variant/no, danach Grösse/Jahrgang hart geprüft. Preiswahl aus den yes-Kandidaten
+ * (Ausreisser weg, häufigster/mittlerer, bei zwei ähnlichen der höhere); nur variant → Rückfrage.
+ * Ohne yes: die direkten Shop-Suchen als Ergänzung. null = nicht verfügbar (Schlüssel, Kontingent,
+ * Fehler der ersten Abfrage) – dann übernimmt die bisherige Suche.
+ */
+export async function researchPriceShopping(
+  wine: PriceWine,
+  year: number | null,
+  sizeMl: number | null,
+  options: { get?: Get; db?: Db; serpApiKey?: string | null } = {},
+): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics } | null> {
+  const key = options.serpApiKey !== undefined ? options.serpApiKey : process.env.SERPAPI_API_KEY;
+  if (!key) return null;
+  const used = options.db ? await serpApiQueriesThisMonth(options.db) : 0;
+  const allowed = serpQueriesAllowed(used);
+  if (!allowed) return null;
+  const size = sizeMl ?? standardSize(wine.type);
+  const term = `${productTerm(wine)}${year != null ? ` ${year}` : ""}`;
+  const queries = [`${term} ${clTerm(size)}`, term];
+  const shop: ShoppingDiagnostics = { queries: [], used_this_month: used, candidates: [], chosen: null };
+  let candidates: ShoppingCandidate[] = [];
+  for (const q of queries.slice(0, allowed)) {
+    let found: ShoppingCandidate[];
+    try {
+      found = await searchShopping(q, key);
+    } catch (error) {
+      // Erste Abfrage gescheitert (Fehler, Kontingent): bisherige Suche; spätere: mit dem Bisherigen weiter.
+      if (!shop.queries.length) throw error;
+      break;
+    } finally {
+      await recordUsage("serpapi", { server_tool_use: { web_search_requests: 1 } }, { ...currentUsageContext(), purpose: "research_price" });
+    }
+    shop.queries.push(q);
+    for (const c of found) if (!candidates.some((x) => x.source === c.source && x.title === c.title && x.price === c.price)) candidates.push(c);
+    // Genug Treffer: keine zweite Abfrage.
+    if (candidates.length >= 5) break;
+  }
+  candidates = candidates.slice(0, MAX_CANDIDATES);
+  const category = wine.spirit_category_id && options.db ? await spiritCategoryName(options.db, wine.spirit_category_id) : null;
+  const verdicts = await judgeCandidates(
+    { name: wine.name, producer: wine.producer, type: wine.type, category, year, sizeMl: size, alcohol: wine.alcohol_content ?? null, age: wine.age_years ?? null, cask: wine.cask ?? null },
+    candidates,
+  );
+  shop.candidates = candidates.map((c, i) => ({ title: c.title.slice(0, 160), price: c.price, source: c.source.slice(0, 60), verdict: verdicts[i]?.verdict ?? "no", reason: (verdicts[i]?.reason ?? "").slice(0, 120) }));
+  const found: Found[] = candidates.flatMap((c, i): Found[] => {
+    const v = verdicts[i];
+    if (!v || v.verdict === "no") return [];
+    // Zeigt Google einen alten Preis („statt“), gilt der Normalpreis.
+    const amount = Math.round((c.regular ?? c.price) * 100) / 100;
+    const base = { amount, merchant: c.source || hostOf(c.url) || "Google Shopping", url: c.url, year: v.year ?? year, sizeMl: v.sizeMl ?? size };
+    return v.verdict === "yes" ? [{ kind: "exact", ...base }] : [{ kind: "other", ...base, why: v.reason, reason: "variant" }];
+  });
+  const diagnostics: PriceDiagnostics = { raw: null, verdict: "none", pages: [], shopping: shop };
+  // Kein yes: die direkten Shop-Suchen als Ergänzung (mit eigener Seitenprüfung).
+  if (!found.some((f) => f.kind === "exact")) {
+    const get = options.get ?? createGetter({ maxRequests: 60, timeoutMs: DIRECT_TIMEOUT_MS });
+    const want: PriceWant & { name: string } = { year, sizeMl: size, type: wine.type, name: wine.name, producer: wine.producer };
+    const direct = await searchShops({ name: wine.name, producer: wine.producer, year, sizeMl: size, type: wine.type }, get);
+    diagnostics.direct = direct.map((d) => ({ ...d, ...(d.urls ? { urls: d.urls.map(shortUrl) } : {}), ...(d.brandPage ? { brandPage: shortUrl(d.brandPage) } : {}) }));
+    const urls = [...new Set(direct.flatMap((d) => d.urls ?? []))];
+    if (urls.length) found.push(...(await verifyPages(urls, want, get, diagnostics.pages)));
+  }
+  const best = pickBest(found);
+  if (!best) {
+    diagnostics.verdict = "not_found:shopping";
+    return { finding: { kind: "none", reason: "not_found" }, diagnostics };
+  }
+  const { merchants, ...offer } = best;
+  const finding: PriceFinding = best.kind === "exact" && merchants > 1 ? { ...offer, kind: "exact", merchants } : offer;
+  if (best.kind === "exact") {
+    diagnostics.merchants = merchants;
+    shop.chosen = { amount: best.amount, merchant: best.merchant, merchants };
+  }
+  diagnostics.verdict = finding.kind === "other" ? `not_exact:${finding.reason ?? "variant"}:shopping` : `${finding.kind}:shopping`;
+  return { finding, diagnostics };
+}
+
+async function spiritCategoryName(db: Db, id: string) {
+  const { data } = await db.from("spirit_categories").select("name").eq("id", id).maybeSingle();
+  return data?.name ?? null;
 }
 
 /** Auftrag an das Modell: feste Suchbegriffe der Reihe nach, Regeln für Händler und Angebot. */
@@ -503,7 +644,7 @@ type ItemRow = {
 async function loadItem(db: Db, itemId: string): Promise<ItemRow | null> {
   const { data, error } = await db
     .from("inventory_items")
-    .select("id, wine_id, vintage_year, bottle_size_ml, quantity, purchase_price, regular_price, is_gift, gift_from, vendor:vendors(name), wine:wines(name, producer, type, country, region, appellation)")
+    .select("id, wine_id, vintage_year, bottle_size_ml, quantity, purchase_price, regular_price, is_gift, gift_from, vendor:vendors(name), wine:wines(name, producer, type, country, region, appellation, alcohol_content, age_years, cask, spirit_category_id)")
     .eq("id", itemId)
     .maybeSingle();
   if (error) throw error;
@@ -751,7 +892,7 @@ export async function runPriceSearch(db: Db, p: PriceJobParams): Promise<Researc
     // Schon von Hand ausgefüllt (z. B. inzwischen in der App)? Dann nichts suchen (Testlauf: trotzdem).
     const empty = p.mode === "both" ? item.purchase_price == null || item.regular_price == null : item.regular_price == null;
     if (!empty && !p.dry_run) return done();
-    const { finding, diagnostics } = await researchPrice(item.wine, item.vintage_year, item.bottle_size_ml, item.vendor?.name ?? null);
+    const { finding, diagnostics } = await researchPrice(item.wine, item.vintage_year, item.bottle_size_ml, item.vendor?.name ?? null, { db });
     diag = diagnostics;
     if (p.dry_run) {
       diag = { ...diagnostics, finding };
