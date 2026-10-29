@@ -42,3 +42,14 @@ export function withQuery(href: string, query: string) {
   const search = url.searchParams.toString();
   return `${url.pathname}${search ? `?${search}` : ""}`;
 }
+
+/** Trefferzahl am Suchfeld: „Keine Treffer“, „1 Treffer“, „12 Treffer“. */
+export const hitText = (n: number) => (n === 0 ? "Keine Treffer" : `${n} Treffer`);
+
+/** Sichtbare Einträge (gleiche Logik wie die Live-Suche): ohne Suche alle gezeigten. */
+export const hitCount = (ids: string[], visible: Set<string> | null) => (visible == null ? ids.length : ids.filter((id) => visible.has(id)).length);
+
+/** Scroll-Ziel, damit die Suchzeile direkt unter der Kopfzeile steht (iOS: Versatz des sichtbaren Bereichs). */
+export function searchScrollTarget(rowTop: number, scrollY: number, headerHeight: number, viewportOffset = 0) {
+  return Math.max(0, Math.round(rowTop + scrollY - headerHeight - viewportOffset));
+}

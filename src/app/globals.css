@@ -1440,7 +1440,8 @@ input[inputmode="decimal"] {
   gap: 10px;
   align-items: center;
 }
-.controls .search {
+.controls .search,
+.list-search .search {
   display: flex;
   gap: 6px;
   flex: 1 1 220px;
@@ -1452,6 +1453,34 @@ input[inputmode="decimal"] {
   align-items: center;
   gap: 8px;
   flex: 1 1 100%;
+}
+/* Suchzeile der Listen: eigene Zeile über den übrigen Bedienelementen (Abstand wie vorher). */
+.list-search + .controls {
+  margin-top: -12px;
+}
+/* Mit Suchbegriff bzw. Fokus: direkt unter der Kopfzeile angeheftet, Treffer scrollen darunter. */
+.list-search.is-pinned {
+  position: sticky;
+  top: var(--header-h, 0px);
+  z-index: 9;
+  margin: 0 -16px;
+  padding: 8px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+/* Platz unter der Liste (als Element: zählt für das Anheften, anders als Innenabstand). */
+.search-room::after {
+  content: "";
+  display: block;
+  height: 100vh;
+}
+.search-count {
+  align-self: center;
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .filter-button {
   min-height: 44px;

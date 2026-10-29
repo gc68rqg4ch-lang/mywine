@@ -107,7 +107,7 @@ export function ListView<T extends Filterable>({
 
   return (
     <SearchScope basePath={basePath} index={index} initialQuery={state.query}>
-      <ListControls basePath={basePath} state={state} groupings={groupings} typeCounts={counts} optionParts={optionParts} />
+      <ListControls basePath={basePath} state={state} groupings={groupings} typeCounts={counts} optionParts={optionParts} shownIds={shown.map(idOf)} />
       {body}
       <Suspense fallback={null}>
         <ListMemory basePath={basePath} />

@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { filterOptions, mergeOptions, optionPart, typeCountParts, type Filterable } from "@/lib/cellar/filters";
 import { EMPTY_FILTERS } from "@/lib/cellar/list-params";
 import { groupWines, matchesQuery } from "@/lib/cellar/overview";
-import { anyVisible, liveCount, queryTerms, searchText, visibleIds, withQuery } from "@/lib/cellar/search";
+import { anyVisible, hitCount, hitText, liveCount, queryTerms, searchScrollTarget, searchText, visibleIds, withQuery } from "@/lib/cellar/search";
 import { foldText } from "@/lib/text/fold";
 
 type Entry = Filterable & { id: string };
@@ -116,4 +116,37 @@ test("Suchfeld: filtert beim Tippen, Enter lädt nicht neu, ✕ leert und behäl
     assert.match(page, /<ListView/, f);
     assert.ok(!/state\.query \?/.test(page), `${f}: Server filtert nicht mehr nach q`);
   }
+});
+
+test("Trefferzahl am Suchfeld: Text 0/1/n, gezählt wie die sichtbaren Einträge", () => {
+  assert.equal(hitText(0), "Keine Treffer");
+  assert.equal(hitText(1), "1 Treffer");
+  assert.equal(hitText(12), "12 Treffer");
+  const ids = Object.keys(index);
+  for (const q of ["", "spanien", "pago", "xyz", "ribera 2021"]) {
+    const visible = visibleIds(index, q);
+    assert.equal(hitCount(ids, visible), ids.filter((id) => visible == null || visible.has(id)).length, q);
+  }
+  assert.equal(hitCount(ids, visibleIds(index, "spanien")), 2);
+  assert.equal(hitCount(["a"], visibleIds(index, "spanien")), 1, "nur Einträge der gezeigten Liste (nach Filter und Typ)");
+  // Ein Wein in mehreren Gruppen (z. B. Rebsorten) zählt einmal: gezählt werden Einträge, nicht Karten
+  const controls = readFileSync("src/components/cellar/list-controls.tsx", "utf8");
+  assert.match(controls, /hitText\(hitCount\(shownIds, visible\)\)/);
+  assert.match(readFileSync("src/components/cellar/list-view.tsx", "utf8"), /shownIds=\{shown\.map\(idOf\)\}/);
+});
+
+test("Suchzeile: einmal beim Fokus unter die Kopfzeile scrollen, angeheftet mit Suchbegriff bzw. Fokus", () => {
+  // Ziel: Zeile direkt unter der Kopfzeile; iOS: Versatz des sichtbaren Bereichs (visualViewport) mitrechnen
+  assert.equal(searchScrollTarget(430, 0, 56), 374);
+  assert.equal(searchScrollTarget(56, 374, 56), 374, "schon oben → bleibt");
+  assert.equal(searchScrollTarget(300, 100, 87, 40), 273);
+  assert.equal(searchScrollTarget(20, 0, 56), 0, "nie negativ");
+  const controls = readFileSync("src/components/cellar/list-controls.tsx", "utf8");
+  assert.match(controls, /onFocus=\{\(\) => \{[\s\S]*scrollRowToTop\(row\.current\)/);
+  assert.ok(!/onChange=\{[^}]*scroll/i.test(controls), "nicht bei jedem Buchstaben scrollen");
+  assert.match(controls, /window\.visualViewport/);
+  assert.match(controls, /const pinned = searching \|\| focused;/, "nach ✕ angeheftet, bis der Fokus geht");
+  const css = readFileSync("src/app/globals.css", "utf8");
+  assert.match(css, /\.list-search\.is-pinned \{\s*position: sticky;\s*top: var\(--header-h, 0px\);/);
+  assert.match(css, /\.search-room::after \{\s*content: "";\s*display: block;\s*height: 100vh;/);
 });
