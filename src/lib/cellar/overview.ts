@@ -637,15 +637,23 @@ export function countryCode(country: string | null | undefined) {
 }
 
 /**
- * Kartenzeile: „🇪🇸 Rioja“ – Flagge plus Region (ohne Region das Land). Ohne Flagge Region und Land
- * ausgeschrieben („Lara, Venezuela“), ohne Region nur das Land.
+ * Herkunft für die Kartenzeile: Land (mit Flagge, falls bekannt) und Region getrennt – die Region
+ * darf auf schmalen Bildschirmen abgeschnitten werden, das Land nie. Region gleich Land → nur einmal.
  */
-export function originLabel(w: { country: string | null; region: string | null }) {
-  const flag = countryFlag(w.country);
-  const region = w.region?.trim() || null;
+export function originParts(w: { country: string | null; region: string | null }) {
   const country = w.country?.trim() || null;
-  if (flag) return [flag, region ?? country].filter(Boolean).join(" ");
-  return [region, country].filter(Boolean).join(", ") || null;
+  const region = w.region?.trim() || null;
+  const flag = countryFlag(country);
+  return {
+    country: country ? (flag ? `${flag} ${country}` : country) : null,
+    region: region && !(country && countryKey(region) === countryKey(country)) ? region : null,
+  };
+}
+
+/** Kartenzeile als Text: „🇻🇪 Venezuela · Lara“, „🇪🇸 Spanien“, ohne Flagge „Atlantis · Lara“. */
+export function originLabel(w: { country: string | null; region: string | null }) {
+  const p = originParts(w);
+  return [p.country, p.region].filter(Boolean).join(" · ") || null;
 }
 
 /** Flaggen-Emoji für einen (deutschen) Ländernamen – auch Schottland, Wales, England –, sonst null. */

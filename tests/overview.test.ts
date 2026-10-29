@@ -83,7 +83,7 @@ test("Suche, Flaggen, Herkunft, Lagerorte, Preisklassen", () => {
   assert.equal(countryFlag("Schweiz"), "🇨🇭");
   assert.equal(countryFlag("USA"), "🇺🇸");
   assert.equal(countryFlag("Atlantis"), null);
-  assert.equal(originLabel({ country: "Spanien", region: "Toro" }), "🇪🇸 Toro");
+  assert.equal(originLabel({ country: "Spanien", region: "Toro" }), "🇪🇸 Spanien · Toro");
   assert.equal(originLabel({ country: null, region: null }), null);
   assert.deepEqual(parseLocations([{ sealed: 2, open: 0, storage_room: "X", storage_house: null }, 3, null]), [
     { storage_house: null, storage_room: "X", sealed: 2, open: 0 },

@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { PhotoThumb, type ViewerPhoto } from "@/components/photo-viewer";
 import { WineTypeIcon } from "@/components/wine-type-icon";
-import { drinkStatusHref, type DrinkBadge } from "@/lib/cellar/overview";
+import { drinkStatusHref, originParts, type DrinkBadge } from "@/lib/cellar/overview";
 import type { WineType } from "@/lib/format";
 import { MEDIA_KIND_LABELS } from "@/lib/media/pick";
 import type { LabelPair, ViewPhoto } from "@/lib/media/store";
@@ -21,6 +21,7 @@ export function WineCard({
   producer,
   title,
   meta,
+  origin,
   extra,
   aside,
   photo,
@@ -32,6 +33,8 @@ export function WineCard({
   title: string;
   /** Kleine Zeile unter dem Titel, Teile werden mit „·“ verbunden. */
   meta: (string | null | undefined | false)[];
+  /** Herkunft am Ende der Zeile: „🇻🇪 Venezuela · Lara“ – nur die Region wird bei Platzmangel abgeschnitten. */
+  origin?: { country: string | null; region: string | null };
   /** Optionale zweite kleine Zeile (z. B. Bewertungen). */
   extra?: ReactNode;
   /** Rechte Seite (Flaschenzahl, Füllstand …). */
@@ -60,7 +63,7 @@ export function WineCard({
           <Link href={href} className="item-title item-link">
             {title}
           </Link>
-          <span className="item-meta">{meta.filter(Boolean).join(" · ")}</span>
+          <MetaLine meta={meta} origin={origin} />
           {extra && <span className="item-meta item-extra">{extra}</span>}
           {drink?.map((b, i) => (
             <span key={b.year ?? i} className="item-meta item-drink">
@@ -74,6 +77,22 @@ export function WineCard({
         {aside}
       </div>
     </li>
+  );
+}
+
+const SEP = "\u00a0·\u00a0";
+
+/** Kleine Zeile: Angaben, dann Land (nie abgeschnitten) und Region (zuerst abgeschnitten). */
+function MetaLine({ meta, origin }: { meta: (string | null | undefined | false)[]; origin?: { country: string | null; region: string | null } }) {
+  const lead = meta.filter(Boolean).join(" · ");
+  const o = origin ? originParts(origin) : null;
+  if (!o || (!o.country && !o.region)) return <span className="item-meta">{lead}</span>;
+  return (
+    <span className="item-meta item-meta-row">
+      {lead && <span className="meta-lead">{lead}{SEP}</span>}
+      {o.country && <span className="meta-country">{o.country}</span>}
+      {o.region && <span className="meta-region">{o.country ? SEP : ""}{o.region}</span>}
+    </span>
   );
 }
 

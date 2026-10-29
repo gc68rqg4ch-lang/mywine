@@ -14,7 +14,6 @@ import {
   BASE_GROUPINGS,
   currentYear,
   formatVintages,
-  originLabel,
   type GroupBy,
 } from "@/lib/cellar/overview";
 import { buildDrunkEntries, drunkTotals, type DrunkBottle, type DrunkEntry, type RatingRow } from "@/lib/cellar/lists";
@@ -160,8 +159,8 @@ export default async function DrunkBottlesPage({ searchParams }: PageProps<"/get
               ...spiritMeta(wine),
               formatVintages(vintages),
               wine.lastDrunk ? `zuletzt ${formatDate(wine.lastDrunk)}` : null,
-              originLabel(wine),
             ]}
+            origin={wine}
             extra={ratingsText(wine)}
             aside={<BottleCount bottles={bottles} />}
             photo={photo(wine.wine_id, vintages.length === 1 ? vintages[0] : wine.latestVintage)}

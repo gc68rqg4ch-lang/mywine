@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { countryCode, countryFlag, originLabel } from "../src/lib/cellar/overview";
+import { countryCode, countryFlag, originLabel, originParts } from "../src/lib/cellar/overview";
 
 test("Flaggen für alle Länder aus Intl.DisplayNames", () => {
   assert.equal(countryFlag("Venezuela"), "🇻🇪");
@@ -41,11 +41,23 @@ test("unbekannt → null", () => {
   assert.equal(countryFlag("Europa"), null);
 });
 
-test("Kartenzeile mit/ohne Flagge, mit/ohne Region", () => {
-  assert.equal(originLabel({ country: "Venezuela", region: "Lara" }), "🇻🇪 Lara");
-  assert.equal(originLabel({ country: "Venezuela", region: null }), "🇻🇪 Venezuela");
-  assert.equal(originLabel({ country: "Atlantis", region: "Lara" }), "Lara, Atlantis");
-  assert.equal(originLabel({ country: "Atlantis", region: " " }), "Atlantis");
+test("Kartenzeile: Flagge Land · Region; ohne Region nur das Land; Region = Land nur einmal", () => {
+  // Spirituose (Diplomático) und Wein
+  assert.equal(originLabel({ country: "Venezuela", region: "Lara" }), "🇻🇪 Venezuela · Lara");
+  assert.equal(originLabel({ country: "Spanien", region: "Rioja" }), "🇪🇸 Spanien · Rioja");
+  assert.equal(originLabel({ country: "Schottland", region: "Islay" }), `${countryFlag("Schottland")} Schottland · Islay`);
+  assert.equal(originLabel({ country: "Spanien", region: null }), "🇪🇸 Spanien");
+  assert.equal(originLabel({ country: "Venezuela", region: " " }), "🇻🇪 Venezuela");
+  // ohne Flagge gleiches Format
+  assert.equal(originLabel({ country: "Atlantis", region: "Lara" }), "Atlantis · Lara");
+  assert.equal(originLabel({ country: "Atlantis", region: null }), "Atlantis");
+  // Region gleich Land
+  assert.equal(originLabel({ country: "Barbados", region: "Barbados" }), "🇧🇧 Barbados");
+  assert.equal(originLabel({ country: "Schweiz", region: "schweiz" }), "🇨🇭 Schweiz");
+  // ohne Land
   assert.equal(originLabel({ country: null, region: "Lara" }), "Lara");
   assert.equal(originLabel({ country: null, region: null }), null);
+  // getrennt für die Karte: Land nie abgeschnitten, Region schon
+  assert.deepEqual(originParts({ country: "Venezuela", region: "Lara" }), { country: "🇻🇪 Venezuela", region: "Lara" });
+  assert.deepEqual(originParts({ country: "Kuba", region: "Kuba" }), { country: "🇨🇺 Kuba", region: null });
 });

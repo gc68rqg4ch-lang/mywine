@@ -9,7 +9,7 @@ import { withDrinkWindows } from "@/lib/cellar/filters";
 import { readListState } from "@/lib/cellar/list-params";
 import { loadDrinkWindows } from "@/lib/cellar/load";
 import type { RatingRow } from "@/lib/cellar/lists";
-import { TASTED_GROUPINGS, currentYear, formatVintages, originLabel } from "@/lib/cellar/overview";
+import { TASTED_GROUPINGS, currentYear, formatVintages } from "@/lib/cellar/overview";
 import { buildTastedEntries, tastedTotals, type TastedEntry, type TastedWineInfo } from "@/lib/cellar/tasted";
 import { wineHref } from "@/lib/cellar/wine-page";
 import { asWineType, formatDate, formatStarNumber, todayIso } from "@/lib/format";
@@ -148,8 +148,8 @@ export default async function TastedPage({ searchParams }: PageProps<"/verkostet
               formatVintages(vintages),
               `zuletzt ${formatDate(wine.lastTasted)}`,
               wine.lastPlace,
-              originLabel(wine),
             ]}
+            origin={wine}
             extra={ratingsText(wine)}
             aside={
               <span className="item-qty">

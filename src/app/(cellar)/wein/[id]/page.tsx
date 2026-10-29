@@ -8,7 +8,7 @@ import { PhotoGallery } from "@/components/photo-viewer";
 import { ResearchSuggestions } from "@/components/research-suggestions";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
-import { countryFlag } from "@/lib/cellar/overview";
+import { originParts } from "@/lib/cellar/overview";
 import {
   anchorItem,
   parseVintageParam,
@@ -276,7 +276,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const drinkSource = asDrinkSource(vintage?.drink_window_source);
   const drinkWindow = drinkWindowText(vintage?.drink_from_year ?? null, vintage?.drink_until_year ?? null, drinkSource);
   const latestReadiness = tastings.find((t) => t.readiness)?.readiness ?? null;
-  const flag = countryFlag(wine.country);
+  const origin = originParts(wine);
   const sizes = [...new Set(inVintage.map((i) => i.bottle_size_ml ?? (spirit ? 700 : 750)))].map((ml) => formatBottleSize(ml)).join(", ");
   const legacyRating = inVintage.map((i) => i.personal_wine_rating).find((r) => r != null) ?? null;
   const back = BACK_LINKS[typeof query.von === "string" ? query.von : ""] ?? BACK_LINKS.bestand;
@@ -425,8 +425,9 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   ) : null;
   const details: Record<WineDetailField, ReactNode> = {
     Typ: <WineTypeIcon type={wine.type} withLabel />,
-    Land: wine.country ? `${flag ? `${flag} ` : ""}${wine.country}` : null,
-    Region: wine.region,
+    Land: origin.country,
+    // Region gleich Land: nur einmal.
+    Region: origin.region,
     Appellation: wine.appellation,
     Alkohol: wine.alcohol_content != null ? `${wine.alcohol_content.toLocaleString("de-CH")} %` : null,
     Flasche: sizes,

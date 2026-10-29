@@ -9,7 +9,7 @@ import { loadRatingsByWine } from "@/lib/cellar/load";
 import { WineCard } from "@/components/cellar/wine-card";
 import { FillGauge } from "@/components/fill-gauge";
 import { getMemberSession } from "@/lib/auth";
-import { BASE_GROUPINGS, currentYear, drinkBadges, originLabel } from "@/lib/cellar/overview";
+import { BASE_GROUPINGS, currentYear, drinkBadges } from "@/lib/cellar/overview";
 import { openTotals, toOpenEntry } from "@/lib/cellar/lists";
 import { asWineType, formatBottleSize, formatDaysSince, todayIso } from "@/lib/format";
 import { KeepBadge } from "@/components/keep-badge";
@@ -136,8 +136,8 @@ export default async function OpenBottlesPage({ searchParams }: PageProps<"/offe
               // Spirituosen: keine „seit … Tagen offen“-Hinweise (halten offen lange).
               wine.type === "spirit" ? null : formatDaysSince(wine.dateOpened),
               wine.bottleSizeMl && wine.bottleSizeMl !== (wine.type === "spirit" ? 700 : 750) ? formatBottleSize(wine.bottleSizeMl) : null,
-              originLabel(wine),
             ]}
+            origin={wine}
             extra={wine.type === "fortified" ? <KeepBadge status={keepStatus(wine.dateOpened, keep.get(wine.wine_id)?.days, today)} /> : undefined}
             drink={drinkBadges(wine, wine.vintages, thisYear)}
             aside={<FillGauge percent={wine.fill} />}

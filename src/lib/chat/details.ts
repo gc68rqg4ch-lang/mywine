@@ -1,7 +1,7 @@
 // „ℹ️ Details“ im Wein-Menü des Bots: kompakte Nachricht für einen Jahrgang.
 // Rein, ohne DB – leere Angaben fallen weg statt „–“ zu zeigen.
 
-import { countryFlag } from "@/lib/cellar/overview";
+import { originLabel } from "@/lib/cellar/overview";
 import { drinkWindowHint, drinkWindowText } from "@/lib/cellar/drink-window";
 import { daysSince, formatBottleSize, formatMoney, formatStarNumber, priceDiscount, type WineType } from "@/lib/format";
 import { typeEmoji } from "./menu-view";
@@ -104,7 +104,6 @@ export function wineDetailsText(d: WineDetails) {
   const priceLines =
     prices.size > 1 ? [...prices].map(([text, where]) => `${where.join(", ")}: ${text}`) : [...prices.keys()];
 
-  const flag = countryFlag(d.country);
   // Schätzung mit „≈“; „bis“ im laufenden Jahr oder davor → kurzer Hinweis.
   const spirit = d.type === "spirit";
   // Spirituosen: kein Trinkfenster (ein Ablaufdatum steht als „bis“ – dann nur das).
@@ -117,7 +116,7 @@ export function wineDetailsText(d: WineDetails) {
   const lines = [
     `${typeEmoji(d.type)} <b>${e(d.name)} ${d.year ?? "o. J."}</b>`,
     d.producer && e(d.producer),
-    e(join([d.country && `${flag ? `${flag} ` : ""}${d.country}`, d.region, d.appellation])),
+    e(join([originLabel(d), d.appellation])),
     spirit && d.spirit?.length ? e(join(d.spirit)) : null,
     e(join([!spirit && d.grapes && `🍇 ${d.grapes}`, d.alcohol != null && `${d.alcohol.toLocaleString("de-CH")} % vol`])),
     drinkWindow && `⏳ Trinkreife ${drinkWindow}${d.drinkSource === "estimate" ? " (geschätzt)" : ""}${drinkHint ? ` – ${drinkHint}` : ""}`,

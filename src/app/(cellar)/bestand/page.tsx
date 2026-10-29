@@ -21,7 +21,6 @@ import {
   drinkCounts,
   drinkStatusHref,
   formatVintages,
-  originLabel,
   toSummaryWine,
   toVintageRow,
   unitKey,
@@ -204,7 +203,8 @@ export default async function InventoryPage({ searchParams }: PageProps<"/bestan
             type={wine.type}
             producer={wine.producer}
             title={wine.name}
-            meta={[...spiritMeta(wine), formatVintages(vintages), originLabel(wine)]}
+            meta={[...spiritMeta(wine), formatVintages(vintages)]}
+            origin={wine}
             photo={photo(wine.wine_id, newestVintage(vintages))}
             drink={drinkBadges(wine, vintages, thisYear)}
             extra={
