@@ -368,3 +368,85 @@ test("Riserva nur auf einer Seite: nichts gespeichert, „Übernehmen?“ mit Gr
   const outcome = await runJob(db, row as never);
   assert.equal((outcome.diagnostics as { verdict: string }).verdict, "not_exact:reserve_mismatch");
 });
+
+/** Pintia mit „🔎 Such du“, dann eine neue Erfassung; Suche ohne Fund → Rückfrage zurückgehalten. */
+async function heldWhileOtherFlow() {
+  await start();
+  await press("🔎");
+  await save();
+  const JOB2 = "aaaaaaaa-0000-4000-8000-0000000000b3";
+  net.tables.ingest_jobs.push({ id: JOB2, source: "text", telegram_chat_id: 111, status: "processing", extracted: { step: "researching", source: "text" }, photo_paths: [], created_at: minutesAgo(0), updated_at: minutesAgo(0) });
+  parseResult = {
+    name: "Grappa Fass 13", producer: "Brennerei Muster", vintage_year: 2015, country: null, region: null, appellation: null, type: null,
+    grape_shares: [], alcohol_content: null, bottle_size_ml: null,
+    purchase: { quantity: 1, storage_room: "Weinkeller", price: 0, regular_price: 0, vendor: "Mövenpick", gift: false, gift_from: "" },
+  };
+  await processTextJob(JOB2, 111, "Grappa Fass 13 2015, 1 Flasche, Weinkeller, bei Mövenpick");
+  priceAnswer = NOTHING;
+  await runPriceJob();
+  const held = net.tables.ingest_jobs.find((j) => (j.extracted as IngestState).step === "price_held")!;
+  assert.ok(held, "zurückgehalten");
+  return { held, job2: () => net.tables.ingest_jobs.find((j) => j.id === JOB2)! };
+}
+const backdate = (job: Record<string, unknown>, minutes: number) => {
+  job.updated_at = minutesAgo(minutes);
+  const x = job.extracted as IngestState;
+  if (x.price_followup?.held_at) job.extracted = { ...x, price_followup: { ...x.price_followup, held_at: minutesAgo(minutes) } };
+};
+
+test("Zurückgehaltene Frage verfällt nicht: andere Erfassung dauert 15 Minuten → Frage kommt danach, Frist ab Senden", async () => {
+  const { held, job2 } = await heldWhileOtherFlow();
+  // 15 Minuten später: die andere Erfassung läuft noch (eben beantwortet), die Frage wartet weiter
+  backdate(held, 15);
+  await say("29");
+  assert.equal(held.status, "needs_review", "nicht nach 10 Minuten verworfen");
+  assert.equal((held.extracted as IngestState).step, "price_held");
+  await press("✅ Ja, gleich");
+  job2().extracted = { ...(job2().extracted as IngestState), step: "saving" };
+  await saveJob(job2() as never, 111);
+  // Jetzt gestellt – mit frischer Zeit (die 10 Minuten beginnen erst hier)
+  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
+  assert.equal((held.extracted as IngestState).step, "price");
+  assert.ok(Date.parse(String(held.updated_at)) > Date.now() - 60_000, "Frist ab Senden");
+
+  // Gesendet, aber ohne Antwort: nach 10 Minuten still verworfen (wie bisher)
+  const { expireStale } = await import("@/lib/chat/pending");
+  const before = texts().length;
+  backdate(held, 11);
+  await expireStale(db, 111);
+  assert.equal(held.status, "discarded");
+  assert.equal(texts().length, before, "still");
+});
+
+test("Länger als 24 Stunden zurückgehalten → verfällt mit einer Hinweis-Meldung", async () => {
+  const { held } = await heldWhileOtherFlow();
+  backdate(held, 24 * 60 + 5);
+  const { tickHeldPriceQuestions } = await import("@/lib/research/price");
+  await tickHeldPriceQuestions(db);
+  assert.equal(held.status, "discarded");
+  assert.equal(lastText(), "Preis für 🍷 <b>Vega Sicilia – Pintia</b> 2019, 75 cl noch leer – du kannst ihn jederzeit in der App oder hier nachtragen.");
+  const count = texts().length;
+  await tickHeldPriceQuestions(db);
+  assert.equal(texts().length, count, "nur einmal");
+  assert.deepEqual([item().purchase_price, item().regular_price], [null, null]);
+});
+
+test("Worker gibt eine wartende Frage frei, sobald die andere Erfassung verfallen ist – auch ohne neue Nachricht", async () => {
+  const { held, job2 } = await heldWhileOtherFlow();
+  const { tickHeldPriceQuestions } = await import("@/lib/research/price");
+  await tickHeldPriceQuestions(db);
+  assert.equal((held.extracted as IngestState).step, "price_held", "andere Erfassung läuft noch");
+  job2().status = "discarded"; // z. B. vom Aufräumjob still verworfen
+  await tickHeldPriceQuestions(db);
+  assert.equal((held.extracted as IngestState).step, "price");
+  assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
+});
+
+test("DB-Aufräumjob lässt zurückgehaltene Fragen bis 25 Stunden aus (Migration)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const sql = readFileSync(new URL("../supabase/migrations/20261029190000_keep_held_price_questions.sql", import.meta.url), "utf8");
+  assert.match(sql, /extracted->>'step' = 'price_held'/);
+  assert.match(sql, /held_at/);
+  assert.match(sql, /interval '25 hours'/);
+  assert.match(sql, /updated_at < now\(\) - interval '10 minutes'/);
+});

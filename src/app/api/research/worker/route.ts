@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { processQueue } from "@/lib/research/jobs";
+import { tickHeldPriceQuestions } from "@/lib/research/price";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { secretMatches, workerSecretFrom } from "@/lib/secret";
 
@@ -15,7 +16,10 @@ export async function POST(request: NextRequest) {
   if (!expected) return NextResponse.json({ ok: false, error: "RESEARCH_WORKER_SECRET ist nicht gesetzt." }, { status: 503 });
   if (!secretMatches(workerSecretFrom(request.headers), expected)) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const result = await processQueue(createAdminClient());
+  const db = createAdminClient();
+  // Zurückgehaltene Preis-Rückfragen: stellen, sobald frei, bzw. nach 24 Std. verfallen lassen.
+  await tickHeldPriceQuestions(db);
+  const result = await processQueue(db);
   if (result.status === "ok" && result.processed) {
     try {
       revalidatePath("/", "layout");

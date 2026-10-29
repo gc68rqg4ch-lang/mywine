@@ -245,6 +245,8 @@ export type IngestState = {
     ask?: "not_found" | "fix" | "offer";
     /** Zurückgehalten (Schritt „price_held“): dieser Schritt kommt nach der Freigabe. */
     held_step?: IngestStep;
+    /** Seit wann zurückgehalten (ISO) – höchstens 24 Std.; die 10-Min.-Frist beginnt erst beim Senden. */
+    held_at?: string;
   };
   /** Preissuche: nur anderer Jahrgang bzw. andere Grösse gefunden – Angebot zum Übernehmen. */
   price_offer?: PriceOffer;

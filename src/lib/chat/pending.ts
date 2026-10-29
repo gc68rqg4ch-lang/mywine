@@ -91,7 +91,9 @@ async function close(db: AdminClient, job: Job, error: string | null) {
  * verwerfen und kurz melden. Laufende Arbeit (received/processing) verfällt still.
  */
 export async function expireStale(db: AdminClient, chatId: number, now = Date.now()) {
-  const stale = (await openFlows(db, chatId)).filter((j) => Date.parse(j.updated_at) < now - PENDING_TTL_MS);
+  // Zurückgehaltene Preis-Rückfragen: keine 10-Min.-Frist (beginnt erst beim Senden; Obergrenze 24
+  // Std. – expireHeldPriceQuestions).
+  const stale = (await openFlows(db, chatId)).filter((j) => !isHeldPrice(j) && Date.parse(j.updated_at) < now - PENDING_TTL_MS);
   const closed: Job[] = [];
   for (const job of stale) {
     const done = await close(db, job, EXPIRED_ERROR);
@@ -120,7 +122,7 @@ export async function supersede(db: AdminClient, chatId: number, reason: Superse
     const x = job.extracted as { step?: string; price_followup?: Record<string, unknown> };
     await db
       .from("ingest_jobs")
-      .update({ extracted: { ...x, step: "price_held", price_followup: { ...x.price_followup, held_step: x.step } } as Json })
+      .update({ extracted: { ...x, step: "price_held", price_followup: { ...x.price_followup, held_step: x.step, held_at: new Date().toISOString() } } as Json })
       .eq("id", job.id)
       .eq("status", "needs_review");
   }

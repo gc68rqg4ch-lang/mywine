@@ -368,7 +368,7 @@ export async function startPriceFollowup(
     proposal: { name: item.wine?.name ?? "", producer: item.wine?.producer ?? null, vintage_year: item.vintage_year, type: item.wine?.type ?? null },
     recognition: { model: "", confidence: 1, notes: null, enriched_fields: [], sources: [] },
     quantity: item.quantity,
-    price_followup: { item_id: item.id, label: bottleLabel(item), mode, ask, ...(held ? { held_step: step } : {}) },
+    price_followup: { item_id: item.id, label: bottleLabel(item), mode, ask, ...(held ? { held_step: step, held_at: new Date().toISOString() } : {}) },
     // Nur den Normalpreis: der bezahlte Preis bzw. das Geschenk bleibt, wie es ist.
     ...(mode === "regular" ? { price: item.purchase_price, ...(item.is_gift ? { is_gift: true, gift_from: item.gift_from } : {}) } : {}),
     ...extra,
@@ -431,12 +431,67 @@ async function askOrHold(db: Db, chatId: number, item: ItemRow, mode: PriceMode,
   await sendPriceQuestion(chatId, jobId, data?.extracted as unknown as IngestState);
 }
 
+/** Längstens so lange wird eine Preis-Rückfrage zurückgehalten; danach verfällt sie mit Hinweis. */
+export const HOLD_MAX_MS = 24 * 60 * 60 * 1000;
+
+/** Seit wann zurückgehalten (held_at; ältere Einträge ohne: updated_at). */
+const heldSince = (j: { extracted: unknown; updated_at?: string }) =>
+  Date.parse(((j.extracted as IngestState | null)?.price_followup?.held_at ?? j.updated_at ?? "") as string);
+
+/**
+ * Länger als 24 Stunden zurückgehalten: verwerfen und einmal melden („Preis für … noch leer – du
+ * kannst ihn jederzeit in der App oder hier nachtragen.“). Wirft nie.
+ */
+export async function expireHeldPriceQuestions(db: Db, chatId: number, now = Date.now()) {
+  try {
+    const { data, error } = await db
+      .from("ingest_jobs")
+      .select("id, extracted, updated_at")
+      .eq("telegram_chat_id", chatId)
+      .eq("status", "needs_review")
+      .eq("extracted->>step", "price_held");
+    if (error) throw error;
+    for (const job of (data ?? []).filter((j) => heldSince(j) < now - HOLD_MAX_MS)) {
+      const { data: closed, error: closeError } = await db
+        .from("ingest_jobs")
+        .update({ status: "discarded", error: "abgelaufen: 24 Std. zurückgehalten" })
+        .eq("id", job.id)
+        .eq("status", "needs_review")
+        .select("id");
+      if (closeError) throw closeError;
+      if (closed?.length) await sendMessage(chatId, T.priceHeldExpired((job.extracted as unknown as IngestState).price_followup?.label ?? "die Flasche"));
+    }
+  } catch (error) {
+    console.error("expire held price questions failed", error instanceof Error ? error.message : error);
+  }
+}
+
+/**
+ * Für alle Chats (Recherche-Worker, jede Minute): zu lange zurückgehaltene Preis-Rückfragen
+ * verfallen lassen und wartende stellen, sobald keine andere Erfassung mehr läuft – auch wenn
+ * niemand mehr schreibt (z. B. nachdem die andere Erfassung still verfallen ist). Wirft nie.
+ */
+export async function tickHeldPriceQuestions(db: Db, now = Date.now()) {
+  try {
+    const { data, error } = await db.from("ingest_jobs").select("telegram_chat_id").eq("status", "needs_review").eq("extracted->>step", "price_held");
+    if (error) throw error;
+    for (const chatId of new Set((data ?? []).map((j) => j.telegram_chat_id).filter((c): c is number => c != null))) {
+      await expireHeldPriceQuestions(db, chatId, now);
+      await releaseHeldPriceQuestions(db, chatId);
+    }
+  } catch (error) {
+    console.error("held price questions tick failed", error instanceof Error ? error.message : error);
+  }
+}
+
 /**
  * Zurückgehaltene Preis-Rückfragen stellen, sobald keine andere Erfassung mehr läuft – eine nach der
- * anderen (die älteste zuerst; die nächste nach deren Antwort). Wirft nie.
+ * anderen (die älteste zuerst; die nächste nach deren Antwort). Erst mit dem Senden beginnt die
+ * übliche Frist von 10 Minuten (updated_at). Wirft nie.
  */
 export async function releaseHeldPriceQuestions(db: Db, chatId: number) {
   try {
+    await expireHeldPriceQuestions(db, chatId);
     if (await otherFlowActive(db, chatId)) return;
     const { data, error } = await db
       .from("ingest_jobs")

@@ -234,6 +234,8 @@ export const T = {
   regularNotFound: (label: string) => `${label}\nKeinen Normalpreis bei Schweizer Händlern gefunden. Was kostet eine Flasche normalerweise? Schreib mir den Betrag.`,
   /** Rückfrage beantwortet: Preise der Charge gespeichert. */
   priceSaved: (label: string, line: string | null) => `${label}\n${line ? `✅ Gespeichert: ${e(line)}.` : "✅ Gut, der Preis bleibt leer."}`,
+  /** Zurückgehaltene Preis-Rückfrage nach 24 Std. verworfen. */
+  priceHeldExpired: (label: string) => `Preis für ${label} noch leer – du kannst ihn jederzeit in der App oder hier nachtragen.`,
   priceLeftEmpty: "Gut, der Preis bleibt leer.",
   priceOfferRetry: "Tippe bitte einen Knopf: Übernehmen, Selbst eingeben oder Leer lassen.",
   /** Kaufpreis „0“: dafür gibt es „🎁 Geschenk“ (Varianten). */
