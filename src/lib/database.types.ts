@@ -462,6 +462,84 @@ export type Database = {
         }
         Relationships: []
       }
+      research_jobs: {
+        Row: {
+          attempts: number
+          created_at: string
+          created_by: string | null
+          error: string | null
+          finished_at: string | null
+          hold: string | null
+          id: string
+          kind: string
+          notified_at: string | null
+          params: Json
+          position: number
+          result: Json | null
+          run_id: string
+          started_at: string | null
+          status: string
+          summary: string | null
+          vintage_year: number | null
+          wine_id: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          finished_at?: string | null
+          hold?: string | null
+          id?: string
+          kind: string
+          notified_at?: string | null
+          params?: Json
+          position?: number
+          result?: Json | null
+          run_id: string
+          started_at?: string | null
+          status?: string
+          summary?: string | null
+          vintage_year?: number | null
+          wine_id: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          finished_at?: string | null
+          hold?: string | null
+          id?: string
+          kind?: string
+          notified_at?: string | null
+          params?: Json
+          position?: number
+          result?: Json | null
+          run_id?: string
+          started_at?: string | null
+          status?: string
+          summary?: string | null
+          vintage_year?: number | null
+          wine_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_jobs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "persons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "research_jobs_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "wines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       research_suggestions: {
         Row: {
           created_at: string
@@ -539,6 +617,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      research_worker_lock: {
+        Row: {
+          id: number
+          locked_until: string | null
+          owner: string | null
+        }
+        Insert: {
+          id: number
+          locked_until?: string | null
+          owner?: string | null
+        }
+        Update: {
+          id?: number
+          locked_until?: string | null
+          owner?: string | null
+        }
+        Relationships: []
       }
       telegram_chat_messages: {
         Row: {
@@ -1488,6 +1584,10 @@ export type Database = {
       }
     }
     Functions: {
+      acquire_research_worker: {
+        Args: { p_owner: string; p_seconds: number }
+        Returns: boolean
+      }
       change_vintage: {
         Args: {
           p_from: number
@@ -1497,6 +1597,30 @@ export type Database = {
         }
         Returns: undefined
       }
+      claim_research_job: {
+        Args: { p_owner: string }
+        Returns: {
+          attempts: number
+          created_at: string
+          created_by: string | null
+          error: string | null
+          finished_at: string | null
+          hold: string | null
+          id: string
+          kind: string
+          notified_at: string | null
+          params: Json
+          position: number
+          result: Json | null
+          run_id: string
+          started_at: string | null
+          status: string
+          summary: string | null
+          vintage_year: number | null
+          wine_id: string
+        }[]
+      }
+      cleanup_research_jobs: { Args: never; Returns: number }
       delete_bottles: {
         Args: { p_item_id: string; p_quantity?: number }
         Returns: number
@@ -1534,6 +1658,10 @@ export type Database = {
         Returns: string
       }
       price_class: { Args: { p_price: number }; Returns: string }
+      release_research_worker: {
+        Args: { p_owner: string }
+        Returns: undefined
+      }
       replace_grape_shares: {
         Args: { p_shares: Json; p_vintage_year: number; p_wine_id: string }
         Returns: {

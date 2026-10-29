@@ -121,6 +121,18 @@ export const T = {
   apiLimitText: (until: string | null, random?: () => number) =>
     `${pick(["Mein Kontingent für heute ist aufgebraucht – ich kann den Wein gerade nicht nachschlagen.", "Oje, mein Kontingent ist aufgebraucht – nachschlagen kann ich gerade nicht."], random)} Versuch es später nochmals${until ? ` (ab ${until} geht es wieder)` : ""} – ich habe nichts gespeichert.`,
   thinkingResearch: "🔎 Ich recherchiere den Wein und melde mich gleich.",
+  /** Recherche im Hintergrund: Sammellauf fertig (zusammen mit den Zahlen aus job-text.ts). */
+  researchRunDone: (counts: string, extra: string | null, random?: () => number) =>
+    `🔎 Recherche fertig: ${counts}.${extra ? ` (${extra})` : ""} ${pick(["Die Vorschläge findest du in der App unter „Recherche“.", "Schau dir die Vorschläge in Ruhe in der App an.", "Was abweicht, liegt in der App unter „Recherche“ für dich bereit."], random)}`,
+  /** 🔎 für einen Wein fertig. */
+  researchSingleDone: (name: string, found: string | null, random?: () => number) =>
+    found
+      ? `🔎 Recherche fertig: <b>${e(name)}</b> – ${e(found)}.`
+      : `🔎 Recherche fertig: <b>${e(name)}</b> – ${pick(["ich habe nichts Neues gefunden.", "deine Angaben stimmen mit dem überein, was ich gefunden habe.", "Neues habe ich keines gefunden."], random)}`,
+  researchSingleFailed: (name: string) => `🔎 Bei <b>${e(name)}</b> bin ich mit der Recherche leider nicht durchgekommen. Versuch es später nochmals mit 🔎 auf der Weinseite.`,
+  /** Kontingent aufgebraucht: Lauf angehalten, Rest bleibt offen. */
+  researchPaused: (open: string, random?: () => number) =>
+    `${pick(["Mein Kontingent ist aufgebraucht – ich habe die Recherche angehalten.", "Oje, mein Kontingent ist aufgebraucht – die Recherche ruht vorerst."], random)} Noch ${open} offen; auf der Seite „Recherche“ kannst du später fortsetzen.`,
   here: "Bitte schön:",
 
   // --- Offene Rückfragen

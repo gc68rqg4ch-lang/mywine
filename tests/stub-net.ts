@@ -106,7 +106,11 @@ export function installNet(net: Net) {
     }
     const m = url.pathname.match(/\/rest\/v1\/(rpc\/)?(\w+)$/);
     if (!m) throw new Error(`stub: ${url}`);
-    if (m[1]) return json(net.rpc[m[2]]?.(body) ?? null);
+    if (m[1]) {
+      // Fehlerantwort einer Funktion: { __status, body } (z. B. Funktion fehlt → 404 PGRST202).
+      const out = net.rpc[m[2]]?.(body) as { __status?: number; body?: unknown } | null | undefined;
+      return out && typeof out === "object" && typeof out.__status === "number" ? json(out.body, out.__status) : json(out ?? null);
+    }
     const failure = net.fail?.(method, m[2], body);
     if (failure) return json(failure.body, failure.status);
     const table = (net.tables[m[2]] ??= []);

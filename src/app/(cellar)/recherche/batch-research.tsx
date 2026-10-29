@@ -8,7 +8,7 @@ import { runBatch } from "@/lib/research/batch";
 import type { ResearchScope } from "@/lib/research/gaps";
 import type { ResearchOutcome, TasteMode } from "@/lib/research/wine";
 import { noProfileText } from "@/lib/taste/profile";
-import { researchDrinkWindows, researchWine } from "../research-actions";
+import { researchDrinkWindows, researchWine, startBatchResearch } from "../research-actions";
 
 export type BatchCandidate = {
   wineId: string;
@@ -85,6 +85,25 @@ export function BatchResearch({
   async function run() {
     stop.current = false;
     setHalt(null);
+    // Im Hintergrund (Warteschlange): die Seite darf geschlossen werden; Fortschritt oben.
+    const queued = await startBatchResearch({
+      mode,
+      scope,
+      taste,
+      skipRecent,
+      candidates: todo.map((c) => ({ wineId: c.wineId, ...(c.tasteYear !== undefined ? { tasteYear: c.tasteYear } : {}), ...(c.windowYears ? { windowYears: c.windowYears } : {}) })),
+    });
+    if ("runId" in queued) {
+      setPhase("idle");
+      router.refresh();
+      return;
+    }
+    if ("error" in queued) {
+      setHalt(queued.error);
+      setPhase("idle");
+      return;
+    }
+    // Migration noch nicht eingespielt: wie bisher hier in der Seite, Wein für Wein.
     setPhase("running");
     // Nacheinander; API-Limit: sofort aufhören; andere Fehler: nach 3 in Folge.
     const research = (c: BatchCandidate) =>
@@ -157,7 +176,7 @@ export function BatchResearch({
               </p>
             )}
             <p className="muted small">Abweichungen lege ich als Vorschläge ab – ich überschreibe nichts.</p>
-            <p className="muted small">Die Seite muss dabei offen bleiben. Gefundenes wird sofort gespeichert.</p>
+            <p className="muted small">Ich arbeite im Hintergrund – du kannst die Seite schliessen. Gefundenes wird sofort gespeichert; wenn alles fertig ist, meldet sich Antoine per Telegram.</p>
             <div className="row">
               <button type="button" className="btn btn-primary btn-sm" onClick={run}>
                 Starten

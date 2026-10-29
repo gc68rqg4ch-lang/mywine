@@ -52,9 +52,12 @@ test("Ablauf im 🔎-Feld: Nachrecherchieren, Zuletzt recherchiert, drehendes �
   assert.ok(head.includes('"Nachrecherchieren"') && head.includes("Zuletzt recherchiert am ${researchedOn}") && head.includes('"Noch nie recherchiert"'));
   assert.ok(head.includes('name="year"') && head.includes('value={year == null ? "nv" : String(year)}'), "gewählter Jahrgang");
   assert.ok(head.includes("hidden={!open}"), "Feld bleibt im DOM – das Ergebnis geht nicht verloren");
-  assert.ok(head.includes("!pending && setOpen"), "während der Recherche nicht schliessbar");
+  assert.ok(head.includes("!submitting && setOpen"), "während des Absendens nicht schliessbar");
+  // Im Hintergrund: läuft ein Auftrag, dreht das 🔎 auch nach dem Wiederöffnen der Seite
+  assert.ok(head.includes("const pending = submitting || running;") && head.includes("Recherche läuft im Hintergrund"));
   const action = readFileSync("src/app/(cellar)/research-actions.ts", "utf8");
-  assert.match(action, /researchWine\(wineId, "all", "always", formYear\(formData\)\)/, "inkl. Geschmacksprofil, gewählter Jahrgang");
+  assert.match(action, /enqueueRun\(session\.supabase, \[\{ wineId, kind: "page", params: year === undefined \? \{\} : \{ year \} \}\]/, "Auftrag mit gewähltem Jahrgang");
+  assert.match(action, /researchWine\(wineId, "all", "always", year\)/, "ohne Migration wie bisher: inkl. Geschmacksprofil, gewählter Jahrgang");
   assert.match(action, /revalidatePath\(`\/wein\/\$\{wineId\}`\)/, "„Zuletzt recherchiert am“ wird aktualisiert");
 });
 

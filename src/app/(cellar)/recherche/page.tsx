@@ -19,6 +19,9 @@ import { compareWineNames, wineName } from "@/lib/format";
 import { loadPendingSuggestions, type Suggestion } from "@/lib/research/suggestions";
 import { loadGapData } from "@/lib/research/wine";
 import { BatchResearch, type BatchCandidate } from "./batch-research";
+import { BatchProgress } from "./batch-progress";
+import { latestBatchRun } from "@/lib/research/jobs";
+import { runActive } from "@/lib/research/job-text";
 
 export const metadata: Metadata = { title: "Recherche" };
 
@@ -52,7 +55,17 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
     return `/recherche${query ? `?${query}` : ""}`;
   };
   const { supabase } = await getMemberSession();
-  const [data, suggestions] = await Promise.all([loadGapData(supabase), loadPendingSuggestions(supabase)]);
+  const [data, suggestions, run] = await Promise.all([
+    loadGapData(supabase),
+    loadPendingSuggestions(supabase),
+    // Sammellauf im Hintergrund (ohne Migration: null).
+    latestBatchRun(supabase).catch((error) => {
+      console.error("loading research run failed", error);
+      return null;
+    }),
+  ]);
+  // Läuft bzw. ruht (API-Limit) ein Lauf, zuerst diesen zeigen; neu starten erst danach.
+  const runOpen = run != null && (runActive(run.counts) || run.counts.held > 0);
   const byWine = new Map<string, Suggestion[]>();
   for (const s of suggestions) byWine.set(s.wineId, [...(byWine.get(s.wineId) ?? []), s]);
 
@@ -260,7 +273,10 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
       </Link>
       )}
 
+      {run && <BatchProgress runId={run.runId} counts={run.counts} holdReason={run.holdReason} />}
+
       {/* key: bei Wechsel von Umfang oder Optionen frisch beginnen */}
+      {!runOpen && (
       <BatchResearch
         key={`${scope}:${complete}:${skipRecent}:${profile}:${windowMode}`}
         candidates={candidates}
@@ -270,6 +286,7 @@ export default async function ResearchPage({ searchParams }: PageProps<"/recherc
         skipped={skipRecent && !windowMode ? recent.length : 0}
         mode={windowMode ? "window" : "research"}
       />
+      )}
     </div>
   );
 }

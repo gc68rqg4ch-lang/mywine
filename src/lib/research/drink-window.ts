@@ -16,6 +16,7 @@ import { webResearch } from "@/lib/ingest/recognize";
 import { loadGrapeShares } from "@/lib/grapes/store";
 import { formatShares } from "@/lib/grapes/shares";
 import { asDrinkSource, decideDrinkWindow, drinkWindowText, saveVintageWindow, type FoundWindow } from "@/lib/cellar/drink-window";
+import { apiProblem } from "@/lib/ai/api-errors";
 import { recordSuggestion } from "./suggestions";
 import { sourceNote } from "./compare";
 import { loadShopPages, shopDocuments, shopFetchAllowed, shopFetchNote, shopPagesNote, type ShopPage } from "./shops";
@@ -208,3 +209,27 @@ export async function findAndStoreDrinkWindow(
 /** Kurz für Listen und Meldungen: „Trinkfenster 2019: ≈ 2024–2030“. */
 export const drinkWindowFilled = (year: number | null, w: FoundWindow) =>
   `Trinkfenster ${year ?? "NV"}: ${drinkWindowText(w.from, w.until, w.source)}`;
+
+/**
+ * „Trinkfenster fehlt“ für mehrere Jahrgänge eines Weins (nacheinander, höchstens 20) – für den
+ * Sammellauf in der Seite und im Hintergrund. API-Fehler: Abbruch mit dem bis dahin Gefundenen.
+ */
+export async function researchDrinkWindowYears(db: Db, wineId: string, years: (number | null)[]) {
+  const started = Date.now();
+  const seconds = () => Math.round((Date.now() - started) / 1000);
+  const filled: string[] = [];
+  let suggested = 0;
+  try {
+    for (const year of years.filter((y) => y === null || Number.isInteger(y)).slice(0, 20)) {
+      const { result, window } = await findAndStoreDrinkWindow(db, wineId, year);
+      if (result === "set" && window) filled.push(drinkWindowFilled(year, window));
+      if (result === "suggested") suggested++;
+    }
+  } catch (error) {
+    const problem = apiProblem(error);
+    if (problem?.kind === "usage_limit") console.error("api limit reached", wineId, problem.message);
+    else console.error("drink window research failed", wineId, error);
+    return { status: "error" as const, filled, suggested, seconds: seconds(), error: problem ?? { kind: "other" as const, message: "Die Suche ist fehlgeschlagen." } };
+  }
+  return { status: filled.length || suggested ? ("filled" as const) : ("nothing" as const), filled, suggested, seconds: seconds() };
+}

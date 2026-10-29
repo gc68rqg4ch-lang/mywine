@@ -41,6 +41,7 @@ import { DocumentClip } from "./documents";
 import { BatchForm, WineCardForm, WineNotesForm, type EditBatch } from "./edit-sections";
 import { WineNotesView } from "@/components/wine-notes";
 import { ResearchHead } from "./research-head";
+import { wineJobStatus } from "@/lib/research/jobs";
 import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
 import { PersonRatings, RatingsForm, type PersonRating } from "./ratings-card";
@@ -183,7 +184,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const inVintage = items.filter((i) => i.vintage_year === year);
   const anchor = anchorItem(inVintage);
 
-  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places, deleteSummary, tasteProfile, leavesEmpty, suggestions] = await Promise.all([
+  const [{ ratings, tastings, vintage }, grapes, photos, vendors, documents, places, deleteSummary, tasteProfile, leavesEmpty, suggestions, researchJob] = await Promise.all([
     loadRatingsAndTastings(supabase, wine.id, year),
     loadGrapeShares(supabase, wine.id, year),
     loadVintagePhotos(supabase, wine.id, year, inVintage.map((i) => i.inventory_item_id)),
@@ -202,6 +203,8 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
       console.error("loading suggestions failed", error);
       return [];
     }),
+    // Recherche im Hintergrund (🔎 bzw. Sammellauf): läuft sie noch?
+    wineJobStatus(supabase, wine.id),
   ]);
   const emptyWine = leavesEmpty ? { encounterId: encounters[0].id, wineId: wine.id, name: wine.name, question: EMPTY_WINE_QUESTION } : null;
 
@@ -539,7 +542,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 <h1 className="page-title">
                   {wine.name} {yearLabel}
                 </h1>
-                <ResearchHead wineId={wine.id} year={year} researchedOn={formatDate(zurichDate(wine.researched_at))} />
+                <ResearchHead wineId={wine.id} year={year} researchedOn={formatDate(zurichDate(wine.researched_at))} running={researchJob.running} />
               </div>
               {wine.producer && <span className="item-producer">{wine.producer}</span>}
             </div>

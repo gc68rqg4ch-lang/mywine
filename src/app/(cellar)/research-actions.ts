@@ -8,8 +8,9 @@ import { researchAndFillWine, type ResearchOutcome, type TasteMode } from "@/lib
 import { noProfileText } from "@/lib/taste/profile";
 import { researchSummary } from "@/lib/research/summary";
 import { apiProblem } from "@/lib/ai/api-errors";
-import { drinkWindowFilled, findAndStoreDrinkWindow } from "@/lib/research/drink-window";
+import { researchDrinkWindowYears } from "@/lib/research/drink-window";
 import type { ActionState } from "./actions";
+import { cancelRun, enqueueRun, kickWorker, resumeRun, type NewJob } from "@/lib/research/jobs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -59,26 +60,10 @@ export async function researchWine(
  */
 export async function researchDrinkWindows(wineId: string, years: (number | null)[]): Promise<ResearchOutcome> {
   const session = await getSession();
-  const started = Date.now();
-  const seconds = () => Math.round((Date.now() - started) / 1000);
   if (!session.isMember || !UUID_RE.test(wineId)) return { status: "error", filled: [], suggested: 0, seconds: 0 };
-  const filled: string[] = [];
-  let suggested = 0;
-  try {
-    for (const year of years.filter((y) => y === null || Number.isInteger(y)).slice(0, 20)) {
-      const { result, window } = await findAndStoreDrinkWindow(session.supabase, wineId, year);
-      if (result === "set" && window) filled.push(drinkWindowFilled(year, window));
-      if (result === "suggested") suggested++;
-    }
-  } catch (error) {
-    const problem = apiProblem(error);
-    if (problem?.kind === "usage_limit") console.error("api limit reached", wineId, problem.message);
-    else console.error("drink window research failed", wineId, error);
-    if (filled.length || suggested) revalidatePath("/", "layout");
-    return { status: "error", filled, suggested, seconds: seconds(), error: problem ?? { kind: "other", message: "Die Suche ist fehlgeschlagen." } };
-  }
-  if (filled.length || suggested) revalidatePath("/", "layout");
-  return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, seconds: seconds() };
+  const outcome = await researchDrinkWindowYears(session.supabase, wineId, years);
+  if (outcome.filled.length || outcome.suggested) revalidatePath("/", "layout");
+  return outcome;
 }
 
 /** Jahrgang aus dem Formular: leer → undefined (Recherche wählt), „nv“ → null. */
@@ -99,10 +84,84 @@ const tasteNote = (outcome: ResearchOutcome) => (outcome.taste === "none" ? `Ges
  */
 export async function researchWineFromHeader(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const wineId = String(formData.get("wineId") ?? "");
-  const outcome = await researchWine(wineId, "all", "always", formYear(formData));
+  const year = formYear(formData);
+  // Im Hintergrund (Warteschlange); die Seite darf geschlossen werden. Ohne Migration wie bisher direkt.
+  const session = await getSession();
+  if (!session.isMember || !UUID_RE.test(wineId)) return { error: "Kein Zugriff." };
+  const queued = await enqueueRun(session.supabase, [{ wineId, kind: "page", params: year === undefined ? {} : { year } }], session.person?.id ?? null).catch((error) => {
+    console.error("research enqueue failed", wineId, error);
+    return { unavailable: true as const };
+  });
+  if ("runId" in queued) {
+    kickWorker();
+    revalidatePath(`/wein/${wineId}`);
+    return { ok: BACKGROUND_TEXT };
+  }
+  const outcome = await researchWine(wineId, "all", "always", year);
   // „Zuletzt recherchiert am …“ auch ohne Fund aktualisieren.
   if (outcome.status !== "error" && UUID_RE.test(wineId)) revalidatePath(`/wein/${wineId}`);
   return researchSummary(outcome);
+}
+
+const BACKGROUND_TEXT = "Recherche läuft im Hintergrund – du kannst die Seite schliessen. Ist sie fertig, meldet sich Antoine per Telegram; die Ergebnisse stehen dann hier.";
+
+export type BatchStart = { runId: string } | { unavailable: true } | { error: string };
+
+/**
+ * Sammellauf starten: die gewählten Weine als Aufträge in die Warteschlange (nacheinander im
+ * Hintergrund). unavailable: Migration fehlt – dann läuft der Sammellauf wie bisher in der Seite.
+ */
+export async function startBatchResearch(input: {
+  mode: "research" | "window";
+  scope: ResearchScope;
+  taste: TasteMode;
+  skipRecent: boolean;
+  candidates: { wineId: string; tasteYear?: number | null; windowYears?: (number | null)[] }[];
+}): Promise<BatchStart> {
+  const session = await getSession();
+  if (!session.isMember) return { error: "Kein Zugriff." };
+  const scope: ResearchScope = input.scope === "all" ? "all" : "cellar";
+  const taste = TASTE_MODES.includes(input.taste) ? input.taste : "missing";
+  const validYear = (y: unknown): y is number | null => y === null || Number.isInteger(y);
+  const jobs: NewJob[] = input.candidates
+    .filter((c) => UUID_RE.test(c.wineId))
+    .slice(0, 500)
+    .map((c) =>
+      input.mode === "window"
+        ? { wineId: c.wineId, kind: "window", params: { years: (c.windowYears ?? []).filter(validYear).slice(0, 20) }, vintageYear: (c.windowYears ?? []).find((y) => y != null) ?? null }
+        : { wineId: c.wineId, kind: "research", params: { scope, taste, skipRecent: input.skipRecent !== false, ...(validYear(c.tasteYear) ? { year: c.tasteYear } : {}) } },
+    );
+  try {
+    const queued = await enqueueRun(session.supabase, jobs, session.person?.id ?? null);
+    if ("empty" in queued) return { error: "Nichts ausgewählt." };
+    if ("runId" in queued) {
+      kickWorker();
+      revalidatePath("/recherche");
+    }
+    return queued;
+  } catch (error) {
+    console.error("research batch enqueue failed", error);
+    return { error: "Der Sammellauf liess sich nicht starten." };
+  }
+}
+
+/** Sammellauf abbrechen: offene Aufträge → übersprungen (der laufende Wein wird fertig). */
+export async function cancelBatchResearch(runId: string): Promise<ActionState> {
+  const session = await getSession();
+  if (!session.isMember || !UUID_RE.test(runId)) return { error: "Kein Zugriff." };
+  const n = await cancelRun(session.supabase, runId);
+  revalidatePath("/recherche");
+  return { ok: n ? `Abgebrochen – ${n} ${n === 1 ? "Wein" : "Weine"} übersprungen.` : "Es war nichts mehr offen." };
+}
+
+/** Nach dem API-Limit fortsetzen. */
+export async function resumeBatchResearch(runId: string): Promise<ActionState> {
+  const session = await getSession();
+  if (!session.isMember || !UUID_RE.test(runId)) return { error: "Kein Zugriff." };
+  const n = await resumeRun(session.supabase, runId);
+  if (n) kickWorker();
+  revalidatePath("/recherche");
+  return { ok: n ? `Fortgesetzt – ${n} ${n === 1 ? "Wein" : "Weine"} wieder in der Warteschlange.` : "Es war nichts angehalten." };
 }
 
 /** „🔎 Geschmacksprofil recherchieren“ in der Karte – nur das Profil. */

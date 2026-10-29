@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { researchWineFromHeader } from "../../research-actions";
 
@@ -7,26 +8,39 @@ import { researchWineFromHeader } from "../../research-actions";
  * 🔎 neben dem Weinnamen: öffnet ein kleines Feld mit „Nachrecherchieren“ (gewählter Jahrgang,
  * inkl. Geschmacksprofil) und „Zuletzt recherchiert am …“. Während der Recherche dreht sich
  * das 🔎; danach eine kurze Meldung. Abweichungen erscheinen wie bisher in „Zum Wein“.
+ * Im Hintergrund (Warteschlange): „Recherche läuft …“, solange ein Auftrag offen ist (auch nach
+ * dem Schliessen und Wiederöffnen der Seite); die Seite lädt dann alle 20 s neu, bis er fertig ist.
  */
 export function ResearchHead({
   wineId,
   year,
   researchedOn,
+  running = false,
 }: {
   wineId: string;
   year: number | null;
   researchedOn: string | null;
+  /** Auftrag im Hintergrund offen (Warteschlange). */
+  running?: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const [state, action, submitting] = useActionState(
     researchWineFromHeader,
     undefined,
   );
+  const router = useRouter();
+  const pending = submitting || running;
+  // Hintergrund: Ergebnisse erscheinen, sobald der Auftrag fertig ist.
+  useEffect(() => {
+    if (!running) return;
+    const timer = window.setInterval(() => router.refresh(), 20_000);
+    return () => window.clearInterval(timer);
+  }, [running, router]);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
   // Antippen ausserhalb oder Escape schliesst das Feld (nicht während der Recherche).
   useEffect(() => {
-    if (!open || pending) return;
+    if (!open || submitting) return;
     const outside = (e: PointerEvent) => {
       if (box.current && !box.current.contains(e.target as Node))
         setOpen(false);
@@ -38,7 +52,7 @@ export function ResearchHead({
       document.removeEventListener("pointerdown", outside);
       document.removeEventListener("keydown", escape);
     };
-  }, [open, pending]);
+  }, [open, submitting]);
 
   return (
     <div className="research-head" ref={box}>
@@ -51,7 +65,7 @@ export function ResearchHead({
         aria-label={pending ? "Recherche läuft" : "Recherche"}
         title={pending ? "Recherche läuft …" : "Recherche"}
         // Während der Recherche bleibt das Feld offen – danach steht dort die Meldung.
-        onClick={() => !pending && setOpen((v) => !v)}
+        onClick={() => !submitting && setOpen((v) => !v)}
       >
         <span aria-hidden>🔎</span>
       </button>
@@ -74,9 +88,14 @@ export function ResearchHead({
           className="btn btn-sm btn-primary"
           disabled={pending}
         >
-          {pending ? "Recherchiere …" : "Nachrecherchieren"}
+          {pending ? "Recherche läuft …" : "Nachrecherchieren"}
         </button>
-        {pending ? (
+        {running ? (
+          <p className="muted small" role="status">
+            Recherche läuft im Hintergrund – du kannst die Seite schliessen.
+            Die Ergebnisse erscheinen hier, sobald sie fertig ist.
+          </p>
+        ) : submitting ? (
           <p className="muted small" role="status">
             Ich ergänze leere Angaben und suche das Geschmacksprofil – das
             dauert etwa eine Minute.
