@@ -347,7 +347,7 @@ export function productPage(html: string): PageRead {
 
   if (products.length) {
     const p = products[0];
-    const name = p.name?.trim();
+    const name = p.name ? decodeHtml(p.name).trim() : "";
     if (!name) return listing("no_product_name");
     const offers = ([] as unknown[]).concat(p.offers ?? []).flatMap((o) => ([] as unknown[]).concat((o as { offers?: unknown })?.offers ?? o));
     for (const o of offers) {

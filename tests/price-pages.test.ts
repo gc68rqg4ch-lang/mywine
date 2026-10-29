@@ -179,3 +179,8 @@ test("Zwei geprüfte Händler 29.90 und 15.90 → Rückfrage mit beiden Preisen 
   assert.match(String(finding.kind === "other" && finding.why).replace(/ /g, " "), /CHF 15\.90 \(Liquori\)/);
   assert.equal(diagnostics.verdict, "not_exact:price_spread");
 });
+
+test("JSON-LD-Name mit HTML-Zeichen („Noah&#039;s Mill“) wird dekodiert", () => {
+  const r = productPage(ld({ "@type": "Product", name: "Noah&#039;s Mill Bourbon Whiskey 70cl", offers: offer("86.90") }));
+  assert.ok(r.kind === "product" && r.offer.title === "Noah's Mill Bourbon Whiskey 70cl");
+});

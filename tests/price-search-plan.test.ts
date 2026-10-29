@@ -9,7 +9,11 @@ import { installNet, type Net } from "./stub-net";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   DIRECT_SHOPS,
+  apostropheVariants,
   brandFromProducer,
+  brandPageHits,
+  duplicateQueries,
+  shopSearchTerms,
   directShopsFor,
   genericName,
   htmlSearchHits,
@@ -42,7 +46,7 @@ test("Marke aus dem Produzenten: Rechtsform, Familienzusatz und Betriebswörter 
   assert.equal(brandFromProducer(""), null);
 });
 
-test("Gattungsnamen und kurze Namen immer mit Marke; Marke im Namen (Disaronno) → Name allein", () => {
+test("Gattungsnamen mit Marke; eigenständige Produktnamen (Disaronno, Creanza, Noah's Mill) → Name allein", () => {
   assert.equal(genericName("Amaretto"), true);
   assert.equal(genericName("Premium Pisco"), true);
   assert.equal(genericName("Grappa Riserva"), true);
@@ -54,7 +58,8 @@ test("Gattungsnamen und kurze Namen immer mit Marke; Marke im Namen (Disaronno) 
   assert.equal(productTerm({ name: "Disaronno", producer: "Illva Saronno" }), "Disaronno", "Name ist selbst die Marke");
   assert.equal(productTerm({ name: "Disaronno Originale", producer: "Illva Saronno S.p.A." }), "Disaronno Originale");
   assert.equal(productTerm({ name: "Premium Pisco", producer: "Capel" }), "Capel Premium Pisco");
-  assert.equal(productTerm({ name: "Creanza", producer: "Moreno Wildhaber" }), "Moreno Wildhaber Creanza");
+  assert.equal(productTerm({ name: "Creanza", producer: "Moreno Wildhaber" }), "Creanza");
+  assert.equal(productTerm({ name: "Noah's Mill", producer: "Willett Distillery" }), "Noah's Mill");
   assert.equal(productTerm({ name: "Lagavulin 16", producer: "Lagavulin Distillery" }), "Lagavulin 16");
   assert.equal(productTerm({ name: "Amaretto", producer: null }), "Amaretto");
 });
@@ -70,18 +75,20 @@ test("Feste Suchbegriffe: Marke + Name + Grösse, kaufen CHF, site:.ch, Händler
   assert.deepEqual(disaronno, ["Disaronno 70cl", "Disaronno kaufen CHF", "Disaronno site:.ch", "Coop Disaronno"]);
   assert.ok(!disaronno.some((q) => /Originale/.test(q) && /Coop/.test(q)), "kein „Coop Originale“");
   assert.deepEqual(priceQueries({ name: "Pintia", producer: "Bodegas Vega Sicilia", year: 2019, sizeMl: 750 }), [
+    "Pintia 2019 75cl",
+    "Pintia 2019 kaufen CHF",
+    "Pintia 2019 site:.ch",
     "Vega Sicilia Pintia 2019 75cl",
-    "Vega Sicilia Pintia 2019 kaufen CHF",
-    "Vega Sicilia Pintia 2019 site:.ch",
   ]);
-  // Eigenständiger Name aus mehreren Wörtern: zuletzt auch ohne Marke
-  assert.equal(priceQueries({ name: "Americano al Ciapón", producer: "Distilleria Beccaris", sizeMl: 700 }).at(-1), "Americano al Ciapón 70cl");
+  // Eigenständiger Name: zuerst allein, Marke + Name zuletzt
+  const ciapon = priceQueries({ name: "Americano al Ciapón", producer: "Distilleria Beccaris", sizeMl: 700 });
+  assert.deepEqual([ciapon[0], ciapon.at(-1)], ["Americano al Ciapón 70cl", "Beccaris Americano al Ciapón 70cl"]);
 });
 
-test("Websuche mit Standort Schweiz (Zürich) für alle Recherchen; Preissuche bis 10 Suchen", () => {
+test("Websuche mit Standort Schweiz (Zürich) für alle Recherchen; Preissuche bis 6 Suchen", () => {
   const tools = researchTools({ toolName: "x", toolDescription: "x", inputSchema: { type: "object" }, maxSearches: PRICE_MAX_SEARCHES });
   const search = tools.find((t) => "type" in t && t.type === "web_search_20260209") as { max_uses?: number; user_location?: unknown };
-  assert.equal(search.max_uses, 10);
+  assert.equal(search.max_uses, 6);
   assert.deepEqual(search.user_location, { type: "approximate", country: "CH", city: "Zürich", region: "Zürich", timezone: "Europe/Zurich" });
   assert.equal(SWISS_LOCATION.country, "CH");
 });
@@ -230,7 +237,7 @@ test("Eigene Prüfung ohne Modell-Zusage: .ch-Adressen aus den Suchergebnissen w
   assert.match(prompt, /nur ein Hinweis/);
   const tools = lastBody.tools as { type?: string; max_uses?: number; user_location?: { country?: string } }[];
   const search = tools.find((t) => t.type === "web_search_20260209")!;
-  assert.deepEqual([search.max_uses, search.user_location?.country], [10, "CH"]);
+  assert.deepEqual([search.max_uses, search.user_location?.country], [6, "CH"]);
 });
 
 test("Direkte Shop-Suche findet den Preis; mit zwei exakten Händlern entfällt die Websuche", async () => {
@@ -299,4 +306,54 @@ test("Shop-Treffer: Original vor Variante und anderer Grösse; Grappa ist kein B
   assert.deepEqual(rankHits(htmlSearchHits(html, drinks), { name: "Disaronno", producer: "Illva Saronno", sizeMl: 700 }).map((h) => h.url), ["https://www.drinks.ch/de/amaretto-disaronno-70cl.html"]);
   const grappa = [{ url: "https://casapoli.ch/products/grappa-di-barolo", label: "Grappa di Barolo 70 cl." }, { url: "https://x.ch/p/barolo-ceretto-2021", label: "Barolo DOCG Ceretto 2021" }];
   assert.deepEqual(rankHits(grappa, { name: "Barolo", producer: "Ceretto", year: 2021, sizeMl: 750, type: "red" }).map((h) => h.url), ["https://x.ch/p/barolo-ceretto-2021"]);
+});
+
+test("Noah's Mill (Willett Distillery): zuerst der Name ohne Firma, Apostroph-Varianten, dann Marke + Name", () => {
+  const want = { name: "Noah's Mill", producer: "Willett Distillery" };
+  assert.equal(brandFromProducer(want.producer), "Willett");
+  assert.deepEqual(apostropheVariants("Noah's Mill"), ["Noah's Mill", "Noahs Mill", "Noah s Mill"]);
+  assert.deepEqual(apostropheVariants("Noah’s Mill"), ["Noah’s Mill", "Noahs Mill", "Noah s Mill"]);
+  assert.deepEqual(apostropheVariants("Disaronno"), ["Disaronno"]);
+  assert.deepEqual(shopSearchTerms(want), ["Noah's Mill", "Noahs Mill", "Noah s Mill", "Willett Noah's Mill"]);
+  assert.deepEqual(shopSearchTerms({ name: "Amaretto", producer: "Paolo Lazzaroni & Figli" }), ["Lazzaroni Amaretto"], "Gattungsname: nur mit Marke");
+  assert.deepEqual(shopSearchTerms({ name: "Blanton's", producer: "Buffalo Trace Distillery" })[0], "Blanton's");
+  const q = priceQueries({ ...want, sizeMl: 700 });
+  assert.deepEqual(q, ["Noah's Mill 70cl", "Noah's Mill kaufen CHF", "Noah's Mill site:.ch", "Noahs Mill 70cl", "Willett Noah's Mill 70cl"]);
+  assert.ok(!q.slice(0, 3).some((x) => /Willett/.test(x)), "erste Begriffe ohne Willett");
+  assert.equal(new Set(q.map((x) => x.toLowerCase())).size, q.length, "jeder Begriff nur einmal");
+});
+
+test("Doppelte Websuchen werden erkannt (Gross/Klein, Leerzeichen egal)", () => {
+  assert.deepEqual(duplicateQueries(["Noah's Mill 70cl", "noah's  mill 70cl", "Willett Noah's Mill", "Noah's Mill 70cl", "Noahs Mill"]), [{ query: "Noah's Mill 70cl", count: 3 }]);
+  assert.deepEqual(duplicateQueries(["a", "b"]), []);
+});
+
+test("Markenseite in der Trefferliste (drinks.ch/de/marken/…): passende Adresse erkannt", () => {
+  const drinks = DIRECT_SHOPS.find((s) => s.id === "drinks.ch")!;
+  const html = `<a href="https://www.drinks.ch/de/marken/noah-s-mill.html">Noah's Mill</a><a href="/de/marken/willett.html">Willett</a><a href="/de/marken/noah-s-mill.html">x</a>`;
+  assert.deepEqual(brandPageHits(html, drinks, { name: "Noah's Mill" }), ["https://www.drinks.ch/de/marken/noah-s-mill.html"]);
+  assert.deepEqual(htmlSearchHits(html, drinks), [], "Markenseiten sind keine Produkte");
+  assert.ok(DIRECT_SHOPS.some((s) => s.id === "bringts.ch" && s.kind === "shopify"), "bringts.ch dabei");
+  assert.ok(directShopsFor("spirit").some((s) => s.id === "bringts.ch"));
+});
+
+test("Direkte Shop-Suche: Schreibweisen der Reihe nach, Markenseite → deren Produkte werden geprüft; ohne Websuche", async () => {
+  web.clear();
+  claudeCalls = 0;
+  blocks = [];
+  const NOAH = { name: "Noah's Mill", producer: "Willett Distillery", type: "spirit", country: "USA", region: "Kentucky", appellation: null };
+  const drinks = DIRECT_SHOPS.find((s) => s.id === "drinks.ch")!;
+  const PRODUCT = "https://www.drinks.ch/de/noah-s-mill-bourbon-whiskey-70cl.html";
+  // „Noah's Mill“ findet nichts, „Noahs Mill“ nur die Markenseite
+  web.set(drinks.search("Noah's Mill"), `<p>Keine Treffer</p>`);
+  web.set(drinks.search("Noahs Mill"), `<a href="https://www.drinks.ch/de/marken/noah-s-mill.html">Noah's Mill</a>`);
+  web.set("https://www.drinks.ch/de/marken/noah-s-mill.html", `<a href="/de/whisky.html">Whisky</a><a href="${PRODUCT}">Noah's Mill Bourbon</a>`);
+  web.set(PRODUCT, `<script type="application/ld+json">{"@type":"Product","name":"Noah's Mill Bourbon Whiskey 70cl","offers":{"price":"86.90","priceCurrency":"CHF"}}</script>`);
+  const { finding, diagnostics } = await researchPrice(NOAH, null, 700, null);
+  assert.ok(finding.kind === "exact" && finding.amount === 86.9, JSON.stringify(finding));
+  assert.equal(claudeCalls, 0, "exakter Shop-Treffer: keine Websuche");
+  const d = diagnostics.direct!.find((x) => x.shop === "drinks.ch")!;
+  assert.deepEqual([d.result, d.queries, d.brandPage], ["ok", ["Noah's Mill", "Noahs Mill", "Noah s Mill"], "https://www.drinks.ch/de/marken/noah-s-mill.html"]);
+  // Höchstens 3 Abfragen je Shop; die Marke kommt erst als vierte Schreibweise
+  assert.ok(diagnostics.direct!.every((x) => (x.queries?.length ?? 0) <= 3 && !(x.queries ?? []).slice(0, 3).some((q) => /Willett/.test(q))));
 });

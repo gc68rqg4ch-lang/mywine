@@ -25,41 +25,87 @@ export function swissMerchantUrl(url: string) {
 // ——— Marke und Suchbegriffe ———
 
 /**
- * Produkt für die Suche: Marke + Name („Lazzaroni Amaretto“, „Wildhaber Creanza“); steckt die Marke
- * schon im Namen, der Name allein („Disaronno“). Ohne Produzent: der Name.
+ * Produkt für die Suche: bei Gattungsnamen Marke + Name („Lazzaroni Amaretto“, „Capel Premium
+ * Pisco“); bei eigenständigen Produktnamen der Name allein („Noah's Mill“, „Disaronno“, „Lagavulin
+ * 16“) – die Firma dahinter (Willett Distillery) steht in Shops meist nicht im Titel.
  */
 export function productTerm(want: { name: string; producer?: string | null }) {
   const name = want.name.trim();
   const brand = brandFromProducer(want.producer);
-  if (!brand || brandInName(brand, name)) return name;
+  if (!brand || brandInName(brand, name) || !genericName(name)) return name;
   return `${brand} ${name}`;
+}
+
+/** Schreibweisen mit Apostroph: „Noah's Mill“, „Noahs Mill“, „Noah s Mill“ (ohne Doppel). */
+export function apostropheVariants(term: string) {
+  const t = term.trim();
+  return unique([t, t.replace(/['’`´]/g, ""), t.replace(/['’`´]/g, " ").replace(/\s+/g, " ").trim()]);
+}
+
+const unique = (list: string[]) => {
+  const seen = new Set<string>();
+  return list.filter((q) => {
+    const k = normQuery(q);
+    if (!q || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+/** Suchbegriff vereinheitlicht (Gross/Klein, Leerzeichen) – für das Erkennen doppelter Suchen. */
+export const normQuery = (q: string) => q.toLowerCase().replace(/\s+/g, " ").trim();
+
+/**
+ * Begriffe für die direkten Shop-Suchen, der Reihe nach bis zum ersten Treffer: Name (bzw. bei
+ * Gattungsnamen Marke + Name), ohne Apostroph, Apostroph als Leerzeichen, erst dann Marke + Name.
+ */
+export function shopSearchTerms(want: { name: string; producer?: string | null }) {
+  const first = productTerm(want);
+  const brand = brandFromProducer(want.producer);
+  const withBrand = brand && first === want.name.trim() && !brandInName(brand, want.name) ? [`${brand} ${want.name.trim()}`] : [];
+  return unique([...apostropheVariants(first), ...withBrand]);
 }
 
 /** „70cl“, „75cl“, „150cl“ – so wie in Shop-Titeln. */
 export const clTerm = (ml: number) => `${Math.round(ml / 10)}cl`;
 
 /**
- * Feste Suchbegriffe in dieser Reihenfolge: „<Marke> <Name> <Grösse>“, „… kaufen CHF“, „… site:.ch“,
- * mit Händler „<Händler> <Marke> <Name>“, bei eigenständigem Namen zuletzt der Name mit Grösse.
- * Jahrgang hinten am Produkt. Der Händler (auch Ketten wie Coop, Denner) nur mit dem ganzen Produkt.
+ * Feste Suchbegriffe in dieser Reihenfolge (jeder nur einmal): „<Produkt> <Grösse>“, „… kaufen
+ * CHF“, „… site:.ch“, mit Händler „<Händler> <Produkt>“, die Schreibweise ohne Apostroph, bei
+ * eigenständigen Namen zuletzt Marke + Name. Jahrgang hinten am Produkt. Der Händler (auch Ketten
+ * wie Coop, Denner) nur mit dem ganzen Produkt.
  */
 export function priceQueries(want: { name: string; producer?: string | null; year?: number | null; sizeMl: number; vendor?: string | null }) {
   const product = productTerm(want);
-  const p = want.year != null ? `${product} ${want.year}` : product;
+  const y = want.year != null ? ` ${want.year}` : "";
+  const p = `${product}${y}`;
   const size = clTerm(want.sizeMl);
   const vendor = want.vendor?.trim();
-  const own = !genericName(want.name) && wordsOf(want.name).length >= 2 && product !== want.name.trim();
-  const name = want.year != null ? `${want.name.trim()} ${want.year}` : want.name.trim();
-  return [
-    ...new Set([`${p} ${size}`, `${p} kaufen CHF`, `${p} site:.ch`, ...(vendor ? [`${vendor} ${p}`] : []), ...(own ? [`${name} ${size}`] : [])]),
-  ];
+  const variants = apostropheVariants(product).slice(1, 2).map((v) => `${v}${y} ${size}`);
+  const brand = brandFromProducer(want.producer);
+  const withBrand = brand && product === want.name.trim() && !brandInName(brand, want.name) ? [`${brand} ${want.name.trim()}${y} ${size}`] : [];
+  return unique([`${p} ${size}`, `${p} kaufen CHF`, `${p} site:.ch`, ...(vendor ? [`${vendor} ${p}`] : []), ...variants, ...withBrand]);
+}
+
+/** Wiederholte Suchbegriffe im Protokoll (gleicher Text, Gross/Klein egal): je Begriff, wie oft. */
+export function duplicateQueries(queries: string[]): { query: string; count: number }[] {
+  const counts = new Map<string, { query: string; count: number }>();
+  for (const q of queries) {
+    const k = normQuery(q);
+    if (!k) continue;
+    const e = counts.get(k) ?? { query: q, count: 0 };
+    e.count++;
+    counts.set(k, e);
+  }
+  return [...counts.values()].filter((e) => e.count > 1);
 }
 
 // ——— Direkte Suche in Schweizer Shops ———
 // Geprüft am 29.10.2026 (ohne Login, robots.txt erlaubt die Suche): Shopify-Suche
-// /search/suggest.json bei casapoli.ch, napawine.ch, finespirits.ch; HTML-Suche bei drinks.ch
+// /search/suggest.json bei casapoli.ch, napawine.ch, finespirits.ch, bringts.ch; HTML-Suche bei drinks.ch
 // (/de/search?q=), flaschenpost.ch (/wein?search=, nur Wein), piemont-weine.ch (/search?q=) und
 // bauraulacvins.ch (/de/search.html?query=). Produktseiten mit schema.org bzw. Microdata.
+// flaschenpost.ch nur für Wein: die Spirituosen-Suche (/spirituosen?search=) lädt Treffer erst per
+// JavaScript – im HTML stehen keine Produktlinks.
 // Nicht dabei: galaxus.ch, globus.ch, decantalo.ch (403/Bot-Schutz), ullrich.ch, bottlebutler.ch,
 // manor.ch (Suche per robots.txt gesperrt), moevenpick-wein.com (robots.txt sperrt Adressen mit „?“),
 // casadeltabacco.ch (keine Verbindung), bottega.ch (400), schuewo.ch und boucherville.ch (keine
@@ -74,14 +120,24 @@ export type DirectShop = {
   search: (q: string) => string;
   /** Produktlinks in der HTML-Trefferliste (Gruppe 1 = Pfad). */
   link?: RegExp;
+  /** Markenseiten in der Trefferliste (Gruppe 1 = Pfad) – deren Produktlinks werden geprüft. */
+  brandLink?: RegExp;
 };
 
 const enc = (q: string) => encodeURIComponent(q).replace(/%20/g, "+");
 
 export const DIRECT_SHOPS: DirectShop[] = [
-  { id: "drinks.ch", origin: "https://www.drinks.ch", kind: "html", search: (q) => `https://www.drinks.ch/de/search?q=${enc(q)}`, link: /href="(?:https:\/\/www\.drinks\.ch)?(\/de\/[a-z0-9-]+\.html)"/g },
+  {
+    id: "drinks.ch",
+    origin: "https://www.drinks.ch",
+    kind: "html",
+    search: (q) => `https://www.drinks.ch/de/search?q=${enc(q)}`,
+    link: /href="(?:https:\/\/www\.drinks\.ch)?(\/de\/[a-z0-9-]+\.html)"/g,
+    brandLink: /href="(?:https:\/\/www\.drinks\.ch)?(\/de\/marken\/[a-z0-9-]+\.html)"/g,
+  },
   { id: "casapoli.ch", origin: "https://casapoli.ch", kind: "shopify", search: (q) => `https://casapoli.ch/search/suggest.json?q=${enc(q)}&resources%5Btype%5D=product&resources%5Blimit%5D=10` },
   { id: "finespirits.ch", origin: "https://finespirits.ch", kind: "shopify", search: (q) => `https://finespirits.ch/search/suggest.json?q=${enc(q)}&resources%5Btype%5D=product&resources%5Blimit%5D=10` },
+  { id: "bringts.ch", origin: "https://www.bringts.ch", kind: "shopify", search: (q) => `https://www.bringts.ch/search/suggest.json?q=${enc(q)}&resources%5Btype%5D=product&resources%5Blimit%5D=10` },
   { id: "napawine.ch", origin: "https://napawine.ch", kind: "shopify", search: (q) => `https://napawine.ch/search/suggest.json?q=${enc(q)}&resources%5Btype%5D=product&resources%5Blimit%5D=10` },
   { id: "flaschenpost.ch", origin: "https://www.flaschenpost.ch", kind: "html", wineOnly: true, search: (q) => `https://www.flaschenpost.ch/wein?search=${enc(q)}`, link: /href="(\/[a-z0-9-]+_[a-z0-9-]+\?_size=\d+(?:&amp;|&)_vintage=\d+)"/g },
   { id: "piemont-weine.ch", origin: "https://piemont-weine.ch", kind: "html", search: (q) => `https://piemont-weine.ch/search?q=${enc(q)}`, link: /href="(?:https:\/\/piemont-weine\.ch)?(\/p\/[a-z0-9-]+)"/g },
@@ -123,6 +179,19 @@ export function htmlSearchHits(html: string, shop: DirectShop): ShopHit[] {
 
 /** Spirituosen-Wörter: in einem Treffer für einen Wein ein anderes Produkt („Grappa di Barolo“). */
 const SPIRIT_WORDS = new Set("grappa brandy cognac whisky whiskey gin rum vodka likor liqueur liquore marc tresterbrand destillat".split(" "));
+
+/** Markenseiten in einer HTML-Trefferliste, deren Adresse zum Namen passt („…/marken/noah-s-mill.html“). */
+export function brandPageHits(html: string, shop: DirectShop, want: { name: string }): string[] {
+  if (!shop.brandLink) return [];
+  const need = wordsOf(want.name.replace(/['’`´]/g, "")).filter((w) => w.length >= 3 && !/^\d+$/.test(w));
+  const out: string[] = [];
+  for (const m of html.matchAll(new RegExp(shop.brandLink.source, "g"))) {
+    const url = `${shop.origin}${m[1]}`;
+    const slug = wordsOf(m[1].split("/").pop()!.replace(/\.html$/, "")).join("");
+    if (!out.includes(url) && need.length && need.every((w) => slug.includes(w))) out.push(url);
+  }
+  return out;
+}
 
 /**
  * Treffer einer Shop-Suche, die zum gesuchten Produkt passen (Name bzw. Marke im Titel/Slug), die

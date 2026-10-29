@@ -29,8 +29,10 @@ import { createGetter, findShopPages, shopDocuments, shopPagesNote } from "./sho
 import type { Get } from "./shops/adapters";
 import { offerFromShopify, productPage, qualifierMismatch, sameProduct, shopifyDataUrl, sizeFromText, swissPage, yearFromText, type Mismatch, type PageRead, type ProductOffer } from "./price-match";
 import {
+  brandPageHits,
   compactSearches,
   directShopsFor,
+  duplicateQueries,
   hostOf,
   htmlSearchHits,
   pickBest,
@@ -39,6 +41,7 @@ import {
   rankHits,
   searchLog,
   searchTitles,
+  shopSearchTerms,
   shopifySuggestHits,
   shortUrl,
   swissMerchantUrl,
@@ -185,7 +188,7 @@ export async function readOffer(url: string, get: Get): Promise<ProductOffer | n
   return read.kind === "product" ? read.offer : null;
 }
 
-export type DirectResult = { shop: string; result: "ok" | "no_hit" | "error"; urls?: string[] };
+export type DirectResult = { shop: string; result: "ok" | "no_hit" | "error"; urls?: string[]; /** Abfragen der Reihe nach */ queries?: string[]; /** Produkte von dieser Markenseite */ brandPage?: string };
 
 export type PriceDiagnostics = {
   raw: Omit<PriceRaw, "quote" | "candidate_urls"> | null;
@@ -199,6 +202,8 @@ export type PriceDiagnostics = {
   search_results?: { query: string; urls: string[]; error?: string }[];
   /** Direkte Shop-Suchen: ok (passender Treffer), no_hit, error. */
   direct?: DirectResult[];
+  /** Websuchen mit demselben Begriff mehrmals (Gross/Klein egal): Begriff und Anzahl. */
+  duplicates?: { query: string; count: number }[];
   /** Händler mit exaktem Treffer (Preis = häufigster bzw. mittlerer). */
   merchants?: number;
   /** Testlauf (dry_run): Ergebnis, ohne zu speichern oder zu senden. */
@@ -249,23 +254,50 @@ type PriceOfferFoundKind = Exclude<PriceFinding, { kind: "none" }>;
 /** Zeitlimit je direkter Shop-Suche (alle parallel). */
 export const DIRECT_TIMEOUT_MS = 6000;
 
-/** Eine Shop-Suche: Trefferliste lesen, passende Produkte (höchstens 2). */
+/** Je Shop höchstens so viele Suchabfragen (Schreibweisen), bis zum ersten Treffer. */
+export const MAX_SHOP_QUERIES = 3;
+/** Produktlinks einer Markenseite: höchstens so viele prüfen. */
+export const MAX_BRAND_PAGE_PRODUCTS = 5;
+
+/**
+ * Eine Shop-Suche: die Schreibweisen der Reihe nach (Name, ohne Apostroph, Apostroph als
+ * Leerzeichen, Marke + Name – höchstens 3), bis passende Produkte kommen (höchstens 2). Liefert die
+ * Suche nur eine Markenseite des Shops, deren Produktlinks (höchstens 5).
+ */
 async function searchShop(shop: DirectShop, want: { name: string; producer: string | null; year: number | null; sizeMl: number | null; type: string | null }, get: Get): Promise<DirectResult> {
+  const queries: string[] = [];
+  let reached = false;
+  const brandPages: string[] = [];
   try {
-    const res = await get(shop.search(productTerm(want)));
-    if (!res || res.status !== 200) return { shop: shop.id, result: "error" };
-    let hits;
-    if (shop.kind === "shopify") {
-      try {
-        hits = shopifySuggestHits(JSON.parse(res.text), shop.origin);
-      } catch {
-        return { shop: shop.id, result: "error" };
+    for (const term of shopSearchTerms(want).slice(0, MAX_SHOP_QUERIES)) {
+      queries.push(term);
+      const res = await get(shop.search(term));
+      if (!res || res.status !== 200) continue;
+      reached = true;
+      let hits;
+      if (shop.kind === "shopify") {
+        try {
+          hits = shopifySuggestHits(JSON.parse(res.text), shop.origin);
+        } catch {
+          continue;
+        }
+      } else {
+        hits = htmlSearchHits(res.text, shop);
+        for (const url of brandPageHits(res.text, shop, want)) if (!brandPages.includes(url)) brandPages.push(url);
       }
-    } else hits = htmlSearchHits(res.text, shop);
-    const urls = rankHits(hits, want).map((h) => h.url);
-    return urls.length ? { shop: shop.id, result: "ok", urls } : { shop: shop.id, result: "no_hit" };
+      const urls = rankHits(hits, want).map((h) => h.url);
+      if (urls.length) return { shop: shop.id, result: "ok", urls, queries };
+    }
+    // Markenseite (z. B. drinks.ch/de/marken/noah-s-mill.html): deren Produkte prüfen.
+    for (const page of brandPages.slice(0, 1)) {
+      const res = await get(page);
+      if (res?.status !== 200 || !res.text) continue;
+      const urls = rankHits(htmlSearchHits(res.text, shop), want, MAX_BRAND_PAGE_PRODUCTS).map((h) => h.url);
+      if (urls.length) return { shop: shop.id, result: "ok", urls, queries, brandPage: page };
+    }
+    return { shop: shop.id, result: reached ? "no_hit" : "error", queries };
   } catch {
-    return { shop: shop.id, result: "error" };
+    return { shop: shop.id, result: "error", queries };
   }
 }
 
@@ -276,8 +308,8 @@ export async function searchShops(want: { name: string; producer: string | null;
 
 export type PriceWine = { name: string; producer: string | null; type: string | null; country: string | null; region: string | null; appellation: string | null };
 
-/** So viele Websuchen darf das Modell für die Preissuche machen. */
-export const PRICE_MAX_SEARCHES = 10;
+/** So viele Websuchen darf das Modell für die Preissuche machen (die direkten Shop-Suchen liefern das meiste). */
+export const PRICE_MAX_SEARCHES = 6;
 /** So viele Adressen aus den Suchergebnissen prüft der Code selbst (dazu die gemeldeten). */
 export const MAX_RESULT_URLS = 8;
 
@@ -299,7 +331,7 @@ export async function researchPrice(
   const size = sizeMl ?? standardSize(wine.type);
   const want: PriceWant & { name: string } = { year, sizeMl: size, type: wine.type, name: wine.name, producer: wine.producer };
   // Eigenes Abruf-Budget (Shop-Suchen, Produktseiten); die Shop-Adapter haben ihr eigenes.
-  const get = options.get ?? createGetter({ maxRequests: 40, timeoutMs: DIRECT_TIMEOUT_MS });
+  const get = options.get ?? createGetter({ maxRequests: 60, timeoutMs: DIRECT_TIMEOUT_MS });
   const found: PriceOfferFoundKind[] = [];
 
   // 1. Direkte Shop-Suchen (dazu die Händlerseiten der Shop-Adapter als Beilage für das Modell).
@@ -307,7 +339,7 @@ export async function researchPrice(
     searchShops({ name: wine.name, producer: wine.producer, year, sizeMl: size, type: wine.type }, get),
     findShopPages({ name: wine.name, producer: wine.producer, appellation: wine.appellation, region: wine.region, country: wine.country }, [year], { vendors: vendor ? [vendor] : [] }).catch(() => []),
   ]);
-  diagnostics.direct = direct.map((d) => ({ ...d, ...(d.urls ? { urls: d.urls.map(shortUrl) } : {}) }));
+  diagnostics.direct = direct.map((d) => ({ ...d, ...(d.urls ? { urls: d.urls.map(shortUrl) } : {}), ...(d.brandPage ? { brandPage: shortUrl(d.brandPage) } : {}) }));
   const directUrls = [...new Set(direct.flatMap((d) => d.urls ?? []))];
   if (directUrls.length) found.push(...(await verifyPages(directUrls, want, get, diagnostics.pages)));
 
@@ -331,6 +363,8 @@ export async function researchPrice(
     const searches: SearchLog[] = searchLog(blocks);
     diagnostics.queries = searches.map((x) => x.query.slice(0, 120));
     diagnostics.searches = searches.length;
+    const repeated = duplicateQueries(diagnostics.queries);
+    if (repeated.length) diagnostics.duplicates = repeated;
     diagnostics.search_results = compactSearches(searches);
     if (raw) {
       const { quote: _quote, candidate_urls: _candidates, ...rest } = raw;
@@ -371,7 +405,7 @@ function priceSearchPrompt(wine: PriceWine, year: number | null, size: number, v
   return `Gesucht ist der Preis pro Flasche in CHF bei einem Schweizer Händler für: ${JSON.stringify({
     name: wine.name,
     produzent: wine.producer,
-    marke_und_name: productTerm(wine),
+    suchname: productTerm(wine),
     art: what,
     jahrgang: year ?? "ohne Jahrgang",
     flaschengroesse: clSize(size),
@@ -379,7 +413,8 @@ function priceSearchPrompt(wine: PriceWine, year: number | null, size: number, v
     region: wine.region,
     haendler_hinweis: vendor,
   })}
-- Arbeite diese Suchanfragen genau so und der Reihe nach ab (eine nach der anderen, wörtlich), bis du eine Schweizer Produktseite mit CHF-Preis hast: ${planned.map((q) => `„${q}“`).join(", ")}. Danach höchstens eigene Varianten aus Marke und Name (z. B. andere Schreibweise), nie den Händlernamen allein mit Teilen des Namens.
+- Arbeite diese Suchanfragen genau so und der Reihe nach ab (eine nach der anderen, wörtlich), bis du eine Schweizer Produktseite mit CHF-Preis hast: ${planned.map((q) => `„${q}“`).join(", ")}.
+- Jeden Suchbegriff nur einmal – nie denselben Begriff wiederholen. Bringen 2 Suchen keinen Schweizer Treffer, formuliere anders: Name + Kategorie (z. B. „Bourbon“, „Grappa“, „Rotwein“), Name + Grösse + „CHF“, andere Schreibweise. Nie den Händlernamen allein mit Teilen des Namens.
 - Der Händler ist nur ein Hinweis, wo gekauft wurde (bei Ketten wie Coop, Denner, Migros, Galaxus oft nicht online) – das Angebot darf von jedem Schweizer Händler sein.
 - Nur Schweizer Händler mit Preisen in CHF: Domain .ch bzw. moevenpick-wein.com, andere Domains nur, wenn die Seite CHF-Preise und eine Schweizer Adresse bzw. Versand aus der Schweiz zeigt. Keine ausländischen Shops, keine Preise in EUR oder anderen Währungen, keine Preisvergleichs- oder Auktionsseiten.
 - Bekannte Schweizer Shops: ${SHOP_DOMAINS.join(", ")}, drinks.ch, casapoli.ch, flaschenpost.ch, piemont-weine.ch.
