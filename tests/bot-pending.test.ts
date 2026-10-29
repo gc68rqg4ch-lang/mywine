@@ -123,7 +123,7 @@ test("Die 10 Minuten laufen ab der letzten Antwort, nicht ab dem Start", async (
   await say("teuer");
   assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\?/);
   assert.ok(Date.parse(String(job().updated_at)) > Date.now() - 60_000);
-  assert.deepEqual(lastButtons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"], "Knöpfe der Preisfrage bleiben");
+  assert.deepEqual(lastButtons().map((b) => b.text), ["🎁", "🤷", "🔎", "✖️ Abbrechen"], "Knöpfe der Preisfrage bleiben");
 });
 
 test("Neues Anliegen verwirft den alten Ablauf (Text mit neuem Wein, Menü-Knopf, Befehl)", async () => {

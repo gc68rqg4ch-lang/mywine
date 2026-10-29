@@ -118,17 +118,17 @@ async function runPriceJob() {
 
 test("Knöpfe „🔎 Such du“ bei bezahlt, Normalpreis und Geschenk-Wert (callback ≤ 64 Bytes)", () => {
   const all = [priceKeyboard(ID), regularPriceKeyboard(ID, 20), regularPriceKeyboard(ID, null), giftValueKeyboard(ID)].map((k) => k.inline_keyboard.flat());
-  const search = all.map((bs) => bs.find((b) => b.text === "🔎 Such du"));
+  const search = all.map((bs) => bs.find((b) => b.text === "🔎"));
   assert.deepEqual(search.map((b) => parseCallbackData((b as { callback_data: string }).callback_data)?.action), ["searchprice", "searchreg", "searchreg", "searchreg"]);
   for (const b of search) assert.ok(Buffer.byteLength((b as { callback_data: string }).callback_data) <= 64);
   // Rückfragen nach der Suche: ohne „Such du“
-  assert.ok(!priceKeyboard(ID, false).inline_keyboard.flat().some((b) => b.text === "🔎 Such du"));
+  assert.ok(!priceKeyboard(ID, false).inline_keyboard.flat().some((b) => b.text === "🔎"));
   assert.equal(parseCallbackData(callbackData("offeryes", ID))?.action, "offeryes");
 });
 
 test("„🔎 Such du“ bei „bezahlt?“: kein Normalpreis, weiter zum Speichern, „Preis: wird gesucht“; Treffer → beide Preise gespeichert", async () => {
   await start();
-  await press("🔎 Such du");
+  await press("🔎");
   assert.deepEqual([state().price, state().regular_price, state().price_search], [null, null, "both"]);
   assert.match(lastText(), /Zusammenfassung[\s\S]*Preis: wird gesucht … · bei Mövenpick/);
   const booked = await save();
@@ -147,7 +147,7 @@ test("„🔎 Such du“ bei „bezahlt?“: kein Normalpreis, weiter zum Speich
   // „✏️ Ändern“ → normale Preisfragen (ohne „Such du“), danach von Hand
   await press("✏️ Ändern");
   assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\?/);
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🎁", "🤷", "✖️ Abbrechen"]);
   await say("70");
   await press("✅ Ja, gleich");
   await runLater();
@@ -159,7 +159,7 @@ test("„🔎 Such du“ bei „bezahlt?“: kein Normalpreis, weiter zum Speich
 test("„🔎 Such du“ beim Normalpreis: bezahlt bleibt, nur der Normalpreis wird gesucht (Aktion → Normalpreis)", async () => {
   await start();
   await say("38");
-  await press("🔎 Such du");
+  await press("🔎");
   assert.deepEqual([state().price, state().regular_price, state().price_search], [38, null, "regular"]);
   assert.match(await save(), /Bezahlt CHF 38\.00 · Normalpreis: wird gesucht …/);
   priceAnswer = offer({ price: 39, regular_price: 45, quote: "CHF 39.00 statt 45.00" });
@@ -170,10 +170,10 @@ test("„🔎 Such du“ beim Normalpreis: bezahlt bleibt, nur der Normalpreis w
 
 test("Geschenk: „🔎 Such du“ beim Wert sucht nur den Normalpreis, bezahlt bleibt 0", async () => {
   await start();
-  await press("🎁 Geschenk");
+  await press("🎁");
   await press("Überspringen");
   assert.equal(state().step, "regular_price");
-  await press("🔎 Such du");
+  await press("🔎");
   assert.match(lastText(), /🎁 Geschenk · Normalpreis: wird gesucht …/);
   await save();
   await runPriceJob();
@@ -183,7 +183,7 @@ test("Geschenk: „🔎 Such du“ beim Wert sucht nur den Normalpreis, bezahlt 
 test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst eingeben / Leer lassen", async () => {
   for (const choice of ["✅ Übernehmen", "✏️ Selbst eingeben", "Leer lassen"]) {
     await start();
-    await press("🔎 Such du");
+    await press("🔎");
     await save();
     priceAnswer = offer({ vintage: 2020, price: 64, url: "https://www.moevenpick-wein.com/de/2020-pintia.html" });
     await runPriceJob();
@@ -200,7 +200,7 @@ test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst
     } else {
       assert.match(lastText(), /[Ww]as hast du pro Flasche bezahlt\?/);
       await say("50");
-      await press("🤷 Weiss ich nicht");
+      await press("🤷");
       await runLater();
       assert.deepEqual([item().purchase_price, item().regular_price, item().price_source], [50, null, "manual"]);
     }
@@ -208,7 +208,7 @@ test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst
   }
   // Andere Grösse
   await start();
-  await press("🔎 Such du");
+  await press("🔎");
   await save();
   priceAnswer = offer({ size_ml: 1500, price: 140 });
   await runPriceJob();
@@ -217,12 +217,12 @@ test("Nur anderer Jahrgang: nichts gespeichert, Rückfrage; Übernehmen / Selbst
 
 test("Nichts gefunden: Antoine fragt nach dem Preis; ein Betrag läuft wie die normale Preisangabe", async () => {
   await start();
-  await press("🔎 Such du");
+  await press("🔎");
   await save();
   priceAnswer = NOTHING;
   await runPriceJob();
   assert.equal(lastText(), PINTIA + "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?");
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🎁", "🤷", "✖️ Abbrechen"]);
   await say("39");
   assert.match(lastText(), /Ist das auch der Normalpreis\?/, "Normalpreis-Frage wie gewohnt");
   await say("45");
@@ -279,10 +279,10 @@ test("Shop-Seiten liefern den Preis mit (Magento, schema.org)", () => {
 test("Suche endet während einer neuen Erfassung: Rückfrage erst danach, mit Flasche (Geschenk von …); Betrag gehört zur neuen Erfassung", async () => {
   // Pintia als Geschenk von Dad, Wert: „🔎 Such du“
   await start();
-  await press("🎁 Geschenk");
+  await press("🎁");
   await say("Dad");
   assert.equal(state().step, "regular_price");
-  await press("🔎 Such du");
+  await press("🔎");
   await save();
   // Während die Suche läuft: neue Erfassung (Grappa Fass 13) bis zur Preisfrage
   const JOB2 = "aaaaaaaa-0000-4000-8000-0000000000b2";
@@ -327,7 +327,7 @@ test("Suche endet während einer neuen Erfassung: Rückfrage erst danach, mit Fl
 
 test("Neues Foto während einer offenen Preis-Rückfrage: sie wird zurückgehalten statt verworfen", async () => {
   await start();
-  await press("🔎 Such du");
+  await press("🔎");
   await save();
   priceAnswer = NOTHING;
   await runPriceJob();
@@ -357,7 +357,7 @@ test("Flasche in Preis-Meldungen: Symbol der Art, Produzent – Name, Jahrgang b
 
 test("Riserva nur auf einer Seite: nichts gespeichert, „Übernehmen?“ mit Grund", async () => {
   await start();
-  await press("🔎 Such du");
+  await press("🔎");
   await save();
   priceAnswer = offer({ same_wine: true, product_title: "Vega Sicilia Pintia Reserva 2019 75 cl", price: 89 });
   await runPriceJob();

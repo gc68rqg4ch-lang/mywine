@@ -108,13 +108,13 @@ test("Zeile in Zusammenfassung und Bestätigung", () => {
   assert.equal(priceLine(null, null), null);
 });
 
-const SAME = ["✅ Ja, gleich", "✏️ Anderer Betrag", "🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"];
+const SAME = ["✅ Ja, gleich", "✏️ Anderer Betrag", "🤷", "🔎", "✖️ Abbrechen"];
 
 test("Frage 1: Hinweis zum Eintippen, Knöpfe „🎁 Geschenk“ und „🤷 Weiss ich nicht“ – kein „Überspringen“", async () => {
   await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
   assert.equal(state().step, "price");
   assert.match(lastText(), /^6 Flaschen\. .*[Ww]as hast du pro Flasche bezahlt\? Schreib mir einfach den Betrag, z\. B\. <i>38<\/i>\.$/);
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🎁", "🤷", "🔎", "✖️ Abbrechen"]);
   for (const v of VARIANTS_PRICE) assert.match(v, /Schreib mir einfach den Betrag/);
 });
 
@@ -137,7 +137,7 @@ test("„38“ → „✏️ Anderer Betrag“ → „45“ bzw. direkt „45“
   await press("✏️ Anderer Betrag");
   assert.equal(state().step, "regular_price");
   assert.match(lastText(), /was kostet eine Flasche normalerweise\? Schreib mir einfach den Betrag/);
-  assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🤷", "🔎", "✖️ Abbrechen"]);
   await say("0");
   assert.match(lastText(), /Den Betrag verstehe ich nicht ganz/);
   await say("45");
@@ -156,7 +156,7 @@ test("„38“ → „✏️ Anderer Betrag“ → „45“ bzw. direkt „45“
 test("„38“ → „🤷 Weiss ich nicht“ → 38/NULL", async () => {
   await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
   await say("38");
-  await press("🤷 Weiss ich nicht");
+  await press("🤷");
   assert.match(summary(), /\nBezahlt CHF 38\.00 · bei Coop\n/);
   await confirmAndSave();
   assert.deepEqual([item().purchase_price, item().regular_price], [38, null]);
@@ -164,12 +164,12 @@ test("„38“ → „🤷 Weiss ich nicht“ → 38/NULL", async () => {
 
 test("„🤷 Weiss ich nicht“ bei Frage 1 → Frage 3 → „45“ → NULL/45", async () => {
   await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
-  await press("🤷 Weiss ich nicht");
+  await press("🤷");
   assert.deepEqual([state().step, state().price], ["regular_price", null]);
   assert.match(lastText(), /[Ww]eisst du, was eine Flasche normalerweise kostet\? Schreib mir (einfach )?den Betrag\.$/);
-  assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🤷", "🔎", "✖️ Abbrechen"]);
   await say("keine Ahnung");
-  assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"], "Knöpfe bleiben");
+  assert.deepEqual(buttons().map((b) => b.text), ["🤷", "🔎", "✖️ Abbrechen"], "Knöpfe bleiben");
   await say("45");
   assert.match(summary(), /\nNormalpreis CHF 45\.00 · bei Coop\n/);
   const booked = await confirmAndSave();
@@ -214,11 +214,11 @@ test("Foto mit Bildtext „66 Franken“ → bezahlt 66", async () => {
 
 test("Geschenk-Ablauf unverändert: 🎁 → Von wem? → Normalpreis; purchase_price 0", async () => {
   await text("Pintia 2019, 6 Flaschen, Weinkeller, bei Coop");
-  await press("🎁 Geschenk");
+  await press("🎁");
   assert.equal(state().step, "gift_from");
   await say("Marc");
   assert.equal(state().step, "regular_price");
-  assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🤷", "🔎", "✖️ Abbrechen"]);
   await say("38");
   assert.match(summary(), /🎁 Geschenk von Marc · Normalpreis CHF 38\.00/);
   await confirmAndSave();

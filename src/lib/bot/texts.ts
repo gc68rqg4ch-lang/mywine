@@ -27,8 +27,8 @@ export const VARIANTS = {
   ],
   saved: ["Gespeichert.", "Ist notiert.", "Erledigt – ist gespeichert."],
   priceZero: [
-    "0 Franken? Falls es ein Geschenk war, tippe einfach „🎁 Geschenk“ – sonst schreib mir den Preis pro Flasche, z. B. <i>24.50</i>.",
-    "War er geschenkt? Dann tippe „🎁 Geschenk“. Sonst brauche ich einen Betrag über 0, z. B. <i>24.50</i>.",
+    "0 Franken? Falls es ein Geschenk war, tippe einfach 🎁 – sonst schreib mir den Preis pro Flasche, z. B. <i>24.50</i>.",
+    "War er geschenkt? Dann tippe 🎁. Sonst brauche ich einen Betrag über 0, z. B. <i>24.50</i>.",
   ],
   quantityOther: [
     "Gerne – wie viele Flaschen sind es? Schreib mir einfach die Zahl, z. B. <i>24</i>.",
@@ -43,12 +43,12 @@ export const VARIANTS = {
   giftValue: [
     "Weisst du ungefähr, was eine Flasche normalerweise kostet? Schreib mir einfach den Betrag, z. B. <i>38</i>.",
     "Und was ist eine Flasche ungefähr wert? Ein Betrag genügt, z. B. <i>34.80</i>.",
-    "Kennst du den Normalpreis pro Flasche? Z. B. <i>38</i> – sonst tippe „🤷 Weiss ich nicht“.",
+    "Kennst du den Normalpreis pro Flasche? Z. B. <i>38</i> – sonst tippe 🤷.",
   ],
   giftValueRetry: [
     "Den Betrag verstehe ich nicht ganz – was kostet eine Flasche normalerweise? Z. B. <i>38</i> oder <i>34.80</i>.",
-    "Magst du mir den Normalpreis als Betrag schreiben, z. B. <i>38</i>? Sonst tippe „🤷 Weiss ich nicht“.",
-    "Bitte einen Betrag über 0, z. B. <i>34.80</i> – oder „🤷 Weiss ich nicht“.",
+    "Magst du mir den Normalpreis als Betrag schreiben, z. B. <i>38</i>? Sonst tippe 🤷.",
+    "Bitte einen Betrag über 0, z. B. <i>34.80</i> – oder tippe 🤷.",
   ],
   giftFrom: ["🎁 Wie schön, ein Geschenk! Von wem?", "🎁 Ein Geschenk – schön! Von wem ist er?", "🎁 Wie nett! Von wem hast du ihn bekommen?"],
   done: ["Wunderbar, dann ist alles notiert.", "Schön – alles festgehalten.", "Perfekt, ich habe alles."],
@@ -202,7 +202,7 @@ export const T = {
   /** Frage a: bezahlter Preis pro Flasche (→ purchase_price). */
   pricePaid: (bottles: string, random?: () => number) =>
     `${e(bottles)}. ${pick(["Was hast du pro Flasche bezahlt?", "Und was hast du pro Flasche bezahlt?", "Sag mir noch: Was hast du pro Flasche bezahlt?"], random)} ${PRICE_TYPE_HINT}`,
-  priceRetry: `Den Betrag verstehe ich nicht ganz – was hast du pro Flasche bezahlt? ${PRICE_TYPE_HINT} Sonst tippe „🎁 Geschenk“ bzw. „🤷 Weiss ich nicht“.`,
+  priceRetry: `Den Betrag verstehe ich nicht ganz – was hast du pro Flasche bezahlt? ${PRICE_TYPE_HINT} Sonst tippe 🎁 (Geschenk) bzw. 🤷 (weiss ich nicht).`,
   /** Geschenk: „Von wem?“ (Varianten). */
   giftFromAsk: (random?: () => number) => say("giftFrom", random),
   /** Geschenk: Normalpreis (Wert) pro Flasche? (Varianten) */

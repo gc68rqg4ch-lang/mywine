@@ -92,15 +92,15 @@ test("„🎁 Geschenk“ → Name → Betrag 38: regular_price 38, purchase_pri
   parseResult = entry({});
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller");
   assert.equal(state().step, "price");
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
-  await press("🎁 Geschenk");
+  assert.deepEqual(buttons().map((b) => b.text), ["🎁", "🤷", "🔎", "✖️ Abbrechen"]);
+  await press("🎁");
   assert.deepEqual([state().step, state().is_gift, state().price, state().regular_price], ["gift_from", true, 0, undefined]);
   assert.match(lastText(), /Von wem/);
   assert.deepEqual(buttons().map((b) => b.text), ["Überspringen", "✖️ Abbrechen"]);
   await say("   Marc    Muster  ");
   assert.deepEqual([state().gift_from, state().step], ["Marc Muster", "regular_price"]);
   assert.ok(VARIANTS.giftValue.includes(lastText() as never), lastText());
-  assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🤷", "🔎", "✖️ Abbrechen"]);
   await say("38");
   assert.equal(state().regular_price, 38);
   assert.match(lastText(), /Zusammenfassung[\s\S]*6 Flaschen · Weinkeller\n🎁 Geschenk von Marc Muster · Normalpreis CHF\s38\.00\n/);
@@ -114,10 +114,10 @@ test("„🎁 Geschenk“ → „Überspringen“ → „🤷 Weiss ich nicht“
   reset();
   parseResult = entry({});
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller");
-  await press("🎁 Geschenk");
+  await press("🎁");
   await press("Überspringen");
   assert.deepEqual([state().gift_from, state().step], [null, "regular_price"]);
-  await press("🤷 Weiss ich nicht");
+  await press("🤷");
   assert.equal(state().regular_price, null);
   assert.match(lastText(), /\n🎁 Geschenk\n/);
   await confirmAndSave();
@@ -129,14 +129,14 @@ test("Normalpreis: 34.80 gespeichert; 0, -5, „keine Ahnung“ → freundlich n
   reset();
   parseResult = entry({});
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller");
-  await press("🎁 Geschenk");
+  await press("🎁");
   await press("Überspringen");
   for (const bad of ["0", "-5", "keine Ahnung"]) {
     await say(bad);
     assert.equal(state().step, "regular_price", bad);
     assert.equal(state().regular_price, undefined, bad);
     assert.ok(VARIANTS.giftValueRetry.includes(lastText() as never), `${bad}: ${lastText()}`);
-    assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
+    assert.deepEqual(buttons().map((b) => b.text), ["🤷", "🔎", "✖️ Abbrechen"]);
   }
   await say("34.80");
   assert.equal(state().regular_price, 34.8);
@@ -211,7 +211,7 @@ test("Normaler Preis wie bisher", async () => {
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller");
   await say("24.50");
   assert.deepEqual([state().step, state().price, state().is_gift], ["regular_price", 24.5, undefined]);
-  await press("🤷 Weiss ich nicht");
+  await press("🤷");
   await press("Überspringen");
   await confirmAndSave();
   assert.deepEqual([item().is_gift, item().purchase_price, item().gift_from], [false, 24.5, null]);
@@ -222,7 +222,7 @@ test("„Von wem?“ läuft nach 10 Minuten ab und lässt sich abbrechen", async
   reset();
   parseResult = entry({});
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller");
-  await press("🎁 Geschenk");
+  await press("🎁");
   await press("✖️ Abbrechen");
   assert.equal(job().status, "discarded");
   assert.equal(net.tables.inventory_items.length, 0);
@@ -230,7 +230,7 @@ test("„Von wem?“ läuft nach 10 Minuten ab und lässt sich abbrechen", async
   reset();
   parseResult = entry({});
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller");
-  await press("🎁 Geschenk");
+  await press("🎁");
   job().updated_at = minutesAgo(11);
   await expireStale(db, 111);
   assert.equal(job().status, "discarded");

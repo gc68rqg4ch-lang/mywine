@@ -201,16 +201,19 @@ export function quantityKeyboard(jobId: string): TgInlineKeyboard {
   };
 }
 
-/** „🔎 Such du“: die Recherche sucht den Preis bei Schweizer Händlern (nach dem Speichern). */
-const searchButton = (jobId: string, action: "searchprice" | "searchreg") => ({ text: "🔎 Such du", callback_data: callbackData(action, jobId) });
+/**
+ * Preis-Knöpfe nur als Emoji (sonst schneidet das iPhone sie ab): 🎁 Geschenk, 🤷 Weiss ich nicht,
+ * 🔎 Such du (die Recherche sucht den Preis bei Schweizer Händlern, nach dem Speichern).
+ */
+const searchButton = (jobId: string, action: "searchprice" | "searchreg") => ({ text: "🔎", callback_data: callbackData(action, jobId) });
 
 /** Frage „bezahlt?“: Betrag tippen oder 🎁 Geschenk · 🤷 Weiss ich nicht · 🔎 Such du (search false: ohne „Such du“). */
 export function priceKeyboard(jobId: string, search = true): TgInlineKeyboard {
   return {
     inline_keyboard: [
       [
-        { text: "🎁 Geschenk", callback_data: callbackData("gift", jobId) },
-        { text: "🤷 Weiss ich nicht", callback_data: callbackData("skipprice", jobId) },
+        { text: "🎁", callback_data: callbackData("gift", jobId) },
+        { text: "🤷", callback_data: callbackData("skipprice", jobId) },
         ...(search ? [searchButton(jobId, "searchprice")] : []),
       ],
       cancelRow(jobId),
@@ -222,7 +225,7 @@ export function priceKeyboard(jobId: string, search = true): TgInlineKeyboard {
 export function giftValueKeyboard(jobId: string, search = true): TgInlineKeyboard {
   return {
     inline_keyboard: [
-      [{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }, ...(search ? [searchButton(jobId, "searchreg")] : [])],
+      [{ text: "🤷", callback_data: callbackData("skipregular", jobId) }, ...(search ? [searchButton(jobId, "searchreg")] : [])],
       cancelRow(jobId),
     ],
   };
@@ -248,7 +251,7 @@ export function giftFromKeyboard(jobId: string): TgInlineKeyboard {
  * ohne (bzw. nach „Anderer Betrag“) nur „🤷 Weiss ich nicht“ – der Betrag wird getippt.
  */
 export function regularPriceKeyboard(jobId: string, paid: number | null, search = true): TgInlineKeyboard {
-  const unknown = [{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }, ...(search ? [searchButton(jobId, "searchreg")] : [])];
+  const unknown = [{ text: "🤷", callback_data: callbackData("skipregular", jobId) }, ...(search ? [searchButton(jobId, "searchreg")] : [])];
   if (paid == null) return { inline_keyboard: [unknown, cancelRow(jobId)] };
   return {
     inline_keyboard: [
