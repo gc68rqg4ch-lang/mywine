@@ -114,6 +114,8 @@ export type PriceOffer = {
   size_ml: number | null;
   /** both = bezahlt und Normalpreis setzen, regular = nur Normalpreis. */
   mode: "both" | "regular";
+  /** Abweichender Zusatz, z. B. „Angebot ohne Riserva“ (kein exakter Treffer). */
+  why?: string;
 };
 
 export type StorageRoom = "Weinkeller" | "Wohnzimmer";

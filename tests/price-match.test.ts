@@ -9,6 +9,7 @@ import { claudeTool, installNet, type Net } from "./stub-net";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   distinctiveWords,
+  qualifierMismatch,
   offerFromHtml,
   offerFromShopify,
   producerVariants,
@@ -25,10 +26,11 @@ const ACQUA_URL = "https://casapoli.ch/products/casa-grappa-acquastilla-36-mesi-
 const shopify = (title: string, cents: number, compare: number | null = null) =>
   JSON.stringify({ title, vendor: "Giovanni Poli", variants: [{ title: "Default Title", price: cents, compare_at_price: compare, available: true }] });
 
-test("Namensvergleich: Riserva, Produzent mit Klammern, „70 cl.“ im Titel → gleich; anderes Alter → nicht", () => {
+test("Namensvergleich: Produzent mit Klammern, „70 cl.“ im Titel → gleich; Riserva nur auf einer Seite → nachfragen; anderes Alter → nicht", () => {
   assert.deepEqual(distinctiveWords(ACQUA.name, ACQUA.producer), ["acquastilla"]);
-  assert.deepEqual(sameProduct(ACQUA, "Casa Grappa Acquastilla 36 mesi 70 cl.", "Giovanni Poli"), { same: true });
-  assert.deepEqual(sameProduct(ACQUA, "CASA GRAPPA ACQUASTILLA 36 MESI"), { same: true }, "Gross-/Kleinschreibung");
+  // Riserva nur im gesuchten Namen: derselbe Wein, aber kein exakter Treffer
+  assert.deepEqual(sameProduct(ACQUA, "Casa Grappa Acquastilla 36 mesi 70 cl.", "Giovanni Poli"), { same: true, mismatch: { reason: "reserve_mismatch", detail: "Angebot ohne Riserva" } });
+  assert.deepEqual(sameProduct(ACQUA, "CASA GRAPPA ACQUASTILLA RISERVA 36 MESI 70 cl."), { same: true }, "Gross-/Kleinschreibung, beide mit Riserva");
   assert.deepEqual(sameProduct(ACQUA, "Acqua Stilla 36 Mesi Riserva"), { same: true }, "getrennt geschrieben");
   assert.deepEqual(sameProduct(ACQUA, "Casa Grappa Acquastilla 18 mesi 70 cl."), { same: false, reason: "age_differs" });
   assert.deepEqual(sameProduct(ACQUA, "Casa Grappa Acquastilla 70 cl."), { same: false, reason: "age_differs" }, "Alter fehlt im Angebot");
@@ -36,9 +38,22 @@ test("Namensvergleich: Riserva, Produzent mit Klammern, „70 cl.“ im Titel �
   assert.deepEqual(sameProduct({ name: "Pintia", producer: "Vega Sicilia", year: 2019 }, "Pintia 2018 Vega Sicilia 75cl"), { same: false, reason: "year_differs" });
   assert.deepEqual(sameProduct({ name: "Pintia", producer: "Vega Sicilia", year: 2019 }, "Bodegas Pintia Toro 2019"), { same: true });
   assert.deepEqual(sameProduct({ name: "Lagavulin 16", producer: "Lagavulin" }, "Lagavulin 16 Years Islay Single Malt 70cl"), { same: true });
+  // Riserva/Reserva/Reserve: beide oder keine Seite → wie bisher; nur eine → Rückfrage
+  const barolo = { name: "Grappa di Barolo Riserva", producer: "Marolo" };
+  assert.deepEqual(sameProduct(barolo, "Marolo Grappa di Barolo"), { same: true, mismatch: { reason: "reserve_mismatch", detail: "Angebot ohne Riserva" } });
+  assert.deepEqual(sameProduct(barolo, "Marolo Grappa di Barolo Riserva 70cl"), { same: true });
+  assert.deepEqual(sameProduct({ name: "Grappa di Barolo", producer: "Marolo" }, "Marolo Grappa di Barolo Riserva"), { same: true, mismatch: { reason: "reserve_mismatch", detail: "Angebot mit Riserva" } });
+  assert.deepEqual(sameProduct({ name: "Viña Ardanza", producer: "La Rioja Alta" }, "La Rioja Alta Viña Ardanza Gran Reserva 2016"), { same: true, mismatch: { reason: "reserve_mismatch", detail: "Angebot mit Riserva" } });
+  assert.deepEqual(sameProduct({ name: "Prestige Grande Réserve", producer: "Taittinger" }, "Taittinger Prestige Grande Réserve"), { same: true }, "Akzente egal");
+  // Weitere Zusätze: Single Cask, Cask Strength, Vintage, XO/VSOP/VS
+  assert.deepEqual(sameProduct({ name: "Glenfarclas 15", producer: "Glenfarclas" }, "Glenfarclas 15 Years Single Cask"), { same: true, mismatch: { reason: "single_cask_mismatch", detail: "Angebot mit Single Cask" } });
+  assert.deepEqual(sameProduct({ name: "Aberlour A'bunadh Cask Strength", producer: "Aberlour" }, "Aberlour A'bunadh"), { same: true, mismatch: { reason: "cask_strength_mismatch", detail: "Angebot ohne Cask Strength" } });
+  assert.deepEqual(sameProduct({ name: "Hennessy VSOP", producer: "Hennessy" }, "Hennessy VS 70cl"), { same: true, mismatch: { reason: "grade_mismatch", detail: "Angebot VS statt VSOP" } });
+  assert.deepEqual(sameProduct({ name: "Hennessy XO", producer: "Hennessy" }, "Hennessy XO Cognac"), { same: true });
   assert.deepEqual(sameProduct({ name: "Lagavulin 16 Years", producer: "Lagavulin" }, "Lagavulin 8 Years"), { same: false, reason: "age_differs" });
   // Name nur aus Zusätzen: dann zählt der Produzent
   assert.deepEqual(sameProduct({ name: "Grappa Riserva", producer: "Nonino" }, "Nonino Grappa Riserva 70 cl"), { same: true });
+  assert.deepEqual(qualifierMismatch("Grappa", "Grappa"), null);
   assert.deepEqual(sameProduct({ name: "Grappa Riserva", producer: "Nonino" }, "Berta Grappa Riserva"), { same: false, reason: "missing_words" });
   assert.deepEqual(sameProduct(ACQUA, ""), { same: false, reason: "no_title" });
 });
@@ -76,8 +91,11 @@ test("Antwort des Modells: tolerant beim Namen (Titel), Verwerfungsgründe", () 
     price: 73, regular_price: 0, vintage: 0, size_ml: 700, quote: "CHF 73.00", candidate_urls: [], reason: "", ...o,
   });
   const want = { year: null, sizeMl: 700, type: "spirit", ...ACQUA };
-  const f = evaluatePrice(raw(), want);
+  const f = evaluatePrice(raw({ product_title: "Casa Grappa Acquastilla Riserva 36 mesi 70 cl." }), want);
   assert.ok(f.kind === "exact" && f.amount === 73 && f.sizeMl === 700, "Modell zu streng – Titelvergleich entscheidet");
+  // Ohne Riserva im Angebot: auch wenn das Modell „derselbe“ meint → Rückfrage mit Grund
+  const noRis = evaluatePrice(raw({ same_wine: true }), want);
+  assert.ok(noRis.kind === "other" && noRis.why === "Angebot ohne Riserva" && noRis.reason === "reserve_mismatch", JSON.stringify(noRis));
   assert.deepEqual(evaluatePrice(raw({ found: false }), want), { kind: "none", reason: "not_found" });
   assert.deepEqual(evaluatePrice(raw({ product_title: "Acquastilla 18 mesi" }), want), { kind: "none", reason: "not_same_wine" });
   assert.deepEqual(evaluatePrice(raw({ currency: "EUR" }), want), { kind: "none", reason: "not_chf" });
@@ -103,14 +121,19 @@ const db = createAdminClient();
 const SPIRIT = { name: ACQUA.name, producer: ACQUA.producer, type: "spirit", country: "Italien", region: null, appellation: null };
 const NOTHING = { found: false, same_wine: false, product_title: "", merchant: "", url: "", currency: "", price: 0, regular_price: 0, vintage: 0, size_ml: 0, quote: "", candidate_urls: [], reason: "Kein Shop gefunden" };
 
-test("Fall Acquastilla: Modell findet nur die Adresse – Shopify-Daten → exact CHF 73.00, 70 cl", async () => {
+test("Fall Acquastilla: Modell findet nur die Adresse – Shopify-Daten CHF 73.00, 70 cl; Angebot ohne Riserva → Rückfrage", async () => {
   web.clear();
   web.set(`${ACQUA_URL}.js`, shopify("Casa Grappa Acquastilla 36 mesi 70 cl.", 7300));
   answer = { ...NOTHING, candidate_urls: [ACQUA_URL], reason: "Name passt nicht genau (36 mesi ohne Riserva)" };
   const { finding, diagnostics } = await researchPrice(SPIRIT, null, 700, "Casa Poli");
-  assert.deepEqual(finding, { kind: "exact", amount: 73, merchant: "Casapoli", url: ACQUA_URL, year: null, sizeMl: 700 });
-  assert.equal(diagnostics.verdict, "exact:page");
-  assert.deepEqual(diagnostics.pages, [{ url: ACQUA_URL, result: "exact" }]);
+  assert.deepEqual(finding, { kind: "other", amount: 73, merchant: "Casapoli", url: ACQUA_URL, year: null, sizeMl: 700, why: "Angebot ohne Riserva", reason: "reserve_mismatch" });
+  assert.equal(diagnostics.verdict, "not_exact:reserve_mismatch");
+  assert.deepEqual(diagnostics.pages, [{ url: ACQUA_URL, result: "not_exact:reserve_mismatch" }]);
+  // Mit Riserva im Titel: exakter Treffer
+  web.set(`${ACQUA_URL}.js`, shopify("Casa Grappa Acquastilla Riserva 36 mesi 70 cl.", 7300));
+  const exact = await researchPrice(SPIRIT, null, 700, "Casa Poli");
+  assert.deepEqual(exact.finding, { kind: "exact", amount: 73, merchant: "Casapoli", url: ACQUA_URL, year: null, sizeMl: 700 });
+  assert.equal(exact.diagnostics.verdict, "exact:page");
   assert.equal(diagnostics.raw?.reason, "Name passt nicht genau (36 mesi ohne Riserva)");
   // Suchanfragen: Händler + Name, Name, Name + Produzent-Varianten
   assert.match(prompt, /„Casa Poli Acquastilla Riserva 36 Mesi“, „Acquastilla Riserva 36 Mesi“, „Acquastilla Riserva 36 Mesi Distilleria Giovannipoli“/);
@@ -126,7 +149,7 @@ test("Geprüfte Seiten mit Grund protokolliert: anderes Alter, Euro, Ausland, ke
   web.set(`${other}.js`, shopify("Casa Grappa Acquastilla 18 mesi 70 cl.", 5500));
   web.set(`${eur}.js`, JSON.stringify({ title: "Acquastilla 36 mesi", variants: [{ price: 6900 }] }));
   web.set(eur, "<p>Prezzi in EUR, spedizione in Italia</p>");
-  web.set(swissCom, `<script type="application/ld+json">{"@type":"Product","name":"Acquastilla 36 mesi 70cl","offers":{"price":"75.00","priceCurrency":"CHF"}}</script> Vini Ticino SA, CH-6900 Lugano`);
+  web.set(swissCom, `<script type="application/ld+json">{"@type":"Product","name":"Acquastilla Riserva 36 mesi 70cl","offers":{"price":"75.00","priceCurrency":"CHF"}}</script> Vini Ticino SA, CH-6900 Lugano`);
   answer = { ...NOTHING, candidate_urls: [other, eur, empty, swissCom] };
   const { finding, diagnostics } = await researchPrice(SPIRIT, null, 700, null);
   assert.ok(finding.kind === "exact" && finding.amount === 75, "Shop ohne .ch mit Schweizer Adresse und CHF zählt");

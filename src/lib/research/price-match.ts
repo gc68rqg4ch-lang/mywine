@@ -17,9 +17,12 @@ const PRODUCER_GENERIC = new Set(
   "distilleria distillerie distillery brennerei destillerie weingut domaine chateau cantina cantine bodega bodegas tenuta azienda agricola fattoria casa maison weinkellerei kellerei winery estate sa ag gmbh srl spa sas sarl ltd inc co cie & et und and di de del della des du la le les the von van".split(" "),
 );
 
-/** Zusätze, die keinen anderen Wein machen (Qualitäts- und Füllwörter). */
+/**
+ * Zusätze, die nicht als unterscheidende Namenswörter zählen (Qualitäts- und Füllwörter). Riserva,
+ * Single Cask, Cask Strength, Vintage, XO/VSOP/VS prüft qualifierMismatch eigens.
+ */
 const NAME_GENERIC = new Set(
-  "riserva reserva reserve réserve gran grande grand selection selezione edition cuvee cuvée vino wine wein grappa brandy whisky whiskey rum gin likor liqueur liquore cl ml l ltr liter litre flasche bottle botella bouteille the il la le di de del della".split(" "),
+  "riserva reserva reserve réserve gran grande grand selection selezione edition cuvee cuvée vino wine wein grappa brandy whisky whiskey rum gin likor liqueur liquore cl ml l ltr liter litre flasche bottle botella bouteille the il la le di de del della".split(" ").concat("single cask strength fassstarke vintage jahrgang millesimato millesime xo vsop vs".split(" ")),
 );
 
 /** Alters- bzw. Reifeangaben: „36 mesi“, „12 years“, „18 anni“, „10 Jahre“, „12 yo“. */
@@ -69,13 +72,52 @@ export function distinctiveWords(name: string, producer?: string | null) {
   return wordsOf(withoutAge).filter((w) => !NAME_GENERIC.has(w) && !producerWords.has(w) && !/^\d+$/.test(w) && w.length >= 2);
 }
 
-export type SameProduct = { same: true } | { same: false; reason: "missing_words" | "age_differs" | "year_differs" | "no_title" };
+/**
+ * Zusätze, die oft ein eigenes Produkt bezeichnen: steht einer nur auf einer Seite (gesuchter Name
+ * oder Angebot), ist es kein exakter Treffer – Antoine fragt „Übernehmen?“.
+ */
+const QUALIFIERS = [
+  { key: "reserve", re: /\b(riserva|reserva|reserve)\b/, label: "Riserva" },
+  { key: "single_cask", re: /\bsingle\s+cask\b/, label: "Single Cask" },
+  { key: "cask_strength", re: /\b(cask\s+strength|fassstarke)\b/, label: "Cask Strength" },
+  { key: "vintage", re: /\b(vintage|jahrgang|millesimato|millesime)\b/, label: "Vintage" },
+] as const;
+/** Cognac/Brandy-Qualitäten – schliessen sich gegenseitig aus. */
+const GRADE_RE = /\b(xo|vsop|vs)\b/g;
+
+export type Mismatch = { reason: string; detail: string };
+
+/**
+ * Abweichender Zusatz zwischen gesuchtem Namen und Angebot (rein): „Angebot ohne Riserva“, „Angebot
+ * mit Single Cask“, „Angebot VS statt VSOP“; reason z. B. reserve_mismatch. Sonst null.
+ */
+export function qualifierMismatch(name: string, title: string): Mismatch | null {
+  const want = fold(name);
+  const offer = fold(title);
+  for (const q of QUALIFIERS) {
+    const inWant = q.re.test(want);
+    const inOffer = q.re.test(offer);
+    if (inWant !== inOffer) return { reason: `${q.key}_mismatch`, detail: `Angebot ${inWant ? "ohne" : "mit"} ${q.label}` };
+  }
+  const grades = (s: string) => [...new Set([...s.matchAll(GRADE_RE)].map((m) => m[1].toUpperCase()))].sort().join("/");
+  const wantGrade = grades(want);
+  const offerGrade = grades(offer);
+  if (wantGrade !== offerGrade) {
+    const detail = !offerGrade ? `Angebot ohne ${wantGrade}` : !wantGrade ? `Angebot mit ${offerGrade}` : `Angebot ${offerGrade} statt ${wantGrade}`;
+    return { reason: "grade_mismatch", detail };
+  }
+  return null;
+}
+
+/** same: derselbe Wein; mismatch: aber ein unterscheidender Zusatz nur auf einer Seite (→ nachfragen). */
+export type SameProduct = { same: true; mismatch?: Mismatch } | { same: false; reason: "missing_words" | "age_differs" | "year_differs" | "no_title" };
 
 /**
  * Derselbe Wein bzw. dieselbe Spirituose? Massgebend sind die unterscheidenden Wörter des Namens
  * (alle müssen im Titel bzw. Händler-/Produzentenfeld vorkommen) und Alters-/Reifeangaben („36
- * mesi“ ≠ „18 mesi“). Zusätze wie Riserva, Gross-/Kleinschreibung, Grössenangaben im Titel und
- * Schreibweisen des Produzenten zählen nicht. year: gesuchter Jahrgang (anderer im Titel → nein).
+ * mesi“ ≠ „18 mesi“). Gross-/Kleinschreibung, Grössenangaben im Titel und Schreibweisen des
+ * Produzenten zählen nicht. Zusätze wie Riserva, Single Cask, XO nur auf einer Seite: derselbe Wein,
+ * aber mit mismatch (kein exakter Treffer). year: gesuchter Jahrgang (anderer im Titel → nein).
  */
 export function sameProduct(want: { name: string; producer?: string | null; year?: number | null }, title: string | null | undefined, extra?: string | null): SameProduct {
   if (!title?.trim()) return { same: false, reason: "no_title" };
@@ -99,7 +141,8 @@ export function sameProduct(want: { name: string; producer?: string | null; year
   if (wantAges.length && !wantAges.every((a) => offerAges.includes(a))) return { same: false, reason: "age_differs" };
   const offerYear = yearFromText(title);
   if (want.year != null && offerYear != null && offerYear !== want.year) return { same: false, reason: "year_differs" };
-  return { same: true };
+  const mismatch = qualifierMismatch(want.name, title);
+  return mismatch ? { same: true, mismatch } : { same: true };
 }
 
 /** Angebot von einer Produktseite. */

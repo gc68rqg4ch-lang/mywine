@@ -26,7 +26,7 @@ import { giftValueKeyboard, priceKeyboard, priceOfferKeyboard, regularPriceKeybo
 import type { IngestState, IngestStep, PriceOffer } from "@/lib/ingest/schema";
 import { createGetter, findShopPages, shopDocuments, shopPagesNote } from "./shops";
 import type { Get } from "./shops/adapters";
-import { offerFromHtml, offerFromShopify, producerVariants, sameProduct, shopifyDataUrl, swissPage, yearFromText, type ProductOffer } from "./price-match";
+import { offerFromHtml, offerFromShopify, producerVariants, qualifierMismatch, sameProduct, shopifyDataUrl, swissPage, yearFromText, type Mismatch, type ProductOffer } from "./price-match";
 import { SHOP_DOMAINS } from "./shops/match";
 import type { ResearchOutcome } from "./wine";
 export { priceNoteHint } from "./price-note";
@@ -36,7 +36,7 @@ export type PriceMode = "both" | "regular";
 
 export const PriceSchema = z.object({
   found: z.boolean().describe("true, wenn ein Schweizer Händler diesen Wein bzw. diese Spirituose mit Preis in CHF anbietet"),
-  same_wine: z.boolean().describe("true, wenn es derselbe Wein bzw. dieselbe Spirituose ist (unterscheidende Namensteile gleich; Zusätze wie Riserva, Grössenangaben und Schreibweisen des Produzenten egal)"),
+  same_wine: z.boolean().describe("true, wenn es derselbe Wein bzw. dieselbe Spirituose ist (unterscheidende Namensteile gleich; Grössenangaben und Schreibweisen des Produzenten egal; Riserva/Reserva, Single Cask, Cask Strength, XO/VSOP/VS müssen übereinstimmen)"),
   product_title: z.string().describe("Titel des Angebots im Shop, wörtlich; leer ohne Fund"),
   merchant: z.string().describe("Name des Händlers, z. B. „Mövenpick“; leer ohne Fund"),
   url: z.string().describe("Adresse der Produktseite (https://…); leer ohne Fund"),
@@ -51,7 +51,8 @@ export const PriceSchema = z.object({
 });
 export type PriceRaw = z.infer<typeof PriceSchema>;
 
-export type PriceOfferFound = { amount: number; merchant: string; url: string; year: number | null; sizeMl: number };
+/** why: abweichender Zusatz („Angebot ohne Riserva“) – dann kein exakter Treffer. */
+export type PriceOfferFound = { amount: number; merchant: string; url: string; year: number | null; sizeMl: number; why?: string; reason?: string };
 export type PriceFinding =
   | ({ kind: "exact" } & PriceOfferFound)
   | ({ kind: "other" } & PriceOfferFound)
@@ -78,12 +79,14 @@ const standardSize = (type: string | null | undefined) => (type === "spirit" ? 7
 export type PriceWant = { year: number | null; sizeMl: number | null; type?: string | null; name?: string; producer?: string | null };
 
 /** Treffer bzw. anderer Jahrgang/andere Grösse (rein). Aktions- und Normalpreis → der Normalpreis. */
-function finding(want: PriceWant, o: { price: number; regular: number | null; merchant: string; url: string; year: number | null; sizeMl: number | null }): PriceFinding {
+function finding(want: PriceWant, o: { price: number; regular: number | null; merchant: string; url: string; year: number | null; sizeMl: number | null; mismatch?: Mismatch }): PriceFinding {
   const amount = o.regular != null && o.regular > o.price ? o.regular : o.price;
   if (!(amount > 0 && amount < 100_000)) return { kind: "none", reason: "bad_amount" };
   const size = want.sizeMl ?? standardSize(want.type);
   const offerSize = o.sizeMl && o.sizeMl > 0 ? Math.round(o.sizeMl) : standardSize(want.type);
   const found = { amount: Math.round(amount * 100) / 100, merchant: o.merchant, url: o.url, year: o.year, sizeMl: offerSize };
+  // Zusatz wie Riserva nur auf einer Seite: oft ein eigenes Produkt – nur mit Rückfrage.
+  if (o.mismatch) return { kind: "other", ...found, why: o.mismatch.detail, reason: o.mismatch.reason };
   return o.year === want.year && offerSize === size ? { kind: "exact", ...found } : { kind: "other", ...found };
 }
 
@@ -94,8 +97,11 @@ function finding(want: PriceWant, o: { price: number; regular: number | null; me
  */
 export function evaluatePrice(raw: PriceRaw | null, want: PriceWant): PriceFinding {
   if (!raw || !raw.found) return { kind: "none", reason: "not_found" };
-  const same = raw.same_wine || (want.name ? sameProduct({ name: want.name, producer: want.producer, year: want.year }, raw.product_title).same : false);
+  const compared = want.name && raw.product_title.trim() ? sameProduct({ name: want.name, producer: want.producer, year: want.year }, raw.product_title) : null;
+  const same = raw.same_wine || compared?.same === true;
   if (!same) return { kind: "none", reason: "not_same_wine" };
+  // Auch wenn das Modell „derselbe“ meint: Riserva o. Ä. nur auf einer Seite → nachfragen.
+  const mismatch = compared?.same ? compared.mismatch : want.name && raw.product_title.trim() ? (qualifierMismatch(want.name, raw.product_title) ?? undefined) : undefined;
   if (raw.currency.trim().toUpperCase() !== "CHF") return { kind: "none", reason: "not_chf" };
   if (!swissMerchantUrl(raw.url)) return { kind: "none", reason: "not_swiss" };
   if (!raw.quote.trim()) return { kind: "none", reason: "no_quote" };
@@ -106,6 +112,7 @@ export function evaluatePrice(raw: PriceRaw | null, want: PriceWant): PriceFindi
     url: raw.url,
     year: raw.vintage > 0 ? Math.round(raw.vintage) : null,
     sizeMl: raw.size_ml,
+    mismatch,
   });
 }
 
@@ -169,8 +176,8 @@ async function verifyPages(urls: string[], want: PriceWant & { name: string }, g
       log.push({ url, result: `not_same_wine:${same.reason}` });
       continue;
     }
-    const f = finding(want, { price: offer.price, regular: offer.regular, merchant: merchantFromUrl(url), url, year: yearFromText(offer.title), sizeMl: offer.sizeMl });
-    log.push({ url, result: f.kind });
+    const f = finding(want, { price: offer.price, regular: offer.regular, merchant: merchantFromUrl(url), url, year: yearFromText(offer.title), sizeMl: offer.sizeMl, mismatch: same.mismatch });
+    log.push({ url, result: f.kind === "other" && f.reason ? `not_exact:${f.reason}` : f.kind });
     if (f.kind === "exact") return f;
     if (f.kind === "other" && !other) other = f;
   }
@@ -215,7 +222,7 @@ export async function researchPrice(
 - Suchanfragen in dieser Reihenfolge (bis du eine Produktseite findest): ${[...new Set(queries)].map((q) => `„${q}“`).join(", ")}.
 - Nur Schweizer Händler mit Preisen in CHF: Domain .ch bzw. moevenpick-wein.com, andere Domains nur, wenn die Seite CHF-Preise und eine Schweizer Adresse bzw. Versand aus der Schweiz zeigt. Keine ausländischen Shops, keine Preise in EUR oder anderen Währungen, keine Preisvergleichs- oder Auktionsseiten.
 - Bekannte Schweizer Shops: ${SHOP_DOMAINS.join(", ")}${vendor ? `; zuerst der Shop von „${vendor}“, falls es einen gibt` : ""}.
-- Derselbe ${wine.type === "spirit" ? "Spirituose" : "Wein"}: massgebend sind die unterscheidenden Teile des Namens und die Art – Zusätze wie Riserva/Reserve, Gross-/Kleinschreibung, Grössenangaben im Titel („70 cl.“) und andere Schreibweisen des Produzenten (z. B. „Giovanni Poli“ statt „Giovannipoli“, Marke statt Firmenname) machen keinen anderen ${wine.type === "spirit" ? "Spirituose" : "Wein"}. Ein anderes Alter bzw. eine andere Reifezeit („18 mesi“ statt „36 mesi“) schon.
+- Derselbe ${wine.type === "spirit" ? "Spirituose" : "Wein"}: massgebend sind die unterscheidenden Teile des Namens und die Art – Gross-/Kleinschreibung, Grössenangaben im Titel („70 cl.“) und andere Schreibweisen des Produzenten (z. B. „Giovanni Poli“ statt „Giovannipoli“, Marke statt Firmenname) machen keinen anderen ${wine.type === "spirit" ? "Spirituose" : "Wein"}. Ein anderes Alter bzw. eine andere Reifezeit („18 mesi“ statt „36 mesi“) schon. Zusätze wie Riserva/Reserva/Reserve, Single Cask, Cask Strength, Vintage, XO/VSOP/VS bezeichnen oft ein eigenes Produkt: Steht so ein Zusatz nur beim gesuchten Namen oder nur im Angebot, melde das Angebot trotzdem (mit wörtlichem Titel), aber same_wine false.
 - Möglichst ${year != null ? `Jahrgang ${year}` : "ohne Jahrgang"} und ${clSize(size)}. Gibt es das nur in einem anderen Jahrgang bzw. einer anderen Grösse, melde diesen mit seinem Jahrgang und seiner Grösse.
 - Zeigt der Shop einen Aktionspreis und einen Normalpreis („statt“, durchgestrichen), gib beide an: price = Aktionspreis, regular_price = Normalpreis.
 - Preis pro Flasche (nicht pro Karton). Gib den Titel des Angebots wörtlich an (product_title). Weitere passende Produktseiten Schweizer Shops in candidate_urls. Nichts gefunden: found false, Rest leer bzw. 0, reason kurz begründen.${shopPagesNote(pages)}`,
@@ -235,11 +242,11 @@ export async function researchPrice(
   const urls = [...new Set([raw?.url ?? "", ...(raw?.candidate_urls ?? []).slice(0, 4), ...pages.map((p) => p.url)].filter((u) => hostOf(u)))].slice(0, 6);
   const verified = urls.length ? await verifyPages(urls, want, get, diagnostics.pages) : null;
   if (verified) {
-    diagnostics.verdict = `${verified.kind}:page`;
+    diagnostics.verdict = verified.kind === "other" && verified.reason ? `not_exact:${verified.reason}` : `${verified.kind}:page`;
     return { finding: verified, diagnostics };
   }
   const result = evaluatePrice(raw, want);
-  diagnostics.verdict = result.kind === "none" ? (result.reason ?? "none") : `${result.kind}:answer`;
+  diagnostics.verdict = result.kind === "none" ? (result.reason ?? "none") : result.kind === "other" && result.reason ? `not_exact:${result.reason}` : `${result.kind}:answer`;
   return { finding: result, diagnostics };
 }
 
@@ -383,6 +390,10 @@ async function sendPriceQuestion(chatId: number, jobId: string, state: IngestSta
   const label = f.label ?? "";
   if (state.step === "price_offer" && state.price_offer) {
     const o = state.price_offer;
+    if (o.why) {
+      await sendMessage(chatId, T.priceOtherProduct(label, o.why, money(o.amount), o.merchant), priceOfferKeyboard(jobId));
+      return;
+    }
     const what = o.year !== state.proposal.vintage_year ? (o.year != null ? `Jahrgang ${o.year}` : "ohne Jahrgang") : clSize(o.size_ml) ?? "andere Grösse";
     await sendMessage(chatId, T.priceOther(label, what, money(o.amount), o.merchant), priceOfferKeyboard(jobId));
     return;
@@ -505,7 +516,7 @@ export async function runPriceSearch(db: Db, p: PriceJobParams): Promise<Researc
       return done([`${p.mode === "regular" ? "Normalpreis" : "Preis"} ${money(finding.amount)} (${offerDetails(finding)})`]);
     }
     if (finding.kind === "other") {
-      const offer: PriceOffer = { amount: finding.amount, merchant: finding.merchant, url: finding.url, year: finding.year, size_ml: finding.sizeMl, mode: p.mode };
+      const offer: PriceOffer = { amount: finding.amount, merchant: finding.merchant, url: finding.url, year: finding.year, size_ml: finding.sizeMl, mode: p.mode, ...(finding.why ? { why: finding.why } : {}) };
       await askOrHold(db, p.chat_id, item, p.mode, "price_offer", "offer", { price_offer: offer });
       return done();
     }

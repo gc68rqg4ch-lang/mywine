@@ -227,6 +227,8 @@ export const T = {
     `${label}\n💰 ${regularOnly ? "Normalpreis" : "Preis"} gefunden: ${e(money)} pro Flasche (${e(details)}) – gespeichert.`,
   /** Nur anderer Jahrgang bzw. andere Grösse: „Nur Jahrgang 2020 gefunden: CHF 64.00 (Mövenpick). Übernehmen?“ */
   priceOther: (label: string, what: string, money: string, merchant: string) => `${label}\nNur ${e(what)} gefunden: ${e(money)} (${e(merchant)}). Übernehmen?`,
+  /** Zusatz wie Riserva nur auf einer Seite: „Gefunden: CHF 70.05 (Trinkgenuss) – Angebot ohne Riserva. Übernehmen?“ */
+  priceOtherProduct: (label: string, why: string, money: string, merchant: string) => `${label}\nGefunden: ${e(money)} (${e(merchant)}) – ${e(why)}. Übernehmen?`,
   /** Nichts gefunden: nach dem Preis fragen. */
   priceNotFound: (label: string) => `${label}\nKeinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?`,
   regularNotFound: (label: string) => `${label}\nKeinen Normalpreis bei Schweizer Händlern gefunden. Was kostet eine Flasche normalerweise? Schreib mir den Betrag.`,

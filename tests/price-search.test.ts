@@ -354,3 +354,17 @@ test("Flasche in Preis-Meldungen: Symbol der Art, Produzent – Name, Jahrgang b
   assert.equal(bottleLabel({ vintage_year: 2019, bottle_size_ml: null, is_gift: false, gift_from: null, wine: wine("red") }), "🍷 <b>Marolo – Grappa di Barolo Riserva</b> 2019, 75 cl");
   assert.equal(bottleLabel({ vintage_year: null, bottle_size_ml: 500, is_gift: true, gift_from: null, wine: wine("sweet") }), "🍯 <b>Marolo – Grappa di Barolo Riserva</b> o. J., 50 cl (Geschenk)");
 });
+
+test("Riserva nur auf einer Seite: nichts gespeichert, „Übernehmen?“ mit Grund", async () => {
+  await start();
+  await press("🔎 Such du");
+  await save();
+  priceAnswer = offer({ same_wine: true, product_title: "Vega Sicilia Pintia Reserva 2019 75 cl", price: 89 });
+  await runPriceJob();
+  assert.deepEqual([item().purchase_price, item().regular_price], [null, null], "nichts direkt gespeichert");
+  assert.equal(lastText(), PINTIA + "Gefunden: CHF 89.00 (Mövenpick) – Angebot mit Riserva. Übernehmen?");
+  assert.deepEqual(buttons().map((b) => b.text), ["✅ Übernehmen", "✏️ Selbst eingeben", "Leer lassen"]);
+  const row = net.tables.research_jobs.find((j) => j.kind === "price")!;
+  const outcome = await runJob(db, row as never);
+  assert.equal((outcome.diagnostics as { verdict: string }).verdict, "not_exact:reserve_mismatch");
+});
