@@ -12,6 +12,11 @@ const geistSans = Geist({
 export const metadata: Metadata = {
   title: { default: "MyWine", template: "%s · MyWine" },
   description: "Persönliche Weinsammlung",
+  applicationName: "MyWine",
+  // Name auf dem Home-Bildschirm (nicht der Seitentitel). Bewusst nicht über appleWebApp: das setzt
+  // „mobile-web-app-capable“ – eine Home-Bildschirm-App hätte eine eigene Sitzung, der Magic Link käme
+  // nicht an (siehe manifest.ts, display „browser“).
+  other: { "apple-mobile-web-app-title": "MyWine" },
 };
 
 // iPad/iPhone: kein automatisches Hineinzoomen beim Antippen von Feldern (maximum-scale=1);

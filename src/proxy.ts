@@ -7,7 +7,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Alles außer statischen Dateien und Bildoptimierung.
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    // Alles außer statischen Dateien, Bildoptimierung und Manifest (Symbole und Manifest auch
+    // ohne Anmeldung, z. B. auf der Login-Seite und für den Home-Bildschirm).
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
