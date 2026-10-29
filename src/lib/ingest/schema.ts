@@ -97,6 +97,17 @@ export const ENRICHABLE_FIELDS = [
 ] as const;
 export type EnrichableField = (typeof ENRICHABLE_FIELDS)[number];
 
+/** Gefundener Preis (CHF pro Flasche) mit Herkunft. */
+export type PriceOffer = {
+  amount: number;
+  merchant: string;
+  url: string;
+  year: number | null;
+  size_ml: number | null;
+  /** both = bezahlt und Normalpreis setzen, regular = nur Normalpreis. */
+  mode: "both" | "regular";
+};
+
 export type StorageRoom = "Weinkeller" | "Wohnzimmer";
 
 export type IngestStep =
@@ -124,6 +135,8 @@ export type IngestStep =
   /** Geschenk: „Von wem?“ – Freitext oder „Überspringen“. */
   | "gift_from"
   | "regular_price"
+  /** Preissuche fand nur einen anderen Jahrgang bzw. eine andere Grösse: „Übernehmen?“ */
+  | "price_offer"
   | "vendor"
   | "vendor_new"
   /** Wein oder Spirituose? (Erkennung unsicher) */
@@ -202,6 +215,18 @@ export type IngestState = {
   price?: number | null;
   /** Normalpreis pro Flasche (regular_price). */
   regular_price?: number | null;
+  /**
+   * „🔎 Such du“: both = bezahlt und Normalpreis suchen (bei der Frage „bezahlt?“), regular = nur
+   * den Normalpreis (bei der Normalpreis- bzw. Geschenk-Wert-Frage). Gesucht wird nach dem Speichern.
+   */
+  price_search?: "both" | "regular";
+  /**
+   * Preis-Rückfrage nach der Suche (eigene kleine Erfassung zur schon gespeicherten Charge):
+   * Antworten ändern nur deren Preise (price_source manual), nichts wird neu eingebucht.
+   */
+  price_followup?: { item_id: string };
+  /** Preissuche: nur anderer Jahrgang bzw. andere Grösse gefunden – Angebot zum Übernehmen. */
+  price_offer?: PriceOffer;
   /** Händler-IDs in der Reihenfolge der Buttons (callback_data enthält nur den Index). */
   vendor_options?: string[];
   vendor_id?: string | null;

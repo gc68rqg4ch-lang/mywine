@@ -16,13 +16,14 @@ import { later } from "@/lib/later";
 import { appBaseUrl } from "@/lib/telegram/config";
 import { researchDrinkWindowYears } from "./drink-window";
 import { researchOpenKeepJob } from "./open-keep";
+import { runPriceSearch } from "./price";
 import type { ResearchScope } from "./gaps";
 import { limitText, runDoneText, singleDoneText, type JobResult, type RunCounts } from "./job-text";
 import { researchAndFillWine, type ResearchOutcome, type TasteMode } from "./wine";
 
 type Db = SupabaseClient<Database>;
 export type JobRow = Database["public"]["Tables"]["research_jobs"]["Row"];
-export type JobKind = "page" | "research" | "window" | "keep";
+export type JobKind = "page" | "research" | "window" | "keep" | "price";
 
 /** Angaben für die Recherche – wie bisher an researchAndFillWine bzw. das Trinkfenster übergeben. */
 export type JobParams = {
@@ -33,6 +34,10 @@ export type JobParams = {
   skipRecent?: boolean;
   /** „Trinkfenster fehlt“: diese Jahrgänge. */
   years?: (number | null)[];
+  /** Preissuche („🔎 Such du“): Charge, was gesucht wird, Chat für Antoines Meldung. */
+  item_id?: string;
+  mode?: "both" | "regular";
+  chat_id?: number;
 };
 
 export type NewJob = { wineId: string; kind: JobKind; params: JobParams; vintageYear?: number | null };
@@ -159,6 +164,10 @@ export async function runJob(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "par
   try {
     if (job.kind === "window") return await researchDrinkWindowYears(db, job.wine_id, p.years ?? []);
     if (job.kind === "keep") return await researchOpenKeepJob(db, job.wine_id);
+    if (job.kind === "price") {
+      if (!p.item_id || !p.chat_id) return { status: "nothing", filled: [], suggested: 0, seconds: 0 };
+      return await runPriceSearch(db, { item_id: p.item_id, mode: p.mode === "regular" ? "regular" : "both", chat_id: p.chat_id });
+    }
     const year = "year" in p ? { year: p.year ?? null } : {};
     if (job.kind === "page") return await researchAndFillWine(db, job.wine_id, "all", { taste: "always", ...year });
     return await researchAndFillWine(db, job.wine_id, p.scope === "all" ? "all" : "cellar", { taste: p.taste ?? "missing", ...year, skipRecent: p.skipRecent !== false });
@@ -280,6 +289,8 @@ async function notifyIfRunDone(db: Db, runId: string) {
   if (markError) throw markError;
   if (!marked?.length) return;
   const person = list[0].created_by;
+  // Preissuche: Antoine hat das Ergebnis schon selbst gemeldet (mit Knöpfen).
+  if (list.every((r) => r.kind === "price")) return;
   const results = list.map((r) => r.result as JobResult | null);
   if (list.length === 1 && list[0].kind === "page") {
     const { data: wine } = await db.from("wines").select("name, producer").eq("id", list[0].wine_id).maybeSingle();

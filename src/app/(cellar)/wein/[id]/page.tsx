@@ -50,6 +50,7 @@ import { ResearchHead } from "./research-head";
 import { wineJobStatus } from "@/lib/research/jobs";
 import { WinePhotos } from "./photos";
 import { PriceLine, type PriceInfo } from "./price-card";
+import { priceNoteHint } from "@/lib/research/price-note";
 import { PersonRatings, RatingsForm, type PersonRating } from "./ratings-card";
 import { EncounterSection } from "./encounters";
 import { TasteCard } from "./taste-card";
@@ -93,7 +94,7 @@ export async function generateMetadata({ params }: PageProps<"/wein/[id]">): Pro
 /** Alle Flaschen des Weins (ungeöffnet, offen, getrunken), mit „Geschenk von“ (nicht in cellar_overview). */
 async function loadItems(supabase: Supabase, wineId: string) {
   // Beide Abfragen gleichzeitig (unabhängig voneinander).
-  const [gifts, { data, error }] = await Promise.all([
+  const [gifts, { data, error }, researched] = await Promise.all([
     supabase.from("inventory_items").select("id, gift_from").eq("wine_id", wineId),
     supabase
       .from("cellar_overview")
@@ -101,8 +102,11 @@ async function loadItems(supabase: Supabase, wineId: string) {
         "inventory_item_id, vintage_year, status, quantity, bottle_size_ml, storage_house, storage_room, purchase_price, regular_price, currency, purchased_at, vendor_name, is_gift, fill_level_percent, date_opened, drunk_at, personal_wine_rating, vintage_rating",
       )
       .eq("wine_id", wineId),
+    // Recherchierte Preise (Hinweis „Preis recherchiert: …“); vor der Migration keine.
+    supabase.from("inventory_items").select("id, price_note").eq("wine_id", wineId).eq("price_source", "research"),
   ]);
   if (gifts.error) throw gifts.error;
+  const priceNotes = new Map((researched.data ?? []).map((r) => [r.id, r.price_note]));
   const giftFrom = new Map((gifts.data ?? []).filter((g) => g.gift_from != null).map((g) => [g.id, g.gift_from]));
   if (error) throw error;
   return (data ?? []).flatMap((r) =>
@@ -114,6 +118,7 @@ async function loadItems(supabase: Supabase, wineId: string) {
             status: r.status as InventoryStatus,
             quantity: r.quantity ?? 0,
             gift_from: giftFrom.get(r.inventory_item_id) ?? null,
+            price_hint: priceNoteHint(priceNotes.get(r.inventory_item_id)),
           },
         ]
       : [],
@@ -347,6 +352,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 form={batchForm(b)}
               >
                 <PriceLine {...priceOf(b)} />
+                {b.price_hint && <p className="muted small">{b.price_hint}</p>}
                 <GiftLine item={b} />
               </EditUnit>
             ))}
@@ -380,6 +386,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 form={batchForm(d)}
               >
                 <PriceLine {...priceOf(d)} />
+                {d.price_hint && <p className="muted small">{d.price_hint}</p>}
                 <GiftLine item={d} />
               </EditUnit>
             ))}

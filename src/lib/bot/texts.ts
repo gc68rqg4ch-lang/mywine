@@ -227,6 +227,19 @@ export const T = {
   regularPrice: (random?: () => number) =>
     pick(["Weisst du, was eine Flasche normalerweise kostet? Schreib mir den Betrag.", "Und weisst du, was eine Flasche normalerweise kostet? Schreib mir einfach den Betrag."], random),
   regularPriceRetry: "Den Betrag verstehe ich nicht ganz – was kostet eine Flasche normalerweise? Bitte einen Betrag über 0, z. B. <i>29.90</i> – oder tippe einen Knopf.",
+  // --- Preissuche („🔎 Such du“)
+  /** Treffer (gleicher Jahrgang, gleiche Grösse) – gespeichert. details: „Mövenpick, 2019, 75 cl“. */
+  priceFound: (money: string, details: string, regularOnly: boolean) =>
+    `💰 ${regularOnly ? "Normalpreis" : "Preis"} gefunden: ${e(money)} pro Flasche (${e(details)}) – gespeichert.`,
+  /** Nur anderer Jahrgang bzw. andere Grösse: „Nur Jahrgang 2020 gefunden: CHF 64.00 (Mövenpick). Übernehmen?“ */
+  priceOther: (what: string, money: string, merchant: string) => `Nur ${e(what)} gefunden: ${e(money)} (${e(merchant)}). Übernehmen?`,
+  /** Nichts gefunden: nach dem Preis fragen. */
+  priceNotFound: "Keinen Preis bei Schweizer Händlern gefunden. Wie viel hast du bezahlt?",
+  regularNotFound: "Keinen Normalpreis bei Schweizer Händlern gefunden. Was kostet eine Flasche normalerweise? Schreib mir den Betrag.",
+  /** Rückfrage beantwortet: Preise der Charge gespeichert. */
+  priceSaved: (line: string | null) => (line ? `✅ Gespeichert: ${e(line)}.` : "✅ Gut, der Preis bleibt leer."),
+  priceLeftEmpty: "Gut, der Preis bleibt leer.",
+  priceOfferRetry: "Tippe bitte einen Knopf: Übernehmen, Selbst eingeben oder Leer lassen.",
   /** Kaufpreis „0“: dafür gibt es „🎁 Geschenk“ (Varianten). */
   priceZero: (random?: () => number) => say("priceZero", random),
   vendorAsk: (hasVendors: boolean) => (hasVendors ? "Wo hast du ihn gekauft?" : "Wo hast du ihn gekauft? Schreib mir den Namen – oder tippe „Überspringen“."),

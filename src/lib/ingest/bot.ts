@@ -2,7 +2,7 @@ import "server-only";
 
 import { later } from "@/lib/later";
 import { cleanGiftFrom } from "./gift";
-import { isZeroAmount, parseAmount } from "@/lib/format";
+import { formatMoney, isZeroAmount, parseAmount } from "@/lib/format";
 import { findDocumentAwaitingText, handleDocument, handleDocumentCallback, handleDocumentSearch, isDocumentCallback, isPdfDocument } from "./document";
 import { after } from "next/server";
 import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
@@ -108,6 +108,7 @@ import {
   setVintage,
   startTextIngest,
 } from "./flow";
+import { askPriceForItem, isPriceCallback, offerDetails, parsePriceCallback, storeFoundPrice } from "@/lib/research/price";
 import { chooseMainCategory, chooseSubCategory, createProposedCategory, kindPatch, mainOptions } from "./spirit-flow";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Grenze der Claude API pro Bild
@@ -364,6 +365,17 @@ async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[
 // Buttons
 
 async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
+  // „✏️ Ändern“ unter „💰 Preis gefunden“: die normalen Preisfragen für diese Charge.
+  if (isPriceCallback(cb.data)) {
+    const fix = parsePriceCallback(cb.data);
+    const chatId = cb.message?.chat.id;
+    await answerCallback(cb.id);
+    if (!fix || chatId == null) return;
+    if (cb.message?.message_id != null) await clearKeyboard(chatId, cb.message.message_id);
+    await supersede(createAdminClient(), chatId, "command");
+    if (!(await askPriceForItem(createAdminClient(), chatId, fix.itemId, fix.mode))) await sendMessage(chatId, T.alreadyDone);
+    return;
+  }
   if (isResearchCallback(cb.data)) {
     await handleResearchCallback(cb, actor);
     return;
@@ -512,6 +524,52 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       await answerCallback(cb.id);
       await clearKeyboard(chatId, messageId);
       await advanceTo(db, job, chatId, "price", giftPatch(undefined));
+      return;
+    }
+
+    case "searchprice": {
+      // „🔎 Such du“ bei „bezahlt?“: bezahlt und Normalpreis werden nach dem Speichern gesucht.
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await advanceTo(db, job, chatId, "price", { price: null, regular_price: null, price_search: "both" });
+      return;
+    }
+
+    case "searchreg": {
+      // „🔎 Such du“ beim Normalpreis bzw. Geschenk-Wert: nur der Normalpreis wird gesucht.
+      await answerCallback(cb.id);
+      await clearKeyboard(chatId, messageId);
+      await advanceTo(db, job, chatId, "regular_price", { regular_price: null, price_search: "regular" });
+      return;
+    }
+
+    case "offeryes": {
+      // Preissuche: anderen Jahrgang bzw. andere Grösse übernehmen (nur leere Felder).
+      await answerCallback(cb.id);
+      const offer = state.price_offer;
+      const itemId = state.price_followup?.item_id;
+      if (state.step !== "price_offer" || !offer || !itemId) return;
+      await clearKeyboard(chatId, messageId);
+      if (!(await advanceJob(db, job, "price_offer", { step: "done" }, { status: "confirmed" }))) return;
+      const saved = await storeFoundPrice(db, itemId, offer, offer.mode);
+      await sendMessage(chatId, saved ? T.priceFound(formatMoney(offer.amount, "CHF")!, offerDetails(offer), offer.mode === "regular") : T.alreadyDone);
+      return;
+    }
+
+    case "offerself": {
+      // „Selbst eingeben“: die normalen Preisfragen (bezahlt bzw. Normalpreis).
+      await answerCallback(cb.id);
+      if (state.step !== "price_offer") return;
+      await clearKeyboard(chatId, messageId);
+      await advanceTo(db, job, chatId, "price_offer", {});
+      return;
+    }
+
+    case "offerleave": {
+      await answerCallback(cb.id);
+      if (state.step !== "price_offer") return;
+      await clearKeyboard(chatId, messageId);
+      if (await advanceJob(db, job, "price_offer", { step: "done" }, { status: "confirmed" })) await sendMessage(chatId, T.priceLeftEmpty);
       return;
     }
 

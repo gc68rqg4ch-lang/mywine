@@ -61,6 +61,25 @@ const firstYear = (s: string) => {
 const baseOf = (label: string) => words(label).filter((w) => !/^(19|20)\d\d$/.test(w)).join("-");
 const query = (wine: ShopWine) => encodeURIComponent(searchTerms(wine)).replace(/%20/g, "+");
 
+/** CHF-Betrag „66.00“ (Shopify: Rappen als Zahl; sonst Franken als Text). */
+const chf = (v: number) => `CHF ${v.toFixed(2)}`;
+
+/**
+ * Preise einer Produktseite als Textzeilen (für die Preissuche): Magento (Mövenpick:
+ * data-price-amount mit finalPrice/oldPrice) und schema.org (itemprop="price"). Aktion → „statt“.
+ */
+export function htmlPriceLines(html: string): string[] {
+  const amount = (type: string) => {
+    const m = html.match(new RegExp(`data-price-amount="([0-9.]+)"[^>]*data-price-type="${type}"`)) ?? html.match(new RegExp(`data-price-type="${type}"[^>]*data-price-amount="([0-9.]+)"`));
+    return m ? Number(m[1]) : null;
+  };
+  const final = amount("finalPrice");
+  const old = amount("oldPrice");
+  if (final != null && final > 0) return [old != null && old > final ? `Preis: ${chf(final)} (Aktion, statt ${chf(old)})` : `Preis: ${chf(final)}`];
+  const item = html.match(/itemprop="price"[^>]*content="([0-9.]+)"/i) ?? html.match(/content="([0-9.]+)"[^>]*itemprop="price"/i);
+  return item && Number(item[1]) > 0 ? [`Preis: ${chf(Number(item[1]))}`] : [];
+}
+
 // ——— Shopify (napawine.ch, finespirits.ch) ———
 
 function shopify(id: ShopId, label: string, origin: string, vendor: RegExp): ShopAdapter {
@@ -84,11 +103,21 @@ function shopify(id: ShopId, label: string, origin: string, vendor: RegExp): Sho
       if (!handle) return null;
       const res = await get(`${origin}/products/${handle}.js`);
       if (!res || res.status !== 200) return null;
-      const data = JSON.parse(res.text) as { title?: string; description?: string };
+      const data = JSON.parse(res.text) as {
+        title?: string;
+        description?: string;
+        variants?: { title?: string; price?: number; compare_at_price?: number | null; available?: boolean }[];
+      };
       const title = decodeEntities(data.title ?? "").trim();
       if (!title) return null;
+      // Preise je Variante (Rappen): „Preis 70cl: CHF 66.00 (Aktion, statt CHF 72.00)“.
+      const prices = (data.variants ?? []).flatMap((v) =>
+        typeof v.price === "number" && v.price > 0
+          ? [`Preis${v.title && v.title !== "Default Title" ? ` ${v.title}` : ""}: ${chf(v.price / 100)}${v.compare_at_price && v.compare_at_price > v.price ? ` (Aktion, statt ${chf(v.compare_at_price / 100)})` : ""}`]
+          : [],
+      );
       // „vendor“ ist bei diesen Shops nicht der Produzent („-“ bzw. der Shop selbst) – weggelassen.
-      const text = [title, htmlToText(data.description ?? "")].filter(Boolean).join("\n");
+      const text = [title, ...prices, htmlToText(data.description ?? "")].filter(Boolean).join("\n");
       return { shop: id, url: `${origin}/products/${handle}`, title, year: firstYear(title), text: clip(text, MAX_PAGE_CHARS) };
     },
   };
@@ -103,7 +132,7 @@ const MP_PRODUCT = /^https:\/\/www\.moevenpick-wein\.com\/de\/((?:19|20)\d\d)-([
 export function moevenpickPage(html: string, url: string): ShopPage | null {
   const title = (metaContent(html, "og:title") ?? "").replace(/\s*\|\s*Mövenpick.*$/i, "").trim();
   if (!title) return null;
-  const parts: string[] = [title];
+  const parts: string[] = [title, ...htmlPriceLines(html)];
   const description = html.match(/class="product attribute mpw_webtext">\s*<div class="value"\s*>([\s\S]*?)<\/div>/i)?.[1];
   if (description) parts.push(`Beschreibung: ${htmlToText(description)}`);
   let drink: ShopPage["drink"];
@@ -198,7 +227,7 @@ export function bauraulacPage(html: string, url: string): ShopPage | null {
   const head = htmlToText(h1 ?? "");
   if (!head) return null;
   const title = [head, htmlToText(h2 ?? "")].filter(Boolean).join(" – ");
-  const parts = [title];
+  const parts = [title, ...htmlPriceLines(html)];
   const description = html.match(/<p itemprop="description"[^>]*>([\s\S]*?)<\/p>/i)?.[1];
   if (description) parts.push(`Beschreibung: ${htmlToText(description)}`);
   for (const m of html.matchAll(/<td class="productDetailListTitle">([\s\S]*?)<\/td>\s*<td class="productDetailListText">([\s\S]*?)<\/td>/gi)) {

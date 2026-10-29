@@ -41,7 +41,15 @@ export type CallbackAction =
   /** Hauptkategorie (Index) */
   | "catmain"
   /** Unterkategorie (Index) bzw. „none“ = ohne */
-  | "catsub";
+  | "catsub"
+  /** „🔎 Such du“ bei „bezahlt?“ (bezahlt und Normalpreis) */
+  | "searchprice"
+  /** „🔎 Such du“ beim Normalpreis bzw. Geschenk-Wert (nur Normalpreis) */
+  | "searchreg"
+  /** Preissuche: anderen Jahrgang/andere Grösse übernehmen, selbst eingeben, leer lassen */
+  | "offeryes"
+  | "offerself"
+  | "offerleave";
 
 export function callbackData(action: CallbackAction, jobId: string, value?: string) {
   return [action, jobId, value].filter(Boolean).join(":");
@@ -75,6 +83,11 @@ export function parseCallbackData(data: string | undefined) {
     "catpick",
     "catmain",
     "catsub",
+    "searchprice",
+    "searchreg",
+    "offeryes",
+    "offerself",
+    "offerleave",
   ];
   if (!actions.includes(action as CallbackAction) || !/^[0-9a-f-]{36}$/.test(jobId ?? "")) {
     return null;
@@ -194,21 +207,41 @@ export function quantityKeyboard(jobId: string): TgInlineKeyboard {
   };
 }
 
-export function priceKeyboard(jobId: string): TgInlineKeyboard {
+/** „🔎 Such du“: die Recherche sucht den Preis bei Schweizer Händlern (nach dem Speichern). */
+const searchButton = (jobId: string, action: "searchprice" | "searchreg") => ({ text: "🔎 Such du", callback_data: callbackData(action, jobId) });
+
+/** Frage „bezahlt?“: Betrag tippen oder 🎁 Geschenk · 🤷 Weiss ich nicht · 🔎 Such du (search false: ohne „Such du“). */
+export function priceKeyboard(jobId: string, search = true): TgInlineKeyboard {
   return {
     inline_keyboard: [
       [
         { text: "🎁 Geschenk", callback_data: callbackData("gift", jobId) },
         { text: "🤷 Weiss ich nicht", callback_data: callbackData("skipprice", jobId) },
+        ...(search ? [searchButton(jobId, "searchprice")] : []),
       ],
       cancelRow(jobId),
     ],
   };
 }
 
-/** Geschenk: Normalpreis (Wert) pro Flasche – Betrag schreiben oder „🤷 Weiss ich nicht“. */
-export function giftValueKeyboard(jobId: string): TgInlineKeyboard {
-  return { inline_keyboard: [[{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }], cancelRow(jobId)] };
+/** Geschenk: Normalpreis (Wert) pro Flasche – Betrag schreiben, „🤷 Weiss ich nicht“ oder „🔎 Such du“. */
+export function giftValueKeyboard(jobId: string, search = true): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      [{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }, ...(search ? [searchButton(jobId, "searchreg")] : [])],
+      cancelRow(jobId),
+    ],
+  };
+}
+
+/** Preissuche fand nur einen anderen Jahrgang bzw. eine andere Grösse: übernehmen? */
+export function priceOfferKeyboard(jobId: string): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      [{ text: "✅ Übernehmen", callback_data: callbackData("offeryes", jobId) }, { text: "✏️ Selbst eingeben", callback_data: callbackData("offerself", jobId) }],
+      [{ text: "Leer lassen", callback_data: callbackData("offerleave", jobId) }],
+    ],
+  };
 }
 
 /** Geschenk: „Von wem?“ – Name schreiben oder „Überspringen“. */
@@ -220,8 +253,8 @@ export function giftFromKeyboard(jobId: string): TgInlineKeyboard {
  * Normalpreis: mit bezahltem Betrag „✅ Ja, gleich“, „✏️ Anderer Betrag“, „🤷 Weiss ich nicht“;
  * ohne (bzw. nach „Anderer Betrag“) nur „🤷 Weiss ich nicht“ – der Betrag wird getippt.
  */
-export function regularPriceKeyboard(jobId: string, paid: number | null): TgInlineKeyboard {
-  const unknown = [{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }];
+export function regularPriceKeyboard(jobId: string, paid: number | null, search = true): TgInlineKeyboard {
+  const unknown = [{ text: "🤷 Weiss ich nicht", callback_data: callbackData("skipregular", jobId) }, ...(search ? [searchButton(jobId, "searchreg")] : [])];
   if (paid == null) return { inline_keyboard: [unknown, cancelRow(jobId)] };
   return {
     inline_keyboard: [
@@ -386,8 +419,11 @@ export function wineSummaryLines(state: IngestState) {
  * Preise in Zusammenfassung und Bestätigung: beide gleich → „CHF 34.80“; verschieden →
  * „Bezahlt CHF 29.80 · Normalpreis CHF 34.80“; nur einer → „Bezahlt …“ bzw. „Normalpreis …“.
  */
-export function priceLine(paid: number | null | undefined, regular: number | null | undefined) {
+export function priceLine(paid: number | null | undefined, regular: number | null | undefined, search?: "both" | "regular") {
   const money = (v: number) => formatMoney(v, "CHF");
+  // „🔎 Such du“: Preis bzw. Normalpreis wird nach dem Speichern gesucht.
+  if (search === "both") return "Preis: wird gesucht …";
+  if (search === "regular") return [paid != null ? `Bezahlt ${money(paid)}` : null, "Normalpreis: wird gesucht …"].filter(Boolean).join(" · ");
   if (paid != null && regular != null) return paid === regular ? money(paid) : `Bezahlt ${money(paid)} · Normalpreis ${money(regular)}`;
   if (paid != null) return `Bezahlt ${money(paid)}`;
   if (regular != null) return `Normalpreis ${money(regular)}`;
@@ -406,7 +442,7 @@ export function textSummaryMessage(state: IngestState, extra: string[] = []) {
   const prices = state.is_gift
     ? null
     : [
-        priceLine(state.price, state.regular_price),
+        priceLine(state.price, state.regular_price, state.price_search),
         state.vendor_name ? `bei ${state.vendor_name}` : null,
       ]
         .filter(Boolean)
@@ -417,7 +453,10 @@ export function textSummaryMessage(state: IngestState, extra: string[] = []) {
     ...extra,
     e(purchase),
     state.is_gift
-      ? [T.giftLine(state.gift_from ?? null), state.regular_price != null ? e(`Normalpreis ${formatMoney(state.regular_price, "CHF")}`) : null]
+      ? [
+          T.giftLine(state.gift_from ?? null),
+          state.price_search ? "Normalpreis: wird gesucht …" : state.regular_price != null ? e(`Normalpreis ${formatMoney(state.regular_price, "CHF")}`) : null,
+        ]
           .filter(Boolean)
           .join(" · ")
       : prices

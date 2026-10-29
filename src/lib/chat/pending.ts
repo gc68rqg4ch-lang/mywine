@@ -36,6 +36,9 @@ export const isSavedTasted = (job: Pick<Job, "source" | "extracted">) =>
  */
 export const isEmptyNewWine = (job: Pick<Job, "extracted">) => (job.extracted as Extracted | null)?.step === "describe";
 
+/** Preis-Rückfrage nach der Suche (Charge schon gespeichert): verfällt still, der Preis bleibt leer. */
+export const isPriceFollowup = (job: Pick<Job, "extracted">) => Boolean((job.extracted as { price_followup?: unknown } | null)?.price_followup);
+
 /** Worum es im Ablauf ging – für „Den angefangenen Pintia 2019 lasse ich mal beiseite.“ */
 export function flowSubject(job: Pick<Job, "source" | "extracted">): FlowSubject {
   const x = (job.extracted ?? {}) as Extracted;
@@ -91,8 +94,8 @@ export async function expireStale(db: AdminClient, chatId: number, now = Date.no
     const done = await close(db, job, EXPIRED_ERROR);
     if (done && job.status === "needs_review") closed.push(done);
   }
-  // Nur Abläufe mit Inhalt melden; ein leerer „Neuer Wein“ verfällt still.
-  const reported = closed.filter((j) => !isEmptyNewWine(j));
+  // Nur Abläufe mit Inhalt melden; ein leerer „Neuer Wein“ und Preis-Rückfragen verfallen still.
+  const reported = closed.filter((j) => !isEmptyNewWine(j) && !isPriceFollowup(j));
   if (reported.length) {
     await sendMessage(chatId, reported.map((j) => T.laidAside(flowSubject(j))).join("\n"));
   }
@@ -122,7 +125,7 @@ export async function supersede(db: AdminClient, chatId: number, reason: Superse
   }
   // Ein leerer „Neuer Wein“ (wartet nur auf Foto oder Beschreibung) wird durch genau diese
   // Antwort abgelöst – still. Gemeldet wird nur, was wirklich Inhalt hatte (z. B. erkannter Wein).
-  const reported = closed.filter((j) => !isEmptyNewWine(j));
+  const reported = closed.filter((j) => !isEmptyNewWine(j) && !isPriceFollowup(j));
   if (reported.length) {
     await sendMessage(chatId, reported.map((j) => T.laidAside(flowSubject(j))).join("\n"));
   }

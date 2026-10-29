@@ -92,7 +92,7 @@ test("„🎁 Geschenk“ → Name → Betrag 38: regular_price 38, purchase_pri
   parseResult = entry({});
   await processTextJob(JOB, 111, "Pintia 2019, 6 Flaschen, Weinkeller");
   assert.equal(state().step, "price");
-  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🎁 Geschenk", "🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
   await press("🎁 Geschenk");
   assert.deepEqual([state().step, state().is_gift, state().price, state().regular_price], ["gift_from", true, 0, undefined]);
   assert.match(lastText(), /Von wem/);
@@ -100,7 +100,7 @@ test("„🎁 Geschenk“ → Name → Betrag 38: regular_price 38, purchase_pri
   await say("   Marc    Muster  ");
   assert.deepEqual([state().gift_from, state().step], ["Marc Muster", "regular_price"]);
   assert.ok(VARIANTS.giftValue.includes(lastText() as never), lastText());
-  assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "✖️ Abbrechen"]);
+  assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
   await say("38");
   assert.equal(state().regular_price, 38);
   assert.match(lastText(), /Zusammenfassung[\s\S]*6 Flaschen · Weinkeller\n🎁 Geschenk von Marc Muster · Normalpreis CHF\s38\.00\n/);
@@ -136,7 +136,7 @@ test("Normalpreis: 34.80 gespeichert; 0, -5, „keine Ahnung“ → freundlich n
     assert.equal(state().step, "regular_price", bad);
     assert.equal(state().regular_price, undefined, bad);
     assert.ok(VARIANTS.giftValueRetry.includes(lastText() as never), `${bad}: ${lastText()}`);
-    assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "✖️ Abbrechen"]);
+    assert.deepEqual(buttons().map((b) => b.text), ["🤷 Weiss ich nicht", "🔎 Such du", "✖️ Abbrechen"]);
   }
   await say("34.80");
   assert.equal(state().regular_price, 34.8);

@@ -302,6 +302,8 @@ export type Database = {
           personal_vintage_rating: number | null
           personal_wine_rating: number | null
           photo_urls: string[]
+          price_note: string | null
+          price_source: string | null
           purchase_price: number | null
           purchased_at: string | null
           quantity: number
@@ -329,6 +331,8 @@ export type Database = {
           personal_vintage_rating?: number | null
           personal_wine_rating?: number | null
           photo_urls?: string[]
+          price_note?: string | null
+          price_source?: string | null
           purchase_price?: number | null
           purchased_at?: string | null
           quantity?: number
@@ -356,6 +360,8 @@ export type Database = {
           personal_vintage_rating?: number | null
           personal_wine_rating?: number | null
           photo_urls?: string[]
+          price_note?: string | null
+          price_source?: string | null
           purchase_price?: number | null
           purchased_at?: string | null
           quantity?: number
