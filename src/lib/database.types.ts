@@ -535,6 +535,27 @@ export type Database = {
             foreignKeyName: "research_jobs_wine_id_fkey"
             columns: ["wine_id"]
             isOneToOne: false
+            referencedRelation: "cellar_overview"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "research_jobs_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "cellar_wine_summary"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "research_jobs_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
+            referencedRelation: "tasted_wines"
+            referencedColumns: ["wine_id"]
+          },
+          {
+            foreignKeyName: "research_jobs_wine_id_fkey"
+            columns: ["wine_id"]
+            isOneToOne: false
             referencedRelation: "wines"
             referencedColumns: ["id"]
           },
@@ -1619,6 +1640,12 @@ export type Database = {
           vintage_year: number | null
           wine_id: string
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "research_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       cleanup_research_jobs: { Args: never; Returns: number }
       delete_bottles: {
@@ -1658,10 +1685,7 @@ export type Database = {
         Returns: string
       }
       price_class: { Args: { p_price: number }; Returns: string }
-      release_research_worker: {
-        Args: { p_owner: string }
-        Returns: undefined
-      }
+      release_research_worker: { Args: { p_owner: string }; Returns: undefined }
       replace_grape_shares: {
         Args: { p_shares: Json; p_vintage_year: number; p_wine_id: string }
         Returns: {
