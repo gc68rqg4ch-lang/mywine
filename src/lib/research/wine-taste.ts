@@ -15,7 +15,7 @@ import {
   type WineResearch,
   type WineResearchInput,
 } from "@/lib/ingest/recognize";
-import type { TasteProfileData } from "@/lib/taste/profile";
+import { UNKNOWN, type TasteProfileData } from "@/lib/taste/profile";
 import { readTasteResearch, tasteResearchRequest, type TasteWine } from "./taste";
 import type { ResearchDocument } from "./documents";
 import type { ShopPage } from "./shops";
@@ -38,11 +38,21 @@ export type WineTasteInput = {
   taste: { wine: TasteWine; year: number | null; documents: ResearchDocument[]; pages: ShopPage[] };
 };
 
-/** Prompt des gemeinsamen Aufrufs (rein): gezielte Suche zuerst, dann die Regeln beider Teile. */
+/** Kernwerte des Profils, nach denen weitergesucht wird (Tannin nur bei Rotwein). */
+export const coreTasteKeys = (wineType: string | null) => ["sweetness", "acidity", ...(wineType === "red" ? ["tannin"] : []), "body"] as const;
+
+/**
+ * Prompt des gemeinsamen Aufrufs (rein): Reihenfolge der Quellen, wann weitersuchen und wann
+ * aufhören, dann die Regeln beider Teile.
+ */
 export function wineTastePrompt(input: WineTasteInput, tasteRules: string, notes: string) {
   const year = input.taste.year;
-  return `Du recherchierst in EINER Websuche für zwei Berichte zu genau diesem Wein und meldest beide zusammen.
-Suche zuerst gezielt das technische Datenblatt (Tech Sheet, Fiche technique) bzw. die Verkostungsnotiz${year != null ? ` des Jahrgangs ${year}` : ""} beim Produzenten, dann seriöse Händler, Kritiker und Fachpresse – solche Seiten belegen meist Stammdaten und Geschmack zugleich. Keine Suche doppelt.
+  const core = input.taste.wine.type === "red" ? "Säure, Tannin, Körper, Süsse" : "Säure, Körper, Süsse";
+  return `Du recherchierst für zwei Berichte zu genau diesem Wein und meldest beide zusammen (bis zu ${WINE_TASTE_SEARCHES} Websuchen).
+Beginne mit dem technischen Datenblatt (Tech Sheet, Fiche technique) bzw. der Verkostungsnotiz${year != null ? ` des Jahrgangs ${year}` : ""} beim Produzenten.
+Wann weitersuchen: Solange das Profil nur eine Quelle hat oder Kernwerte (${core}) „unbekannt“ sind – bzw. Stammdaten oder Jahrgangsangaben fehlen – und noch Suchen übrig sind, suche weiter. Jede weitere Suche mit einem anderen Ansatz bzw. einer anderen Art von Quelle (Produzent/Datenblatt, Kritiker/Fachpresse, weitere Händler); keine Abfrage wiederholen.
+Wann aufhören: wenn beide Teile mit mindestens zwei unabhängigen Quellen belegt sind oder die Suchen aufgebraucht sind.
+„unbekannt“ bleibt richtig, wenn die Quellen es wirklich nicht hergeben – nichts erfinden; die Belegregeln (Quellen, Zitate) gelten unverändert.
 
 Teil 1 (Feld wine) – Stammdaten und Jahrgänge:
 ${wineResearchRules(input.wine)}
@@ -52,12 +62,41 @@ ${tasteRules}
 Die Regeln jedes Teils gelten nur für diesen Teil; Quellen und Zitate von Teil 2 in taste.sources bzw. taste.evidence.${notes}`;
 }
 
+/** Diagnose des gemeinsamen Aufrufs (in research_jobs.result.diagnostics.wine_taste). */
+export type WineTasteDiagnostics = {
+  /** Ausgeführte Websuchen (alle Runden) */
+  web_searches: number;
+  /** Quellen des gespeicherten Profils (0 = kein Profil) */
+  profile_sources: number;
+  /** Kernwerte (Süsse, Säure, Tannin bei Rotwein, Körper) „unbekannt“ bzw. ohne Profil alle */
+  unknown_core: number;
+  confidence: string | null;
+  /** Gab es eine Antwort mit dem Tool? */
+  answered: boolean;
+};
+
+/** Diagnose aus Suchen und geprüftem Profil (rein). */
+export function wineTasteDiagnostics(searches: number, profile: TasteProfileData | null, wineType: string | null, answered: boolean): WineTasteDiagnostics {
+  const core = coreTasteKeys(wineType);
+  const values = (profile?.values ?? {}) as Record<string, string | undefined>;
+  return {
+    web_searches: searches,
+    profile_sources: profile?.sources.length ?? 0,
+    unknown_core: profile ? core.filter((k) => !values[k] || values[k] === UNKNOWN).length : core.length,
+    confidence: profile?.confidence ?? null,
+    answered,
+  };
+}
+
 /**
- * Ein Aufruf für beides. wine/profile null = nichts Verlässliches im jeweiligen Teil; das
- * Ganze null = gar keine Antwort (der Aufrufer macht dann keinen Ersatz-Aufruf).
+ * Ein Aufruf für beides. wine/profile null = nichts Verlässliches im jeweiligen Teil bzw. gar
+ * keine Antwort (der Aufrufer macht dann keinen Ersatz-Aufruf); dazu die Diagnose.
  */
-export async function researchWineAndTaste(input: WineTasteInput): Promise<{ wine: WineResearch | null; profile: TasteProfileData | null } | null> {
+export async function researchWineAndTaste(
+  input: WineTasteInput,
+): Promise<{ wine: WineResearch | null; profile: TasteProfileData | null; diagnostics: WineTasteDiagnostics } | null> {
   if (!input.wine.wine.name) return null;
+  let searches = 0;
   const t = tasteResearchRequest(input.taste.wine, input.taste.year, input.taste.documents, input.taste.pages);
   // Beilagen beider Teile, ohne Doppelte (gleiches Datenblatt bzw. gleiche Händlerseite).
   const documents = uniqueBy([...(input.wine.documents ?? []), ...t.documents], (d) => d.name);
@@ -78,13 +117,19 @@ export async function researchWineAndTaste(input: WineTasteInput): Promise<{ win
     repair: (found) => partProblems(found, t.schema),
     maxSearches: WINE_TASTE_SEARCHES,
     maxTokens: WINE_TASTE_MAX_TOKENS,
+    onContent: (blocks) => {
+      searches += blocks.filter((b) => b.type === "server_tool_use" && b.name === "web_search").length;
+    },
   });
-  if (!raw) return null;
+  const wineType = input.taste.wine.type;
+  if (!raw) return { wine: null, profile: null, diagnostics: wineTasteDiagnostics(searches, null, wineType, false) };
   const wine = EnrichmentSchema.safeParse(raw.wine);
   const taste = t.schema.safeParse(raw.taste);
+  const profile = taste.success ? readTasteResearch(taste.data, { wine: input.taste.wine, year: input.taste.year, documents: input.taste.documents }) : null;
   return {
     wine: wine.success ? readWineResearch(wine.data, input.wine) : null,
-    profile: taste.success ? readTasteResearch(taste.data, { wine: input.taste.wine, year: input.taste.year, documents: input.taste.documents }) : null,
+    profile,
+    diagnostics: wineTasteDiagnostics(searches, profile, wineType, true),
   };
 }
 

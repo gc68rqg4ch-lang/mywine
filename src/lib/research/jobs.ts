@@ -161,7 +161,7 @@ export function kickWorker() {
 
 // ——— Abarbeiten ———
 
-const toResult = (o: ResearchOutcome): JobResult => ({
+export const toResult = (o: ResearchOutcome): JobResult => ({
   status: o.status,
   filled: o.filled,
   suggested: o.suggested,

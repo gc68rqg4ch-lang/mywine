@@ -7,6 +7,8 @@ import { claudeError, claudeTool, installNet, type Net } from "./stub-net";
 import { schemaRejected, usageLimit } from "@/lib/ai/api-errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { researchAndFillWine } from "@/lib/research/wine";
+import { runJob, toResult } from "@/lib/research/jobs";
+import { wineTastePrompt } from "@/lib/research/wine-taste";
 import { WINE_TASTE_MAX_TOKENS, WINE_TASTE_SEARCHES, wineTasteSchema } from "@/lib/research/wine-taste";
 import { tasteResearchSchema } from "@/lib/research/taste";
 import { toolInputSchema } from "@/lib/ingest/recognize";
@@ -66,7 +68,7 @@ test("Stammdaten und Profil fällig → genau EIN Recherche-Aufruf; beides wird 
   const search = (body.tools as { type?: string; max_uses?: number }[]).find((t) => t.type?.startsWith("web_search"));
   assert.equal(search?.max_uses, WINE_TASTE_SEARCHES);
   const prompt = JSON.stringify(body.messages);
-  assert.match(prompt, /Suche zuerst gezielt das technische Datenblatt[^"]*Verkostungsnotiz des Jahrgangs 2019/);
+  assert.match(prompt, /Beginne mit dem technischen Datenblatt[^"]*Verkostungsnotiz des Jahrgangs 2019/);
   assert.match(prompt, /Teil 1 \(Feld wine\)[\s\S]*Rebsorten mit Prozent[\s\S]*Teil 2 \(Feld taste\)[\s\S]*wörtliches Zitat/);
   // Stammdaten, Jahrgang, Profil
   assert.deepEqual([net.tables.wines[0].appellation, net.tables.wines[0].alcohol_content], ["DO Toro", 14.5]);
@@ -195,4 +197,36 @@ test("Vor der Migration: neuer Zweck wird als research_wine gezählt", async () 
   });
   await recordUsage("claude-sonnet-5-5", { input_tokens: 10, output_tokens: 5 }, { purpose: "research_wine_taste" });
   assert.deepEqual(rows.map((r) => r.purpose), ["research_wine"]);
+});
+
+test("Prompt: klares Kriterium zum Weitersuchen bzw. Aufhören, keine Einladung zum Aufhören nach einem Treffer", () => {
+  const input = { wine: { wine: { name: "Pintia", producer: "Vega Sicilia", country: null, region: null, appellation: null, type: "red" as const, alcohol_content: null }, vintages: [{ year: 2019, knownGrapes: [] }] }, taste: { wine: { name: "Pintia", producer: "Vega Sicilia", type: "red" }, year: 2019, documents: [], pages: [] } };
+  const prompt = wineTastePrompt(input, "REGELN", "");
+  assert.match(prompt, /Wann weitersuchen: Solange das Profil nur eine Quelle hat oder Kernwerte \(Säure, Tannin, Körper, Süsse\) „unbekannt“ sind/);
+  assert.match(prompt, /anderen Ansatz bzw\. einer anderen Art von Quelle \(Produzent\/Datenblatt, Kritiker\/Fachpresse, weitere Händler\); keine Abfrage wiederholen/);
+  assert.match(prompt, /Wann aufhören: wenn beide Teile mit mindestens zwei unabhängigen Quellen belegt sind oder die Suchen aufgebraucht sind/);
+  assert.match(prompt, /„unbekannt“ bleibt richtig, wenn die Quellen es wirklich nicht hergeben – nichts erfinden/);
+  assert.match(prompt, /bis zu 6 Websuchen/);
+  assert.doesNotMatch(prompt, /belegen meist|zugleich|Keine Suche doppelt|EINER Websuche/);
+  const white = wineTastePrompt({ ...input, taste: { ...input.taste, wine: { ...input.taste.wine, type: "white" } } }, "REGELN", "");
+  assert.match(white, /Kernwerte \(Säure, Körper, Süsse\)/, "Tannin nur bei Rotwein");
+});
+
+test("Diagnose im Ergebnis des Auftrags: Websuchen, Profil-Quellen, Kernwerte „unbekannt“, confidence", async () => {
+  reset();
+  // Zwei Websuchen in der Antwort (wie die API sie als server_tool_use liefert)
+  combinedReply = () => {
+    const r = claudeTool("report_wine_and_taste", { wine: WINE, taste: TASTE }) as { content: unknown[] };
+    return { ...r, content: [{ type: "server_tool_use", id: "s1", name: "web_search", input: { query: "Pintia 2019 ficha" } }, { type: "server_tool_use", id: "s2", name: "web_search", input: { query: "Pintia 2019 review" } }, ...r.content] };
+  };
+  const outcome = await runJob(db, { wine_id: W, kind: "page", params: { year: 2019 } });
+  const result = toResult(outcome) as { diagnostics?: { wine_taste?: Record<string, unknown> } };
+  // TASTE: eine Quelle, Säure unbekannt (Süsse, Tannin, Körper belegt)
+  assert.deepEqual(result.diagnostics?.wine_taste, { web_searches: 2, profile_sources: 1, unknown_core: 1, confidence: "mittel", answered: true });
+  // Rückfall (Schema-Fehler): vermerkt
+  reset();
+  combinedReply = () => claudeError(400, GRAMMAR) as never;
+  const fallback = toResult(await runJob(db, { wine_id: W, kind: "page", params: { year: 2019 } })) as { diagnostics?: { wine_taste?: { fallback?: string } } };
+  assert.match(String(fallback.diagnostics?.wine_taste?.fallback), /grammar/);
+  combinedReply = () => claudeTool("report_wine_and_taste", { wine: WINE, taste: TASTE });
 });

@@ -6,7 +6,7 @@ import "server-only";
 // Für „Nachrecherchieren“ auf der Weinseite, den Sammellauf und den Bot. Auch Weine ohne
 // Flaschen (nur verkostet) werden recherchiert – Jahrgänge dann aus „Verkostet“.
 
-import { researchWineAndTaste } from "./wine-taste";
+import { researchWineAndTaste, type WineTasteDiagnostics } from "./wine-taste";
 import type { TasteProfileData } from "@/lib/taste/profile";
 import { canonicalProducer } from "@/lib/producers/load";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -75,7 +75,7 @@ export type ResearchOutcome = {
   taste?: "saved" | "suggested" | "none" | "unchanged" | "skipped";
   /** Jahrgang, für den das Profil gesucht wurde (null = Wein ohne Jahrgang). */
   tasteYear?: number | null;
-  /** Preissuche: Rohantwort, Verwerfungsgrund, geprüfte Seiten (für research_jobs.result). */
+  /** Für research_jobs.result: Preissuche (Rohantwort, Verwerfungsgrund, geprüfte Seiten) bzw. gemeinsame Recherche (wine_taste: Suchen, Profil-Quellen, Kernwerte „unbekannt“, confidence). */
   diagnostics?: unknown;
   /** Bei status „error“: was schiefging (Nutzungslimit → Lauf sofort stoppen). */
   error?: { kind: "usage_limit" | "temporary" | "api" | "other"; message: string };
@@ -205,17 +205,21 @@ export async function researchAndFillWine(
   // Wein mit fälligem Profil: Stammdaten und Profil in EINEM Aufruf (eine Websuche statt zwei).
   // Kommt nichts, gibt es keinen Ersatz-Aufruf – das Profil gilt als gesucht ohne Fund.
   let prefetched: { profile: TasteProfileData | null } | undefined;
+  let diagnostics: { wine_taste: WineTasteDiagnostics | { fallback: string } } | undefined;
   let found: WineResearch | null = null;
   if (wine.type !== "spirit" && runTaste) {
     try {
       const both = await researchWineAndTaste({ wine: wineInput, taste: { wine, year: profileYear, documents: tasteDocs, pages: tastePages } });
       found = both?.wine ?? null;
       prefetched = { profile: both?.profile ?? null };
+      // Messbar ohne Logs: Suchen, Profil-Quellen, Kernwerte „unbekannt“, confidence.
+      if (both) diagnostics = { wine_taste: both.diagnostics };
     } catch (error) {
       // Schema bzw. Grammatik von der API abgelehnt: sofort die zwei Einzelaufrufe (Stammdaten hier,
       // Profil in taste()) – ein Schema-Problem blockiert die Recherche nie ganz. Andere Fehler wie bisher.
       if (!schemaRejected(error)) throw error;
       console.error("wine+taste research rejected (schema) – falling back to two calls", wineId, error instanceof Error ? error.message : error);
+      diagnostics = { wine_taste: { fallback: (error instanceof Error ? error.message : String(error)).slice(0, 200) } };
       found = await researchWineWeb(wineInput);
       prefetched = undefined;
     }
@@ -225,7 +229,7 @@ export async function researchAndFillWine(
   if (!found) {
     const result = await taste(prefetched);
     await markResearched(db, wineId);
-    return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, tasteYear: profileYear, seconds: seconds() };
+    return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, tasteYear: profileYear, ...(diagnostics ? { diagnostics } : {}), seconds: seconds() };
   }
 
   const note = sourceNote(found.sources);
@@ -329,6 +333,7 @@ export async function researchAndFillWine(
     taste: tasteResult,
     tasteYear: profileYear,
     ...(tasteError ? { error: tasteError } : {}),
+    ...(diagnostics ? { diagnostics } : {}),
     seconds: seconds(),
   };
 }
