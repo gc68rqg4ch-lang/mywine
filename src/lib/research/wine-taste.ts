@@ -20,8 +20,11 @@ import { readTasteResearch, tasteResearchRequest, type TasteWine } from "./taste
 import type { ResearchDocument } from "./documents";
 import type { ShopPage } from "./shops";
 
-/** Höchstens so viele Websuchen – wie ein einzelner Aufruf heute, nicht die Summe beider. */
-export const WINE_TASTE_SEARCHES = 6;
+/**
+ * Höchstens so viele Websuchen: eine verlässliche Quelle genügt (meist schon die erste Suche);
+ * die Grenze greift nur, wenn nichts Verlässliches zu finden ist.
+ */
+export const WINE_TASTE_SEARCHES = 3;
 /** Ausgabe je Runde: Stammdaten (~1000) plus Profil mit Zitaten (~2500), Reserve fürs Denken. */
 export const WINE_TASTE_MAX_TOKENS = 9000;
 
@@ -50,9 +53,10 @@ export function wineTastePrompt(input: WineTasteInput, tasteRules: string, notes
   const core = input.taste.wine.type === "red" ? "Säure, Tannin, Körper, Süsse" : "Säure, Körper, Süsse";
   return `Du recherchierst für zwei Berichte zu genau diesem Wein und meldest beide zusammen (bis zu ${WINE_TASTE_SEARCHES} Websuchen).
 Beginne mit dem technischen Datenblatt (Tech Sheet, Fiche technique) bzw. der Verkostungsnotiz${year != null ? ` des Jahrgangs ${year}` : ""} beim Produzenten.
-Wann weitersuchen: Solange das Profil nur eine Quelle hat oder Kernwerte (${core}) „unbekannt“ sind – bzw. Stammdaten oder Jahrgangsangaben fehlen – und noch Suchen übrig sind, suche weiter. Jede weitere Suche mit einem anderen Ansatz bzw. einer anderen Art von Quelle (Produzent/Datenblatt, Kritiker/Fachpresse, weitere Händler); keine Abfrage wiederholen.
-Wann aufhören: wenn beide Teile mit mindestens zwei unabhängigen Quellen belegt sind oder die Suchen aufgebraucht sind.
-„unbekannt“ bleibt richtig, wenn die Quellen es wirklich nicht hergeben – nichts erfinden; die Belegregeln (Quellen, Zitate) gelten unverändert.
+Verlässliche Quellen: Produzent bzw. Datenblatt, offizieller Importeur bzw. Vertreiber, seriöse Fachhändler, Kritiker bzw. Fachpresse. Nicht verlässlich: persönliche Einschätzungen (Blogs, Videos, Foren, Bewertungsportale mit Nutzernotizen).
+Wann aufhören: sobald beide Teile (Stammdaten und Geschmacksprofil) mit mindestens einer verlässlichen Quelle belegt sind – eine verlässliche Quelle genügt.
+Wann weitersuchen: nur, solange für einen Teil noch keine verlässliche Quelle gefunden ist – dann mit einem anderen Ansatz bzw. einer anderen Art von Quelle; keine Abfrage wiederholen.
+Werte, die die verlässliche Quelle nicht nennt (z. B. einzelne Kernwerte wie ${core}), bleiben „unbekannt“ – dafür nicht weitersuchen und nichts erfinden; die Belegregeln (Quellen, Zitate) gelten unverändert.
 
 Teil 1 (Feld wine) – Stammdaten und Jahrgänge:
 ${wineResearchRules(input.wine)}

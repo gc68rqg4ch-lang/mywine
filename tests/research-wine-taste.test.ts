@@ -67,6 +67,7 @@ test("Stammdaten und Profil fällig → genau EIN Recherche-Aufruf; beides wird 
   assert.equal(body.max_tokens, WINE_TASTE_MAX_TOKENS);
   const search = (body.tools as { type?: string; max_uses?: number }[]).find((t) => t.type?.startsWith("web_search"));
   assert.equal(search?.max_uses, WINE_TASTE_SEARCHES);
+  assert.equal(WINE_TASTE_SEARCHES, 3);
   const prompt = JSON.stringify(body.messages);
   assert.match(prompt, /Beginne mit dem technischen Datenblatt[^"]*Verkostungsnotiz des Jahrgangs 2019/);
   assert.match(prompt, /Teil 1 \(Feld wine\)[\s\S]*Rebsorten mit Prozent[\s\S]*Teil 2 \(Feld taste\)[\s\S]*wörtliches Zitat/);
@@ -202,14 +203,14 @@ test("Vor der Migration: neuer Zweck wird als research_wine gezählt", async () 
 test("Prompt: klares Kriterium zum Weitersuchen bzw. Aufhören, keine Einladung zum Aufhören nach einem Treffer", () => {
   const input = { wine: { wine: { name: "Pintia", producer: "Vega Sicilia", country: null, region: null, appellation: null, type: "red" as const, alcohol_content: null }, vintages: [{ year: 2019, knownGrapes: [] }] }, taste: { wine: { name: "Pintia", producer: "Vega Sicilia", type: "red" }, year: 2019, documents: [], pages: [] } };
   const prompt = wineTastePrompt(input, "REGELN", "");
-  assert.match(prompt, /Wann weitersuchen: Solange das Profil nur eine Quelle hat oder Kernwerte \(Säure, Tannin, Körper, Süsse\) „unbekannt“ sind/);
-  assert.match(prompt, /anderen Ansatz bzw\. einer anderen Art von Quelle \(Produzent\/Datenblatt, Kritiker\/Fachpresse, weitere Händler\); keine Abfrage wiederholen/);
-  assert.match(prompt, /Wann aufhören: wenn beide Teile mit mindestens zwei unabhängigen Quellen belegt sind oder die Suchen aufgebraucht sind/);
-  assert.match(prompt, /„unbekannt“ bleibt richtig, wenn die Quellen es wirklich nicht hergeben – nichts erfinden/);
-  assert.match(prompt, /bis zu 6 Websuchen/);
-  assert.doesNotMatch(prompt, /belegen meist|zugleich|Keine Suche doppelt|EINER Websuche/);
+  assert.match(prompt, /Verlässliche Quellen: Produzent bzw\. Datenblatt, offizieller Importeur bzw\. Vertreiber, seriöse Fachhändler, Kritiker bzw\. Fachpresse\. Nicht verlässlich: persönliche Einschätzungen \(Blogs, Videos, Foren, Bewertungsportale mit Nutzernotizen\)/);
+  assert.match(prompt, /Wann aufhören: sobald beide Teile \(Stammdaten und Geschmacksprofil\) mit mindestens einer verlässlichen Quelle belegt sind/);
+  assert.match(prompt, /Wann weitersuchen: nur, solange für einen Teil noch keine verlässliche Quelle gefunden ist – dann mit einem anderen Ansatz bzw\. einer anderen Art von Quelle; keine Abfrage wiederholen/);
+  assert.match(prompt, /bleiben „unbekannt“ – dafür nicht weitersuchen und nichts erfinden/);
+  assert.match(prompt, /bis zu 3 Websuchen/);
+  assert.doesNotMatch(prompt, /mindestens zwei unabhängigen Quellen|nur eine Quelle hat|belegen meist|zugleich|Keine Suche doppelt|EINER Websuche/);
   const white = wineTastePrompt({ ...input, taste: { ...input.taste, wine: { ...input.taste.wine, type: "white" } } }, "REGELN", "");
-  assert.match(white, /Kernwerte \(Säure, Körper, Süsse\)/, "Tannin nur bei Rotwein");
+  assert.match(white, /Kernwerte wie Säure, Körper, Süsse\)/, "Tannin nur bei Rotwein");
 });
 
 test("Diagnose im Ergebnis des Auftrags: Websuchen, Profil-Quellen, Kernwerte „unbekannt“, confidence", async () => {
