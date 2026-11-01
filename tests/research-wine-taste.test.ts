@@ -223,7 +223,7 @@ test("Diagnose im Ergebnis des Auftrags: Websuchen, Profil-Quellen, Kernwerte �
   const outcome = await runJob(db, { wine_id: W, kind: "page", params: { year: 2019 } });
   const result = toResult(outcome) as { diagnostics?: { wine_taste?: Record<string, unknown> } };
   // TASTE: eine Quelle, Säure unbekannt (Süsse, Tannin, Körper belegt)
-  assert.deepEqual(result.diagnostics?.wine_taste, { web_searches: 2, profile_sources: 1, unknown_core: 1, confidence: "mittel", answered: true });
+  assert.deepEqual(result.diagnostics?.wine_taste, { web_searches: 2, requests: 1, profile_sources: 1, unknown_core: 1, confidence: "mittel", answered: true });
   // Rückfall (Schema-Fehler): vermerkt
   reset();
   combinedReply = () => claudeError(400, GRAMMAR) as never;

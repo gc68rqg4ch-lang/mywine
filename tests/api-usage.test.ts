@@ -18,8 +18,16 @@ import { z } from "zod";
 
 test("Kosten aus usage: Input, Output, Cache lesen/schreiben, Websuchen; Haiku über 100k teurer; unbekanntes Modell vorsichtig", () => {
   const usage = { input_tokens: 10_000, output_tokens: 1_000, cache_read_input_tokens: 5_000, cache_creation_input_tokens: 2_000, server_tool_use: { web_search_requests: 3, web_fetch_requests: 1 } };
-  // Sonnet 5.5: (10000×2 + 1000×10 + 5000×0.2 + 2000×2.5) / 1e6 + 3 × 0.01
-  assert.equal(costUsd("claude-sonnet-5-5", usage), 0.066);
+  // Sonnet 5.5: (10000×2 + 1000×10 + 5000×0.1 + 2000×2.5) / 1e6 + 3 × 0.01 – Cache lesen 0,05 × Input
+  assert.equal(costUsd("claude-sonnet-5-5", usage), 0.0655);
+  // Recherche mit Cache (Beispiel): 15 000 geschrieben (1,25 × 2), 120 000 gelesen (0,05 × 2), 5000 normal, 3000 Ausgabe, 3 Suchen
+  // = (15000×2.5 + 120000×0.1 + 5000×2 + 3000×10) / 1e6 + 0.03 = 0.1195 (ohne Cache: 140 000×2/1e6 + 0.03 + 0.03 = 0.34)
+  assert.equal(costUsd("claude-sonnet-5-5", { input_tokens: 5_000, output_tokens: 3_000, cache_read_input_tokens: 120_000, cache_creation_input_tokens: 15_000, server_tool_use: { web_search_requests: 3 } }), 0.1195);
+  assert.equal(costUsd("claude-sonnet-5-5", { input_tokens: 140_000, output_tokens: 3_000, server_tool_use: { web_search_requests: 3 } }), 0.34);
+  // Haiku 5.5: lesen 0,1 × (0.01), schreiben 1,25 × (0.125); über 100 000 im selben Verhältnis teurer; Opus 5.5: lesen 0,05 × (0.20)
+  assert.equal(costUsd("claude-haiku-5-5", { cache_read_input_tokens: 20_000, cache_creation_input_tokens: 2_000 }), 0.00045);
+  assert.equal(costUsd("claude-haiku-5-5", { cache_read_input_tokens: 100_000, cache_creation_input_tokens: 10_000 }), 0.01125);
+  assert.equal(costUsd("claude-opus-5-5", { cache_read_input_tokens: 1_000_000 }), 0.2);
   assert.deepEqual(usageCounts(usage), { input: 10_000, output: 1_000, cacheRead: 5_000, cacheWrite: 2_000, webSearches: 3, webFetches: 1 });
   assert.equal(costUsd("claude-haiku-5-5", { input_tokens: 2_000, output_tokens: 500 }), 0.00045);
   assert.equal(costUsd("claude-haiku-5-5", { input_tokens: 150_000, output_tokens: 1_000 }), 0.0775, "über 100k: 0.50/2.50");

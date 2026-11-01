@@ -80,6 +80,10 @@ async function runWith(
     messages: toMessages(history, text),
     max_iterations: MAX_ITERATIONS,
     output_config: { effort: "medium" },
+    // Prompt-Caching: System und Tools (~20 000 Tokens) bleiben gleich, jede Werkzeug-Runde und
+    // jede weitere Nachricht innert 5 Minuten liest sie aus dem Cache. Automatischer Marker – er
+    // wandert mit dem Verlauf mit.
+    cache_control: { type: "ephemeral" },
     ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
   });
   const final = await withUsage({ purpose: "chat" }, () => runner.runUntilDone());

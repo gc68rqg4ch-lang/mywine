@@ -2,14 +2,16 @@
 //
 // Stand 29.10.2026, Quelle: Anthropic-Preisliste (platform.claude.com/pricing, Stand der
 // Claude-API-Referenz 06.10.2026). Preise in USD pro Million Tokens; Cache schreiben = 1,25 ×
-// Input (5-Minuten-Cache), Cache lesen laut Liste. Websuche: 10 USD pro 1000 Suchen; Web-Abruf
-// (web_fetch) kostet nur die Tokens. Haiku 5.5: über 100 000 Input-Tokens gilt der höhere Satz.
+// Input (5-Minuten-Cache; 1-Stunden-Cache nutzt die App nicht), Cache lesen 0,1 × Input – bei
+// Sonnet 5.5 und Opus 5.5 0,05 × (platform.claude.com/docs/en/build-with-claude/prompt-caching).
+// Websuche: 10 USD pro 1000 Suchen; Web-Abruf (web_fetch) kostet nur die Tokens. Haiku 5.5: über 100 000 Input-Tokens gilt der höhere Satz.
 
 export type ModelPrice = { input: number; output: number; cacheRead: number; cacheWrite: number; long?: { above: number; input: number; output: number }; /** USD je Websuche (Standard WEB_SEARCH_USD) */ webSearch?: number };
 
 export const MODEL_PRICES: Record<string, ModelPrice> = {
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, long: { above: 100_000, input: 0.5, output: 2.5 } },
-  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  // Sonnet 5.5 und Opus 5.5: Cache lesen 0,05 × Input (Doku Prompt Caching, Fussnote); sonst 0,1 ×.
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
   "claude-sonnet-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
   "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
   "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
@@ -77,8 +79,10 @@ export function costUsd(model: string, usage: ApiUsage | UsageCounts | null | un
   const u = usage && "webSearches" in usage ? usage : usageCounts(usage as ApiUsage);
   const p = priceOf(model);
   const prompt = u.input + u.cacheRead + u.cacheWrite;
-  const rates = p.long && prompt > p.long.above ? { ...p, input: p.long.input, output: p.long.output } : p;
-  const usd = (u.input * rates.input + u.output * rates.output + u.cacheRead * p.cacheRead + u.cacheWrite * p.cacheWrite) / 1_000_000 + u.webSearches * (p.webSearch ?? WEB_SEARCH_USD);
+  // Langer Prompt (Haiku 5.5 über 100 000): höherer Satz, Cache lesen/schreiben im selben Verhältnis.
+  const f = p.long && prompt > p.long.above ? p.long.input / p.input : 1;
+  const rates = p.long && f !== 1 ? { ...p, input: p.long.input, output: p.long.output, cacheRead: p.cacheRead * f, cacheWrite: p.cacheWrite * f } : p;
+  const usd = (u.input * rates.input + u.output * rates.output + u.cacheRead * rates.cacheRead + u.cacheWrite * rates.cacheWrite) / 1_000_000 + u.webSearches * (p.webSearch ?? WEB_SEARCH_USD);
   return Math.round(usd * 1_000_000) / 1_000_000;
 }
 

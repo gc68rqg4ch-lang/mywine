@@ -70,6 +70,8 @@ Die Regeln jedes Teils gelten nur für diesen Teil; Quellen und Zitate von Teil 
 export type WineTasteDiagnostics = {
   /** Ausgeführte Websuchen (alle Runden) */
   web_searches: number;
+  /** Anfragen an die API (Runden der pause_turn-Schleife inkl. Nachfrage bei ungültigem Teil) */
+  requests: number;
   /** Quellen des gespeicherten Profils (0 = kein Profil) */
   profile_sources: number;
   /** Kernwerte (Süsse, Säure, Tannin bei Rotwein, Körper) „unbekannt“ bzw. ohne Profil alle */
@@ -80,11 +82,12 @@ export type WineTasteDiagnostics = {
 };
 
 /** Diagnose aus Suchen und geprüftem Profil (rein). */
-export function wineTasteDiagnostics(searches: number, profile: TasteProfileData | null, wineType: string | null, answered: boolean): WineTasteDiagnostics {
+export function wineTasteDiagnostics(searches: number, profile: TasteProfileData | null, wineType: string | null, answered: boolean, requests = 1): WineTasteDiagnostics {
   const core = coreTasteKeys(wineType);
   const values = (profile?.values ?? {}) as Record<string, string | undefined>;
   return {
     web_searches: searches,
+    requests,
     profile_sources: profile?.sources.length ?? 0,
     unknown_core: profile ? core.filter((k) => !values[k] || values[k] === UNKNOWN).length : core.length,
     confidence: profile?.confidence ?? null,
@@ -101,6 +104,7 @@ export async function researchWineAndTaste(
 ): Promise<{ wine: WineResearch | null; profile: TasteProfileData | null; diagnostics: WineTasteDiagnostics } | null> {
   if (!input.wine.wine.name) return null;
   let searches = 0;
+  let requests = 0;
   const t = tasteResearchRequest(input.taste.wine, input.taste.year, input.taste.documents, input.taste.pages);
   // Beilagen beider Teile, ohne Doppelte (gleiches Datenblatt bzw. gleiche Händlerseite).
   const documents = uniqueBy([...(input.wine.documents ?? []), ...t.documents], (d) => d.name);
@@ -122,18 +126,19 @@ export async function researchWineAndTaste(
     maxSearches: WINE_TASTE_SEARCHES,
     maxTokens: WINE_TASTE_MAX_TOKENS,
     onContent: (blocks) => {
+      requests++;
       searches += blocks.filter((b) => b.type === "server_tool_use" && b.name === "web_search").length;
     },
   });
   const wineType = input.taste.wine.type;
-  if (!raw) return { wine: null, profile: null, diagnostics: wineTasteDiagnostics(searches, null, wineType, false) };
+  if (!raw) return { wine: null, profile: null, diagnostics: wineTasteDiagnostics(searches, null, wineType, false, requests) };
   const wine = EnrichmentSchema.safeParse(raw.wine);
   const taste = t.schema.safeParse(raw.taste);
   const profile = taste.success ? readTasteResearch(taste.data, { wine: input.taste.wine, year: input.taste.year, documents: input.taste.documents }) : null;
   return {
     wine: wine.success ? readWineResearch(wine.data, input.wine) : null,
     profile,
-    diagnostics: wineTasteDiagnostics(searches, profile, wineType, true),
+    diagnostics: wineTasteDiagnostics(searches, profile, wineType, true, requests),
   };
 }
 

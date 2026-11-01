@@ -301,8 +301,20 @@ async function runWebResearch<T>(options: Parameters<typeof webResearch<T>>[0]):
       }),
     ),
   ];
+  // Prompt-Caching (nur mit Websuche bzw. web_fetch – sonst gibt es nichts wiederzulesen):
+  // Laut Doku setzt die API bei Server-Tools nur dann selbst einen Cache-Punkt hinter jedes
+  // Suchergebnis, wenn die Anfrage schon einen cache_control-Marker hat – erst dann lesen die
+  // weiteren Schritte der Suchschleife derselben Anfrage den wachsenden Anfang aus dem Cache statt
+  // ihn voll zu bezahlen. Automatischer Marker der Anfrage: in der ersten Runde am Ende des
+  // festen Teils (Tools, Beilagen, Prompt), in Folgerunden (pause_turn, Nachfrage) wandert er mit
+  // dem Verlauf mit. Mit Beilagen zusätzlich ein fester Marker am Ende des Prompts (bleibt in
+  // Folgerunden stehen, auch wenn der Verlauf über das 20-Block-Fenster hinauswächst).
+  const cache = options.maxSearches > 0 || Boolean(options.fetchShops);
   const messages: Anthropic.Beta.BetaMessageParam[] = [
-    { role: "user", content: blocks.length ? [...blocks, { type: "text", text }] : text },
+    {
+      role: "user",
+      content: blocks.length ? [...blocks, { type: "text", text, ...(cache ? { cache_control: { type: "ephemeral" as const } } : {}) }] : text,
+    },
   ];
   const inputSchema = toolInputSchema(options.schema);
   const strict = options.strict ?? true;
@@ -318,6 +330,7 @@ async function runWebResearch<T>(options: Parameters<typeof webResearch<T>>[0]):
       tools,
       tool_choice: { type: "auto" },
       messages,
+      ...(cache ? { cache_control: { type: "ephemeral" as const } } : {}),
       ...SONNET_FALLBACK,
     });
 
