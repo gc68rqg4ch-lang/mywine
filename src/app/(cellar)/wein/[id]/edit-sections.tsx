@@ -31,6 +31,7 @@ function More({ children }: { children: ReactNode }) {
  */
 export function WineCardForm({
   wine,
+  producers = [],
   year,
   otherYears,
   shares,
@@ -48,6 +49,8 @@ export function WineCardForm({
     appellation: string | null;
     alcohol_content: number | null;
   };
+  /** Vorhandene Produzenten (Vorschläge, gleiche Schreibweise halten). */
+  producers?: string[];
   year: number | null;
   otherYears: (number | null)[];
   /** Angezeigte Rebsorten (des Jahrgangs bzw. „alle Jahrgänge“). */
@@ -66,7 +69,12 @@ export function WineCardForm({
         </label>
         <label className="field">
           <span>Produzent</span>
-          <input type="text" name="producer" defaultValue={wine.producer ?? ""} autoComplete="off" />
+          <input type="text" name="producer" defaultValue={wine.producer ?? ""} autoComplete="off" list="producer-options" />
+          <datalist id="producer-options">
+            {producers.map((p) => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
         </label>
         <label className="field">
           <span>Typ</span>

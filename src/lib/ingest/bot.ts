@@ -466,6 +466,7 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
           "restock",
           "similar",
           "producer",
+          "producer_match",
           "vintage",
           "review",
           "correcting",
@@ -644,6 +645,19 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       if (!vendor) return;
       await clearKeyboard(chatId, messageId);
       await advanceTo(db, job, chatId, ["vendor", "vendor_new"], { vendor_id: vendor.id, vendor_name: vendor.name });
+      return;
+    }
+
+    case "prodsame":
+    case "prodnew": {
+      // Produzent: vorhandene Schreibweise übernehmen bzw. wie angegeben neu.
+      await answerCallback(cb.id);
+      if (state.step !== "producer_match") return;
+      const index = Number(parsed.value);
+      const chosen = parsed.action === "prodsame" ? state.producer_options?.[index] : state.proposal.producer;
+      if (!chosen) return;
+      await clearKeyboard(chatId, messageId);
+      await advanceTo(db, job, chatId, "producer_match", { proposal: { ...state.proposal, producer: chosen }, producer_checked: chosen, producer_options: undefined });
       return;
     }
 
@@ -866,6 +880,13 @@ async function handleText(msg: TgMessage, actor: Actor) {
     case "correcting": {
       await sendMessage(chatId, T.fixing);
       after(() => correctJob(job, state, chatId, text));
+      return;
+    }
+    case "producer_match": {
+      // Getippter Produzent statt Knopf: neu abgleichen.
+      const producer = text.replace(/\s+/g, " ").trim().slice(0, 120);
+      if (producer.length < 2) return;
+      await advanceTo(db, job, chatId, "producer_match", { proposal: { ...state.proposal, producer }, producer_checked: undefined, producer_options: undefined });
       return;
     }
     case "size": {

@@ -200,3 +200,6 @@ export function wineTitle(row: { vintage_year?: number | null; name?: string | n
 
 /** Prompt-Hinweis für die Erfassung: Länder deutsch, damit countryFlag() eine Flagge findet. */
 export const COUNTRY_HINT = "Land immer als deutscher Ländername, z. B. «Schottland», «Vereinigtes Königreich», «Venezuela», «Elfenbeinküste» – nicht englisch wie «Scotland», «UK», «Ivory Coast»";
+
+/** Prompt-Hinweis (Erkennung, Recherche): Produzent einheitlich – gebräuchlicher Name, keine Zusätze. */
+export const PRODUCER_HINT = "Produzent: der gebräuchliche Name, wie er auf dem Etikett steht bzw. wie man ihn kennt – ohne Rechtsform, Ortszusatz oder Mutterfirma in Klammern (z. B. «Illva Saronno», nicht «Illva Saronno S.p.A.»; «Hendrick's», nicht «Hendrick's Gin Distillery (William Grant & Sons), Girvan»; «Fin Bec», nicht «Cave Fin Bec SA»)";

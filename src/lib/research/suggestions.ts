@@ -4,6 +4,8 @@ import "server-only";
 // entscheiden. Höchstens ein offener Vorschlag pro Wein/Jahrgang/Feld (Ausdrucks-Index →
 // kein Upsert: erst lesen). Übernehmen läuft über das gemeinsame Bearbeiten-Modul.
 
+import { sameOrSimilarProducer } from "@/lib/producers/match";
+import { canonicalProducer } from "@/lib/producers/load";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
 import { applyEdit, NOTHING } from "@/lib/edit/edit";
@@ -39,6 +41,12 @@ export async function recordSuggestion(
   db: Db,
   s: { wineId: string; year: number | null; field: SuggestionField; current: unknown; suggested: unknown; note: string | null },
 ): Promise<"created" | "updated" | "skipped"> {
+  // Produzent: nur ein wirklich anderer Produzent ist ein Vorschlag (nicht Rechtsform, Zusatz,
+  // Schreibweise); passt er zu einem vorhandenen, dessen Schreibweise.
+  if (s.field === "producer" && typeof s.suggested === "string") {
+    if (typeof s.current === "string" && sameOrSimilarProducer(s.current, s.suggested)) return "skipped";
+    s = { ...s, suggested: await canonicalProducer(db, s.suggested) };
+  }
   const { data: rows, error } = await byYear(
     db.from("research_suggestions").select("id, status, suggested_value").eq("wine_id", s.wineId).eq("field", s.field),
     s.year,

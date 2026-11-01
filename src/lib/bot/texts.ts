@@ -253,6 +253,8 @@ export const T = {
   priceZero: (random?: () => number) => say("priceZero", random),
   vendorAsk: (hasVendors: boolean) => (hasVendors ? "Wo hast du ihn gekauft?" : "Wo hast du ihn gekauft? Schreib mir den Namen – oder tippe „Überspringen“."),
   vendorName: "Wie heisst der Händler?",
+  producerMatch: (bottle: string, candidates: string[], typed: string) =>
+    `${bottle}\nProduzent: gleich wie ${candidates.map((c) => `«${c}»`).join(" bzw. ")}? Sonst lege ich «${typed}» neu an.`,
   vendorAll: (page: number, pages: number) => (pages > 1 ? `Alle Händler (Seite ${page + 1} von ${pages}):` : "Alle Händler:"),
   vendorSimilar: (existing: string, typed: string) => `Meinst du <b>${existing}</b>? Oder soll ich «${typed}» als neuen Händler anlegen?`,
   vendorRetry: "Wie heisst der Händler? Schreib mir einfach den Namen – oder tippe „Überspringen“.",

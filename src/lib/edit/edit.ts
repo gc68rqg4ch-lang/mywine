@@ -1,4 +1,6 @@
 import { saveVintageWindow } from "@/lib/cellar/drink-window";
+import { matchProducer } from "@/lib/producers/match";
+import { loadProducers } from "@/lib/producers/load";
 import "server-only";
 
 // Bearbeiten – ein Modul für App und Bot: prepareEdit prüft eine Bearbeitung gegen den
@@ -98,6 +100,18 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
     alcohol_content: set.alcohol === undefined ? wine.alcohol_content : set.alcohol,
   };
   const name = next.name;
+  // Neuer bzw. geänderter Produzent: gleich wie ein vorhandener (nach Normalisierung) → dessen
+  // Schreibweise; nur ähnlich → Hinweis (nicht blockieren).
+  const producerNotes: string[] = [];
+  if (next.producer && next.producer !== wine.producer) {
+    // Ohne die bisherige Angabe dieses Weins (die gilt ja nicht mehr); andere Weine zählen.
+    const others = await loadProducers(db);
+    const own = others.indexOf(wine.producer ?? "");
+    if (own >= 0) others.splice(own, 1);
+    const m = matchProducer(next.producer, others);
+    if (m.kind === "same") next.producer = m.producer;
+    else if (m.kind === "similar") producerNotes.push(similarProducerNote(m.candidates));
+  }
   const producer = next.producer;
   if (!name) return fail("Der Name darf nicht leer sein.");
   if (next.type != null && !WINE_TYPES.includes(next.type)) return fail("Unbekannter Weintyp.");
@@ -132,14 +146,18 @@ async function prepareWine(db: Db, wineId: string, set: WineChanges): Promise<Pr
   const pct = (v: number | null) => (v == null ? DASH : `${v.toLocaleString("de-CH")} % vol`);
   diff(changes, "Alkohol", pct(wine.alcohol_content), pct(alc));
 
-  return ready({ title: wineTitle(wine), action: "Wein bearbeiten", changes, notes: [] }, wineId, async () => {
+  return ready({ title: wineTitle(wine), action: "Wein bearbeiten", changes, notes: producerNotes }, wineId, async () => {
     // Keine Spirituose mehr: Kategorie weg (nur bei Art „spirit“ erlaubt).
     const leavesSpirit = wine.type === "spirit" && next.type !== "spirit";
     const { error } = await db.from("wines").update({ ...next, name, producer, ...(leavesSpirit ? { spirit_category_id: null } : {}) }).eq("id", wineId);
     if (error) throw error;
-    return `die Angaben zu ${wineTitle({ name, producer })} gespeichert`;
+    return `die Angaben zu ${wineTitle({ name, producer })} gespeichert${producerNotes.length ? ` (${producerNotes.join(" ")})` : ""}`;
   });
 }
+
+/** Hinweis bei ähnlichem Produzenten (App und Antoine): nicht blockieren, nur aufmerksam machen. */
+export const similarProducerNote = (candidates: string[]) =>
+  `Ähnlicher Produzent schon vorhanden: ${candidates.map((c) => `«${c}»`).join(", ")} – falls derselbe, bitte genau so schreiben`;
 
 export { MAX_WINE_NOTES, cleanNotes };
 

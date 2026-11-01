@@ -47,6 +47,7 @@ import {
   similarKeyboard,
   similarLabel,
   textSummaryMessage,
+  producerMatchKeyboard,
   sizeKeyboard,
   vendorKeyboard,
   wineSummaryLines,
@@ -59,6 +60,7 @@ import { releaseHeldPriceQuestions, schedulePriceSearch, updateItemPrices } from
 import type { SpiritCategory } from "@/lib/spirits/categories";
 import { needsVintage, type IngestState, type IngestStep, type WineProposal } from "./schema";
 import { completeWineName } from "./wine-names";
+import { resolveProducer } from "@/lib/producers/load";
 import {
   createInventoryItem,
   findSimilarWines,
@@ -241,6 +243,26 @@ export function giftPatch(from: string | null | undefined, value?: number | null
  */
 export const priceSearchAllowed = (state: Pick<IngestState, "price_followup">) => !state.price_followup || state.price_followup.ask === "fix";
 
+/**
+ * Produzent eines neuen Weins mit den vorhandenen abgleichen (rein im Code): gleich nach
+ * Normalisierung → vorhandene Schreibweise; ähnlich → Knöpfe („gleich wie «X»?“ / „Neu“); neu →
+ * wie angegeben. Bekannter Wein bzw. schon geprüfter Wert: nichts.
+ */
+/** Die Flasche in Rückfragen: „Pintia 2019“. */
+const bottleName = (state: IngestState) => wineTitle({ name: state.proposal.name ?? "", vintage_year: state.proposal.vintage_year });
+
+export async function producerPatch(db: AdminClient, state: IngestState, matchedWineId: string | null): Promise<Partial<IngestState>> {
+  const producer = state.proposal.producer?.trim();
+  if (!producer || matchedWineId || state.price_followup || state.producer_checked === producer) return {};
+  const m = await resolveProducer(db, producer).catch((error) => {
+    console.error("producer match failed", error instanceof Error ? error.message : error);
+    return { kind: "new" } as const;
+  });
+  if (m.kind === "same") return { proposal: { ...state.proposal, producer: m.producer }, producer_checked: m.producer, producer_options: undefined };
+  if (m.kind === "similar") return { producer_options: m.candidates };
+  return { producer_checked: producer, producer_options: undefined };
+}
+
 /** Nächster Schritt: die erste noch fehlende Kaufangabe, sonst Zusammenfassung (Text) bzw. Speichern. */
 export function nextPurchaseStep(state: IngestState): IngestStep {
   // Preis-Rückfrage nach der Suche: nur die Preisschritte, danach die Preise der Charge speichern.
@@ -254,6 +276,8 @@ export function nextPurchaseStep(state: IngestState): IngestStep {
   }
   // Zuerst klären: Wein oder Spirituose? Bei Spirituosen die Kategorie (neue erst nach „Anlegen“).
   if (state.kind_unsure) return "kind";
+  // Produzent ähnlich einem vorhandenen (andere Schreibweise?): erst nachfragen (producerPatch).
+  if (state.producer_options?.length && state.producer_checked !== state.proposal.producer) return "producer_match";
   if (state.proposal.type === "spirit" && state.spirit && !state.spirit.done) return "category_main";
   if (needsVintage(state)) return "vintage";
   // Spirituose: Grösse nicht vom Etikett bzw. aus dem Text → fragen (keine Standardgrösse). Wein: 75 cl.
@@ -284,6 +308,8 @@ export async function advanceTo(
   from: IngestStep | IngestStep[],
   patch: Partial<IngestState>,
 ) {
+  // Neuer Wein: Produzent mit den vorhandenen abgleichen (gleich → deren Schreibweise, ähnlich → Rückfrage).
+  patch = { ...patch, ...(await producerPatch(db, { ...jobState(job)!, ...patch }, job.matched_wine_id)) };
   const merged = { ...jobState(job)!, ...patch };
   let step = nextPurchaseStep(merged);
   const vendors = step === "vendor" ? await listVendors(db) : [];
@@ -329,6 +355,13 @@ async function askFor(job: IngestJob, chatId: number, vendors: { id: string; nam
       return;
     case "size":
       await sendMessage(chatId, T.sizeAsk, sizeKeyboard(job.id));
+      return;
+    case "producer_match":
+      await sendMessage(
+        chatId,
+        T.producerMatch(escapeHtml(bottleName(state)), (state.producer_options ?? []).map(escapeHtml), escapeHtml(state.proposal.producer ?? "")),
+        producerMatchKeyboard(job.id, state.producer_options ?? [], state.proposal.producer ?? ""),
+      );
       return;
     case "quantity":
       await sendMessage(
@@ -813,6 +846,8 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     // Jahrgang zuerst: davon hängt ab, ob es ein Nachkauf ist.
     // Kein exakter Treffer, aber ein ähnlicher bestehender Wein: zuerst „Meinst du …?“
     const similar = known ? [] : await findSimilarWines(db, proposal.name, proposal.producer);
+    // Neuer Wein: Produzent mit den vorhandenen abgleichen (gleich → deren Schreibweise, ähnlich → Rückfrage).
+    if (!known && !similar.length) Object.assign(base, await producerPatch(db, base, null));
     const step: IngestStep = similar.length ? "similar" : restockCandidate && !needsVintage(base) ? "restock" : textStep(base);
     const vendors = step === "vendor" ? await listVendors(db) : [];
     const mains = step === "category_main" ? await mainOptions(db).catch(() => [] as SpiritCategory[]) : [];
@@ -952,6 +987,7 @@ export async function chooseSimilar(db: AdminClient, job: IngestJob, chatId: num
     return next;
   }
   if (wine && !needsVintage({ ...state, ...patch })) patch.restock = await inStock(db, wine.id, proposal.vintage_year);
+  if (!wine) Object.assign(patch, await producerPatch(db, { ...state, ...patch }, null));
   const merged: IngestState = { ...state, ...patch };
   const step = textStep(merged);
   const vendors = step === "vendor" ? await listVendors(db) : [];

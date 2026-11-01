@@ -34,6 +34,9 @@ export type CallbackAction =
   /** „Meinst du …?“: ja (vorgeschlagener Händler) bzw. nein (getippten Namen neu anlegen) */
   | "vendorsim"
   | "vendorcreate"
+  /** Produzent: gleich wie vorhandener (Index) bzw. neu wie angegeben */
+  | "prodsame"
+  | "prodnew"
   | "restock"
   | "confirm"
   | "vint"
@@ -82,6 +85,8 @@ export function parseCallbackData(data: string | undefined) {
     "allvendors",
     "vendorsim",
     "vendorcreate",
+    "prodsame",
+    "prodnew",
     "restock",
     "confirm",
     "vint",
@@ -295,6 +300,17 @@ export function vendorKeyboard(jobId: string, vendors: { name: string }[], optio
   ]);
   rows.push(cancelRow(jobId));
   return { inline_keyboard: rows };
+}
+
+/** Produzent ähnlich vorhandenen: je Treffer „✅ «X»“, dazu „➕ Neu: «Y»“. */
+export function producerMatchKeyboard(jobId: string, candidates: string[], typed: string): TgInlineKeyboard {
+  return {
+    inline_keyboard: [
+      ...candidates.map((c, i) => [{ text: `✅ ${c}`.slice(0, 60), callback_data: callbackData("prodsame", jobId, String(i)) }]),
+      [{ text: `➕ Neu: «${typed}»`.slice(0, 60), callback_data: callbackData("prodnew", jobId) }],
+      cancelRow(jobId),
+    ],
+  };
 }
 
 /** „Meinst du «Otto's»?“: Ja (bestehender Händler) bzw. den getippten Namen neu anlegen. */

@@ -6,6 +6,7 @@ import "server-only";
 // Für „Nachrecherchieren“ auf der Weinseite, den Sammellauf und den Bot. Auch Weine ohne
 // Flaschen (nur verkostet) werden recherchiert – Jahrgänge dann aus „Verkostet“.
 
+import { canonicalProducer } from "@/lib/producers/load";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
@@ -215,8 +216,10 @@ export async function researchAndFillWine(
 
   // Stammdaten: Leeres füllen („is null“ schützt vor gleichzeitigen Änderungen), Abweichendes vorschlagen.
   for (const field of WINE_FIELDS) {
-    const value = found.fields[field];
-    if (value == null) continue;
+    const raw = found.fields[field];
+    if (raw == null) continue;
+    // Produzent in der vorhandenen Schreibweise (gleich nach Normalisierung).
+    const value = field === "producer" && typeof raw === "string" ? await canonicalProducer(db, raw) : raw;
     const current = wine[field];
     if (current == null) {
       const { data: updated, error } = await db

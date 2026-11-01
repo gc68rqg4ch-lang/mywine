@@ -3,6 +3,7 @@ import "server-only";
 import type { AdminClient } from "@/lib/supabase/admin";
 import type { Tables } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
+import { canonicalProducer } from "@/lib/producers/load";
 import { bottleSizeOf, grapeNames, type StorageRoom, type WineProposal } from "./schema";
 import { similarWines } from "./wine-names";
 
@@ -70,7 +71,9 @@ export async function resolveWine(
     if (data) return data.id;
   }
 
-  const existing = await findWine(db, proposal.name, proposal.producer);
+  // Produzent in der vorhandenen Schreibweise (gleich nach Normalisierung; Ähnliches fragt der Ablauf vorher).
+  const producer = proposal.producer?.trim() ? await canonicalProducer(db, proposal.producer) : null;
+  const existing = await findWine(db, proposal.name, producer);
   if (existing) return existing.id;
 
   const { data, error } = await db
@@ -78,7 +81,7 @@ export async function resolveWine(
     .insert({
       name: proposal.name!.trim(),
       // Produzent darf fehlen (wird später ergänzt bzw. recherchiert).
-      producer: proposal.producer?.trim() || null,
+      producer,
       country: proposal.country,
       region: proposal.region,
       appellation: proposal.appellation,
@@ -91,7 +94,7 @@ export async function resolveWine(
 
   // Unique-Index wines_name_producer_uq: parallel angelegt → den vorhandenen nehmen.
   if (error?.code === "23505") {
-    const again = await findWine(db, proposal.name, proposal.producer);
+    const again = await findWine(db, proposal.name, producer);
     if (again) return again.id;
   }
   if (error) throw error;

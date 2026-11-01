@@ -8,6 +8,7 @@ import { PhotoGallery } from "@/components/photo-viewer";
 import { ResearchSuggestions } from "@/components/research-suggestions";
 import { WineTypeIcon } from "@/components/wine-type-icon";
 import { getMemberSession } from "@/lib/auth";
+import { loadProducers } from "@/lib/producers/load";
 import { originParts } from "@/lib/cellar/overview";
 import {
   anchorItem,
@@ -195,6 +196,8 @@ const sizeSuffix = (ml: number | null) => (ml && ml !== 750 ? ` · ${formatBottl
 
 export default async function WinePage({ params, searchParams }: PageProps<"/wein/[id]">) {
   const [{ id }, query, { supabase, person }] = await Promise.all([params, searchParams, getMemberSession()]);
+  // Vorhandene Produzenten als Vorschläge beim Bearbeiten (gleiche Schreibweise halten).
+  const producers = await loadProducers(supabase).then((all) => [...new Set(all)].sort((a, b) => a.localeCompare(b, "de-CH"))).catch(() => [] as string[]);
   // Wein, Flaschen und „Verkostet“ gleichzeitig (alle brauchen nur die ID aus der URL).
   const [wine, items, encounters] = await Promise.all([
     loadWine(id),
@@ -454,6 +457,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         form={
           <WineCardForm
             wine={{ ...wine, type: asWineType(wine.type) }}
+            producers={producers}
             year={year}
             otherYears={options.map((o) => o.year).filter((y) => y !== year)}
             shares={shownShares}

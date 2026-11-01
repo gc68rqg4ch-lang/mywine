@@ -209,6 +209,7 @@ export async function findJobAwaitingText(db: AdminClient, chatId: number) {
     .in("extracted->>step", [
       "describe",
       "producer",
+      "producer_match",
       "vintage",
       "correcting",
       "size",

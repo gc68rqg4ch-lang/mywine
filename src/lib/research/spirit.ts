@@ -7,6 +7,7 @@ import "server-only";
 // Kategorie nur, wenn leer und eine bestehende passt – die Recherche legt nie Kategorien an.
 // Quellen: zuerst Schweizer Händler, dann die Websuche; Preise nur von Schweizer Händlern.
 
+import { canonicalProducer } from "@/lib/producers/load";
 import type { Database } from "@/lib/database.types";
 import { webResearch } from "@/lib/ingest/recognize";
 import { spiritCategoriesForAi } from "@/lib/spirits/load";
@@ -16,7 +17,7 @@ import type { Db } from "@/lib/taste/store";
 import { sameValue, type SuggestionField } from "./compare";
 import { recordSuggestion } from "./suggestions";
 import { sourceNote } from "./compare";
-import { COUNTRY_HINT } from "@/lib/format";
+import { COUNTRY_HINT, PRODUCER_HINT } from "@/lib/format";
 
 const SWISS_SHOPS = "finespirits.ch, moevenpick-wein.com (Spirituosen), ullrich.ch, smithandsmith.ch";
 
@@ -41,6 +42,7 @@ export async function researchAndFillSpirit(
   const raw = await webResearch({
     prompt: `Recherchiere diese Spirituose im Web und melde die Angaben, die die Quellen für genau diese Abfüllung belegen: ${JSON.stringify({ name: wine.name, hersteller: wine.producer, land: wine.country, region: wine.region })}.
 - Zuerst Schweizer Händler (${SWISS_SHOPS}), dann Website des Herstellers bzw. der Destillerie, seriöse Händler oder Fachpresse. Preise nur von Schweizer Händlern beachten (keine anderen).
+- ${PRODUCER_HINT}.
 - Gesucht: Hersteller/Destillerie, Land (${COUNTRY_HINT}), Region, Alkohol (% vol), Altersangabe (Jahre), Fass/Reifung/Finish, Jahr der Destillation, Jahr der Abfüllung, passende Kategorie aus der Liste.
 - Nur was die Quellen für genau diese Spirituose belegen; sonst leer bzw. 0. Keine Altersangabe erfinden (NAS = 0).
 - Kategorie nur aus der Liste; passt keine eindeutig: „unbekannt“.${extra.pagesNote ?? ""}`,
@@ -97,8 +99,10 @@ export async function applySpiritFindings(
   const filled: string[] = [];
   let suggested = 0;
   for (const key of Object.keys(SPIRIT_FIELD_LABELS) as (keyof SpiritFindings)[]) {
-    const value = found[key];
-    if (value === undefined) continue;
+    const raw = found[key];
+    if (raw === undefined) continue;
+    // Produzent in der vorhandenen Schreibweise (gleich nach Normalisierung).
+    const value = key === "producer" && typeof raw === "string" ? await canonicalProducer(db, raw) : raw;
     const field = DB_FIELD[key];
     if (now[key] == null) {
       const { data: updated, error } = await db

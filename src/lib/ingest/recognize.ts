@@ -3,7 +3,7 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { COUNTRY_HINT } from "@/lib/format";
+import { COUNTRY_HINT, PRODUCER_HINT } from "@/lib/format";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { usageLimit } from "@/lib/ai/api-errors";
 import type { Purpose } from "@/lib/ai/cost";
@@ -78,6 +78,7 @@ Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. 
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
 - name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist. ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE}
 - country: ${COUNTRY_HINT} (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
+- ${PRODUCER_HINT}.
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira – das ist Wein), spirit (Spirituose: Whisky, Grappa, Likör, Obstbrand, Cognac/Brandy, Rum, Gin, Vodka, Tequila/Mezcal, Kräuterschnaps).
 - bottle_size_ml: aus der aufgedruckten Füllmenge (75 cl = 750, 70 cl = 700, 50 cl = 500, 37,5 cl = 375, 1,5 l = 1500). ${SIZE_ALCOHOL_RULE}
 - spirit: kind „spirit“ bei einer Spirituose, „wine“ bei Wein, „unsure“, wenn du es nicht sicher erkennst. Bei Spirituosen: name = Name der Abfüllung wie oben (z. B. „Lagavulin 16“, „Galliano Vanilla“), producer = Destillerie bzw. Hersteller, region z. B. Islay, Speyside, Kentucky, Cognac; alcohol_content in % vol, nur vom Etikett; grape_shares leer (bei Grappa die Rebsorte nur, wenn sie dasteht). Dazu category/subcategory (Haupt-, Unterkategorie – nur aus den im Schema genannten Kategorien, nie neue Namen erfinden; z. B. „Monovitigno Nosiola“ ist keine Unterkategorie, sondern gehört zu Grappa / Trester ohne Unterkategorie), Altersangabe, Fass/Finish, Destilliert- und Abfülljahr – nur, was auf dem Etikett steht; sonst leer bzw. 0. vintage_year nur, wenn ein Jahrgang ausdrücklich als solcher dasteht (sonst null; Destilliert/Abgefüllt gehören in spirit).
@@ -417,7 +418,8 @@ Melde den Wert aus den Quellen, auch wenn er von unseren Angaben abweicht – wi
 Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech Sheet) des Produzenten, sonst seriöse Händler oder Fachpresse. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null bzw. leere Liste.
 - Für jeden genannten Jahrgang genau einen Eintrag in vintages.
 - Rebsorten: percent nur, wenn eine Quelle den Anteil für genau diesen Jahrgang belegt (Cuvées ändern sich); reinsortig = 100; sonst Rebsorten mit percent null. Internationale Schreibweise (Cabernet Sauvignon, Tempranillo …).
-- ${COUNTRY_HINT}.${input.documentsNote ?? ""}${input.pagesNote ?? ""}${input.fetchShops ? (input.fetchNote ?? "") : ""}`,
+- ${COUNTRY_HINT}.
+- ${PRODUCER_HINT}.${input.documentsNote ?? ""}${input.pagesNote ?? ""}${input.fetchShops ? (input.fetchNote ?? "") : ""}`,
     toolName: "report_wine_details",
     documents: input.documents,
     pages: input.pages,
@@ -490,6 +492,7 @@ const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in 
 - name: Weinname ohne Jahrgang. ${NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500, „50 cl“ = 500). ${SIZE_ALCOHOL_RULE}
 - ${COUNTRY_HINT}.
+- ${PRODUCER_HINT}.
 - Spirituosen (Whisky, Grappa, Likör, Obstbrand, Cognac, Rum, Gin …): type spirit, im Block spirit Kategorie, Altersangabe, Fass/Finish, Destilliert/Abgefüllt, wenn genannt; kind unsure, wenn unklar ist, ob Wein oder Spirituose. Bei Wein kind wine.
 - ${BEST_BEFORE_RULE}
 - purchase: Anzahl Flaschen, Lagerort (nur Weinkeller oder Wohnzimmer), bezahlter Preis (price) und Normalpreis (regular_price) pro Flasche in CHF, Händler. Ein einzelner Preis ist der bezahlte (price); regular_price nur, wenn ausdrücklich ein Normal-/Regulärpreis genannt ist (z. B. „49 statt 66“: price 49, regular_price 66). Nicht Genanntes: 0 bzw. leer. Ein Gesamtpreis für mehrere Flaschen wird durch die Anzahl geteilt.`;
@@ -543,7 +546,7 @@ export async function applyCorrection(
     model: RECOGNITION_MODEL,
     max_tokens: 16000,
     system:
-      `Du pflegst Weindaten. Übernimm die Korrektur des Users in die bestehenden Daten und gib den vollständigen, aktualisierten Datensatz zurück. Ändere nur, was die Korrektur betrifft. ${COUNTRY_HINT}. best_before (Ablaufdatum) als YYYY-MM-DD bzw. YYYY-MM, leer = keins.`,
+      `Du pflegst Weindaten. Übernimm die Korrektur des Users in die bestehenden Daten und gib den vollständigen, aktualisierten Datensatz zurück. Ändere nur, was die Korrektur betrifft. ${COUNTRY_HINT}. ${PRODUCER_HINT}. best_before (Ablaufdatum) als YYYY-MM-DD bzw. YYYY-MM, leer = keins.`,
     messages: [
       {
         role: "user",

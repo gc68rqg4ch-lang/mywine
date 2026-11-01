@@ -3,7 +3,7 @@ import { FALLBACK_CATEGORIES, spiritLabelSchema } from "@/lib/spirits/ai-categor
 import type { SpiritCategory } from "@/lib/spirits/categories";
 import { sizeFromText } from "@/lib/research/price-match";
 import { completeSpiritName, completeWineName } from "./wine-names";
-import { COUNTRY_HINT, WINE_TYPES } from "@/lib/format";
+import { COUNTRY_HINT, PRODUCER_HINT, WINE_TYPES } from "@/lib/format";
 import { normalizeGrapeShares, type GrapeSource } from "@/lib/grapes/shares";
 import type { SpiritDraft, SpiritLabel } from "@/lib/spirits/draft";
 
@@ -20,7 +20,7 @@ export const GrapeShareSchema = z.object({
 /** Weindaten, wie sie vom Etikett gelesen bzw. korrigiert werden. */
 export const WineProposalSchema = z.object({
   name: z.string().nullable().describe("Vollständiger Name ohne Jahrgang (mit Zusätzen wie Liqueur, Holzfass); Wein ohne Produzent, Spirituose mit Marke, wenn sie Teil des Produktnamens ist (z. B. Galliano Vanilla)"),
-  producer: z.string().nullable().describe("Weingut / Produzent"),
+  producer: z.string().nullable().describe(`Weingut / Produzent. ${PRODUCER_HINT}`),
   vintage_year: z.number().int().nullable().describe("Jahrgang, z. B. 2019; null wenn ohne Jahrgang"),
   country: z.string().nullable().describe(`${COUNTRY_HINT}; z. B. Spanien, Frankreich, Schweiz, USA`),
   region: z.string().nullable().describe("Weinbauregion, z. B. Rioja, Bordeaux, California"),
@@ -125,6 +125,8 @@ export type IngestStep =
   | "similar"
   /** Text-Erfassung: Produzent fehlt noch. */
   | "producer"
+  /** Produzent ähnlich einem vorhandenen: „gleich wie «X»?“ (Knöpfe) oder neu. */
+  | "producer_match"
   /** Jahrgang fehlt oder ist unsicher: Zahl oder „Ohne Jahrgang (NV)“. */
   | "vintage"
   | "review"
@@ -244,6 +246,9 @@ export type IngestState = {
   price_offer?: PriceOffer;
   /** Händler-IDs in der Reihenfolge der Buttons (callback_data enthält nur den Index). */
   vendor_options?: string[];
+  /** Produzenten-Abgleich: ähnliche vorhandene (Knöpfe) bzw. der geprüfte bzw. bestätigte Wert. */
+  producer_options?: string[];
+  producer_checked?: string;
   /** „Meinst du …?“: getippter Name und vorgeschlagener bestehender Händler. */
   vendor_typed?: string;
   vendor_suggest?: string;

@@ -368,6 +368,12 @@ test("Bot: unsicher → „Wein oder Spirituose?“, unbekannte Unterkategorie �
   assert.deepEqual(buttons(), ["🍷 Wein", "🥃 Spirituose", "✖️ Abbrechen"]);
 
   await handleUpdate(cb(callbackData("kind", JOB, "s")) as never);
+  // Produzent «Woodford Reserve» ähnlich dem vorhandenen «Woodford»: Rückfrage mit der Flasche → „Neu“.
+  assert.equal(state().step, "producer_match");
+  assert.match(lastText(), /Rye Whiskey[\s\S]*Produzent: gleich wie «Woodford»\?/);
+  assert.deepEqual(buttons(), ["✅ Woodford", "➕ Neu: «Woodford Reserve»", "✖️ Abbrechen"]);
+  await handleUpdate(cb(callbackData("prodnew", JOB)) as never);
+  assert.equal(state().proposal.producer, "Woodford Reserve");
   assert.equal(state().proposal.type, "spirit");
   assert.equal(state().proposal.bottle_size_ml, null, "keine Standardgrösse (0,7 l) mehr");
   // „Rye“ gibt es nicht: Whisky, ohne Rückfrage und ohne „Anlegen“; kein Jahrgang nötig; Grösse nicht lesbar → Rückfrage.
@@ -395,7 +401,7 @@ test("Bot: unsicher → „Wein oder Spirituose?“, unbekannte Unterkategorie �
   await saveJob(job() as never, 111);
   assert.equal(job().status, "confirmed");
   const saved = net.tables.wines.find((w) => w.name === "Rye Whiskey")!;
-  assert.deepEqual([saved.type, saved.spirit_category_id, saved.alcohol_content], ["spirit", "c-whisky", 45.2]);
+  assert.deepEqual([saved.type, saved.spirit_category_id, saved.alcohol_content, saved.producer], ["spirit", "c-whisky", 45.2, "Woodford Reserve"]);
   assert.equal(net.tables.inventory_items[0].bottle_size_ml, 700);
   assert.equal(net.tables.wine_vintages.filter((v) => v.drink_from_year != null || v.drink_until_year != null).length, 0, "kein Trinkfenster");
   assert.equal(net.tables.inventory_items[0].status, "sealed", "Einbuchen: alle Flaschen zu, nichts automatisch geöffnet");
@@ -412,6 +418,10 @@ test("Bot: unsichere Hauptkategorie → nur bestehende als Knöpfe, dann Unterka
   assert.match(lastText(), /Abgefüllt: 2022/);
   assert.doesNotMatch(lastText(), /Trinkreife|Trauben/);
   await handleUpdate(cb(callbackData("save", JOB)) as never);
+  // Ähnlicher Produzent: „gleich wie «Woodford»“ übernimmt die vorhandene Schreibweise.
+  assert.equal(state().step, "producer_match");
+  await handleUpdate(cb(callbackData("prodsame", JOB, "0")) as never);
+  assert.equal(state().proposal.producer, "Woodford");
   // „Sake“ gibt es nicht: Auswahl nur der bestehenden Hauptkategorien – kein „Anlegen“.
   assert.equal(state().step, "category_main");
   assert.match(lastText(), /In welche Kategorie gehört sie\?/);
