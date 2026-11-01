@@ -1,9 +1,11 @@
-// Google-Suche auf Schweizer Seiten („<Name> <Grösse> site:.ch“) als weitere Quelle der Preissuche:
-// liefert echte Händler-Links (anders als Google Shopping bei Serper). Serper (POST
-// https://google.serper.dev/search) bzw. SerpApi (engine=google), gl=ch, hl=de, 20 Ergebnisse.
+// Google-Suche Schweiz („<Name> <Grösse> kaufen CHF“, gl=ch) als weitere Quelle der Preissuche:
+// liefert echte Händler-Links (anders als Google Shopping bei Serper); nur Schweizer Domains werden
+// danach gelesen. Serper (POST https://google.serper.dev/search) bzw. SerpApi (engine=google), hl=de,
+// 10 Ergebnisse, ohne Such-Operatoren (plainQuery – das Serper-Gratiskonto lehnt site: u. Ä. ab).
 // Rein bis auf die beiden Abfragen.
 
 import { amountInText } from "./price-match";
+import { plainQuery } from "./price-search";
 
 export type SearchHit = {
   url: string;
@@ -14,7 +16,8 @@ export type SearchHit = {
 };
 
 export const SERPER_SEARCH_URL = "https://google.serper.dev/search";
-export const SEARCH_RESULTS = 20;
+/** Ergebnisse je Abfrage: 10 – mehr liefert das Serper-Gratiskonto ohnehin nicht (num 20 → höchstens 10). */
+export const SEARCH_RESULTS = 10;
 
 const str = (x: unknown) => (typeof x === "string" ? x : "");
 
@@ -61,7 +64,7 @@ export async function searchSerperWeb(q: string, apiKey: string, timeoutMs = 15_
   const res = await fetch(SERPER_SEARCH_URL, {
     method: "POST",
     headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ q, gl: "ch", hl: "de", num: SEARCH_RESULTS }),
+    body: JSON.stringify({ q: plainQuery(q), gl: "ch", hl: "de", num: SEARCH_RESULTS }),
     signal: AbortSignal.timeout(timeoutMs),
     cache: "no-store",
   });
@@ -74,7 +77,7 @@ export async function searchSerperWeb(q: string, apiKey: string, timeoutMs = 15_
 export function serpApiSearchUrl(q: string, apiKey: string) {
   const u = new URL("https://serpapi.com/search.json");
   u.searchParams.set("engine", "google");
-  u.searchParams.set("q", q);
+  u.searchParams.set("q", plainQuery(q));
   u.searchParams.set("gl", "ch");
   u.searchParams.set("hl", "de");
   u.searchParams.set("google_domain", "google.ch");

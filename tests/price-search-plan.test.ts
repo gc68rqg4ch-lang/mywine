@@ -64,20 +64,20 @@ test("Gattungsnamen mit Marke; eigenständige Produktnamen (Disaronno, Creanza, 
   assert.equal(productTerm({ name: "Amaretto", producer: null }), "Amaretto");
 });
 
-test("Feste Suchbegriffe: Marke + Name + Grösse, kaufen CHF, site:.ch, Händler nur mit dem ganzen Produkt, Jahrgang", () => {
+test("Feste Suchbegriffe: Marke + Name + Grösse, kaufen CHF, Schweiz, Händler nur mit dem ganzen Produkt, Jahrgang", () => {
   assert.deepEqual(priceQueries({ name: "Amaretto", producer: "Paolo Lazzaroni & Figli", sizeMl: 700, vendor: "Galaxus" }), [
     "Lazzaroni Amaretto 70cl",
     "Lazzaroni Amaretto kaufen CHF",
-    "Lazzaroni Amaretto site:.ch",
+    "Lazzaroni Amaretto Schweiz",
     "Galaxus Lazzaroni Amaretto",
   ]);
   const disaronno = priceQueries({ name: "Disaronno", producer: "Illva Saronno", sizeMl: 700, vendor: "Coop" });
-  assert.deepEqual(disaronno, ["Disaronno 70cl", "Disaronno kaufen CHF", "Disaronno site:.ch", "Coop Disaronno"]);
+  assert.deepEqual(disaronno, ["Disaronno 70cl", "Disaronno kaufen CHF", "Disaronno Schweiz", "Coop Disaronno"]);
   assert.ok(!disaronno.some((q) => /Originale/.test(q) && /Coop/.test(q)), "kein „Coop Originale“");
   assert.deepEqual(priceQueries({ name: "Pintia", producer: "Bodegas Vega Sicilia", year: 2019, sizeMl: 750 }), [
     "Pintia 2019 75cl",
     "Pintia 2019 kaufen CHF",
-    "Pintia 2019 site:.ch",
+    "Pintia 2019 Schweiz",
     "Vega Sicilia Pintia 2019 75cl",
   ]);
   // Eigenständiger Name: zuerst allein, Marke + Name zuletzt
@@ -233,7 +233,7 @@ test("Eigene Prüfung ohne Modell-Zusage: .ch-Adressen aus den Suchergebnissen w
   assert.ok(diagnostics.direct?.every((d) => d.result === "error"));
   // Prompt mit festen Suchbegriffen; Händler nur als Hinweis
   const prompt = JSON.stringify(lastBody.messages);
-  assert.match(prompt, /„Lazzaroni Amaretto 70cl“, „Lazzaroni Amaretto kaufen CHF“, „Lazzaroni Amaretto site:.ch“, „Galaxus Lazzaroni Amaretto“/);
+  assert.match(prompt, /„Lazzaroni Amaretto 70cl“, „Lazzaroni Amaretto kaufen CHF“, „Lazzaroni Amaretto Schweiz“, „Galaxus Lazzaroni Amaretto“/);
   assert.match(prompt, /nur ein Hinweis/);
   const tools = lastBody.tools as { type?: string; max_uses?: number; user_location?: { country?: string } }[];
   const search = tools.find((t) => t.type === "web_search_20260209")!;
@@ -318,7 +318,7 @@ test("Noah's Mill (Willett Distillery): zuerst der Name ohne Firma, Apostroph-Va
   assert.deepEqual(shopSearchTerms({ name: "Amaretto", producer: "Paolo Lazzaroni & Figli" }), ["Lazzaroni Amaretto"], "Gattungsname: nur mit Marke");
   assert.deepEqual(shopSearchTerms({ name: "Blanton's", producer: "Buffalo Trace Distillery" })[0], "Blanton's");
   const q = priceQueries({ ...want, sizeMl: 700 });
-  assert.deepEqual(q, ["Noah's Mill 70cl", "Noah's Mill kaufen CHF", "Noah's Mill site:.ch", "Noahs Mill 70cl", "Willett Noah's Mill 70cl"]);
+  assert.deepEqual(q, ["Noah's Mill 70cl", "Noah's Mill kaufen CHF", "Noah's Mill Schweiz", "Noahs Mill 70cl", "Willett Noah's Mill 70cl"]);
   assert.ok(!q.slice(0, 3).some((x) => /Willett/.test(x)), "erste Begriffe ohne Willett");
   assert.equal(new Set(q.map((x) => x.toLowerCase())).size, q.length, "jeder Begriff nur einmal");
 });

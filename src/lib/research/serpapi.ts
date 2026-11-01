@@ -3,6 +3,7 @@
 // Schlüssel in SERPAPI_API_KEY; Kontingent 250 Abfragen pro Monat (Gratis-Plan).
 
 import { merchantOf, type MerchantVia } from "./merchant";
+import { plainQuery } from "./price-search";
 
 /** Gratis-Plan: 250 Abfragen pro Monat. Ab SOFT nur noch eine Abfrage pro Flasche, ab HARD keine. */
 export const SERPAPI_MONTHLY_LIMIT = 250;
@@ -27,7 +28,7 @@ export type ShoppingCandidate = {
   domain?: string | null;
   swiss?: boolean;
   via?: MerchantVia | null;
-  /** Quelle: Google Shopping, direkte Shop-Suche, Google-Suche site:.ch (je mit eigener Seitenprüfung) */
+  /** Quelle: Google Shopping, direkte Shop-Suche, Google-Suche Schweiz (je mit eigener Seitenprüfung) */
   origin?: "shopping" | "direct" | "search";
   soldOut?: boolean;
 };
@@ -104,7 +105,7 @@ export function shoppingCandidates(json: unknown, max = MAX_CANDIDATES): Shoppin
 export function shoppingUrl(q: string, apiKey: string) {
   const u = new URL("https://serpapi.com/search.json");
   u.searchParams.set("engine", "google_shopping");
-  u.searchParams.set("q", q);
+  u.searchParams.set("q", plainQuery(q));
   u.searchParams.set("gl", "ch");
   u.searchParams.set("hl", "de");
   u.searchParams.set("google_domain", "google.ch");

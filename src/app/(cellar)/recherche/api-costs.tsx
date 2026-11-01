@@ -5,8 +5,12 @@ import { budgetFrom, monthCost, type MonthCost } from "@/lib/ai/budget";
 import { BUDGET_STEP_USD, PURPOSE_LABELS, usd, type Purpose } from "@/lib/ai/cost";
 import { wineName } from "@/lib/format";
 import { raiseBudgetAction } from "../budget-actions";
+import { issueText, providerIssues } from "@/lib/research/provider-health";
 
 type Db = SupabaseClient<Database>;
+
+/** „01.11., 14:05“ (Zürich). */
+const when = (iso: string) => new Intl.DateTimeFormat("de-CH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Zurich" }).format(new Date(iso));
 
 const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const monthLabel = (month: string) => `${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
@@ -21,6 +25,19 @@ async function topCalls(db: Db, now = Date.now()) {
     .limit(10);
   if (error) throw error;
   return (data ?? []) as unknown as { id: string; created_at: string; purpose: Purpose; model: string; cost_usd: number; web_searches: number; wine: { id: string; name: string; producer: string | null } | null }[];
+}
+
+/** Preissuchen der letzten 7 Tage (für den Zustand der Such-Anbieter). */
+async function recentPriceJobs(db: Db, now = Date.now()) {
+  const { data, error } = await db
+    .from("research_jobs")
+    .select("finished_at, result")
+    .eq("kind", "price")
+    .gte("finished_at", new Date(now - 7 * 86_400_000).toISOString())
+    .order("finished_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return data ?? [];
 }
 
 function Month({ title, cost }: { title: string; cost: MonthCost }) {
@@ -55,12 +72,14 @@ function Month({ title, cost }: { title: string; cost: MonthCost }) {
  * zehn teuersten Aufrufe der letzten 7 Tage. Vor der Migration: nichts.
  */
 export async function ApiCosts({ db }: { db: Db }) {
-  const [current, previous, top, budgetRow] = await Promise.all([
+  const [current, previous, top, budgetRow, priceJobs] = await Promise.all([
     monthCost(db, 0).catch(() => null),
     monthCost(db, -1).catch(() => null),
     topCalls(db).catch(() => []),
     db.from("api_budget").select("extra_usd, notified_on, month").order("month", { ascending: false }).limit(1).maybeSingle(),
+    recentPriceJobs(db).catch(() => []),
   ]);
+  const issues = providerIssues(priceJobs);
   if (!current) return null;
   const extra = budgetRow.data?.month === current.month ? Number(budgetRow.data.extra_usd ?? 0) : 0;
   const budget = budgetFrom(current.month, current.total, extra);
@@ -77,6 +96,21 @@ export async function ApiCosts({ db }: { db: Db }) {
           Budget für diesen Monat einmalig um {BUDGET_STEP_USD} USD erhöhen
         </button>
       </form>
+      {priceJobs.length > 0 && (
+        <div className="stack-sm">
+          <h3 className="small">Dienste der Preissuche (letzte 7 Tage, {priceJobs.length} Preissuchen)</h3>
+          {issues.length ? (
+            issues.map((i) => (
+              <p key={`${i.provider}-${i.part}`} className={i.serious ? "notice notice-error small" : "muted small"} role={i.serious ? "alert" : undefined}>
+                {issueText(i)}
+                {i.lastAt ? ` (zuletzt ${when(i.lastAt)})` : ""}
+              </p>
+            ))
+          ) : (
+            <p className="muted small">Serper und SerpApi ohne Fehler.</p>
+          )}
+        </div>
+      )}
       <Month title="Dieser Monat" cost={current} />
       {previous && <Month title="Vormonat" cost={previous} />}
       {top.length > 0 && (

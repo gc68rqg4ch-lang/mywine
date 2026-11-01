@@ -38,10 +38,24 @@ export function productTerm(want: { name: string; producer?: string | null }) {
 }
 
 /**
+ * Suchbegriff ohne Such-Operatoren (rein): keine Anführungszeichen, kein site:/inurl:/intitle:/
+ * filetype:/before:/after: – Serper lehnt solche Muster beim Gratiskonto ab („Query pattern not
+ * allowed for free accounts“). Die Einschränkung auf Schweizer Händler macht der Filter danach.
+ */
+export function plainQuery(q: string) {
+  return q
+    .replace(/["“”„«»]/g, " ")
+    .replace(/(^|\s)-?(site|inurl|intitle|intext|allintitle|allinurl|filetype|ext|before|after|related|cache):\S*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Google-Abfragen der Preissuche (rein), ohne Gattungsliste: Shopping mit dem Namen, die Google-Suche
- * site:.ch mit „<Marke> <Name> <Grösse>“, wenn die Marke (aus dem Produzenten) nicht schon im Namen
- * steht. Die zweite Abfrage ist jeweils die andere Variante. Steht die Marke im Namen (bzw. gibt es
- * keine): zweite Abfrage ohne Grösse. brand: die vorangestellte Marke (sonst null).
+ * (gl=ch) mit „<Marke> <Name> <Grösse> kaufen CHF“, wenn die Marke (aus dem Produzenten) nicht schon
+ * im Namen steht. Die zweite Abfrage ist jeweils die andere Variante. Steht die Marke im Namen (bzw.
+ * gibt es keine): zweite Abfrage ohne Grösse. Ohne Such-Operatoren (plainQuery). brand: die
+ * vorangestellte Marke (sonst null).
  */
 export function googleQueries(want: { name: string; producer?: string | null; year?: number | null; sizeMl: number | null }) {
   const y = want.year != null ? ` ${want.year}` : "";
@@ -50,8 +64,9 @@ export function googleQueries(want: { name: string; producer?: string | null; ye
   const withBrand = brand && !brandInName(brand, want.name) ? `${brand} ${want.name.trim()}${y}` : null;
   // Grösse unbekannt: ohne Grösse suchen (die Rückfrage nennt die Grösse des Angebots).
   const cl = want.sizeMl ? ` ${clTerm(want.sizeMl)}` : "";
-  if (!withBrand) return { shopping: unique([`${name}${cl}`, name]), search: unique([`${name}${cl} site:.ch`, `${name} site:.ch`]), brand: null };
-  return { shopping: [`${name}${cl}`, `${withBrand}${cl}`], search: [`${withBrand}${cl} site:.ch`, `${name}${cl} site:.ch`], brand };
+  const clean = (list: string[]) => unique(list.map(plainQuery));
+  if (!withBrand) return { shopping: clean([`${name}${cl}`, name]), search: clean([`${name}${cl} kaufen CHF`, `${name} kaufen CHF`]), brand: null };
+  return { shopping: clean([`${name}${cl}`, `${withBrand}${cl}`]), search: clean([`${withBrand}${cl} kaufen CHF`, `${name}${cl} kaufen CHF`]), brand };
 }
 
 /** Schreibweisen mit Apostroph: „Noah's Mill“, „Noahs Mill“, „Noah s Mill“ (ohne Doppel). */
@@ -88,7 +103,7 @@ export const clTerm = (ml: number) => `${Math.round(ml / 10)}cl`;
 
 /**
  * Feste Suchbegriffe in dieser Reihenfolge (jeder nur einmal): „<Produkt> <Grösse>“, „… kaufen
- * CHF“, „… site:.ch“, mit Händler „<Händler> <Produkt>“, die Schreibweise ohne Apostroph, bei
+ * CHF“, „… Schweiz“, mit Händler „<Händler> <Produkt>“, die Schreibweise ohne Apostroph, bei
  * eigenständigen Namen zuletzt Marke + Name. Jahrgang hinten am Produkt. Der Händler (auch Ketten
  * wie Coop, Denner) nur mit dem ganzen Produkt.
  */
@@ -101,7 +116,7 @@ export function priceQueries(want: { name: string; producer?: string | null; yea
   const variants = apostropheVariants(product).slice(1, 2).map((v) => `${v}${y} ${size}`);
   const brand = brandFromProducer(want.producer);
   const withBrand = brand && product === want.name.trim() && !brandInName(brand, want.name) ? [`${brand} ${want.name.trim()}${y} ${size}`] : [];
-  return unique([`${p} ${size}`, `${p} kaufen CHF`, `${p} site:.ch`, ...(vendor ? [`${vendor} ${p}`] : []), ...variants, ...withBrand]);
+  return unique([`${p} ${size}`, `${p} kaufen CHF`, `${p} Schweiz`, ...(vendor ? [`${vendor} ${p}`] : []), ...variants, ...withBrand].map(plainQuery));
 }
 
 /** Wiederholte Suchbegriffe im Protokoll (gleicher Text, Gross/Klein egal): je Begriff, wie oft. */

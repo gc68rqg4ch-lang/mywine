@@ -220,6 +220,8 @@ export type PriceDiagnostics = {
   finding?: PriceFinding;
   /** Google Shopping (SerpApi): Abfragen, Kandidaten mit Urteil und Grund, gewählter Preis. */
   shopping?: ShoppingDiagnostics;
+  /** Alle Fehler der Anbieter (Serper, SerpApi) – auch, wenn danach die bisherige Suche übernahm. Sichtbar auf /recherche. */
+  provider_errors?: ProviderError[];
 };
 
 /**
@@ -352,12 +354,14 @@ export async function researchPrice(
 ): Promise<{ finding: PriceFinding; diagnostics: PriceDiagnostics }> {
   if (!wine.name) return { finding: { kind: "none", reason: "no_name" }, diagnostics: { raw: null, verdict: "no_name", pages: [] } };
   // Zuerst Google Shopping (SerpApi) + Haiku; ohne Schlüssel, ohne Kontingent oder bei Fehler die bisherige Suche.
-  const shopping = await researchPriceShopping(wine, year, sizeMl, options).catch((error) => {
+  const errors: ProviderError[] = [];
+  const shopping = await researchPriceShopping(wine, year, sizeMl, { ...options, errors }).catch((error) => {
     if (apiProblem(error)?.kind === "usage_limit") throw error;
     console.error("shopping price search failed", error instanceof Error ? error.message : error);
     return null;
   });
-  const result = shopping ?? (await researchPriceLegacy(wine, year, sizeMl, vendor, options));
+  const found = shopping ?? (await researchPriceLegacy(wine, year, sizeMl, vendor, options));
+  const result = errors.length ? { ...found, diagnostics: { ...found.diagnostics, provider_errors: errors } } : found;
   return sizeMl == null && wine.type === "spirit" ? { ...result, finding: sizeUnknownFinding(result.finding) } : result;
 }
 
@@ -457,14 +461,21 @@ export async function serpApiQueriesThisMonth(db: Db, now = new Date()) {
   return error ? 0 : (count ?? 0);
 }
 
-export type ShoppingOptions = { get?: Get; db?: Db; serpApiKey?: string | null; serperApiKey?: string | null };
+export type ShoppingOptions = {
+  get?: Get;
+  db?: Db;
+  serpApiKey?: string | null;
+  serperApiKey?: string | null;
+  /** Sammelt alle Fehler der Anbieter (für diagnostics.provider_errors). */
+  errors?: ProviderError[];
+};
 
 type Provider = {
   provider: ShoppingProvider;
   maxQueries: number;
   used: number;
   search: (q: string) => Promise<ShoppingCandidate[]>;
-  /** Google-Suche (site:.ch) beim selben Anbieter */
+  /** Google-Suche Schweiz (gl=ch, ohne Operatoren) beim selben Anbieter */
   web: (q: string) => Promise<SearchHit[]>;
 };
 
@@ -497,7 +508,7 @@ export type ShoppingDiagnostics = {
   failed?: { provider: ShoppingProvider; error: string }[];
   queries: string[];
   used_this_month: number;
-  /** Google-Suche site:.ch: Abfragen, Anzahl Ergebnisse, geprüfte Seiten; Fehler. */
+  /** Google-Suche Schweiz: Abfragen, Anzahl Ergebnisse, geprüfte Seiten; Fehler. */
   search?: { provider: ShoppingProvider; queries: string[]; results: number; pages: string[]; error?: string };
   /** In diesem Lauf von Produktseiten gelernte Händlernamen. */
   learned?: { name: string; domain: string }[];
@@ -597,8 +608,18 @@ async function saveLearned(db: Db | undefined, learned: { name: string; domain: 
 
 const usageOf = (provider: ShoppingProvider) => recordUsage(provider, { server_tool_use: { web_search_requests: 1 } }, { ...currentUsageContext(), purpose: "research_price" });
 
+export type ProviderError = { provider: ShoppingProvider; part: "shopping" | "search"; error: string };
+
+/** Fehler eines Anbieters nie still schlucken: protokollieren und für die Diagnose festhalten. */
+function providerError(errors: ProviderError[], provider: ShoppingProvider, part: ProviderError["part"], error: unknown) {
+  const message = (error instanceof Error ? error.message : String(error)).slice(0, 200);
+  console.error("price search provider error", provider, part, message);
+  errors.push({ provider, part, error: message });
+  return message;
+}
+
 /** Shopping-Abfragen: Anbieter der Reihe nach; scheitert die erste Abfrage, der nächste. */
-async function runShopping(providers: Provider[], queries: string[], swissEnough: (c: ShoppingCandidate) => boolean) {
+async function runShopping(providers: Provider[], queries: string[], swissEnough: (c: ShoppingCandidate) => boolean, errors: ProviderError[]) {
   const failed: { provider: ShoppingProvider; error: string }[] = [];
   for (const p of providers) {
     const run: ShoppingDiagnostics = { provider: p.provider, queries: [], used_this_month: p.used, candidates: [], chosen: null };
@@ -609,8 +630,9 @@ async function runShopping(providers: Provider[], queries: string[], swissEnough
       try {
         hits = await p.search(q);
       } catch (error) {
+        const message = providerError(errors, p.provider, "shopping", error);
         if (!run.queries.length) {
-          failed.push({ provider: p.provider, error: (error instanceof Error ? error.message : String(error)).slice(0, 160) });
+          failed.push({ provider: p.provider, error: message.slice(0, 160) });
           ok = false;
         }
         break;
@@ -627,8 +649,8 @@ async function runShopping(providers: Provider[], queries: string[], swissEnough
   return { shop: null, candidates: [] as ShoppingCandidate[], failed };
 }
 
-/** Google-Suche site:.ch: „<Name> <Grösse> site:.ch“, bei weniger als 3 Schweizer Treffern ohne Grösse. */
-async function runSiteSearch(providers: Provider[], queries: string[], want: { name: string; producer: string | null; year: number | null }) {
+/** Google-Suche Schweiz: „<Name> <Grösse> kaufen CHF“, bei weniger als 3 Schweizer Treffern die andere Variante. */
+async function runSiteSearch(providers: Provider[], queries: string[], want: { name: string; producer: string | null; year: number | null }, providerErrors: ProviderError[]) {
   const errors: string[] = [];
   for (const p of providers) {
     const done: string[] = [];
@@ -639,8 +661,9 @@ async function runSiteSearch(providers: Provider[], queries: string[], want: { n
         const found = await p.web(q);
         for (const h of found) if (!hits.some((x) => x.url === h.url)) hits.push(h);
       } catch (error) {
+        const message = providerError(providerErrors, p.provider, "search", error);
         if (!done.length) {
-          errors.push(`${p.provider}: ${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`);
+          errors.push(`${p.provider}: ${message.slice(0, 120)}`);
           ok = false;
         }
         break;
@@ -664,7 +687,7 @@ export const MAX_SEARCH_PAGES = 8;
 
 /**
  * Preis über drei Quellen parallel, alle nur mit Schweizer Händlern: Google Shopping Schweiz
- * (SerpApi bzw. Serper, 1–2 Abfragen), Google-Suche „… site:.ch“ (1–2 Abfragen, bis 8 Seiten selbst
+ * (SerpApi bzw. Serper, 1–2 Abfragen), Google-Suche Schweiz „… kaufen CHF“ (1–2 Abfragen, bis 8 Seiten selbst
  * gelesen) und die direkten Shop-Suchen (kostenlos). Shopping-Treffer zählen als Schweizer Händler
  * nur mit Schweizer Domain aus Link bzw. Namen oder laut Tabelle merchants (Händlernamen werden aus
  * gelesenen .ch-Produktseiten gelernt). Alle Kandidaten in einen Haiku-Abgleich (yes/variant/no),
@@ -688,13 +711,14 @@ export async function researchPriceShopping(
   const want = { name: wine.name, producer: wine.producer, year };
   const known = await loadMerchants(options.db);
   const get = options.get ?? createGetter({ maxRequests: 60, timeoutMs: DIRECT_TIMEOUT_MS });
-  // Alles parallel: direkte Shops (wirft nie), Shopping, Google-Suche site:.ch.
+  // Alles parallel: direkte Shops (wirft nie), Shopping, Google-Suche Schweiz.
   const directTask = searchShops({ name: wine.name, producer: wine.producer, year, sizeMl: size, type: wine.type }, get);
   // Genug Treffer für keine zweite Shopping-Abfrage: Schweizer Händler, mit Marke im Titel, falls die Abfrage ohne Marke war.
   const swissEnough = (c: ShoppingCandidate) =>
     (c.swiss === true || merchantOf(c.source, c.link, known).swiss) && (!q.brand || brandInName(q.brand, `${c.title} ${c.source}`));
-  const shoppingTask = runShopping(providers, q.shopping, swissEnough);
-  const searchTask = runSiteSearch(providers, q.search, want);
+  const errors = options.errors ?? [];
+  const shoppingTask = runShopping(providers, q.shopping, swissEnough, errors);
+  const searchTask = runSiteSearch(providers, q.search, want, errors);
   const [shopping, search, direct] = await Promise.all([shoppingTask, searchTask, directTask]);
   const { shop, failed } = shopping;
   if (!shop) {

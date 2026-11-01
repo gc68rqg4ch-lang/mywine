@@ -3,6 +3,7 @@
 // Prepaid-Credits verwaltet Serper (kein eigenes Kontingent in der App). Rein bis auf searchSerper.
 
 import { amountInText } from "./price-match";
+import { plainQuery } from "./price-search";
 import { filterCandidates, type RawOffer, type ShoppingCandidate } from "./serpapi";
 
 /** Preistext → Zahl und Währung: „CHF 86.90“, „86,90 CHF“, „CHF 1'234.50“, „Fr. 34.–“; ohne Währung → null. */
@@ -35,7 +36,7 @@ export async function searchSerper(q: string, apiKey: string, timeoutMs = 15_000
   const res = await fetch(SERPER_URL, {
     method: "POST",
     headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ q, gl: "ch", hl: "de", location: "Switzerland" }),
+    body: JSON.stringify({ q: plainQuery(q), gl: "ch", hl: "de", location: "Switzerland" }),
     signal: AbortSignal.timeout(timeoutMs),
     cache: "no-store",
   });
