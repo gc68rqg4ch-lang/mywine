@@ -3,7 +3,8 @@
 import "./env";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { claudeTool, installNet, type Net } from "./stub-net";
+import { claudeError, claudeTool, installNet, type Net } from "./stub-net";
+import { schemaRejected, usageLimit } from "@/lib/ai/api-errors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { researchAndFillWine } from "@/lib/research/wine";
 import { WINE_TASTE_MAX_TOKENS, WINE_TASTE_SEARCHES, wineTasteSchema } from "@/lib/research/wine-taste";
@@ -120,6 +121,70 @@ test("Gemeinsames Schema: unter der Union-Grenze und strict-tauglich (Wein und S
     assert.ok(unions <= MAX_UNION_PARAMS, `${wineType}: ${unions} Unions`);
     assert.deepEqual(strictSchemaProblems(json), [], wineType);
   }
+});
+
+test("Gemeinsames Tool ohne strict (keine Grammatik), Einzel-Tools weiter strict", async () => {
+  reset();
+  await researchAndFillWine(db, W, "all", { taste: "always", year: 2019 });
+  const tool = (calls[0].body.tools as { name?: string; strict?: boolean }[]).find((t) => t.name === "report_wine_and_taste")!;
+  assert.equal(tool.strict, false);
+  reset();
+  await researchAndFillWine(db, W, "all", { taste: "only", year: 2019 });
+  assert.equal((calls[0].body.tools as { name?: string; strict?: boolean }[]).find((t) => t.name === "report_taste_profile")!.strict, true);
+});
+
+const GRAMMAR = "The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.";
+const LIMIT = "You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.";
+
+test("Schema-Fehler (400) beim gemeinsamen Aufruf → sofort die zwei Einzelaufrufe, beide Ergebnisse gespeichert", async () => {
+  reset();
+  combinedReply = () => claudeError(400, GRAMMAR) as never;
+  const outcome = await researchAndFillWine(db, W, "all", { taste: "always", year: 2019 });
+  assert.deepEqual(calls.map((c) => c.tools), [["report_wine_and_taste"], ["report_wine_details"], ["report_taste_profile"]]);
+  assert.equal(net.tables.wines[0].appellation, "DO Toro");
+  assert.equal(net.tables.wine_taste_profiles.length, 1);
+  assert.equal(outcome.taste, "saved");
+  combinedReply = () => claudeTool("report_wine_and_taste", { wine: WINE, taste: TASTE });
+});
+
+test("API-Limit beim gemeinsamen Aufruf → kein Rückfall (wie bisher), nichts vermerkt", async () => {
+  reset();
+  combinedReply = () => claudeError(400, LIMIT) as never;
+  await assert.rejects(researchAndFillWine(db, W, "all", { taste: "always", year: 2019 }), (e: unknown) => usageLimit(e) != null);
+  assert.equal(calls.length, 1);
+  assert.equal(net.tables.wines[0].researched_at, null);
+  combinedReply = () => claudeTool("report_wine_and_taste", { wine: WINE, taste: TASTE });
+});
+
+test("Schema-Ablehnung erkennen: Grammatik, Union-Grenze, nicht unterstützt – nicht Limit, Überlast oder anderes", () => {
+  const err = (status: number, message: string) => Object.assign(new Error(`${status} ${message}`), { status, error: { type: "error", error: { type: "invalid_request_error", message } } });
+  assert.ok(schemaRejected(err(400, GRAMMAR)));
+  assert.ok(schemaRejected(err(400, "Schemas contains too many parameters with union types (18 parameters with type arrays or anyOf). This exceeds the limit of 16")));
+  assert.ok(schemaRejected(err(400, "tools.2.custom.input_schema: 'minimum' is not supported")));
+  assert.ok(!schemaRejected(err(400, LIMIT)));
+  assert.ok(!schemaRejected(err(529, "Overloaded")));
+  assert.ok(!schemaRejected(err(400, "messages: text content blocks must be non-empty")));
+});
+
+test("Ungültiger Teil → einmal nachfragen (gleiche Unterhaltung); bleibt er ungültig, gilt der gültige Teil", async () => {
+  reset();
+  let n = 0;
+  const broken = { ...TASTE, fields: { sweetness: "trocken" } };
+  combinedReply = () => (++n === 1 ? claudeTool("report_wine_and_taste", { wine: WINE, taste: broken }) : claudeTool("report_wine_and_taste", { wine: WINE, taste: TASTE }));
+  const outcome = await researchAndFillWine(db, W, "all", { taste: "always", year: 2019 });
+  assert.equal(calls.length, 2, "eine Nachfrage");
+  const followUp = JSON.stringify(calls[1].body.messages);
+  assert.match(followUp, /"is_error":true/);
+  assert.match(followUp, /Teil taste/);
+  assert.equal(outcome.taste, "saved");
+  // Zweimal ungültig: keine dritte Runde; Stammdaten bleiben, kein Profil
+  reset();
+  combinedReply = () => claudeTool("report_wine_and_taste", { wine: WINE, taste: broken });
+  const half = await researchAndFillWine(db, W, "all", { taste: "always", year: 2019 });
+  assert.equal(calls.length, 2);
+  assert.equal(net.tables.wines[0].appellation, "DO Toro");
+  assert.equal(half.taste, "none");
+  combinedReply = () => claudeTool("report_wine_and_taste", { wine: WINE, taste: TASTE });
 });
 
 test("Vor der Migration: neuer Zweck wird als research_wine gezählt", async () => {

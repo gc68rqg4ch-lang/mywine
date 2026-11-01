@@ -70,8 +70,12 @@ export async function researchWineAndTaste(input: WineTasteInput): Promise<{ win
     fetchShops: Boolean(input.wine.fetchShops || t.fetchShops),
     toolDescription: "Meldet Stammdaten und Jahrgänge (wine) sowie das belegte Geschmacksprofil (taste) des Weins, je mit Quellen.",
     schema: wineTasteSchema(t.schema),
-    // Jeden Teil für sich prüfen: ein ungültiger Teil verwirft nicht den anderen.
+    // Ohne strict: als strict-Tool ist das gemeinsame Schema für die API zu gross („compiled grammar
+    // is too large“, 400). Stattdessen jeden Teil per Zod prüfen; ist einer ungültig, einmal
+    // nachfragen – danach bleibt der gültige Teil erhalten, ein ungültiger verwirft den anderen nie.
+    strict: false,
     parseSchema: z.object({ wine: z.unknown(), taste: z.unknown() }),
+    repair: (found) => partProblems(found, t.schema),
     maxSearches: WINE_TASTE_SEARCHES,
     maxTokens: WINE_TASTE_MAX_TOKENS,
   });
@@ -82,6 +86,20 @@ export async function researchWineAndTaste(input: WineTasteInput): Promise<{ win
     wine: wine.success ? readWineResearch(wine.data, input.wine) : null,
     profile: taste.success ? readTasteResearch(taste.data, { wine: input.taste.wine, year: input.taste.year, documents: input.taste.documents }) : null,
   };
+}
+
+/**
+ * Ungültige Teile der Antwort (für die eine Nachfrage); null = in Ordnung. Ein Profil ohne
+ * passende Quelle (matches_wine false) braucht keine Nachfrage – es gibt ohnehin keins.
+ */
+export function partProblems(found: { wine: unknown; taste: unknown }, tasteSchema: z.ZodType): string | null {
+  const noProfile = (found.taste as { matches_wine?: unknown } | null)?.matches_wine === false;
+  const problems = [
+    ["wine", EnrichmentSchema.safeParse(found.wine)],
+    ...(noProfile ? [] : [["taste", tasteSchema.safeParse(found.taste)] as const]),
+  ] as const;
+  const bad = problems.filter(([, r]) => !r.success).map(([part, r]) => `Teil ${part}: ${r.error!.issues.slice(0, 5).map((i) => `${i.path.join(".") || "(ganz)"} ${i.message}`).join("; ")}`);
+  return bad.length ? bad.join(" | ") : null;
 }
 
 function uniqueBy<T>(list: T[], key: (x: T) => string) {

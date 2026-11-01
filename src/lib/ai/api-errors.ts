@@ -37,6 +37,16 @@ export function usageLimit(error: unknown): { until: string | null } | null {
   return { until: date ? formatDate(date) : null };
 }
 
+/**
+ * Die API lehnt das Tool-Schema ab (400 invalid_request_error): Grammatik zu gross, zu viele
+ * Union-Parameter, nicht unterstütztes Schema-Merkmal. Nicht: Nutzungslimit (auch 400).
+ */
+export function schemaRejected(error: unknown) {
+  const status = isApiError(error) ? (error as { status: number }).status : null;
+  if (status !== 400 || usageLimit(error)) return false;
+  return /grammar|union types|schema|not supported|input_schema|strict/i.test(errorText(error));
+}
+
 /** 429 Rate-Limit oder 529 überlastet (auch als Fehlertyp im Text): vorübergehend, kein Ausgabenlimit. */
 export function temporaryProblem(error: unknown) {
   const status = isApiError(error) ? (error as { status: number }).status : null;

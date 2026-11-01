@@ -209,6 +209,8 @@ export function researchTools(options: {
   inputSchema: Anthropic.Beta.BetaTool.InputSchema;
   maxSearches: number;
   fetchShops?: boolean;
+  /** false: ohne strict (keine Grammatik – für grosse Schemas; geprüft wird danach per Zod). */
+  strict?: boolean;
 }): Anthropic.Beta.BetaToolUnion[] {
   return [
     // maxSearches 0: ohne Websuche (z. B. nur schätzen, wenn derselbe Wein eben schon gesucht wurde).
@@ -219,7 +221,7 @@ export function researchTools(options: {
     {
       name: options.toolName,
       description: options.toolDescription,
-      strict: true,
+      strict: options.strict ?? true,
       input_schema: options.inputSchema,
     },
   ];
@@ -263,6 +265,16 @@ export async function webResearch<T>(options: {
   maxTokens?: number;
   /** Zum Einlesen der Antwort statt schema (schema geht nur als Tool-Schema an Claude). */
   parseSchema?: z.ZodType<T>;
+  /**
+   * false: Tool ohne strict – die API kompiliert dann keine Grammatik (grosse Schemas sprengen
+   * sonst deren Grenze, „compiled grammar is too large“). Geprüft wird per Zod (parseSchema/repair).
+   */
+  strict?: boolean;
+  /**
+   * Prüfung der Antwort: Text des Problems → einmal nachfragen (tool_result mit is_error, gleiche
+   * Unterhaltung); null = in Ordnung. Nach der Nachfrage gilt die zweite Antwort, wie sie ist.
+   */
+  repair?: (input: T) => string | null;
   /** Alle Inhaltsblöcke jeder Antwort (Suchen und Suchergebnisse – für die eigene Prüfung). */
   onContent?: (blocks: Anthropic.Beta.BetaContentBlock[]) => void;
 }): Promise<T | null> {
@@ -293,9 +305,11 @@ async function runWebResearch<T>(options: Parameters<typeof webResearch<T>>[0]):
     { role: "user", content: blocks.length ? [...blocks, { type: "text", text }] : text },
   ];
   const inputSchema = toolInputSchema(options.schema);
-  const problems = strictSchemaProblems(inputSchema);
+  const strict = options.strict ?? true;
+  const problems = strict ? strictSchemaProblems(inputSchema) : [];
   if (problems.length) throw new Error(`Schema für ${options.toolName} nicht strict-tauglich: ${problems.join(", ")}`);
-  const tools = researchTools({ ...options, inputSchema });
+  const tools = researchTools({ ...options, inputSchema, strict });
+  let repaired = false;
 
   for (let round = 0; round < Math.min(options.maxRounds ?? RESEARCH_MAX_ROUNDS, 8); round++) {
     const response = await anthropic().beta.messages.create({
@@ -316,6 +330,14 @@ async function runWebResearch<T>(options: Parameters<typeof webResearch<T>>[0]):
     );
     if (report) {
       const parsed = (options.parseSchema ?? options.schema).safeParse(report.input);
+      const problem = options.repair && !repaired ? (parsed.success ? options.repair(parsed.data) : parsed.error.message.slice(0, 1500)) : null;
+      if (problem) {
+        // Einmal nachfragen: Fehler als tool_result, dieselbe Unterhaltung (Suchergebnisse bleiben).
+        repaired = true;
+        messages.push({ role: "assistant", content: response.content });
+        messages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: report.id, is_error: true, content: `Die Angaben passen nicht zum Schema: ${problem}\nRufe ${options.toolName} noch einmal vollständig und schemakonform auf (ohne neue Suche).` }] });
+        continue;
+      }
       return parsed.success ? parsed.data : null;
     }
 

@@ -13,7 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
 import { asDrinkSource, saveVintageWindow } from "@/lib/cellar/drink-window";
-import { apiProblem } from "@/lib/ai/api-errors";
+import { apiProblem, schemaRejected } from "@/lib/ai/api-errors";
 import { formatShares, hasAnyPercent } from "@/lib/grapes/shares";
 import { replaceGrapeShares } from "@/lib/grapes/store";
 import { researchWineWeb, type WineResearch, type WineResearchInput } from "@/lib/ingest/recognize";
@@ -207,9 +207,18 @@ export async function researchAndFillWine(
   let prefetched: { profile: TasteProfileData | null } | undefined;
   let found: WineResearch | null = null;
   if (wine.type !== "spirit" && runTaste) {
-    const both = await researchWineAndTaste({ wine: wineInput, taste: { wine, year: profileYear, documents: tasteDocs, pages: tastePages } });
-    found = both?.wine ?? null;
-    prefetched = { profile: both?.profile ?? null };
+    try {
+      const both = await researchWineAndTaste({ wine: wineInput, taste: { wine, year: profileYear, documents: tasteDocs, pages: tastePages } });
+      found = both?.wine ?? null;
+      prefetched = { profile: both?.profile ?? null };
+    } catch (error) {
+      // Schema bzw. Grammatik von der API abgelehnt: sofort die zwei Einzelaufrufe (Stammdaten hier,
+      // Profil in taste()) – ein Schema-Problem blockiert die Recherche nie ganz. Andere Fehler wie bisher.
+      if (!schemaRejected(error)) throw error;
+      console.error("wine+taste research rejected (schema) – falling back to two calls", wineId, error instanceof Error ? error.message : error);
+      found = await researchWineWeb(wineInput);
+      prefetched = undefined;
+    }
   } else if (wine.type !== "spirit") {
     found = await researchWineWeb(wineInput);
   }
