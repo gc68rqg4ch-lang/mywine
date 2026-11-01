@@ -122,14 +122,14 @@ test("Gescheiterter Wein: researched_at und taste_profile_checked_at bleiben unv
     assert.equal(net.tables.wines[0].researched_at, before, taste);
     assert.equal(net.tables.wine_vintages[0].taste_profile_checked_at, before, taste);
   }
-  // Limit erst beim Profil (Stammdaten schon ergänzt): Ergänztes bleibt, Fehler wird gemeldet, Profil nicht als geprüft vermerkt
+  // Stammdaten und Profil kommen aus EINEM Aufruf: ein Limit dort trifft beides – nichts als
+  // geprüft vermerkt, der Fehler geht an den Sammellauf (hält an).
   claudeCalls = 0;
   reply = () => (claudeCalls === 1
     ? claudeTool("report_wine_details", { producer: null, country: null, region: "Toro", appellation: null, type: null, alcohol_content: null, vintages: [], sources: [] })
     : claudeError(400, LIMIT)) as never;
-  const { result: outcome } = await capture(() => researchAndFillWine(db, W, "all", { taste: "always", year: 2019 }));
-  assert.equal(outcome.status, "filled");
-  assert.equal(outcome.error?.kind, "usage_limit", "Sammellauf hält an");
+  await assert.rejects(researchAndFillWine(db, W, "all", { taste: "always", year: 2019 }), (e: unknown) => usageLimit(e) != null);
+  assert.equal(net.tables.wines[0].researched_at, before);
   assert.equal(net.tables.wine_vintages[0].taste_profile_checked_at, before);
 });
 

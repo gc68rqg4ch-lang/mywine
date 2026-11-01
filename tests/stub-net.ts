@@ -95,7 +95,7 @@ export function installNet(net: Net) {
     }
     if (url.host === "api.anthropic.com") {
       // Fehlerantwort der API: { status, body } mit einem HTTP-Status ≠ 200
-      const answer = net.claude(body);
+      const answer = (combinedResearch(net, body) as Record<string, unknown> | null) ?? net.claude(body);
       return typeof answer.status === "number" && answer.body ? json(answer.body, answer.status) : json(answer);
     }
     if (!url.pathname.startsWith("/rest/v1/")) {
@@ -216,3 +216,28 @@ export const claudeTool = (name: string, input: unknown) => ({
   id: "msg", type: "message", role: "assistant", model: "claude-sonnet-5-5", stop_reason: "tool_use", stop_sequence: null,
   content: [{ type: "tool_use", id: "tu", name, input }], usage: { input_tokens: 1, output_tokens: 1 },
 });
+
+/**
+ * Gemeinsame Recherche (report_wine_and_taste): Tests, die die beiden einzelnen Tools nachbilden,
+ * bedient der Stub, indem er net.claude je einmal mit report_wine_details und report_taste_profile
+ * fragt und die Antworten zu { wine, taste } zusammensetzt. Tests mit eigener Antwort auf das
+ * gemeinsame Tool setzen net.nativeCombined.
+ */
+function combinedResearch(net: Net, body: Record<string, unknown>) {
+  const tools = (body.tools as { name?: string; input_schema?: { properties?: Record<string, unknown> } }[] | undefined) ?? [];
+  const combined = tools.find((t) => t.name === "report_wine_and_taste");
+  if (!combined || (net as Net & { nativeCombined?: boolean }).nativeCombined) return null;
+  const ask = (name: string, part: string) =>
+    net.claude({ ...body, tools: tools.map((t) => (t === combined ? { ...t, name, input_schema: combined.input_schema?.properties?.[part] } : t)) }) as {
+      status?: number;
+      content?: { type: string; name?: string; input?: unknown }[];
+    };
+  const wine = ask("report_wine_details", "wine");
+  if (typeof wine.status === "number") return wine;
+  const taste = ask("report_taste_profile", "taste");
+  if (typeof taste.status === "number") return taste;
+  const w = wine.content?.find((b) => b.type === "tool_use");
+  const t = taste.content?.find((b) => b.type === "tool_use");
+  if (!w || !t) return wine;
+  return { ...wine, content: [{ type: "tool_use", id: "tu", name: "report_wine_and_taste", input: { wine: w.input, taste: t.input } }] };
+}

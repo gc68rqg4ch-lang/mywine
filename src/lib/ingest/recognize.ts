@@ -231,6 +231,7 @@ const RESEARCH_PURPOSE: Record<string, Purpose> = {
   report_spirit_details: "research_wine",
   report_grape_shares: "research_wine",
   report_taste_profile: "research_taste",
+  report_wine_and_taste: "research_wine_taste",
   report_drink_window: "research_window",
   report_open_keep: "research_keep",
   report_price: "research_price",
@@ -258,6 +259,10 @@ export async function webResearch<T>(options: {
   fetchShops?: boolean;
   /** Höchstens so viele Durchgänge (pause_turn der Suchschleife); Standard 4. */
   maxRounds?: number;
+  /** Höchstens so viele Ausgabe-Tokens je Runde; Standard RESEARCH_MAX_TOKENS. */
+  maxTokens?: number;
+  /** Zum Einlesen der Antwort statt schema (schema geht nur als Tool-Schema an Claude). */
+  parseSchema?: z.ZodType<T>;
   /** Alle Inhaltsblöcke jeder Antwort (Suchen und Suchergebnisse – für die eigene Prüfung). */
   onContent?: (blocks: Anthropic.Beta.BetaContentBlock[]) => void;
 }): Promise<T | null> {
@@ -295,7 +300,7 @@ async function runWebResearch<T>(options: Parameters<typeof webResearch<T>>[0]):
   for (let round = 0; round < Math.min(options.maxRounds ?? RESEARCH_MAX_ROUNDS, 8); round++) {
     const response = await anthropic().beta.messages.create({
       model: FALLBACK_MODEL,
-      max_tokens: RESEARCH_MAX_TOKENS,
+      max_tokens: options.maxTokens ?? RESEARCH_MAX_TOKENS,
       tools,
       tool_choice: { type: "auto" },
       messages,
@@ -310,7 +315,7 @@ async function runWebResearch<T>(options: Parameters<typeof webResearch<T>>[0]):
         block.type === "tool_use" && block.name === options.toolName,
     );
     if (report) {
-      const parsed = options.schema.safeParse(report.input);
+      const parsed = (options.parseSchema ?? options.schema).safeParse(report.input);
       return parsed.success ? parsed.data : null;
     }
 
@@ -387,13 +392,7 @@ export type WineResearch = {
   sources: string[];
 };
 
-/**
- * Web-Recherche für einen Wein in einem Durchgang (Sonnet + web_search): immer alle
- * Angaben – Produzent, Land, Region, Appellation, Typ, Alkohol und je Jahrgang Trinkfenster
- * und Rebsorten mit %. Was davon gespeichert wird (nur Leeres) oder als Vorschlag gilt
- * (Abweichung), entscheidet der Aufrufer. null, wenn nichts kam.
- */
-export async function researchWineWeb(input: {
+export type WineResearchInput = {
   wine: Pick<WineProposal, "name" | EnrichableField>;
   vintages: ResearchVintage[];
   /** Angehängte Datenblätter der gesuchten Jahrgänge (zusätzlich zur Websuche). */
@@ -406,11 +405,15 @@ export async function researchWineWeb(input: {
   /** Shops ohne Treffer: Datenblatt per web_fetch suchen lassen (Hinweis im Prompt: fetchNote). */
   fetchShops?: boolean;
   fetchNote?: string;
-}): Promise<WineResearch | null> {
-  if (!input.wine.name) return null;
+};
+
+/**
+ * Regeln der Stammdaten-Recherche (rein, ohne Hinweise zu Beilagen) – auch für die gemeinsame
+ * Recherche mit dem Geschmacksprofil (research/wine-taste.ts).
+ */
+export function wineResearchRules(input: WineResearchInput) {
   const label = (year: number | null) => (year == null ? "ohne Jahrgang (NV) – als 0 melden" : String(year));
-  const found = await webResearch({
-    prompt: `Recherchiere diesen Wein im Web und melde alle Angaben, die die Quellen belegen:
+  return `Recherchiere diesen Wein im Web und melde alle Angaben, die die Quellen belegen:
 - ${Object.values(FIELD_NAMES).join(", ")}
 ${input.vintages.map((v) => `- Jahrgang ${label(v.year)}: Trinkfenster ab/bis, Rebsorten mit Prozent${v.knownGrapes.length ? ` (bei uns erfasst: ${v.knownGrapes.join(", ")})` : ""}`).join("\n")}
 Bei uns gespeichert (nur Kontext): ${JSON.stringify(input.wine)}
@@ -419,17 +422,19 @@ Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech
 - Für jeden genannten Jahrgang genau einen Eintrag in vintages.
 - Rebsorten: percent nur, wenn eine Quelle den Anteil für genau diesen Jahrgang belegt (Cuvées ändern sich); reinsortig = 100; sonst Rebsorten mit percent null. Internationale Schreibweise (Cabernet Sauvignon, Tempranillo …).
 - ${COUNTRY_HINT}.
-- ${PRODUCER_HINT}.${input.documentsNote ?? ""}${input.pagesNote ?? ""}${input.fetchShops ? (input.fetchNote ?? "") : ""}`,
-    toolName: "report_wine_details",
-    documents: input.documents,
-    pages: input.pages,
-    fetchShops: input.fetchShops,
-    toolDescription: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
-    schema: EnrichmentSchema,
-    maxSearches: Math.min(8, 3 + input.vintages.length),
-  });
-  if (!found) return null;
+- ${PRODUCER_HINT}.`;
+}
 
+/** Hinweise zu Beilagen der Stammdaten-Recherche (Datenblätter, Shops, web_fetch). */
+export const wineResearchNotes = (input: WineResearchInput) =>
+  `${input.documentsNote ?? ""}${input.pagesNote ?? ""}${input.fetchShops ? (input.fetchNote ?? "") : ""}`;
+
+/** Höchstens so viele Websuchen für die Stammdaten (mehr Jahrgänge → etwas mehr). */
+export const wineResearchSearches = (input: Pick<WineResearchInput, "vintages">) => Math.min(8, 3 + input.vintages.length);
+
+/** Antwort der Stammdaten-Recherche prüfen: ungültige Werte verwerfen (rein). */
+export function readWineResearch(found: z.infer<typeof EnrichmentSchema> | null, input: Pick<WineResearchInput, "vintages">): WineResearch | null {
+  if (!found) return null;
   const fields: WineResearch["fields"] = {};
   for (const field of Object.keys(FIELD_NAMES) as EnrichableField[]) {
     if (validField(field, found[field])) (fields as Record<EnrichableField, unknown>)[field] = found[field];
@@ -454,6 +459,27 @@ Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech
   const single = input.vintages.length === 1 ? input.vintages[0].year : undefined;
   const sources = single === undefined ? found.sources : found.sources.filter((s) => shopSourceAllowed(s, single));
   return { fields, vintages: result, sources: cleanSources(sources) };
+}
+
+/**
+ * Web-Recherche für einen Wein in einem Durchgang (Sonnet + web_search): immer alle
+ * Angaben – Produzent, Land, Region, Appellation, Typ, Alkohol und je Jahrgang Trinkfenster
+ * und Rebsorten mit %. Was davon gespeichert wird (nur Leeres) oder als Vorschlag gilt
+ * (Abweichung), entscheidet der Aufrufer. null, wenn nichts kam.
+ */
+export async function researchWineWeb(input: WineResearchInput): Promise<WineResearch | null> {
+  if (!input.wine.name) return null;
+  const found = await webResearch({
+    prompt: `${wineResearchRules(input)}${wineResearchNotes(input)}`,
+    toolName: "report_wine_details",
+    documents: input.documents,
+    pages: input.pages,
+    fetchShops: input.fetchShops,
+    toolDescription: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
+    schema: EnrichmentSchema,
+    maxSearches: wineResearchSearches(input),
+  });
+  return readWineResearch(found, input);
 }
 
 /**

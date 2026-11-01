@@ -6,6 +6,8 @@ import "server-only";
 // Für „Nachrecherchieren“ auf der Weinseite, den Sammellauf und den Bot. Auch Weine ohne
 // Flaschen (nur verkostet) werden recherchiert – Jahrgänge dann aus „Verkostet“.
 
+import { researchWineAndTaste } from "./wine-taste";
+import type { TasteProfileData } from "@/lib/taste/profile";
 import { canonicalProducer } from "@/lib/producers/load";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
@@ -14,7 +16,7 @@ import { asDrinkSource, saveVintageWindow } from "@/lib/cellar/drink-window";
 import { apiProblem } from "@/lib/ai/api-errors";
 import { formatShares, hasAnyPercent } from "@/lib/grapes/shares";
 import { replaceGrapeShares } from "@/lib/grapes/store";
-import { researchWineWeb } from "@/lib/ingest/recognize";
+import { researchWineWeb, type WineResearch, type WineResearchInput } from "@/lib/ingest/recognize";
 import { recordSuggestion } from "./suggestions";
 import { researchTasteProfile, saveResearchedProfile } from "./taste";
 import { markTasteChecked } from "@/lib/taste/store";
@@ -153,14 +155,12 @@ export async function researchAndFillWine(
     loadResearchDocuments(db, { id: wine.id, name: wine.name }, docYears),
     loadShopPages(db, wine, shopYears),
   ]);
-  const taste = async (): Promise<ResearchOutcome["taste"]> => {
+  const tasteDocs = documents.filter((d) => d.year === profileYear);
+  const tastePages = pages.filter((p) => p.year === profileYear);
+  /** Profil: eigener Aufruf – bzw. das Ergebnis des gemeinsamen Aufrufs (prefetched, dann kein weiterer). */
+  const taste = async (prefetched?: { profile: TasteProfileData | null }): Promise<ResearchOutcome["taste"]> => {
     if (!runTaste) return "skipped";
-    const profile = await researchTasteProfile(
-      wine,
-      profileYear,
-      documents.filter((d) => d.year === profileYear),
-      pages.filter((p) => p.year === profileYear),
-    );
+    const profile = prefetched ? prefetched.profile : await researchTasteProfile(wine, profileYear, tasteDocs, tastePages);
     // Jede Profilsuche vermerken – auch ohne Fund (nicht bei einem Fehler).
     await markTasteChecked(db, wineId, profileYear);
     if (!profile) return "none";
@@ -188,7 +188,7 @@ export async function researchAndFillWine(
     const keep = await findAndStoreOpenKeep(db, wineId, { onlyIfEmpty: false });
     if (keep.result === "set" && keep.keep) filled.push(openKeepFilled(keep.keep));
   }
-  const found = wine.type === "spirit" ? null : await researchWineWeb({
+  const wineInput: WineResearchInput = {
     wine: {
       name: wine.name,
       producer: wine.producer,
@@ -201,9 +201,20 @@ export async function researchAndFillWine(
     vintages: gaps.vintages.map((v) => ({ year: v.year, knownGrapes: v.knownGrapes })),
     ...researchDocs(documents, gaps.vintages.map((v) => v.year)),
     ...researchPages(pages, gaps.vintages.map((v) => v.year), wine),
-  });
+  };
+  // Wein mit fälligem Profil: Stammdaten und Profil in EINEM Aufruf (eine Websuche statt zwei).
+  // Kommt nichts, gibt es keinen Ersatz-Aufruf – das Profil gilt als gesucht ohne Fund.
+  let prefetched: { profile: TasteProfileData | null } | undefined;
+  let found: WineResearch | null = null;
+  if (wine.type !== "spirit" && runTaste) {
+    const both = await researchWineAndTaste({ wine: wineInput, taste: { wine, year: profileYear, documents: tasteDocs, pages: tastePages } });
+    found = both?.wine ?? null;
+    prefetched = { profile: both?.profile ?? null };
+  } else if (wine.type !== "spirit") {
+    found = await researchWineWeb(wineInput);
+  }
   if (!found) {
-    const result = await taste();
+    const result = await taste(prefetched);
     await markResearched(db, wineId);
     return { status: filled.length || suggested ? "filled" : "nothing", filled, suggested, taste: result, tasteYear: profileYear, seconds: seconds() };
   }
@@ -285,11 +296,11 @@ export async function researchAndFillWine(
     }
   }
 
-  // Eigener Aufruf fürs Profil. Scheitert er, bleibt das Ergänzte gespeichert und wird gemeldet.
+  // Profil: aus dem gemeinsamen Aufruf bzw. eigener Aufruf. Scheitert er, bleibt das Ergänzte gespeichert und wird gemeldet.
   let tasteResult: ResearchOutcome["taste"];
   let tasteError: ResearchOutcome["error"];
   try {
-    tasteResult = await taste();
+    tasteResult = await taste(prefetched);
   } catch (error) {
     if (!filled.length && !suggested) throw error;
     console.error("taste research failed", wineId, error);

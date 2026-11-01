@@ -74,7 +74,14 @@ let missingWarned = false;
 
 export async function recordUsage(model: string, usage: ApiUsage | null | undefined, ctx: UsageContext = currentUsageContext()) {
   try {
-    await writer(usageRow(model, usage, ctx));
+    try {
+      await writer(usageRow(model, usage, ctx));
+    } catch (error) {
+      // Neuer Zweck vor der Migration (Check api_usage_purpose_check): als Stammdaten-Recherche zählen.
+      const message = error instanceof Error ? error.message : String(error);
+      if (ctx.purpose !== "research_wine_taste" || !/purpose_check|23514/.test(message)) throw error;
+      await writer(usageRow(model, usage, { ...ctx, purpose: "research_wine" }));
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // Vor der Migration fehlt die Tabelle: nur einmal pro Instanz melden.

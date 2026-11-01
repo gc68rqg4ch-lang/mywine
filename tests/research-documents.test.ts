@@ -107,8 +107,12 @@ test("Profil: PDF mit passendem Jahrgang geht mit, anderer Jahrgang nicht; ohne 
     { name: "andere.pdf", year: null, bytes: pdf("Vintage 2018") },
   ]);
   const outcome = await researchAndFillWine(db, W, "all", { taste: "always", year: 2019 });
+  // Ein gemeinsamer Aufruf (Stammdaten + Profil): Beilagen beider Teile, ohne Doppelte; die
+  // Profil-Regeln nennen nur die PDFs des Profiljahrgangs.
   const taste = calls.find((c) => c.tool === "taste")!;
-  assert.deepEqual(taste.docs.sort(), ["ficha-2019.pdf", "technik.pdf"]);
+  assert.deepEqual(taste.docs.sort(), ["andere.pdf", "ficha-2018.pdf", "ficha-2019.pdf", "technik.pdf"]);
+  const tastePart = taste.text.split("Teil 2 (Feld taste)")[1] ?? "";
+  assert.match(tastePart, /„ficha-2019\.pdf“ – Jahrgang 2019/);
   assert.match(taste.text, /„ficha-2019\.pdf“ – Jahrgang 2019; als Quelle mit url "dokument:ficha-2019\.pdf"/);
   assert.match(taste.text, /„technik\.pdf“ – Jahrgang 2019/);
   // Recherche der Weindaten: je Jahrgang der Recherche (2018 und 2019); „andere.pdf“ nennt eindeutig 2018
