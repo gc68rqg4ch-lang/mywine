@@ -3,7 +3,7 @@ import "server-only";
 // Antoines Tagestext: pro Person und Tag (Europe/Zurich) einmal von Claude geschrieben und in
 // daily_notes gespeichert. Jeden Morgen um 05:00 über /api/home/daily; fehlt er beim Öffnen der
 // Startseite, holt die App ihn einmal im Hintergrund nach. Ablauf: Zeile „pending“ anlegen (nur
-// einer schreibt), Daten laden, Claude fragen, „done“ bzw. „failed“ speichern. Beim API-Limit
+// einer schreibt), Daten laden, Claude fragen (ohne Denken; abgeschnitten → einmal neu), „done“ bzw. „failed“ speichern. Beim API-Limit
 // „failed“ – bis morgen gibt es den Ersatztext, kein neuer Versuch.
 
 import { withUsage } from "@/lib/ai/usage";
@@ -11,6 +11,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { usageLimit } from "@/lib/ai/api-errors";
+import { NO_THINKING, TruncatedOutput, retryOnTruncation } from "@/lib/ai/structured";
 import { RECOGNITION_MODEL, anthropic } from "@/lib/ingest/recognize";
 import { noteContext, previousTexts } from "./compose";
 import { loadHomeData, missingNotesTable } from "./data";
@@ -22,6 +23,11 @@ type Db = SupabaseClient<Database>;
 
 /** Klein und günstig: Haiku. */
 export const DAILY_MODEL = RECOGNITION_MODEL;
+/**
+ * Höchstens so viele Ausgabe-Tokens: der Text hat ~200 (600–700 Zeichen), ohne Denken bleibt
+ * genug Reserve – auch wenn die Eingabe (Texte der letzten 7 Tage) weiter wächst.
+ */
+export const DAILY_MAX_TOKENS = 1000;
 /** Eine „pending“-Zeile älter als das gilt als abgebrochen (z. B. Zeitlimit) und darf neu. */
 export const PENDING_STALE_MS = 10 * 60 * 1000;
 /** Fehlertext beim API-Limit (kein neuer Versuch bis morgen). */
@@ -29,18 +35,23 @@ export const USAGE_LIMIT_ERROR = "usage_limit";
 
 export type Generate = (system: string, prompt: string) => Promise<string>;
 
-/** Claude: Text mit Platzhaltern (strukturiert, Schema DailyNoteSchema). */
+/**
+ * Claude: Text mit Platzhaltern (strukturiert, Schema DailyNoteSchema). Ohne Denken – sonst
+ * verbraucht Haikus adaptives Denken den Grossteil von max_tokens (siehe ai/structured.ts).
+ */
 export const claudeGenerate: Generate = async (system, prompt) => {
   const response = await withUsage({ purpose: "daily_note" }, () =>
     anthropic().beta.messages.parse({
       model: DAILY_MODEL,
-      max_tokens: 2000,
+      max_tokens: DAILY_MAX_TOKENS,
+      ...NO_THINKING,
       system,
       messages: [{ role: "user", content: prompt }],
       output_config: { format: betaZodOutputFormat(DailyNoteSchema) },
     }),
   );
-  if (response.stop_reason === "refusal" || response.stop_reason === "max_tokens" || !response.parsed_output) {
+  if (response.stop_reason === "max_tokens") throw new TruncatedOutput(DAILY_MODEL);
+  if (response.stop_reason === "refusal" || !response.parsed_output) {
     throw new Error(`${DAILY_MODEL}: kein gültiges Ergebnis (${response.stop_reason})`);
   }
   return response.parsed_output.text.trim();
@@ -98,7 +109,8 @@ export async function generateDailyNote(db: Db, person: Person, at: Date | numbe
     const data = await loadHomeData(db, person.id, now);
     const context = noteContext(data, person.name, now);
     const prompt = dailyPrompt({ ...context.prompt, person: person.name, refs: context.refs, previous: previousTexts(data.notes ?? [], today) });
-    const text = await (options.generate ?? claudeGenerate)(DAILY_SYSTEM, prompt);
+    // Abgeschnitten (max_tokens, unvollständiges JSON): im selben Lauf einmal neu; API-Limit nicht.
+    const text = await retryOnTruncation(() => (options.generate ?? claudeGenerate)(DAILY_SYSTEM, prompt), `daily note ${person.id}`);
     if (!text) throw new Error("leerer Text");
     // Nur die genannten Weine speichern; unbekannte Kürzel fallen beim Anzeigen weg (geloggt).
     const used = new Set(placeholdersIn(text));

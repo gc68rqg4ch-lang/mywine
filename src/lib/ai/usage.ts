@@ -93,13 +93,19 @@ const isMessagesCall = (url: string, init?: RequestInit) => (init?.method ?? "GE
  * fetch für den Anthropic-Client: leitet weiter und protokolliert danach den Verbrauch jeder
  * erfolgreichen Messages-Antwort (JSON, nicht Stream). Nutzt das globale fetch zur Laufzeit.
  */
+/** Kurzbeschreibung der Antwort-Blöcke: „thinking(0 Zeichen) text(512 Zeichen)“. */
+export const outputBlocks = (content: { type?: string; text?: string; thinking?: string }[] | undefined) =>
+  (content ?? []).map((b) => `${b.type ?? "?"}(${(b.text ?? b.thinking ?? "").length} Zeichen)`).join(" ");
+
 export const meteredFetch: typeof fetch = async (input, init) => {
   const response = await globalThis.fetch(input, init);
   try {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     if (response.ok && isMessagesCall(url, init) && /json/i.test(response.headers.get("content-type") ?? "")) {
-      const body = (await response.clone().json()) as { model?: string; usage?: ApiUsage };
+      const body = (await response.clone().json()) as { model?: string; usage?: ApiUsage; stop_reason?: string; content?: { type?: string; text?: string; thinking?: string }[] };
       if (body?.usage) await recordUsage(body.model ?? "unknown", body.usage);
+      // Abgeschnitten: protokollieren, wofür die Ausgabe-Tokens gingen (Blockarten, Textlänge).
+      if (body?.stop_reason === "max_tokens") console.warn("claude max_tokens", body.model, outputBlocks(body.content), body.usage?.output_tokens);
     }
   } catch (error) {
     console.error("api usage read failed", error instanceof Error ? error.message : error);

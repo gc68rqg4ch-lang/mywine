@@ -9,6 +9,7 @@ import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { anthropic, RECOGNITION_MODEL } from "@/lib/ingest/recognize";
 import { withUsage } from "@/lib/ai/usage";
+import { NO_THINKING, TruncatedOutput, retryOnTruncation } from "@/lib/ai/structured";
 import type { ShoppingCandidate } from "./serpapi";
 import { brandFromProducer, brandInName, genericName, sizeFromText } from "./price-match";
 
@@ -123,18 +124,30 @@ export function producerCheck(bottle: Pick<JudgeBottle, "name" | "producer">, c:
   return { ...v, verdict: "no", reason: `anderer bzw. kein Produzent (nicht ${brand})` };
 }
 
-/** Haiku urteilt über alle Kandidaten in einem Aufruf; fehlende Urteile gelten als no. */
+/** Höchstens so viele Ausgabe-Tokens: je Kandidat ~40 (bis 30 Kandidaten), ohne Denken mit Reserve. */
+export const JUDGE_MAX_TOKENS = 4000;
+
+/**
+ * Haiku urteilt über alle Kandidaten in einem Aufruf; fehlende Urteile gelten als no. Ohne Denken
+ * (die harten Prüfungen im Code entscheiden Grösse, Jahrgang, Ausführung und Produzent); bei einer
+ * abgeschnittenen Antwort einmal neu.
+ */
 export async function judgeCandidates(bottle: JudgeBottle, candidates: ShoppingCandidate[]): Promise<CandidateVerdict[]> {
   if (!candidates.length) return [];
-  const response = await withUsage({ purpose: "research_price" }, () =>
-    anthropic().beta.messages.parse({
-      model: JUDGE_MODEL,
-      max_tokens: 4000,
-      system: JUDGE_SYSTEM,
-      messages: [{ role: "user", content: judgePrompt(bottle, candidates) }],
-      output_config: { format: betaZodOutputFormat(JudgeSchema) },
-    }),
-  );
+  const response = await retryOnTruncation(async () => {
+    const r = await withUsage({ purpose: "research_price" }, () =>
+      anthropic().beta.messages.parse({
+        model: JUDGE_MODEL,
+        max_tokens: JUDGE_MAX_TOKENS,
+        ...NO_THINKING,
+        system: JUDGE_SYSTEM,
+        messages: [{ role: "user", content: judgePrompt(bottle, candidates) }],
+        output_config: { format: betaZodOutputFormat(JudgeSchema) },
+      }),
+    );
+    if (r.stop_reason === "max_tokens") throw new TruncatedOutput(JUDGE_MODEL);
+    return r;
+  }, "price judge");
   const judged = response.parsed_output?.candidates ?? [];
   return candidates.map((_, i) => {
     const j = judged.find((x) => x.index === i);

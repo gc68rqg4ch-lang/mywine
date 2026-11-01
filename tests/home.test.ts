@@ -19,6 +19,7 @@ import { zurichParts } from "@/lib/home/dates";
 import { DAILY_SYSTEM } from "@/lib/home/prompt";
 import { drunkByType, spending, stockUnits, unitKey, type DrunkItem, type Purchase, type StockItem } from "@/lib/home/summary";
 import { generateAllDailyNotes, generateDailyNote, USAGE_LIMIT_ERROR } from "@/lib/home/daily";
+import { TruncatedOutput, isTruncation, retryOnTruncation } from "@/lib/ai/structured";
 import { DAILY_SECRET_HEADER, workerSecretFrom } from "@/lib/secret";
 import { findOrphanFiles } from "@/lib/media/orphans";
 import { countUnionParams, MAX_UNION_PARAMS } from "@/lib/ai/schema-limits";
@@ -291,6 +292,58 @@ test("anderer Fehler: failed; der Cron versucht es nochmals, die Startseite nich
   claude = () => claudeText({ text: "Zweiter Versuch mit {{W1}}." });
   assert.equal(await generateDailyNote(db, { id: MICHEL, name: "Michel" }, NOW, { retryFailed: true }), "done");
   assert.equal(net.tables.daily_notes[0].text, "Zweiter Versuch mit {{W1}}.");
+});
+
+/** Abgeschnittene Antwort wie am 01.11.: stop_reason max_tokens, JSON mitten im Text zu Ende. */
+const truncated = () => ({
+  id: "m", type: "message", role: "assistant", model: "claude-haiku-5-5", stop_reason: "max_tokens", stop_sequence: null,
+  content: [{ type: "thinking", thinking: "", signature: "x" }, { type: "text", text: '{"text":"Guten Morgen, Michel. Heute w' }],
+  usage: { input_tokens: 5413, output_tokens: 2000 },
+});
+
+test("Abgeschnittene Antwort (max_tokens bzw. ungültiges JSON) → im selben Lauf ein zweiter Versuch, dann done", async () => {
+  reset();
+  let n = 0;
+  claude = () => (++n === 1 ? truncated() : claudeText({ text: "Guten Morgen, Michel. Heute würde ich {{W1}} öffnen." }));
+  assert.equal(await generateDailyNote(db, { id: MICHEL, name: "Michel" }, NOW), "done");
+  assert.equal(calls.length, 2, "genau ein zweiter Versuch");
+  assert.equal(net.tables.daily_notes[0].status, "done");
+  // Ohne Denken, mit passender Grenze
+  assert.deepEqual([calls[1].thinking, calls[1].max_tokens], [{ type: "disabled" }, 1000]);
+
+  // Zweimal abgeschnitten: failed (kein dritter Versuch)
+  reset();
+  claude = () => truncated();
+  assert.equal(await generateDailyNote(db, { id: MICHEL, name: "Michel" }, NOW), "failed");
+  assert.equal(calls.length, 2);
+  assert.match(String(net.tables.daily_notes[0].error), /abgeschnitten|parse/i);
+
+  // Nur ungültiges JSON (ohne stop_reason max_tokens), danach gültig
+  reset();
+  n = 0;
+  claude = () => (++n === 1 ? { ...truncated(), stop_reason: "end_turn" } : claudeText({ text: "Zweiter Versuch mit {{W1}}." }));
+  assert.equal(await generateDailyNote(db, { id: MICHEL, name: "Michel" }, NOW), "done");
+  assert.equal(calls.length, 2);
+  claude = () => claudeText({ text: "Guten Morgen, Michel. Heute würde ich {{W1}} öffnen." });
+});
+
+test("API-Limit: kein zweiter Versuch (USAGE_LIMIT_ERROR wie bisher)", async () => {
+  reset();
+  claude = () => claudeError(400, LIMIT) as never;
+  assert.equal(await generateDailyNote(db, { id: MICHEL, name: "Michel" }, NOW), "limit");
+  assert.equal(calls.length, 1);
+  assert.deepEqual([net.tables.daily_notes[0].status, net.tables.daily_notes[0].error], ["failed", USAGE_LIMIT_ERROR]);
+  claude = () => claudeText({ text: "Guten Morgen, Michel. Heute würde ich {{W1}} öffnen." });
+});
+
+test("Abbruch erkennen: max_tokens und unvollständiges JSON ja, API-Limit und andere Fehler nicht", async () => {
+  assert.ok(isTruncation(new TruncatedOutput("claude-haiku-5-5")));
+  assert.ok(isTruncation(new Error("Failed to parse structured output: SyntaxError: Unterminated string in JSON at position 508")));
+  assert.ok(!isTruncation(new Error("You have reached your specified API usage limits.")));
+  assert.ok(!isTruncation(new Error("boom")));
+  let tries = 0;
+  await assert.rejects(retryOnTruncation(async () => { tries++; throw new Error("boom"); }, "t"), /boom/);
+  assert.equal(tries, 1, "andere Fehler: kein zweiter Versuch");
 });
 
 test("ohne Migration (Tabelle fehlt): nichts erzeugen, die Seite zeigt den Ersatztext", async () => {

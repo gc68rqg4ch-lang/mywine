@@ -117,6 +117,8 @@ type Provider = "serpapi" | "serper";
 const calls: { provider: Provider; q: string }[] = [];
 let judge: Record<string, { v: "yes" | "variant" | "no"; reason?: string; size?: number; vintage?: number }> = {};
 let judgeCalls = 0;
+let truncateJudge = 0;
+const judgeBodies: Record<string, unknown>[] = [];
 let sonnetCalls = 0;
 const NOTHING = { found: false, same_wine: false, product_title: "", merchant: "", url: "", currency: "", price: 0, regular_price: 0, vintage: 0, size_ml: 0, quote: "", candidate_urls: [], reason: "" };
 const link = (x: Offer) => x.link ?? `https://www.${domainFor(x.source)}/p/${encodeURIComponent(x.title)}`;
@@ -125,6 +127,11 @@ const net: Net = {
   claude: (body) => {
     if ((body.output_config as { format?: unknown } | undefined)?.format) {
       judgeCalls++;
+      judgeBodies.push(body);
+      if (truncateJudge > 0) {
+        truncateJudge--;
+        return { id: "m", type: "message", role: "assistant", model: "claude-haiku-5-5", stop_reason: "max_tokens", stop_sequence: null, content: [{ type: "text", text: '{"candidates":[{"index":0,"same_pro' }], usage: { input_tokens: 900, output_tokens: 4000 } };
+      }
       const text = JSON.stringify(body.messages);
       const lines = [...text.matchAll(/\\n(\d+)\. ([^\\]+?) – /g)].map((m) => ({ index: Number(m[1]), title: m[2] }));
       const candidates = lines.map(({ index, title }) => {
@@ -663,4 +670,16 @@ test("Wein ohne Grösse: 75 cl gilt als bekannt (hartes Kriterium), Treffer dire
   const { finding, diagnostics } = await researchPrice({ name: "Pintia", producer: "Vega Sicilia", type: "red", country: "Spanien", region: "Toro", appellation: null }, 2019, null, null, { db, ...keys("serper") });
   assert.ok(finding.kind === "exact" && finding.amount === 64 && finding.sizeMl === 750, JSON.stringify(finding));
   assert.equal(diagnostics.shopping!.candidates.find((c) => c.price === 140)?.verdict, "variant", "Magnum: andere Grösse");
+});
+
+test("Preis-Abgleich: ohne Denken; abgeschnittene Antwort → ein zweiter Versuch", async () => {
+  reset();
+  judgeBodies.length = 0;
+  truncateJudge = 1;
+  answers.set("Noah's Mill 70cl", [o("Noah's Mill Bourbon Whiskey 70cl", "drinks.ch", 86.9)]);
+  judge = { "Noah's Mill": { v: "yes" } };
+  const { finding } = await researchPrice(spirit("Noah's Mill", "Willett Distillery"), null, 700, null, { db, ...keys("serper") });
+  assert.ok(finding.kind === "exact" && finding.amount === 86.9, JSON.stringify(finding));
+  assert.equal(judgeCalls, 2);
+  assert.deepEqual(judgeBodies.map((b) => [b.thinking, b.max_tokens]), [[{ type: "disabled" }, 4000], [{ type: "disabled" }, 4000]]);
 });
