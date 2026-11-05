@@ -5,7 +5,7 @@ import type { Tables } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
 import { canonicalProducer } from "@/lib/producers/load";
 import { bottleSizeOf, grapeNames, type StorageRoom, type WineProposal } from "./schema";
-import { sameProducerWines, similarWines } from "./wine-names";
+import { relatedWines, similarWines } from "./wine-names";
 
 type Wine = Tables<"wines">;
 
@@ -32,13 +32,14 @@ export async function findWine(db: AdminClient, name: string | null, producer: s
   return data;
 }
 
-/** Kandidaten für „Meinst du …?“; byProducer = nur gleicher Produzent und gleiche Art (Name anders). */
+/** Kandidaten für „Meinst du …?“; byProducer = gleiche Art, gleicher Produzent bzw. Name ↔ Produzent (Name anders). */
 export type SimilarWines<W> = W[] & { byProducer?: boolean };
 
 /**
  * Bestehende Weine trotz anderer Schreibweise (bis 3) – nur aufrufen, wenn findWine nichts findet.
  * Akzente, Füllwörter, Bodegas/Quinta/…, Produzent im Namen egal (siehe wine-names.ts). Sonst
- * Weine desselben Produzenten und derselben Art (byProducer) – z. B. Appellation statt Weinname.
+ * Weine derselben Art mit gleichem Produzenten bzw. Gutsname als Name ↔ Produzent (byProducer) –
+ * z. B. Appellation statt Weinname oder Besitzerfirma statt Weingut.
  */
 export async function findSimilarWines(
   db: AdminClient,
@@ -50,7 +51,7 @@ export async function findSimilarWines(
   const rows = data ?? [];
   const similar: SimilarWines<SimilarRow> = similarWines(wine.name, wine.producer, rows);
   if (similar.length) return similar;
-  const byProducer: SimilarWines<SimilarRow> = sameProducerWines(wine.producer, wine.type, wine.appellation, rows);
+  const byProducer: SimilarWines<SimilarRow> = relatedWines(wine, rows);
   if (byProducer.length) byProducer.byProducer = true;
   return byProducer;
 }

@@ -102,6 +102,36 @@ export function similarWines<W extends NamedWine>(name: string | null, producer:
 export type ProducerWine = NamedWine & { type?: string | null; appellation?: string | null };
 
 /**
+ * Kern eines Namens bzw. Produzenten: Wörter ohne Füllwörter und Zusätze wie Château/Domaine
+ * („Château Petit Gravet Aîné“ → „petit gravet aine“). Leer, wenn nichts übrig bleibt.
+ */
+export function nameCore(text: string | null | undefined) {
+  return words(text).filter((t) => !FILLERS.has(t) && !HOUSE_WORDS.has(t)).join(" ");
+}
+
+/**
+ * Derselbe Wein, einmal mit Gutsname als Name, einmal als Produzent: Kern des Namens des einen =
+ * Kern des Produzenten des anderen (in beide Richtungen). Nie Name gegen Name allein – sonst wäre
+ * jeder „Chardonnay“ eines anderen Produzenten ein Kandidat.
+ */
+export function nameMatchesProducer(a: { name: string | null; producer: string | null }, b: { name: string | null; producer: string | null }) {
+  const cross = (x: string | null, y: string | null) => {
+    const k = nameCore(x);
+    return k !== "" && k === nameCore(y);
+  };
+  return cross(a.name, b.producer) || cross(a.producer, b.name);
+}
+
+/** Gleiche Appellation zuerst, dann alphabetisch, höchstens limit (ohne Doppelte). */
+function rankCandidates<W extends ProducerWine>(wines: W[], appellation: string | null | undefined, limit: number): W[] {
+  const app = foldText(appellation);
+  const sameApp = (w: W) => (app && foldText(w.appellation) === app ? 1 : 0);
+  return [...new Map(wines.map((w) => [w.id, w])).values()]
+    .sort((a, b) => sameApp(b) - sameApp(a) || a.name.localeCompare(b.name, "de"))
+    .slice(0, limit);
+}
+
+/**
  * Weine desselben Produzenten (gleich nach Normalisierung, siehe producers/match.ts) und derselben
  * Art – Kandidaten, wenn weder Name noch Schreibweise passen (z. B. Appellation statt Gutsname:
  * „Saint-Émilion Grand Cru“ statt „La Dominique“). Gleiche Appellation zuerst, dann alphabetisch,
@@ -115,10 +145,21 @@ export function sameProducerWines<W extends ProducerWine>(
   limit = 3,
 ): W[] {
   if (!producer?.trim() || !type) return [];
-  const app = foldText(appellation);
-  const sameApp = (w: W) => (app && foldText(w.appellation) === app ? 1 : 0);
-  return wines
-    .filter((w) => w.type === type && sameProducer(w.producer, producer))
-    .sort((a, b) => sameApp(b) - sameApp(a) || a.name.localeCompare(b.name, "de"))
-    .slice(0, limit);
+  return rankCandidates(wines.filter((w) => w.type === type && sameProducer(w.producer, producer)), appellation, limit);
+}
+
+/**
+ * Kandidaten derselben Art aus beiden Regeln: gleicher Produzent (sameProducerWines) oder Name ↔
+ * Produzent („Château Petit Gravet Aîné“ von „Vignobles J.J. Nouvel“ ≈ „Petit Gravet Aîné“ von
+ * „Château Petit Gravet Aîné“). Ohne Doppelte, gleiche Appellation zuerst, höchstens limit. Ohne Art: keine.
+ */
+export function relatedWines<W extends ProducerWine>(
+  wine: { name: string | null; producer: string | null; type?: string | null; appellation?: string | null },
+  wines: W[],
+  limit = 3,
+): W[] {
+  if (!wine.type) return [];
+  const byProducer = sameProducerWines(wine.producer, wine.type, wine.appellation, wines, wines.length);
+  const byName = wines.filter((w) => w.type === wine.type && nameMatchesProducer(wine, w));
+  return rankCandidates([...byProducer, ...byName], wine.appellation, limit);
 }

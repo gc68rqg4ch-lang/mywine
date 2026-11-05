@@ -6,7 +6,7 @@ import "./env";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { claudeText, claudeTool, installNet, type Net } from "./stub-net";
-import { sameProducerWines } from "@/lib/ingest/wine-names";
+import { nameCore, relatedWines, sameProducerWines } from "@/lib/ingest/wine-names";
 import { normalizeProposal, type IngestState } from "@/lib/ingest/schema";
 import { continuePhotoPurchase, processTextJob, saveJob } from "@/lib/ingest/flow";
 import { ESTATE_NAME_RULE } from "@/lib/ingest/recognize";
@@ -193,4 +193,65 @@ test("Nur verkostet: gleicher Produzent, anderer Name → Rückfrage; Wahl häng
   await press("✅ Ja, speichern");
   assert.equal(net.tables.wines.length, 1, "kein neuer Wein");
   assert.equal(net.tables.wine_encounters[0]?.wine_id, DOM);
+});
+
+// --- Name ↔ Produzent: Gutsname einmal als Name, einmal als Produzent (Besitzerfirma als Produzent)
+
+const PG = "44444444-4444-4444-8444-444444444444";
+const petit = (extra: Record<string, unknown> = {}) => ({
+  id: PG, name: "Petit Gravet Aîné", producer: "Château Petit Gravet Aîné", type: "red", country: "Frankreich", region: "Bordeaux", appellation: AOC, alcohol_content: 14, grapes: [], want_to_buy: false, ...extra,
+});
+
+test("Regel Name ↔ Produzent: Kern ohne Füllwörter und Zusätze, beide Richtungen, nie Name gegen Name allein, gleiche Art", () => {
+  assert.equal(nameCore("Château Petit Gravet Aîné"), "petit gravet aine");
+  const stock = [petit()];
+  assert.deepEqual(relatedWines({ name: "Château Petit Gravet Aîné", producer: "Vignobles J.J. Nouvel", type: "red" }, stock).map((w) => w.id), [PG]);
+  // umgekehrt: Bestand mit Gutsname im Namen, Vorschlag mit Gutsname als Produzent
+  const reverse = [petit({ name: "Château Petit Gravet Aîné", producer: "Vignobles J.J. Nouvel" })];
+  assert.deepEqual(relatedWines({ name: "Petit Gravet Aîné", producer: "Château Petit Gravet Aîné", type: "red" }, reverse).map((w) => w.id), [PG]);
+  // gleicher Name, anderer Produzent: kein Kandidat
+  const chard = [{ id: "r", name: "Chardonnay", producer: "Rombauer", type: "white", appellation: null }];
+  assert.deepEqual(relatedWines({ name: "Chardonnay", producer: "Cuvaison", type: "white" }, chard), []);
+  // andere Art bzw. ohne Art: keiner
+  assert.deepEqual(relatedWines({ name: "Château Petit Gravet Aîné", producer: "Vignobles J.J. Nouvel", type: "white" }, stock), []);
+  assert.deepEqual(relatedWines({ name: "Château Petit Gravet Aîné", producer: "Vignobles J.J. Nouvel", type: null }, stock), []);
+  // über Produzent und über Name ↔ Produzent beim selben Wein → nur einmal
+  const both = [petit({ name: "Château Petit Gravet Aîné", producer: "Château Petit Gravet Aîné" })];
+  assert.deepEqual(relatedWines({ name: "Petit Gravet Aîné", producer: "Château Petit Gravet Aîné", type: "red" }, both).map((w) => w.id), [PG]);
+  // beide Regeln zusammen: gleiche Appellation zuerst, dann alphabetisch, höchstens 3
+  const mixed = [
+    wine("a", "Alpha", { producer: "Vignobles J.J. Nouvel", appellation: "Bordeaux" }),
+    wine("b", "Beta", { producer: "Vignobles J.J. Nouvel", appellation: "Bordeaux" }),
+    wine("c", "Gamma", { producer: "Vignobles J.J. Nouvel", appellation: "Bordeaux" }),
+    petit(),
+  ];
+  assert.deepEqual(relatedWines({ name: "Château Petit Gravet Aîné", producer: "Vignobles J.J. Nouvel", type: "red", appellation: AOC }, mixed).map((w) => w.id), [PG, "a", "b"]);
+});
+
+test("Text: «Château Petit Gravet Aîné» von Vignobles J.J. Nouvel → Rückfrage mit «Petit Gravet Aîné»; Wahl bucht auf den bestehenden Wein", async () => {
+  reset([petit()]);
+  await textIngest({ name: "Château Petit Gravet Aîné", producer: "Vignobles J.J. Nouvel", vintage_year: 2016 });
+  assert.equal(state().step, "similar");
+  assert.deepEqual(state().similar_ids, [PG]);
+  assert.match(sent().at(-1)!, /Ist das <b>«Petit Gravet Aîné» \(Château Petit Gravet Aîné\)<\/b>\? Sonst lege ich «Château Petit Gravet Aîné» neu an\./);
+  assert.deepEqual(lastButtons().map((b) => b.text), ["✅ Petit Gravet Aîné", "➕ Neuer Wein", "✖️ Abbrechen"]);
+  await press("✅ Petit Gravet Aîné");
+  assert.equal(job().matched_wine_id, PG);
+  assert.deepEqual([state().proposal.name, state().proposal.producer], ["Petit Gravet Aîné", "Château Petit Gravet Aîné"]);
+  await press("✅ Ja");
+  await runLater();
+  assert.equal(net.tables.wines.length, 1, "kein neuer Wein");
+  assert.equal(net.tables.inventory_items.at(-1)!.wine_id, PG);
+});
+
+test("Text: «Chardonnay» von Cuvaison neben «Chardonnay» von Rombauer → keine Rückfrage; andere Art → keine Rückfrage", async () => {
+  reset([wine("r", "Chardonnay", { producer: "Rombauer", type: "white", appellation: null })]);
+  await textIngest({ name: "Chardonnay", producer: "Cuvaison", type: "white" });
+  assert.notEqual(state().step, "similar");
+  assert.ok(!sent().some((t) => /Ist das|[Mm]einst du/.test(t)));
+
+  reset([petit()]);
+  await textIngest({ name: "Château Petit Gravet Aîné", producer: "Vignobles J.J. Nouvel", type: "white" });
+  assert.notEqual(state().step, "similar");
+  assert.ok(!sent().some((t) => /Ist das|[Mm]einst du/.test(t)));
 });
