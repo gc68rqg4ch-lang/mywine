@@ -58,6 +58,13 @@ const NAME_RULE =
   "Den Produzenten nicht in den Namen – ausser der Name besteht nur aus einer Qualitäts-/Reifestufe oder einem Gattungswort (Reserva, Gran Reserva, Grande Reserva, Riserva, Crianza, Reserve, Grand Vin, Cuvée, Tinto, Rosso): dann Produzent bzw. Marke davor, z. B. „Legaris Reserva“, „Protos Reserva“, „Pago de los Capellanes Reserva“ (ohne „Bodegas“).";
 
 /**
+ * Gilt für Foto und Text: Gutsname als Weinname (Grand Vin eines Châteaus) – nicht die Appellation;
+ * Appellation bzw. Rebsorte nur, wenn der Wein weder eigenen Namen noch den Gutsnamen trägt.
+ */
+export const ESTATE_NAME_RULE =
+  "Ist der Name des Weinguts zugleich der Name des Weins (z. B. der Grand Vin eines Bordeaux-Châteaus), ist name dieser Name ohne „Château“, „Domaine“ o. ä. – z. B. name „La Dominique“, Produzent „Château La Dominique“; name „Tour de Pez“, Produzent „Château Tour de Pez“. Appellation und Klassifikation (Saint-Émilion Grand Cru, Grand Cru Classé, Cru Bourgeois, Premier Cru, DOCG …) gehören in appellation, nie in name. Die Appellation oder Rebsorte (wie auf dem Etikett hervorgehoben) ist name nur, wenn der Wein weder einen eigenen Namen noch den Gutsnamen als Weinnamen trägt.";
+
+/**
  * Gilt für Foto und Text: Name vollständig, bei Spirituosen mit Marke, wenn sie Teil des
  * Produktnamens ist; Grösse und Alkohol nur, was dasteht (keine Standardwerte).
  */
@@ -76,7 +83,7 @@ const RECOGNITION_SYSTEM = `Du liest Weinetiketten für eine private Weinsammlun
 Du bekommst Fotos der Vorder- und meist auch der Rückseite derselben Flasche.
 Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. Land aus "Product of Spain").
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
-- name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist. ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE}
+- name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} ${ESTATE_NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE}
 - country: ${COUNTRY_HINT} (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
 - ${PRODUCER_HINT}.
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira – das ist Wein), spirit (Spirituose: Whisky, Grappa, Likör, Obstbrand, Cognac/Brandy, Rum, Gin, Vodka, Tequila/Mezcal, Kräuterschnaps).
@@ -550,7 +557,7 @@ export async function enrichFromWeb(proposal: WineProposal): Promise<{
 
 const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in der Schweiz aus einer kurzen Nachricht, z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“.
 Übernimm nur, was in der Nachricht steht oder sich eindeutig daraus ergibt; erfinde nichts.
-- name: Weinname ohne Jahrgang. ${NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
+- name: Weinname ohne Jahrgang. ${NAME_RULE} ${ESTATE_NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500, „50 cl“ = 500). ${SIZE_ALCOHOL_RULE}
 - ${COUNTRY_HINT}.
 - ${PRODUCER_HINT}.
@@ -625,7 +632,7 @@ export async function applyCorrection(
 
 const TASTED_SYSTEM = (today: string) => `Du erfasst für eine private Weinsammlung in der Schweiz einen Wein, den jemand irgendwo verkostet hat (Restaurant, Bar, bei Freunden), aus einer kurzen Nachricht – z. B. „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne, würd ich kaufen“.
 Übernimm nur, was in der Nachricht steht; erfinde nichts. Heute ist ${today}.
-- name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null). vintage_year nur, wenn genannt (sonst null).
+- name: Weinname ohne Jahrgang. ${NAME_RULE} ${ESTATE_NAME_RULE} producer nur, wenn genannt (sonst null). vintage_year nur, wenn genannt (sonst null).
 - type, country, region nur, wenn genannt bzw. eindeutig. ${COUNTRY_HINT}.
 - tasting: Datum (heute/gestern umrechnen, sonst leer), Ort, Preis mit Einheit (Flasche/Glas) und Währung, Anlass, Begleitung, Notiz, Sterne der schreibenden Person (-1 = nicht genannt), want_to_buy.`;
 

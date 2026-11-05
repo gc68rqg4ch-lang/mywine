@@ -280,6 +280,9 @@ export const T = {
     pick([`Den kenne ich vielleicht schon: Meinst du <b>${wine}</b>?`, `Meinst du <b>${wine}</b>? Den habe ich schon bei dir.`, `Ich glaube, den gibt es schon – meinst du <b>${wine}</b>?`], random),
   similarMany: (random?: () => number) =>
     pick(["Ich habe ähnliche Weine bei dir gefunden – meinst du einen davon?", "Den kenne ich vielleicht schon. Meinst du einen von diesen?"], random),
+  /** Gleicher Produzent, anderer Name: „Ist das «X» (P)? Sonst lege ich «Y» neu an.“ – Werte schon entschärft (HTML). */
+  similarProducer: (wines: string[], typed: string) => `Ist das ${wines.map((w) => `<b>${w}</b>`).join(" bzw. ")}? Sonst lege ich «${typed}» neu an.`,
+  similarProducerNew: "➕ Neuer Wein",
   similarYes: "✅ Ja, dieser",
   similarNo: "➕ Nein, neuer Wein",
   whichWine: (name: string) => `Es gibt mehrere Weine „${e(name)}“. Welcher ist es?`,

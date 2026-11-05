@@ -46,6 +46,7 @@ import {
   restockKeyboard,
   similarKeyboard,
   similarLabel,
+  producerWineLabel,
   textSummaryMessage,
   producerMatchKeyboard,
   sizeKeyboard,
@@ -64,6 +65,7 @@ import { resolveProducer } from "@/lib/producers/load";
 import {
   createInventoryItem,
   findSimilarWines,
+  type SimilarWines,
   findWine,
   listVendors,
   mergeWithKnownWine,
@@ -202,7 +204,7 @@ export async function continuePhotoPurchase(
     };
 
     // Kein exakter Treffer, aber ein ähnlicher bestehender Wein (andere Schreibweise): erst fragen.
-    const similar = known ? [] : await findSimilarWines(db, proposal.name, proposal.producer);
+    const similar = known ? [] : await findSimilarWines(db, proposal);
     const { error } = await db
       .from("ingest_jobs")
       .update({
@@ -214,7 +216,7 @@ export async function continuePhotoPurchase(
       .eq("id", jobId);
     if (error) throw error;
 
-    if (similar.length) await askSimilar(chatId, jobId, similar);
+    if (similar.length) await askSimilar(chatId, jobId, similar, proposal.name);
     else await sendMessage(chatId, proposalMessage(state, Boolean(known), await summaryExtras(db, known?.id ?? null, state)), reviewKeyboard(jobId));
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
@@ -845,7 +847,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
     };
     // Jahrgang zuerst: davon hängt ab, ob es ein Nachkauf ist.
     // Kein exakter Treffer, aber ein ähnlicher bestehender Wein: zuerst „Meinst du …?“
-    const similar = known ? [] : await findSimilarWines(db, proposal.name, proposal.producer);
+    const similar = known ? [] : await findSimilarWines(db, proposal);
     // Neuer Wein: Produzent mit den vorhandenen abgleichen (gleich → deren Schreibweise, ähnlich → Rückfrage).
     if (!known && !similar.length) Object.assign(base, await producerPatch(db, base, null));
     const step: IngestStep = similar.length ? "similar" : restockCandidate && !needsVintage(base) ? "restock" : textStep(base);
@@ -869,7 +871,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
 
     await sendMessage(chatId, wineSummaryLines(state).join("\n"));
     if (step === "similar") {
-      await askSimilar(chatId, jobId, similar);
+      await askSimilar(chatId, jobId, similar, proposal.name);
     } else if (step === "restock") {
       await sendMessage(
         chatId,
@@ -930,10 +932,10 @@ export async function setProducer(db: AdminClient, job: IngestJob, chatId: numbe
   let proposal: WineProposal = { ...state.proposal, name: completeWineName(state.proposal.name, cleaned), producer: cleaned };
   const known = await findWine(db, proposal.name, proposal.producer);
   if (known) proposal = mergeWithKnownWine(proposal, known);
-  const similar = known || state.new_wine ? [] : await findSimilarWines(db, proposal.name, proposal.producer);
+  const similar = known || state.new_wine ? [] : await findSimilarWines(db, proposal);
   if (similar.length) {
     const next = await advanceJob(db, job, "producer", { step: "similar", proposal, similar_ids: similar.map((w) => w.id) });
-    if (next) await askSimilar(chatId, job.id, similar);
+    if (next) await askSimilar(chatId, job.id, similar, proposal.name);
     return;
   }
   if (known && (await inStock(db, known.id, proposal.vintage_year))) {
@@ -961,7 +963,12 @@ function textStep(state: IngestState): IngestStep {
   return nextPurchaseStep(state);
 }
 
-async function askSimilar(chatId: number, jobId: string, wines: { name: string; producer: string | null }[]) {
+async function askSimilar(chatId: number, jobId: string, wines: SimilarWines<{ name: string; producer: string | null }>, typed: string | null) {
+  if (wines.byProducer) {
+    const text = T.similarProducer(wines.map((w) => escapeHtml(producerWineLabel(w))), escapeHtml(typed ?? ""));
+    await sendMessage(chatId, text, similarKeyboard(jobId, wines, true));
+    return;
+  }
   const text = wines.length === 1 ? T.similarOne(escapeHtml(similarLabel(wines[0]))) : T.similarMany();
   await sendMessage(chatId, text, similarKeyboard(jobId, wines));
 }

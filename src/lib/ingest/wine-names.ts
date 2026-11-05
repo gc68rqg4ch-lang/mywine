@@ -6,6 +6,7 @@
 
 import { foldText } from "@/lib/text/fold";
 import { brandFromProducer, brandInName } from "@/lib/research/price-match";
+import { sameProducer } from "@/lib/producers/match";
 
 /** Qualitäts-/Reifestufen und Gattungswörter – allein kein vollständiger Weinname. */
 const GENERIC = new Set([
@@ -95,5 +96,29 @@ export function similarWines<W extends NamedWine>(name: string | null, producer:
   return wines
     .filter((w) => wineKey(w.name, w.producer) === key)
     .sort((a, b) => a.name.localeCompare(b.name, "de"))
+    .slice(0, limit);
+}
+
+export type ProducerWine = NamedWine & { type?: string | null; appellation?: string | null };
+
+/**
+ * Weine desselben Produzenten (gleich nach Normalisierung, siehe producers/match.ts) und derselben
+ * Art – Kandidaten, wenn weder Name noch Schreibweise passen (z. B. Appellation statt Gutsname:
+ * „Saint-Émilion Grand Cru“ statt „La Dominique“). Gleiche Appellation zuerst, dann alphabetisch,
+ * höchstens limit. Ohne Produzent oder Art: keine.
+ */
+export function sameProducerWines<W extends ProducerWine>(
+  producer: string | null,
+  type: string | null | undefined,
+  appellation: string | null | undefined,
+  wines: W[],
+  limit = 3,
+): W[] {
+  if (!producer?.trim() || !type) return [];
+  const app = foldText(appellation);
+  const sameApp = (w: W) => (app && foldText(w.appellation) === app ? 1 : 0);
+  return wines
+    .filter((w) => w.type === type && sameProducer(w.producer, producer))
+    .sort((a, b) => sameApp(b) - sameApp(a) || a.name.localeCompare(b.name, "de"))
     .slice(0, limit);
 }

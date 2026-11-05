@@ -5,7 +5,7 @@ import type { Tables } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
 import { canonicalProducer } from "@/lib/producers/load";
 import { bottleSizeOf, grapeNames, type StorageRoom, type WineProposal } from "./schema";
-import { similarWines } from "./wine-names";
+import { sameProducerWines, similarWines } from "./wine-names";
 
 type Wine = Tables<"wines">;
 
@@ -32,16 +32,29 @@ export async function findWine(db: AdminClient, name: string | null, producer: s
   return data;
 }
 
+/** Kandidaten für „Meinst du …?“; byProducer = nur gleicher Produzent und gleiche Art (Name anders). */
+export type SimilarWines<W> = W[] & { byProducer?: boolean };
+
 /**
  * Bestehende Weine trotz anderer Schreibweise (bis 3) – nur aufrufen, wenn findWine nichts findet.
- * Akzente, Füllwörter, Bodegas/Quinta/…, Produzent im Namen egal (siehe wine-names.ts).
+ * Akzente, Füllwörter, Bodegas/Quinta/…, Produzent im Namen egal (siehe wine-names.ts). Sonst
+ * Weine desselben Produzenten und derselben Art (byProducer) – z. B. Appellation statt Weinname.
  */
-export async function findSimilarWines(db: AdminClient, name: string | null, producer: string | null) {
-  if (!name?.trim()) return [];
-  const { data, error } = await db.from("wines").select("id, name, producer, type, country");
+export async function findSimilarWines(
+  db: AdminClient,
+  wine: Pick<WineProposal, "name" | "producer"> & Partial<Pick<WineProposal, "type" | "appellation">>,
+) {
+  if (!wine.name?.trim()) return [] as SimilarWines<SimilarRow>;
+  const { data, error } = await db.from("wines").select("id, name, producer, type, country, appellation");
   if (error) throw error;
-  return similarWines(name, producer, data ?? []);
+  const rows = data ?? [];
+  const similar: SimilarWines<SimilarRow> = similarWines(wine.name, wine.producer, rows);
+  if (similar.length) return similar;
+  const byProducer: SimilarWines<SimilarRow> = sameProducerWines(wine.producer, wine.type, wine.appellation, rows);
+  if (byProducer.length) byProducer.byProducer = true;
+  return byProducer;
 }
+type SimilarRow = Pick<Wine, "id" | "name" | "producer" | "type" | "country" | "appellation">;
 
 /**
  * Ergänzt leere Felder des Vorschlags aus den Stammdaten eines bekannten Weins.
