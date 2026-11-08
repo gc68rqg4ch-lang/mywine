@@ -123,7 +123,7 @@ test("Jahrgang nur dieser Charge: Fotos dieser Flasche ziehen mit (Hinweis und M
   assert.ok(prep.ok, JSON.stringify(prep));
   assert.ok(prep.preview.notes.some((n) => /^Nur diese Charge – Fotos dieser Flasche ziehen mit; Bewertungen und Verkostungen bleiben bei 2019\.$/.test(n)), JSON.stringify(prep.preview.notes));
   // Migration: im Charge-Zweig (vor dessen return) nur die Fotos dieser Charge, keine Bewertungen/Verkostungen
-  const sql = readFileSync("supabase/migrations/20261108120000_change_vintage_item_media.sql", "utf8");
+  const sql = readFileSync("supabase/migrations/20261108203837_change_vintage_item_media.sql", "utf8");
   const branch = sql.slice(sql.indexOf("if p_item_id is not null then"), sql.indexOf("return;\n  end if;\n\n  -- Ganzen Jahrgang"));
   assert.match(branch, /update public\.wine_media set vintage_year = p_to\s+where inventory_item_id = p_item_id and wine_id = p_wine_id;/);
   assert.doesNotMatch(branch, /wine_ratings|wine_tastings|wine_encounters/);
