@@ -7,7 +7,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 import type { Database } from "@/lib/database.types";
-import { pickLabels, thumbPathFor, vintagePhotos, type MediaKind, type MediaRow } from "./pick";
+import { pickLabels, thumbPathFor, vintagePhotos, winePagePhotos, type MediaKind, type MediaRow } from "./pick";
 import { mediaUrl } from "./url";
 
 type Db = SupabaseClient<Database>;
@@ -175,26 +175,37 @@ export async function loadLabelPhotos(db: Db, wineIds: string[] | null) {
 /**
  * Fotos eines Jahrgangs für die Weinseite (Vorderseite, Rückseite, weitere). Ältere
  * Bot-Fotos stehen nur in inventory_items.photo_urls – die kommen ohne Vorschaubild dazu.
+ * Hat der Jahrgang gar keine Fotos: dieselben Etiketten wie die Liste (winePagePhotos);
+ * labelFrom = deren Jahrgang (null = ohne Jahrgang) für den Hinweis, sonst undefined.
  */
-export async function loadVintagePhotos(db: Db, wineId: string, year: number | null, itemIds: string[]) {
+export async function loadVintagePhotos(
+  db: Db,
+  wineId: string,
+  year: number | null,
+  itemIds: string[],
+): Promise<ViewPhoto[] & { labelFrom?: number | null }> {
   const [rows, legacy] = await Promise.all([
     loadRows(db, [wineId], ["label_front", "label_back", "photo"]),
     itemIds.length
       ? db.from("inventory_items").select("photo_urls").in("id", itemIds)
       : Promise.resolve({ data: [] as { photo_urls: string[] }[] }),
   ]);
-  const media = vintagePhotos(rows, year);
+  const own = vintagePhotos(rows, year);
   const known = new Set(rows.map((r) => r.storage_path));
   const legacyPaths = [...new Set((legacy.data ?? []).flatMap((r) => r.photo_urls))].filter(
     (p) => !/^[a-z]+:\/\//i.test(p) && !known.has(p),
   );
   const external = [...new Set((legacy.data ?? []).flatMap((r) => r.photo_urls))].filter((p) => p.startsWith("https://"));
 
+  // Keine eigenen Fotos (auch keine alten aus photo_urls): Etiketten wie in der Liste.
+  const fallback = own.length || legacyPaths.length || external.length ? null : winePagePhotos(rows, year);
+  const media = fallback ? fallback.photos : own;
   const urls = photoUrls([
     ...media.flatMap((r) => [r.storage_path, ...(r.thumb_path ? [r.thumb_path] : [])]),
     ...legacyPaths,
   ]);
-  const photos: ViewPhoto[] = media.flatMap((r) => toView(r, urls) ?? []);
+  const photos: ViewPhoto[] & { labelFrom?: number | null } = media.flatMap((r) => toView(r, urls) ?? []);
+  if (fallback && photos.length) photos.labelFrom = fallback.from;
   for (const p of legacyPaths) {
     const url = urls.get(p);
     if (url) photos.push({ id: p, kind: "photo", thumb: url, full: url, legacy: true });

@@ -3,6 +3,7 @@
 // Bot-Vorschlag mit [Ja]. Supabase und Telegram per fetch-Stub. Ausführen: npm test
 import "./env";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { installNet, type Net } from "./stub-net";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -115,6 +116,18 @@ test("Jahrgang: Ziel existiert → Hinweis aufs Zusammenführen; ausführen übe
   assert.ok(done.ok && /zusammengeführt/.test(done.message));
   assert.deepEqual(rpcCalls.at(-1), { p_wine_id: W, p_from: 2019, p_to: 2018 });
   assert.ok(!(await prepareEdit(db, { kind: "vintage", wineId: W, from: 2019, to: 1700 })).ok);
+});
+
+test("Jahrgang nur dieser Charge: Fotos dieser Flasche ziehen mit (Hinweis und Migration), Bewertungen/Verkostungen bleiben", async () => {
+  const prep = await prepareEdit(db, { kind: "batchVintage", itemId: I, to: 2017 });
+  assert.ok(prep.ok, JSON.stringify(prep));
+  assert.ok(prep.preview.notes.some((n) => /^Nur diese Charge – Fotos dieser Flasche ziehen mit; Bewertungen und Verkostungen bleiben bei 2019\.$/.test(n)), JSON.stringify(prep.preview.notes));
+  // Migration: im Charge-Zweig (vor dessen return) nur die Fotos dieser Charge, keine Bewertungen/Verkostungen
+  const sql = readFileSync("supabase/migrations/20261108120000_change_vintage_item_media.sql", "utf8");
+  const branch = sql.slice(sql.indexOf("if p_item_id is not null then"), sql.indexOf("return;\n  end if;\n\n  -- Ganzen Jahrgang"));
+  assert.match(branch, /update public\.wine_media set vintage_year = p_to\s+where inventory_item_id = p_item_id and wine_id = p_wine_id;/);
+  assert.doesNotMatch(branch, /wine_ratings|wine_tastings|wine_encounters/);
+  assert.match(sql, /update public\.wine_media\s+set vintage_year = p_to where wine_id = p_wine_id and vintage_year is not distinct from p_from;/, "ganzer Jahrgang wie bisher");
 });
 
 test("Formular (App): Charge mit Preis, Lagerort und Jahrgang → drei Bearbeitungen; unveränderte fallen weg", async () => {

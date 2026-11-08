@@ -110,6 +110,12 @@ test("Listen und Weinseite: Foto-URLs der Route, kein Signier-Aufruf", async () 
     assert.equal(all(W, 2019)?.front.id, "m1", "null = alle Weine (Bestand lädt gleichzeitig)");
     const photos = await loadVintagePhotos(db, W, 2019, ["i1"]);
     assert.deepEqual(photos.map((p) => p.thumb), [`/media/wine-photos/app/${W}/a.thumb.webp`, `/media/wine-photos/app/${W}/b.thumb.webp`]);
+    assert.equal(photos.labelFrom, undefined, "eigene Fotos: kein Hinweis");
+    // Jahrgang ohne eigene Fotos: dieselben Etiketten wie die Liste, mit Jahrgang für den Hinweis
+    const other = await loadVintagePhotos(db, W, 1991, []);
+    assert.deepEqual(other.map((p) => p.id), ["m1", "m2"]);
+    assert.equal(other.labelFrom, 2019);
+    assert.equal(pick(W, 1991)?.front.id, "m1", "Liste zeigt dasselbe");
     assert.ok(!requests.some((r) => r.startsWith("/storage/")), `kein Storage-Aufruf: ${requests.join(", ")}`);
   } finally {
     globalThis.fetch = base;

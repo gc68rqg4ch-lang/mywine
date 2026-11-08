@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { labelKinds, newestVintage, pickLabels, thumbPathFor, vintagePhotos, type MediaRow } from "@/lib/media/pick";
+import { labelFromHint, labelKinds, newestVintage, pickLabels, thumbPathFor, vintagePhotos, winePagePhotos, type MediaRow } from "@/lib/media/pick";
 
 let n = 0;
 const row = (p: Partial<MediaRow>): MediaRow => ({
@@ -55,4 +55,24 @@ test("vintagePhotos, newestVintage, thumbPathFor", () => {
   assert.equal(newestVintage([]), undefined);
   assert.equal(thumbPathFor("telegram/abc/12.jpg"), "telegram/abc/12.thumb.webp");
   assert.equal(thumbPathFor("app/w/x.y/z"), "app/w/x.y/z.thumb.webp");
+});
+
+test("winePagePhotos: eigene Fotos des Jahrgangs haben Vorrang; sonst dieselben Etiketten wie die Liste mit Hinweis", () => {
+  const f91 = row({ vintage_year: 1991, inventory_item_id: "i91" });
+  const fNv = row({ vintage_year: null });
+  const bNv = row({ kind: "label_back", vintage_year: null });
+  const p91 = row({ kind: "photo", vintage_year: 1991 });
+  // Jahrgang 1991 ohne eigene Fotos, Etikett ohne Jahrgang → dieses, wie pickLabels (Liste)
+  assert.deepEqual(winePagePhotos([fNv, bNv], 1991), { photos: [fNv, bNv], from: null });
+  assert.deepEqual(pickLabels([fNv, bNv], 1991), { front: fNv, back: bNv }, "Liste zeigt dasselbe");
+  // anderer Jahrgang mit Fotos
+  const f20 = row({ vintage_year: 2020 });
+  assert.deepEqual(winePagePhotos([f20, fNv], 2018), { photos: [f20], from: 2020 });
+  // eigene Fotos (auch nur „Weiteres“) → nur diese, kein Hinweis
+  assert.deepEqual(winePagePhotos([f91, fNv, bNv, f20], 1991), { photos: [f91] });
+  assert.deepEqual(winePagePhotos([p91, f20], 1991), { photos: [p91] });
+  // gar keine Vorderseite → nichts
+  assert.deepEqual(winePagePhotos([bNv], 1991), { photos: [] });
+  assert.equal(labelFromHint(1991), "Etikett von 1991");
+  assert.equal(labelFromHint(null), "Etikett ohne Jahrgang");
 });

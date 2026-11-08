@@ -34,6 +34,7 @@ import { loadGrapeShares } from "@/lib/grapes/store";
 import { loadDocuments } from "@/lib/media/documents";
 import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
+import { labelFromHint } from "@/lib/media/pick";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { EditUnit, EditUnits } from "@/components/edit-unit";
 import { SPIRIT_DETAIL_FIELDS, WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, grapeLine, priceDetails, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
@@ -468,7 +469,8 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 wineId={wine.id}
                 vintageYear={year}
                 itemId={anchor?.inventory_item_id ?? null}
-                photos={photos.map(viewerPhoto)}
+                // Fotos eines anderen Jahrgangs (Hinweis) hier nicht ändern – nur die eigenen.
+                photos={photos.labelFrom === undefined ? photos.map(viewerPhoto) : []}
                 alt={photoAlt}
                 embedded
               />
@@ -489,6 +491,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         {photos.length > 0 && (
           <div className="details-photos">
             <PhotoGallery photos={photos.map(viewerPhoto)} alt={photoAlt} />
+            {photos.labelFrom !== undefined && <p className="muted photo-from">{labelFromHint(photos.labelFrom)}</p>}
           </div>
         )}
         {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}
