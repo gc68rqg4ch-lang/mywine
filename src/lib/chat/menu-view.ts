@@ -99,6 +99,8 @@ export type MenuAction =
   | { op: "drunk"; itemId: string; back: ListRef }
   | { op: "open"; wineId: string; year: number | null; back: ListRef }
   | { op: "openBatch"; batchId: string; back: ListRef }
+  /** Öffnen rückgängig: Rückfrage (Ja = Vorschlag cu:<itemId>); Kürzel „Ou“ („Y“ gehört der Verkostung). */
+  | { op: "undoAsk"; itemId: string; back: ListRef }
   | { op: "ratePicker"; subject: Subject; personKey: string; back: ListRef }
   | { op: "rate"; subject: Subject; personKey: string; rating: number; back: ListRef }
   | { op: "rateAsk"; subject: Subject; personKey: string; rating: number; back: ListRef }
@@ -243,6 +245,8 @@ export function encodeMenu(a: MenuAction): string {
       return `N:${a.wineId}:${encodeYear(a.year)}:${l}`;
     case "openBatch":
       return `Q:${a.batchId}:${l}`;
+    case "undoAsk":
+      return `Ou:${a.itemId}:${l}`;
     case "ratePicker":
       return `R:${encodeSubject(a.subject)}:${a.personKey}:${l}`;
     case "rate":
@@ -275,7 +279,7 @@ export function encodeMenu(a: MenuAction): string {
 }
 
 export function isMenuCallback(data: string | undefined) {
-  return /^([LWVOGFPDXNQRSTEKIMBUHCZJ]|Md):/.test(data ?? "");
+  return /^([LWVOGFPDXNQRSTEKIMBUHCZJ]|Md|Ou):/.test(data ?? "");
 }
 
 export function decodeMenu(data: string | undefined): MenuAction | null {
@@ -294,6 +298,7 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
     case "F":
     case "D":
     case "X":
+    case "Ou":
     case "Q": {
       const b = back(1);
       if (!UUID_RE.test(id) || !b) return null;
@@ -302,6 +307,7 @@ export function decodeMenu(data: string | undefined): MenuAction | null {
       if (op === "F") return { op: "fillPicker", itemId: id, back: b };
       if (op === "D") return { op: "drunkAsk", itemId: id, back: b };
       if (op === "X") return { op: "drunk", itemId: id, back: b };
+      if (op === "Ou") return { op: "undoAsk", itemId: id, back: b };
       return { op: "openBatch", batchId: id, back: b };
     }
     case "V":

@@ -14,6 +14,7 @@ import { emptiedRest } from "@/lib/spirits/tag";
 import { saveManualKeep } from "@/lib/fortified/store";
 import { keepOnOpen } from "@/lib/research/open-keep-auto";
 import { openNeedsConfirmation } from "@/lib/cellar/open-bottles";
+import { undoOpenBottle } from "@/lib/cellar/undo-open";
 
 export type ActionState = { error?: string; ok?: string; link?: { href: string; label: string } } | undefined;
 
@@ -74,6 +75,24 @@ export async function openBottle(_prev: ActionState, formData: FormData): Promis
 
   revalidatePath("/", "layout");
   redirect(opened ? wineHref(opened.wine_id, opened.vintage_year, { geoeffnet: "1" }) : "/offen");
+}
+
+/**
+ * Öffnen rückgängig: kürzlich geöffnete Flasche wieder als ungeöffnet buchen (undo_open_bottle;
+ * dieselbe Prüfung wie im Bot: offen, höchstens 24 h, nichts angehängt).
+ */
+export async function undoOpenAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const session = await memberSession();
+  if (!session) return { error: "Kein Zugriff." };
+  const itemId = readItemId(formData);
+  if (!itemId) return { error: "Ungültige Position." };
+  const result = await undoOpenBottle(session.supabase, itemId).catch((error) => {
+    console.error("undo open failed", error);
+    return { ok: false as const, text: "Das Öffnen konnte nicht rückgängig gemacht werden." };
+  });
+  if (!result.ok) return { error: result.text };
+  revalidatePath("/", "layout");
+  return { ok: result.text };
 }
 
 /** Setzt den Füllstand einer offenen Flasche (gemeinsames Bearbeiten-Modul). */

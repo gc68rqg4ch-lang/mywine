@@ -17,6 +17,7 @@ import { loadSpirits } from "@/lib/spirits/load";
 import { openSpiritInfo, withSpiritTags, type OpenSpiritInfo } from "@/lib/spirits/tag";
 import { openSpiritBottles } from "@/lib/spirits/bottles";
 import { alreadyOpenQuestion, openBottlesOfWine } from "@/lib/cellar/open-bottles";
+import { undoOpenCheck, undoOpenQuestion } from "@/lib/cellar/undo-open";
 import { WINE_TYPES, daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
 import { keepLine, keepStatus, shortDate } from "@/lib/fortified/keep";
 import { loadOpenKeep } from "@/lib/fortified/store";
@@ -472,6 +473,32 @@ export function chatTools(
         if (type === "spirit") return proposed;
         const first = open[0];
         return `${proposed} Hinweis: Von diesem Wein ist schon eine Flasche offen (inventory_item_id ${first.itemId}, Jahrgang ${first.year ?? "ohne"}, ${first.fill ?? 100} %). Geht es um ein Glas bzw. Gläser, ist das der Füllstand dieser offenen Flasche (propose_open_bottle_edit mit glasses) – sag das dem Nutzer.`;
+      },
+    }),
+
+    betaZodTool({
+      name: "propose_undo_open",
+      description:
+        "Öffnen rückgängig: schlägt vor, eine versehentlich geöffnete Flasche wieder als ungeöffnet zu buchen („schliess die wieder“, „die war ein Versehen“, „Öffnen rückgängig“) – Wein, Likörwein und Spirituose; ein abgezogenes Glas wird mit zurückgenommen. Geht nur bis 24 Stunden nach dem Öffnen und solange an der Flasche keine Bewertung, Verkostung oder Foto hängt. Ohne inventory_item_id nimmt es die zuletzt geöffnete Flasche des Weins. Ändert noch nichts.",
+      inputSchema: z.object({
+        wine_id: z.uuid().describe("Aus search_cellar bzw. list_open_bottles"),
+        vintage_year: z.number().int().nullable().optional().describe("Nur diesen Jahrgang (weglassen = alle)"),
+        inventory_item_id: z.uuid().optional().describe("Bestimmte offene Flasche aus list_open_bottles"),
+      }),
+      run: async ({ wine_id, vintage_year, inventory_item_id }) => {
+        let open = await openBottlesOfWine(db, wine_id);
+        if (inventory_item_id) open = open.filter((b) => b.itemId === inventory_item_id);
+        else if (vintage_year !== undefined) open = open.filter((b) => b.year === vintage_year);
+        if (!open.length) return "Hinweis für den Nutzer (nichts vorschlagen): Von diesem Wein ist gerade keine Flasche offen – es gibt nichts rückgängig zu machen.";
+        // Zuletzt geöffnete zuerst (Zeitpunkt des Öffnens, nicht das eingetragene Datum).
+        const { data: details, error } = await db.from("open_bottle_details").select("inventory_item_id, created_at").in("inventory_item_id", open.map((b) => b.itemId));
+        if (error) throw error;
+        const at = new Map((details ?? []).map((d) => [d.inventory_item_id, d.created_at]));
+        const latest = [...open].sort((a, b) => (at.get(b.itemId) ?? "").localeCompare(at.get(a.itemId) ?? ""))[0];
+        const check = await undoOpenCheck(db, latest.itemId);
+        if (!check.ok) return `Hinweis für den Nutzer (nichts vorschlagen, ehrlich sagen warum): ${check.text}`;
+        const which = open.length > 1 ? ` – die zuletzt geöffnete${latest.dateOpened ? ` (geöffnet am ${shortDate(latest.dateOpened)})` : ""}, es sind ${open.length} offen` : "";
+        return propose({ kind: "undoOpen", itemId: latest.itemId }, `${undoOpenQuestion(check.item).replace(/\?/, `${which}?`)}`);
       },
     }),
 

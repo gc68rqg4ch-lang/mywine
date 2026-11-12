@@ -71,7 +71,8 @@ import {
   type Subject,
   type TypeCode,
 } from "./menu-view";
-import { fillAfterGlasses, personKey } from "./proposals";
+import { encodeProposal, fillAfterGlasses, personKey } from "./proposals";
+import { undoOpenCheck, undoOpenQuestion } from "@/lib/cellar/undo-open";
 import { startTelling, tastingStartScreen } from "./tasting";
 import { loadSpirits } from "@/lib/spirits/load";
 import { alreadyOpenQuestion, openBottlesOfWine } from "@/lib/cellar/open-bottles";
@@ -505,12 +506,15 @@ async function itemScreen(db: AdminClient, itemId: string, back: ListRef, status
     .filter(Boolean)
     .join(" · ");
   const subject: Subject = { kind: "item", itemId };
+  // Kürzlich geöffnet, nichts angehängt: „Öffnen rückgängig“ (gleiche Prüfung wie undo_open_bottle).
+  const undo = (await undoOpenCheck(db, itemId)).ok;
   return {
     text: withStatus(status, [itemHeader(item), facts, ratings.line ? e(ratings.line) : null].filter(Boolean).join("\n")),
     keyboard: {
       inline_keyboard: [
         [btn("🥃 1 Glas", { op: "glasses", itemId, glasses: 1, back }), btn("🥃🥃 2 Gläser", { op: "glasses", itemId, glasses: 2, back })],
         [btn("Füllstand %", { op: "fillPicker", itemId, back }), btn("✅ Ausgetrunken", { op: "drunkAsk", itemId, back })],
+        ...(undo ? [[btn("↩️ Öffnen rückgängig", { op: "undoAsk", itemId, back })]] : []),
         ...ratingButtons(ratings.persons, subject, back),
         [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
         [btn("📷 Foto", { op: "photo", subject, back }), btn("📎 Dokument", { op: "doc", subject, back })],
@@ -534,6 +538,23 @@ async function fillPickerScreen(db: AdminClient, itemId: string, back: ListRef):
   };
 }
 
+/**
+ * „Öffnen rückgängig“: Rückfrage mit [Ja] (Vorschlag cu:<itemId> – dieselbe Ausführung wie im
+ * Chat, mit erneuter Prüfung) und [Nein] (zurück zur Flasche). Geht es nicht mehr: Grund.
+ */
+async function undoAskScreen(db: AdminClient, itemId: string, back: ListRef): Promise<Screen> {
+  const check = await undoOpenCheck(db, itemId);
+  if (!check.ok) return itemScreen(db, itemId, back, `⚠️ ${check.text}`);
+  return {
+    text: `↩️ ${e(undoOpenQuestion(check.item))}`,
+    keyboard: {
+      inline_keyboard: [[
+        { text: "Ja", callback_data: encodeProposal({ kind: "undoOpen", itemId }) },
+        btn("Nein", { op: "item", itemId, back }),
+      ]],
+    },
+  };
+}
 async function drunkAskScreen(db: AdminClient, itemId: string, back: ListRef, note?: string): Promise<Screen> {
   const item = await loadItem(db, itemId);
   if (item?.status !== "open") return itemScreen(db, itemId, back);
@@ -943,6 +964,8 @@ async function screenForAction(
       return { screen: await fillPickerScreen(db, a.itemId, a.back) };
     case "drunkAsk":
       return { screen: await drunkAskScreen(db, a.itemId, a.back) };
+    case "undoAsk":
+      return { screen: await undoAskScreen(db, a.itemId, a.back) };
     case "ratePicker":
       return { screen: await ratePickerScreen(db, a.subject, a.personKey, a.back) };
     case "glasses":

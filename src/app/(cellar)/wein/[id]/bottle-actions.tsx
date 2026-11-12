@@ -2,7 +2,7 @@
 
 import { useActionState, useId, useState, type ReactNode } from "react";
 import { FillGauge } from "@/components/fill-gauge";
-import { markDrunk, openBottle, updateFillLevel, type ActionState } from "../../actions";
+import { markDrunk, openBottle, undoOpenAction, updateFillLevel, type ActionState } from "../../actions";
 import { PriceLine, type PriceInfo } from "./price-card";
 
 function Feedback({ state }: { state: ActionState }) {
@@ -149,12 +149,26 @@ export type OpenBottleInfo = {
   label: string;
 };
 
-/** Eine offene Flasche: Füllstand ändern oder als ausgetrunken markieren. */
-export function OpenBottleControls({ bottle, price }: { bottle: OpenBottleInfo; /** Preis, Händler, Geschenk (vom Server). */ price?: ReactNode }) {
+/**
+ * Eine offene Flasche: Füllstand ändern, als ausgetrunken markieren oder – kurz nach dem Öffnen,
+ * ohne Bewertung/Verkostung (canUndo, geprüft auf dem Server) – das Öffnen rückgängig machen.
+ */
+export function OpenBottleControls({
+  bottle,
+  price,
+  canUndo = false,
+}: {
+  bottle: OpenBottleInfo;
+  /** Preis, Händler, Geschenk (vom Server). */
+  price?: ReactNode;
+  canUndo?: boolean;
+}) {
   const [fillState, fillAction, fillPending] = useActionState(updateFillLevel, undefined);
   const [drunkState, drunkAction, drunkPending] = useActionState(markDrunk, undefined);
+  const [undoState, undoAction, undoPending] = useActionState(undoOpenAction, undefined);
   const [fill, setFill] = useState(bottle.fillLevel ?? 100);
   const [confirming, setConfirming] = useState(false);
+  const [undoing, setUndoing] = useState(false);
 
   return (
     <div className="open-bottle">
@@ -191,6 +205,32 @@ export function OpenBottleControls({ bottle, price }: { bottle: OpenBottleInfo; 
           </button>
         )}
       </form>
+      {(canUndo || undoState) && (
+        <form action={undoAction} className="stack-sm">
+          <input type="hidden" name="itemId" value={bottle.itemId} />
+          <Feedback state={undoState} />
+          {canUndo && undoing ? (
+            <div className="stack-sm">
+              <p className="small">
+                Wieder als ungeöffnet buchen, als wäre sie nie geöffnet worden?
+                {bottle.fillLevel != null && bottle.fillLevel < 100 ? " Damit wird auch der Füllstand zurückgenommen." : ""}
+              </p>
+              <div className="row">
+                <button type="submit" className="btn btn-danger" disabled={undoPending}>
+                  {undoPending ? "Wird gespeichert …" : "Ja, rückgängig"}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => setUndoing(false)}>
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          ) : canUndo ? (
+            <button type="button" className="btn btn-ghost" onClick={() => setUndoing(true)}>
+              ↩️ Öffnen rückgängig
+            </button>
+          ) : null}
+        </form>
+      )}
     </div>
   );
 }
