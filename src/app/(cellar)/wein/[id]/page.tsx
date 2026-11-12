@@ -34,6 +34,7 @@ import { loadGrapeShares } from "@/lib/grapes/store";
 import { loadDocuments } from "@/lib/media/documents";
 import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
+import { alreadyOpenQuestion, openBottlesOfWine } from "@/lib/cellar/open-bottles";
 import { labelFromHint } from "@/lib/media/pick";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { EditUnit, EditUnits } from "@/components/edit-unit";
@@ -277,6 +278,14 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     price: priceOf(i),
   }));
 
+  // Offene Flasche zuerst: ist vom Wein schon eine offen (gleich welcher Jahrgang), braucht
+  // „Flasche öffnen“ eine Bestätigung – dieselbe Prüfung wie im Bot und im Chat.
+  const openOfWine = !spirit && charges.length ? await openBottlesOfWine(supabase, wine.id) : [];
+  const openQuestion = alreadyOpenQuestion(openOfWine, wine.type);
+  const alreadyOpen = openQuestion
+    ? { question: openQuestion, href: `${wineHref(wine.id, openOfWine[0].year, typeof query.von === "string" ? { von: query.von } : undefined)}#item:${openOfWine[0].itemId}` }
+    : null;
+
   const drinkSource = asDrinkSource(vintage?.drink_window_source);
   const drinkWindow = drinkWindowText(vintage?.drink_from_year ?? null, vintage?.drink_until_year ?? null, drinkSource);
   const latestReadiness = tastings.find((t) => t.readiness)?.readiness ?? null;
@@ -376,7 +385,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
       {!spirit && charges.length > 0 && (
         <section className="card stack">
           <h2 className="section-title">Flasche öffnen</h2>
-          <OpenBottleForm charges={charges} today={today} />
+          <OpenBottleForm charges={charges} today={today} alreadyOpen={alreadyOpen} />
         </section>
       )}
       {drunk.length > 0 && (

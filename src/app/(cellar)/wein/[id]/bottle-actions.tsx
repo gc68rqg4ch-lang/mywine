@@ -66,8 +66,18 @@ export type Charge = {
  * inventory_item-ID. Die Preis-Bearbeitung ist ein eigenes Formular je Charge, darum
  * hängen die Auswahlknöpfe per form-Attribut am Öffnen-Formular.
  */
-export function OpenBottleForm({ charges, today }: { charges: Charge[]; today: string }) {
+export function OpenBottleForm({
+  charges,
+  today,
+  alreadyOpen,
+}: {
+  charges: Charge[];
+  today: string;
+  /** Vom Wein ist schon eine Flasche offen: Rückfrage und Link dorthin – Öffnen erst nach „Trotzdem öffnen“. */
+  alreadyOpen?: { question: string; href: string } | null;
+}) {
   const [state, action, pending] = useActionState(openBottle, undefined);
+  const [confirming, setConfirming] = useState(false);
   const [fill, setFill] = useState(100);
   const [chargeId, setChargeId] = useState(charges[0]?.itemId ?? "");
   const formId = useId();
@@ -100,10 +110,33 @@ export function OpenBottleForm({ charges, today }: { charges: Charge[]; today: s
           <span>Geöffnet am</span>
           <input type="date" name="dateOpened" defaultValue={today} max={today} required />
         </label>
-        <Feedback state={state} />
-        <button type="submit" className="btn btn-primary" disabled={pending}>
-          {pending ? "Wird geöffnet …" : "Flasche öffnen"}
-        </button>
+        {/* Feedback zeigt die Rückfrage der Server-Aktion nicht doppelt, wenn sie hier schon steht. */}
+        {!(alreadyOpen && state?.error === alreadyOpen.question) && <Feedback state={state} />}
+        {alreadyOpen && confirming ? (
+          <div className="stack-sm" role="alert">
+            <p>{alreadyOpen.question}</p>
+            <input type="hidden" name="confirmOpen" value="1" />
+            <div className="row">
+              <button type="submit" className="btn btn-primary" disabled={pending}>
+                {pending ? "Wird geöffnet …" : "Trotzdem öffnen"}
+              </button>
+              <a className="btn" href={alreadyOpen.href}>
+                Zur offenen Flasche
+              </a>
+              <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => setConfirming(false)}>
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        ) : alreadyOpen ? (
+          <button type="button" className="btn" onClick={() => setConfirming(true)}>
+            Flasche öffnen
+          </button>
+        ) : (
+          <button type="submit" className="btn btn-primary" disabled={pending}>
+            {pending ? "Wird geöffnet …" : "Flasche öffnen"}
+          </button>
+        )}
       </form>
     </div>
   );

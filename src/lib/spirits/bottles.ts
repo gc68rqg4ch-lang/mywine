@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { applyEdit } from "@/lib/edit/edit";
 import { NOTHING } from "@/lib/edit/helpers";
+import { openBottlesOfWine, type OpenBottle } from "@/lib/cellar/open-bottles";
 
 type Db = SupabaseClient<Database>;
 
@@ -16,21 +17,10 @@ type Db = SupabaseClient<Database>;
 const missingFunction = (error: { code?: string; message?: string } | null) =>
   !!error && (["PGRST202", "42883"].includes(error.code ?? "") || /Could not find the function/i.test(error.message ?? ""));
 
-export type OpenSpiritBottle = { itemId: string; fill: number | null; sizeMl: number | null; dateOpened: string | null };
+export type OpenSpiritBottle = OpenBottle;
 
-/** Offene Flaschen einer Spirituose (zuerst geöffnete zuerst). */
-export async function openSpiritBottles(db: Db, wineId: string): Promise<OpenSpiritBottle[]> {
-  const { data, error } = await db
-    .from("cellar_overview")
-    .select("inventory_item_id, fill_level_percent, bottle_size_ml, date_opened")
-    .eq("wine_id", wineId)
-    .eq("status", "open")
-    .order("date_opened", { ascending: true, nullsFirst: false });
-  if (error) throw error;
-  return (data ?? []).flatMap((r) =>
-    r.inventory_item_id ? [{ itemId: r.inventory_item_id, fill: r.fill_level_percent, sizeMl: r.bottle_size_ml, dateOpened: r.date_opened }] : [],
-  );
-}
+/** Offene Flaschen einer Spirituose (zuerst geöffnete zuerst) – dieselbe Prüfung wie bei Wein. */
+export const openSpiritBottles = openBottlesOfWine;
 
 /** Bestand einer Spirituose: volle und offene Flaschen. */
 export async function spiritStock(db: Db, wineId: string) {

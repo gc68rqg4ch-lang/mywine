@@ -130,6 +130,8 @@ export function SpiritOpen({ charges, openFill }: { charges: { itemId: string; l
     startTransition(async () => {
       const form = new FormData();
       form.set("itemId", batch);
+      // Die Rückfrage („Es ist schon eine offen …“) stellt diese Ansicht selbst.
+      form.set("confirmOpen", "1");
       // Leitet nach dem Öffnen auf die Weinseite weiter; nur ein Fehler kommt zurück.
       const result = await openBottle(undefined, form);
       if (result?.error) setError(result.error);

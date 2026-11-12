@@ -130,8 +130,8 @@ export const T = {
   spiritEmptied: (name: string, sealed: number, open: number) => `${e(name)} ${emptiedRest(sealed, open)}`,
   /** Füllstand einer offenen Flasche gesetzt. */
   spiritFillSet: (name: string, percent: number) => `${e(name)}: offene Flasche noch ${percent} %.`,
-  /** Öffnen, obwohl schon eine offen ist. */
-  spiritAlreadyOpen: (fill: number | null) => `Es ist schon eine offen${fill != null ? ` (~${fill} %)` : ""}. Trotzdem eine weitere öffnen?`,
+  /** Öffnen, obwohl schon eine offen ist: Text aus alreadyOpenQuestion (lib/cellar/open-bottles). */
+  toOpenBottle: "Zur offenen Flasche",
   // --- Spirituosen (Erfassung)
   /** Erkennung unsicher: Wein oder Spirituose? */
   kindAsk: (random?: () => number) =>

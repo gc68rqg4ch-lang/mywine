@@ -13,6 +13,7 @@ import { emptySpiritBottle, setSpiritFill } from "@/lib/spirits/bottles";
 import { emptiedRest } from "@/lib/spirits/tag";
 import { saveManualKeep } from "@/lib/fortified/store";
 import { keepOnOpen } from "@/lib/research/open-keep-auto";
+import { openNeedsConfirmation } from "@/lib/cellar/open-bottles";
 
 export type ActionState = { error?: string; ok?: string; link?: { href: string; label: string } } | undefined;
 
@@ -46,6 +47,11 @@ export async function openBottle(_prev: ActionState, formData: FormData): Promis
   const dateRaw = String(formData.get("dateOpened") ?? "");
   const dateOpened = DATE_RE.test(dateRaw) ? dateRaw : todayIso();
   if (!itemId) return { error: "Ungültige Position." };
+
+  // Ist vom Wein schon eine Flasche offen (gleich welcher Jahrgang): nur mit Bestätigung
+  // („Trotzdem öffnen“, confirmOpen=1) – sonst die Rückfrage statt still eine zweite öffnen.
+  const question = await openNeedsConfirmation(session.supabase, itemId, formData.get("confirmOpen") === "1");
+  if (question) return { error: question };
 
   const { data: openId, error } = await session.supabase.rpc("open_bottle", {
     p_item_id: itemId,

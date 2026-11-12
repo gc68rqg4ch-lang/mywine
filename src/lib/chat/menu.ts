@@ -74,7 +74,7 @@ import {
 import { fillAfterGlasses, personKey } from "./proposals";
 import { startTelling, tastingStartScreen } from "./tasting";
 import { loadSpirits } from "@/lib/spirits/load";
-import { openSpiritBottles } from "@/lib/spirits/bottles";
+import { alreadyOpenQuestion, openBottlesOfWine } from "@/lib/cellar/open-bottles";
 import { spiritDetailLines } from "@/lib/spirits/categories";
 import { loadCellar } from "./tools";
 
@@ -428,7 +428,9 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
   const open = (rows ?? []).reduce((s, r) => s + (r.open_bottles ?? 0), 0);
   // Spirituose: offene Flaschen bleiben im Bestand („2 Fl. · 1 offen ~40 %“), je eine Taste dazu.
   const spirit = wine?.type === "spirit";
-  const openSpirits = spirit ? await openSpiritBottles(db, wineId) : [];
+  // Offene Flaschen des Weins (alle Jahrgänge) – ganz oben je eine Taste: ein Glas kommt von dort.
+  const openBottles = await openBottlesOfWine(db, wineId);
+  const openSpirits = spirit ? openBottles : [];
   const keep = spirit && openSpirits.length ? (await loadOpenKeep(db, [wineId])).get(wineId)?.days : null;
   const drink = rows?.find((r) => r.drink_from_year != null || r.drink_until_year != null);
   const drinkState = drink ? drinkStatus(drink.drink_from_year, drink.drink_until_year, currentYear()) : null;
@@ -460,6 +462,17 @@ async function vintageScreen(db: AdminClient, wineId: string, year: number | nul
             { op: "item", itemId: b.itemId, back },
           ),
         ]),
+        // Wein: je offene Flasche eine Taste (Füllstand, seit wann; anderer Jahrgang dazu).
+        ...(spirit
+          ? []
+          : openBottles.map((b) => [
+              btn(
+                [`${typeEmoji(wine.type)} Offen`, b.year !== year ? yearLabel(b.year) : null, b.fill != null ? `${b.fill} %` : null, b.dateOpened ? `seit ${shortDate(b.dateOpened)}` : null]
+                  .filter(Boolean)
+                  .join(" · "),
+                { op: "item", itemId: b.itemId, back },
+              ),
+            ])),
         ...(sealed ? [[btn("🍾 Öffnen", { op: "open", wineId, year, back })]] : []),
         ...ratingButtons(ratings.persons, subject, back),
         [btn("📝 Verkostung", { op: "tasting", subject, back }), btn("ℹ️ Details", { op: "details", subject, back })],
@@ -701,12 +714,12 @@ export async function savedWineKeyboard(
   target: { wineId: string; year: number | null; itemId: string },
   actor: MenuActor | null,
 ): Promise<TgInlineKeyboard> {
-  const [screen, { data: wine }] = await Promise.all([
+  const [screen, alreadyOpen] = await Promise.all([
     actorContext.run(actor, () => vintageScreen(db, target.wineId, target.year, { kind: "none" })),
-    db.from("wines").select("type").eq("id", target.wineId).maybeSingle(),
+    openBottlesOfWine(db, target.wineId),
   ]);
-  // Spirituose mit offener Flasche: „Öffnen“ fragt erst nach – nicht direkt die Charge öffnen.
-  if (wine?.type === "spirit" && (await openSpiritBottles(db, target.wineId)).length) return screen.keyboard;
+  // Schon eine Flasche des Weins offen (Wein wie Spirituose): „Öffnen“ fragt erst nach – nicht direkt die Charge öffnen.
+  if (alreadyOpen.length) return screen.keyboard;
   const open = btn("🍾 Öffnen", { op: "openBatch", batchId: target.itemId, back: { kind: "none" } });
   const rows = screen.keyboard.inline_keyboard.filter((row) => !row.some((b) => b.text === "🍾 Öffnen"));
   return { inline_keyboard: [[open], ...rows] };
@@ -952,19 +965,22 @@ async function screenForAction(
     case "open": {
       const batches = await sealedBatches(db, a.wineId, a.year);
       if (!batches.length) return { screen: await vintageScreen(db, a.wineId, a.year, a.back, "Keine ungeöffnete Flasche mehr da.") };
-      // Spirituose: ist schon eine offen, erst nachfragen („Trotzdem eine weitere öffnen?“).
+      // Ist vom Wein schon eine Flasche offen (gleich welcher Jahrgang), erst nachfragen
+      // („Trotzdem eine weitere öffnen?“) – Wein mit „Zur offenen Flasche“.
       const { data: wineType } = await db.from("wines").select("type").eq("id", a.wineId).maybeSingle();
-      const alreadyOpen = wineType?.type === "spirit" ? await openSpiritBottles(db, a.wineId) : [];
-      if (batches.length === 1 && !alreadyOpen.length) return { screen: await openBatch(db, batches[0].batchId, a.back) };
+      const alreadyOpen = await openBottlesOfWine(db, a.wineId);
+      const question = alreadyOpenQuestion(alreadyOpen, wineType?.type);
+      if (batches.length === 1 && !question) return { screen: await openBatch(db, batches[0].batchId, a.back) };
       const base = await vintageScreen(db, a.wineId, a.year, a.back);
       const header = base.text.split("\n").find((l) => l.startsWith("<b>")) ?? "";
-      if (alreadyOpen.length) {
+      if (question) {
         return {
           screen: {
-            text: `${header}\n${e(T.spiritAlreadyOpen(alreadyOpen[0].fill))}`,
+            text: `${header}\n${e(question)}`,
             keyboard: {
               inline_keyboard: [
                 ...batches.map((b) => [btn(batches.length === 1 ? "🍾 Ja, öffnen" : `🍾 Ja, aus ${b.label} (${b.bottles})`, { op: "openBatch", batchId: b.batchId, back: a.back })]),
+                ...(wineType?.type === "spirit" ? [] : [[btn(`${typeEmoji(wineType?.type ?? null)} ${T.toOpenBottle}`, { op: "item", itemId: alreadyOpen[0].itemId, back: a.back })]]),
                 [btn("Abbrechen", { op: "vintage", wineId: a.wineId, year: a.year, back: a.back })],
               ],
             },

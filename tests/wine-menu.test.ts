@@ -163,8 +163,10 @@ assert.deepEqual(texts(s), ["2022 · 5 Fl.", "2023 · 6 Fl.", "‹ Zurück"]);
 s = await show({ op: "wine", wineId: W1, back: { kind: "type", code: "r" } });
 assert.ok(texts(s).includes("🍾 Öffnen"));
 s = await show({ op: "open", wineId: W1, year: 2022, back: { kind: "type", code: "r" } });
-assert.deepEqual(texts(s), ["Weinkeller (3)", "Wohnzimmer (1)", "‹ Zurück"]);
-assert.equal(opened.length, 0, "bei mehreren Orten erst wählen");
+// Palermo hat schon eine offene Flasche: erst nachfragen, je Lagerort „Ja, aus …“.
+assert.match(s.text, /Von diesem Wein ist schon eine Flasche offen \(2022, \d+ %\)\. Trotzdem eine weitere öffnen\?/);
+assert.deepEqual(texts(s), ["🍾 Ja, aus Weinkeller (3)", "🍾 Ja, aus Wohnzimmer (1)", "🍷 Zur offenen Flasche", "Abbrechen"]);
+assert.equal(opened.length, 0, "bei offener Flasche erst nachfragen");
 s = await show({ op: "openBatch", batchId: B1, back: { kind: "type", code: "r" } });
 assert.equal(opened.length, 1); assert.match(s.text, /Geöffnet/);
 });

@@ -14,9 +14,9 @@ import {
   type CellarWine,
 } from "@/lib/cellar/overview";
 import { loadSpirits } from "@/lib/spirits/load";
-import { T } from "@/lib/bot/texts";
 import { openSpiritInfo, withSpiritTags, type OpenSpiritInfo } from "@/lib/spirits/tag";
 import { openSpiritBottles } from "@/lib/spirits/bottles";
+import { alreadyOpenQuestion, openBottlesOfWine } from "@/lib/cellar/open-bottles";
 import { WINE_TYPES, daysSince, formatBottleSize, todayIso, wineTypeLabel, zurichDate } from "@/lib/format";
 import { keepLine, keepStatus, shortDate } from "@/lib/fortified/keep";
 import { loadOpenKeep } from "@/lib/fortified/store";
@@ -462,12 +462,16 @@ export function chatTools(
         const batch = batches[0];
         const wine = batch.wine;
         const label = `${title({ ...wine, vintage_year })} öffnen (aus ${place(batch)}, ${formatBottleSize(batch.bottle_size_ml) ?? "75 cl"})`;
-        // Spirituose: ist schon eine offen, fragt der Vorschlag nach („Trotzdem eine weitere öffnen?“).
-        if ((wine as { type?: string | null } | null)?.type === "spirit") {
-          const open = await openSpiritBottles(db, wine_id);
-          if (open.length) return propose({ kind: "open", itemId: batch.id }, `${label} – ${T.spiritAlreadyOpen(open[0].fill)}`);
-        }
-        return propose({ kind: "open", itemId: batch.id }, label);
+        // Ist vom Wein schon eine Flasche offen (gleich welcher Jahrgang), fragt der Vorschlag nach
+        // („Trotzdem eine weitere öffnen?“); bei Wein mit Hinweis aufs Glas aus der offenen Flasche.
+        const type = (wine as { type?: string | null } | null)?.type;
+        const open = await openBottlesOfWine(db, wine_id);
+        const question = alreadyOpenQuestion(open, type);
+        if (!question) return propose({ kind: "open", itemId: batch.id }, label);
+        const proposed = propose({ kind: "open", itemId: batch.id }, `${label} – ${question}`);
+        if (type === "spirit") return proposed;
+        const first = open[0];
+        return `${proposed} Hinweis: Von diesem Wein ist schon eine Flasche offen (inventory_item_id ${first.itemId}, Jahrgang ${first.year ?? "ohne"}, ${first.fill ?? 100} %). Geht es um ein Glas bzw. Gläser, ist das der Füllstand dieser offenen Flasche (propose_open_bottle_edit mit glasses) – sag das dem Nutzer.`;
       },
     }),
 
