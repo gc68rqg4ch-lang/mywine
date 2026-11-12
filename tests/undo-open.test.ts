@@ -83,7 +83,7 @@ const texts = (s: Awaited<ReturnType<typeof show>>) => s.keyboard.inline_keyboar
 const back = { kind: "open" } as const;
 
 test("Migration: Bedingungen, Zusammenführen mit „is not distinct from“, Journal ohne Reste, Rechte", () => {
-  const sql = readFileSync("supabase/migrations/20261112150000_undo_open_bottle.sql", "utf8");
+  const sql = readFileSync("supabase/migrations/20261112185349_undo_open_bottle.sql", "utf8");
   assert.match(sql, /CREATE OR REPLACE FUNCTION public\.undo_open_bottle\(p_item_id uuid\)\s+RETURNS uuid[\s\S]*SET search_path TO ''/);
   assert.match(sql, /private\.is_member\(\) and coalesce\(auth\.role\(\), ''\) <> 'service_role'/);
   assert.match(sql, /where id = p_item_id\s+for update/);
