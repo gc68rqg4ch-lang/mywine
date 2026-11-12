@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { createAutosave, type AutosaveStatus } from "@/lib/edit/autosave";
 import { emptySpiritAction, openBottle, saveSpiritFill } from "../../actions";
+import { UndoOpen } from "./bottle-actions";
 
 /**
  * Spirituose: Karte „Offene Flasche“ – Öffnungsdatum, Füllstand in 10-%-Schritten (speichert selbst,
@@ -16,6 +17,7 @@ export function SpiritBottle({
   fill,
   openedOn,
   keep,
+  canUndo = false,
   price,
 }: {
   wineId: string;
@@ -24,6 +26,8 @@ export function SpiritBottle({
   /** „Geöffnet am 12. Aug. 2026 · Keller“ */
   openedOn: string | null;
   keep?: ReactNode;
+  /** „↩️ Öffnen rückgängig“ erlaubt (undoOpenCheck auf dem Server) – wie in der Wein-Karte. */
+  canUndo?: boolean;
   /** Preis, Händler, Geschenk (vom Server) – wie bei „Im Bestand“. */
   price?: ReactNode;
 }) {
@@ -106,6 +110,8 @@ export function SpiritBottle({
           </button>
         </div>
       )}
+      {/* Gleiche Komponente wie in der Wein-Karte; Hinweis zum Füllstand nach dem aktuellen Regler. */}
+      <UndoOpen itemId={itemId} fillLevel={value} canUndo={canUndo} />
       {error && (
         <p className="notice notice-error" role="alert">
           {error}

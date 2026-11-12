@@ -15,7 +15,7 @@ import { isTastingCallback } from "@/lib/chat/tasting";
 import { executeProposal } from "@/lib/chat/execute";
 import { chatTools } from "@/lib/chat/tools";
 import { CHAT_SYSTEM } from "@/lib/bot/chat-prompt";
-import { UNDO_OPEN_BLOCK_TEXT, undoOpenBlock, undoOpenCheck } from "@/lib/cellar/undo-open";
+import { UNDO_OPEN_BLOCK_TEXT, undoOpenBlock, undoOpenCheck, undoableItems } from "@/lib/cellar/undo-open";
 
 const VASO = "11111111-1111-4111-8111-111111111111";
 const GRAPPA = "22222222-2222-4222-8222-222222222222";
@@ -195,4 +195,51 @@ test("Callbacks: cu:<itemId> (Chat), Ou:<itemId> (Menü) – eindeutig, höchste
   const menu = encodeMenu({ op: "undoAsk", itemId: OPEN, back: { kind: "type", code: "r" } });
   assert.ok(Buffer.byteLength(menu) <= 64 && isMenuCallback(menu) && !isChatCallback(menu) && !isTastingCallback(menu));
   assert.deepEqual(decodeMenu(menu), { op: "undoAsk", itemId: OPEN, back: { kind: "type", code: "r" } });
+});
+
+// --- App: Karte offener Spirituosen (SpiritBottle) mit derselben Komponente wie die Wein-Karte
+
+const SPIRIT2 = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"; // Grappa, zweite offene Flasche
+function twoSpirits(second: { createdAt: string; rating?: boolean; tasting?: boolean }) {
+  reset();
+  tables.cellar_overview.push({ inventory_item_id: SPIRIT2, wine_id: GRAPPA, producer: null, name: "Grappa", vintage_year: null, type: "spirit", status: "open", fill_level_percent: 40, date_opened: "2026-11-10", bottle_size_ml: 700, storage_room: "Wohnzimmer" });
+  tables.inventory_items.push({ id: SPIRIT2, wine_id: GRAPPA, vintage_year: null, status: "open", quantity: 1 });
+  tables.open_bottle_details.push({ inventory_item_id: SPIRIT2, fill_level_percent: 40, created_at: second.createdAt });
+  if (second.rating) tables.wine_ratings.push({ inventory_item_id: SPIRIT2, created_at: hoursAgo(0.1) });
+  if (second.tasting) tables.wine_tastings.push({ inventory_item_id: SPIRIT2, created_at: hoursAgo(0.1) });
+}
+
+test("App, Spirituose: Prüfung je offene Flasche – innert 24 h ohne Verknüpfung ja, sonst nein", async () => {
+  twoSpirits({ createdAt: hoursAgo(3) });
+  assert.deepEqual([...(await undoableItems(db, [SPIRIT, SPIRIT2]))].sort(), [SPIRIT, SPIRIT2].sort(), "beide frisch: je ein Knopf");
+  twoSpirits({ createdAt: hoursAgo(30) });
+  assert.deepEqual([...(await undoableItems(db, [SPIRIT, SPIRIT2]))], [SPIRIT], "über 24 h: kein Knopf");
+  twoSpirits({ createdAt: hoursAgo(3), rating: true });
+  assert.deepEqual([...(await undoableItems(db, [SPIRIT, SPIRIT2]))], [SPIRIT], "mit Bewertung: kein Knopf");
+  twoSpirits({ createdAt: hoursAgo(3), tasting: true });
+  assert.deepEqual([...(await undoableItems(db, [SPIRIT, SPIRIT2]))], [SPIRIT], "mit Verkostung: kein Knopf");
+  assert.deepEqual([...(await undoableItems(db, []))], []);
+});
+
+test("App: Wein- und Spirituosen-Karte nutzen dieselbe Komponente UndoOpen (zweistufig, Hinweis zum Füllstand)", () => {
+  const read = (f: string) => readFileSync(`src/app/(cellar)/wein/[id]/${f}`, "utf8");
+  const page = read("page.tsx");
+  const actions = read("bottle-actions.tsx");
+  const spirit = read("spirit-bottle.tsx");
+  // Prüfung für alle offenen Flaschen der Seite (Wein und Spirituose), je Flasche
+  assert.match(page, /const undoable = await undoableItems\(supabase, open\.map\(\(o\) => o\.inventory_item_id\)\);/);
+  assert.match(page, /<SpiritBottle[\s\S]*?canUndo=\{undoable\.has\(o\.inventory_item_id\)\}[\s\S]*?\/>/);
+  assert.match(page, /<OpenBottleControls[\s\S]*?canUndo=\{undoable\.has\(o\.inventory_item_id\)\}[\s\S]*?\/>/);
+  // Eine Komponente, zwei Karten
+  assert.match(actions, /export function UndoOpen\(/);
+  assert.match(actions, /<UndoOpen itemId=\{bottle\.itemId\} fillLevel=\{bottle\.fillLevel\} canUndo=\{canUndo\} \/>/);
+  assert.match(spirit, /import \{ UndoOpen \} from "\.\/bottle-actions";/);
+  assert.match(spirit, /<UndoOpen itemId=\{itemId\} fillLevel=\{value\} canUndo=\{canUndo\} \/>/);
+  assert.equal((actions.match(/useActionState\(undoOpenAction/g) ?? []).length, 1, "nur eine Version");
+  assert.doesNotMatch(spirit, /undoOpenAction/);
+  // Zweistufig, Hinweis unter 100 %
+  const undo = actions.slice(actions.indexOf("export function UndoOpen("));
+  assert.match(undo, /↩️ Öffnen rückgängig[\s\S]*/);
+  assert.match(undo, /Ja, rückgängig[\s\S]*Abbrechen/);
+  assert.match(undo, /fillLevel < 100 \? " Damit wird auch der Füllstand zurückgenommen\."/);
 });

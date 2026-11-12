@@ -165,10 +165,8 @@ export function OpenBottleControls({
 }) {
   const [fillState, fillAction, fillPending] = useActionState(updateFillLevel, undefined);
   const [drunkState, drunkAction, drunkPending] = useActionState(markDrunk, undefined);
-  const [undoState, undoAction, undoPending] = useActionState(undoOpenAction, undefined);
   const [fill, setFill] = useState(bottle.fillLevel ?? 100);
   const [confirming, setConfirming] = useState(false);
-  const [undoing, setUndoing] = useState(false);
 
   return (
     <div className="open-bottle">
@@ -205,32 +203,46 @@ export function OpenBottleControls({
           </button>
         )}
       </form>
-      {(canUndo || undoState) && (
-        <form action={undoAction} className="stack-sm">
-          <input type="hidden" name="itemId" value={bottle.itemId} />
-          <Feedback state={undoState} />
-          {canUndo && undoing ? (
-            <div className="stack-sm">
-              <p className="small">
-                Wieder als ungeöffnet buchen, als wäre sie nie geöffnet worden?
-                {bottle.fillLevel != null && bottle.fillLevel < 100 ? " Damit wird auch der Füllstand zurückgenommen." : ""}
-              </p>
-              <div className="row">
-                <button type="submit" className="btn btn-danger" disabled={undoPending}>
-                  {undoPending ? "Wird gespeichert …" : "Ja, rückgängig"}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => setUndoing(false)}>
-                  Abbrechen
-                </button>
-              </div>
-            </div>
-          ) : canUndo ? (
-            <button type="button" className="btn btn-ghost" onClick={() => setUndoing(true)}>
-              ↩️ Öffnen rückgängig
-            </button>
-          ) : null}
-        </form>
-      )}
+      <UndoOpen itemId={bottle.itemId} fillLevel={bottle.fillLevel} canUndo={canUndo} />
     </div>
+  );
+}
+
+/**
+ * „↩️ Öffnen rückgängig“ für die Karte einer offenen Flasche (Wein und Spirituose): zweistufig
+ * (Bestätigen/Abbrechen), unter 100 % mit Hinweis zum Füllstand. canUndo prüft der Server
+ * (undoOpenCheck); die Server-Aktion prüft nochmals.
+ */
+export function UndoOpen({ itemId, fillLevel, canUndo }: { itemId: string; fillLevel: number | null; canUndo: boolean }) {
+  const [undoState, undoAction, undoPending] = useActionState(undoOpenAction, undefined);
+  const [undoing, setUndoing] = useState(false);
+  const bottle = { itemId, fillLevel };
+  // Nach dem Rückgängigmachen verschwindet die Karte (neu geladen); bis dahin die Meldung zeigen.
+  if (!canUndo && !undoState) return null;
+  return (
+    <form action={undoAction} className="stack-sm">
+      <input type="hidden" name="itemId" value={bottle.itemId} />
+      <Feedback state={undoState} />
+      {canUndo && undoing ? (
+        <div className="stack-sm">
+          <p className="small">
+            Wieder als ungeöffnet buchen, als wäre sie nie geöffnet worden?
+            {bottle.fillLevel != null && bottle.fillLevel < 100 ? " Damit wird auch der Füllstand zurückgenommen." : ""}
+          </p>
+          <div className="row">
+            <button type="submit" className="btn btn-danger" disabled={undoPending}>
+              {undoPending ? "Wird gespeichert …" : "Ja, rückgängig"}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => setUndoing(false)}>
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      ) : canUndo ? (
+        <button type="button" className="btn btn-ghost" onClick={() => setUndoing(true)}>
+          ↩️ Öffnen rückgängig
+        </button>
+      ) : null}
+    </form>
   );
 }

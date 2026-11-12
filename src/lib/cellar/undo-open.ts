@@ -90,3 +90,9 @@ export async function undoOpenBottle(db: Db, itemId: string): Promise<{ ok: true
   const stock = [`${sealed} Fl. ungeöffnet`, open ? `${open} offen` : null].filter(Boolean).join(" · ");
   return { ok: true, text: `Ich habe ${undoLabel(item)} wieder als ungeöffnet gebucht (jetzt ${stock}).`, sealedId: String(sealedId) };
 }
+
+/** Welche dieser offenen Flaschen lassen sich zurückbuchen? Prüfung je Flasche (Weinseite: Wein und Spirituose). */
+export async function undoableItems(db: Db, itemIds: readonly string[]): Promise<Set<string>> {
+  const checks = await Promise.all(itemIds.map(async (id) => ((await undoOpenCheck(db, id)).ok ? id : null)));
+  return new Set(checks.filter((id): id is string => id != null));
+}

@@ -35,7 +35,7 @@ import { loadDocuments } from "@/lib/media/documents";
 import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
 import { alreadyOpenQuestion, openBottlesOfWine } from "@/lib/cellar/open-bottles";
-import { undoOpenCheck } from "@/lib/cellar/undo-open";
+import { undoableItems } from "@/lib/cellar/undo-open";
 import { labelFromHint } from "@/lib/media/pick";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { EditUnit, EditUnits } from "@/components/edit-unit";
@@ -283,12 +283,9 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   // „Flasche öffnen“ eine Bestätigung – dieselbe Prüfung wie im Bot und im Chat.
   const openOfWine = !spirit && charges.length ? await openBottlesOfWine(supabase, wine.id) : [];
   const openQuestion = alreadyOpenQuestion(openOfWine, wine.type);
-  // Öffnen rückgängig: nur kurz nach dem Öffnen und ohne Bewertung/Verkostung (gleiche Prüfung wie im Bot).
-  const undoable = new Set(
-    (await Promise.all((spirit ? [] : open).map(async (o) => ((await undoOpenCheck(supabase, o.inventory_item_id)).ok ? o.inventory_item_id : null)))).filter(
-      (id): id is string => id != null,
-    ),
-  );
+  // Öffnen rückgängig (Wein und Spirituose): je Flasche nur kurz nach dem Öffnen und ohne
+  // Bewertung/Verkostung (gleiche Prüfung wie im Bot).
+  const undoable = await undoableItems(supabase, open.map((o) => o.inventory_item_id));
   const alreadyOpen = openQuestion
     ? { question: openQuestion, href: `${wineHref(wine.id, openOfWine[0].year, typeof query.von === "string" ? { von: query.von } : undefined)}#item:${openOfWine[0].itemId}` }
     : null;
@@ -324,6 +321,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
               fill={o.fill_level_percent}
               openedOn={[o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)}` : null, place(o)].filter(Boolean).join(" · ") || null}
               keep={fortified && keepStatus(o.date_opened, keepDays, today) ? <KeepBadge status={keepStatus(o.date_opened, keepDays, today)} /> : undefined}
+              canUndo={undoable.has(o.inventory_item_id)}
               price={itemPrice(o)}
             />
           </EditUnit>
