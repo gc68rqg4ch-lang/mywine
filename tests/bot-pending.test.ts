@@ -13,7 +13,7 @@ import { TASTED_SOURCE } from "@/lib/chat/tasted";
 import { EXPIRED_ERROR, MENU_SOURCE } from "@/lib/chat/pending";
 import { MENU_VERSION } from "@/lib/chat/menu-view";
 import { runLater } from "@/lib/later";
-import { VARIANTS } from "@/lib/bot/texts";
+import { T, VARIANTS } from "@/lib/bot/texts";
 
 const MICHEL = "86c222d0-3a8c-4d5f-9564-f5654769ecd6";
 const SARA = "c7690541-4e68-4051-aa8f-6a2920fea55b";
@@ -181,7 +181,7 @@ test("Foto mit Bildtext „… Vier von fünf Sternen“: Sterne nicht fragen; J
 
   // Ergänzungs-Knöpfe erscheinen und warten auf eine Wahl.
   assert.match(lastText(), /Möchtest du noch etwas ergänzen\?/);
-  assert.deepEqual(lastButtons().map((b) => b.text), ["📍 Ort", "💰 Preis", "🎉 Anlass", "👥 Begleitung", "🛒 Kaufen?", "📝 Notiz", "⭐ für Sara", "✅ Fertig"]);
+  assert.deepEqual(lastButtons().map((b) => b.text), ["📍 Ort", "💰 Preis", "🎉 Anlass", "👥 Begleitung", "🛒 Kaufen?", "📝 Notiz", "⭐ für Sara", "✅ Fertig", T.wsetInApp]);
   assert.equal(tasted().status, "needs_review");
   assert.equal((tasted().extracted as { step: string }).step, "t_extras");
   await runLater();

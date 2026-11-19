@@ -6,6 +6,7 @@ import { wineHref } from "@/lib/cellar/wine-page";
 import { formatDate, todayIso, wineTitle } from "@/lib/format";
 import { formatShares } from "@/lib/grapes/shares";
 import { loadGrapeShares } from "@/lib/grapes/store";
+import { preselectedPerson } from "@/lib/tasting/links";
 import { autoEvaluate, manualScoresFromData, newTastingData, normalizeData } from "@/lib/tasting/sat";
 import { SatForm } from "../../../flasche/[id]/verkostung/sat-form";
 
@@ -14,12 +15,13 @@ export const metadata: Metadata = { title: "Verkostung (WSET)" };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * WSET-Verkostung aus einem Eintrag „Verkostet“: ohne Flasche, mit encounter_id; Wein,
- * Jahrgang und Datum kommen aus dem Eintrag. ?t=<id> bearbeitet eine bestehende.
+ * WSET-Bewertung aus einem Eintrag „Verkostet“ (auch über den Link von Antoine): ohne
+ * Flasche, mit encounter_id; Wein, Jahrgang, Ort und Datum kommen aus dem Eintrag.
+ * ?t=<id> bearbeitet eine bestehende, ?person=<id> wählt die Person vor (sonst das Login).
  */
 export default async function EncounterTastingPage({ params, searchParams }: PageProps<"/verkostet/[id]/wset">) {
   const { id } = await params;
-  const { t } = await searchParams;
+  const { t, person: personParam } = await searchParams;
   const tastingId = typeof t === "string" && UUID_RE.test(t) ? t : null;
   if (!UUID_RE.test(id)) notFound();
 
@@ -85,7 +87,7 @@ export default async function EncounterTastingPage({ params, searchParams }: Pag
         initial={initial}
         initialManual={manual}
         persons={persons ?? []}
-        initialPersonId={tasting ? tasting.person_id : (person?.id ?? null)}
+        initialPersonId={tasting ? tasting.person_id : preselectedPerson(personParam, persons ?? [], person?.id ?? null)}
         today={today}
         draftKey={`mywine_sat_draft_${tasting?.id ?? `e${encounter.id}`}`}
       />

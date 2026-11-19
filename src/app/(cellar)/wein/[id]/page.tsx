@@ -54,6 +54,7 @@ import { PriceLine, type PriceInfo } from "./price-card";
 import { priceNoteHint } from "@/lib/research/price-note";
 import { PersonRatings, RatingsForm, type PersonRating } from "./ratings-card";
 import { EncounterSection } from "./encounters";
+import { newWsetHref, tastingHref } from "@/lib/tasting/links";
 import { TasteCard } from "./taste-card";
 import { loadTasteProfile } from "@/lib/taste/store";
 import { DeleteWine } from "./delete-sections";
@@ -284,7 +285,6 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
   const legacyRating = inVintage.map((i) => i.personal_wine_rating).find((r) => r != null) ?? null;
   const back = BACK_LINKS[typeof query.von === "string" ? query.von : ""] ?? BACK_LINKS.bestand;
   const yearLabel = year ?? "o. J.";
-  const tastingItem = (itemId: string | null) => itemId ?? anchor?.inventory_item_id;
 
   const von = typeof query.von === "string" ? { von: query.von } : undefined;
   const bottleTitle = (b: EditBatch) =>
@@ -543,11 +543,9 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         <div className="stack section-divider">
           <div className="row row-between">
             <h3 className="subsection-title">WSET</h3>
-            {anchor && (
-              <Link href={`/flasche/${anchor.inventory_item_id}/verkostung`} className="btn btn-sm btn-primary">
-                Neue Verkostung
-              </Link>
-            )}
+            <Link href={newWsetHref(wine.id, year, anchor?.inventory_item_id)} className="btn btn-sm btn-primary">
+              WSET-Bewertung
+            </Link>
           </div>
           {tastings.length === 0 ? (
             <p className="muted">Noch keine Verkostung für {yearLabel}.</p>
@@ -555,13 +553,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
             <ul className="tasting-list">
               {tastings.map((t) => (
                 <li key={t.id}>
-                  <Link
-                    href={
-                      t.encounter_id
-                        ? `/verkostet/${t.encounter_id}/wset?t=${t.id}`
-                        : `/flasche/${tastingItem(t.inventory_item_id)}/verkostung?t=${t.id}`
-                    }
-                  >
+                  <Link href={tastingHref({ ...t, wine_id: wine.id, vintage_year: year })}>
                     <span className="tasting-result">
                       {[t.quality_level, t.points != null ? `${t.points.toLocaleString("de-CH")} / 4 Punkte` : null]
                         .filter(Boolean)
@@ -585,6 +577,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         places={places}
         today={today}
         emptyWine={emptyWine}
+        wset={!spirit}
       />
     </div>
   );

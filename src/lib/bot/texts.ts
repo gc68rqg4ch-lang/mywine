@@ -293,6 +293,8 @@ export const T = {
   tastedSaved: (wine: string, stars: string | null, random?: () => number) =>
     `${pick(["Wunderbar!", "Schön!", "Sehr gut!"], random)} Ich habe ${wine} als verkostet notiert${stars ? ` – mit ${stars}` : ""}.`,
   addMore: "Möchtest du noch etwas ergänzen?",
+  /** Knopf nach der Bewertung „Verkostet“: öffnet das WSET-Tool der App für diesen Eintrag. */
+  wsetInApp: "📝 WSET in der App",
   tastedDone: (wine: string, random?: () => number) =>
     `${pick(["Wunderbar", "Schön", "Perfekt"], random)} – ${wine} steht jetzt unter „Verkostet“.`,
   extra: {

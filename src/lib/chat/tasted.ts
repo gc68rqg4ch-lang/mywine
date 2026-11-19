@@ -19,6 +19,7 @@ import { resolveActor } from "@/lib/telegram/actor";
 import { appBaseUrl } from "@/lib/telegram/config";
 import type { TgCallbackQuery, TgInlineButton, TgInlineKeyboard } from "@/lib/telegram/types";
 import { wineHref } from "@/lib/cellar/wine-page";
+import { encounterWsetHref } from "@/lib/tasting/links";
 import type { Json } from "@/lib/database.types";
 import { parseVintageAnswer, type IngestState, type TastedText, type WineProposal } from "@/lib/ingest/schema";
 import { parseTastedText, type RecognitionResult, enrichFromWeb } from "@/lib/ingest/recognize";
@@ -224,6 +225,17 @@ function ratingButtons(jobId: string, action: string, extra: (string | number)[]
   return [stars.slice(0, 5), stars.slice(5)];
 }
 
+/**
+ * Link-Knopf „WSET in der App“: das WSET-Tool für genau diesen Eintrag (encounter_id), für die
+ * Person, die im Bot bewertet hat. Nicht eingeloggt → nach dem Login dorthin (Proxy, ?next=).
+ * Nur ein Link – kein Callback, kein API-Aufruf; ohne Basis-URL bzw. Eintrag kein Knopf.
+ */
+export function wsetRow(s: Pick<TastedState, "encounterId" | "personId">): TgInlineButton[][] {
+  const base = appBaseUrl();
+  if (!base || !s.encounterId) return [];
+  return [[{ text: T.wsetInApp, url: `${base}${encounterWsetHref(s.encounterId, { personId: s.personId })}` }]];
+}
+
 export function extrasKeyboard(jobId: string, s: TastedState, others: { id: string; name: string }[]): TgInlineKeyboard {
   return {
     inline_keyboard: [
@@ -232,6 +244,7 @@ export function extrasKeyboard(jobId: string, s: TastedState, others: { id: stri
       [button(s.wantToBuy ? "🛒 Kaufen? ✓" : "🛒 Kaufen?", jobId, "buyflag"), button("📝 Notiz", jobId, "x", "note")],
       ...(others.length ? [others.map((p) => button(`⭐ für ${p.name}`, jobId, "other", p.id.slice(0, 8)))] : []),
       [button("✅ Fertig", jobId, "done")],
+      ...wsetRow(s),
     ],
   };
 }
@@ -1012,7 +1025,8 @@ export async function handleTastedCallback(cb: TgCallbackQuery) {
         const base = appBaseUrl();
         const wineId = s.savedWineId;
         const link = base && wineId ? `\n<a href="${base}${wineHref(wineId, s.proposal.vintage_year, { von: "verkostet" })}">In MyWine öffnen</a>` : "";
-        await sendMessage(chatId, `${T.tastedDone(wineLabel(s))}${link}`);
+        const wset = wsetRow(stateOf(next) ?? s);
+        await sendMessage(chatId, `${T.tastedDone(wineLabel(s))}${link}`, wset.length ? { inline_keyboard: wset } : undefined);
       }
       return;
     }

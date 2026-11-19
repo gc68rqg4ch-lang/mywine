@@ -160,7 +160,12 @@ test("Schnellablauf: Foto „im Restaurant probiert“ → Jahrgang → ⭐ → 
   assert.deepEqual([enc.wine_id, enc.vintage_year, enc.person_id, enc.source], [PINTIA, 2019, MICHEL, "bot"]);
   assert.deepEqual(net.tables.wine_ratings.map((r) => [r.person_id, r.rating, r.encounter_id]), [[MICHEL, 4.5, enc.id]]);
   assert.match(lastText(), /^(Wunderbar|Schön|Sehr gut)! Ich habe <b>Vega Sicilia – Pintia<\/b> 2019 als verkostet notiert – mit ⭐ 4½\./);
-  assert.deepEqual(lastButtons().map((b) => b.text), ["📍 Ort", "💰 Preis", "🎉 Anlass", "👥 Begleitung", "🛒 Kaufen?", "📝 Notiz", "⭐ für Sara", "✅ Fertig"]);
+  // Ablauf unverändert; am Schluss nur ein Link-Knopf ins WSET-Tool für genau diesen Eintrag.
+  assert.deepEqual(lastButtons().map((b) => b.text), ["📍 Ort", "💰 Preis", "🎉 Anlass", "👥 Begleitung", "🛒 Kaufen?", "📝 Notiz", "⭐ für Sara", "✅ Fertig", T.wsetInApp]);
+  const wsetButton = lastButtons().at(-1) as { url?: string; callback_data?: string };
+  assert.equal(wsetButton.url, `https://mywine.example/verkostet/${enc.id}/wset?person=${MICHEL}`);
+  assert.equal(wsetButton.callback_data, undefined, "nur ein Link, kein Bot-Ablauf");
+  assert.equal(net.tables.wine_tastings.length, 0, "keine WSET-Bewertung im Bot");
   await runLater(); // Ergänzungen erst nach dem Speichern (Websuche)
 
   // Ort und Preis per Text
@@ -190,9 +195,19 @@ test("Schnellablauf: Foto „im Restaurant probiert“ → Jahrgang → ⭐ → 
   assert.match(lastText(), /Wie viele Sterne gibt Sara\?/);
   await press("4 ★");
   assert.deepEqual(net.tables.wine_ratings.map((r) => [r.person_id, r.rating]), [[MICHEL, 4.5], [SARA, 4]]);
+  const claude = net.claude;
+  let claudeCalls = 0;
+  net.claude = (body) => (claudeCalls++, claude(body));
   await press("✅ Fertig");
+  await runLater();
+  net.claude = claude;
   assert.equal(tastedJob().status, "confirmed");
   assert.match(lastText(), /steht jetzt unter „Verkostet“/);
+  assert.deepEqual(
+    lastButtons().map((b) => [b.text, (b as { url?: string }).url]),
+    [[T.wsetInApp, `https://mywine.example/verkostet/${enc.id}/wset?person=${MICHEL}`]],
+  );
+  assert.equal(claudeCalls, 0, "kein zusätzlicher API-Aufruf");
 });
 
 test("Ankündigung „wir verkosten einen Wein“: die nächste Nachricht gilt als verkostet (Freitext in einem Schritt)", async () => {

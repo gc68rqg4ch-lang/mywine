@@ -1,6 +1,7 @@
 // Weinseite, Spalte 3: „Verkostet“ – alle Einträge des Weins (alle Jahrgänge), neuester
 // zuerst, je eine kompakte Zeile („2022 · 28.10.2026 · Kronenhalle · ★ 4“, dahinter „🛒 kaufen“
-// beim Merker); ✏️ je Eintrag öffnet das Formular samt Merker „Kaufen?“ und Löschen.
+// beim Merker) und „📝 WSET-Bewertung“ direkt beim Eintrag (auch ohne Bestand; hängt dann am
+// Eintrag); ✏️ je Eintrag öffnet das Formular samt Merker „Kaufen?“ und Löschen.
 
 import Link from "next/link";
 import { EncounterFields, RatingField, VintageField, type PlaceOption } from "@/components/encounter-fields";
@@ -8,6 +9,7 @@ import { EditUnit } from "@/components/edit-unit";
 import { encounterRows } from "@/lib/cellar/wine-units";
 import type { EncounterView } from "@/lib/edit/encounters";
 import { formatDate } from "@/lib/format";
+import { encounterWsetHref } from "@/lib/tasting/links";
 import { DeleteEncounter } from "./delete-encounter";
 import { EditForm } from "./edit-form";
 
@@ -20,6 +22,7 @@ export function EncounterSection({
   places,
   today,
   emptyWine = null,
+  wset = true,
 }: {
   wineId: string;
   year: number | null;
@@ -30,6 +33,8 @@ export function EncounterSection({
   today: string;
   /** Wein bliebe nach dem Löschen des (einzigen) Eintrags leer zurück. */
   emptyWine?: { encounterId: string; wineId: string; name: string; question: string } | null;
+  /** Knopf „WSET-Bewertung“ je Eintrag (nicht bei Spirituosen). */
+  wset?: boolean;
 }) {
   const newHref = `/verkostet/neu?wein=${wineId}&jahrgang=${year ?? "ohne"}`;
   return (
@@ -89,9 +94,6 @@ export function EncounterSection({
                       <span>🛒 Kaufen? – vormerken</span>
                     </label>
                   </EditForm>
-                  <Link href={`/verkostet/${e.id}/wset`} className="btn btn-ghost btn-sm">
-                    📝 WSET-Verkostung
-                  </Link>
                   <DeleteEncounter
                     encounterId={e.id}
                     label={`Eintrag vom ${formatDate(e.tastedOn)}`}
@@ -100,13 +102,18 @@ export function EncounterSection({
                 </>
               }
             >
-              {e.tastings.length > 0 && (
+              {(wset || e.tastings.length > 0) && (
                 <span className="row small encounter-extra">
                   {e.tastings.map((t) => (
-                    <Link key={t.id} href={`/verkostet/${e.id}/wset?t=${t.id}`} className="link">
+                    <Link key={t.id} href={encounterWsetHref(e.id, { tastingId: t.id })} className="link">
                       📝 {[t.quality ?? "WSET", t.points != null ? `${t.points.toLocaleString("de-CH")} / 4` : null, t.person].filter(Boolean).join(" · ")}
                     </Link>
                   ))}
+                  {wset && (
+                    <Link href={encounterWsetHref(e.id)} className="btn btn-ghost btn-sm">
+                      📝 WSET-Bewertung
+                    </Link>
+                  )}
                 </span>
               )}
             </EditUnit>
