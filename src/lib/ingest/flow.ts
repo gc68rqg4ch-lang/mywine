@@ -421,25 +421,34 @@ export async function confirmAndSave(db: AdminClient, job: IngestJob, chatId: nu
 export async function storeDrinkWindow(db: AdminClient, wineId: string, state: IngestState) {
   const from = state.drink_from_year ?? null;
   const until = state.drink_until_year ?? null;
-  const year = state.proposal.vintage_year;
+  const year = state.proposal?.vintage_year ?? null;
   // Mit Ablaufdatum übernimmt storeBestBefore (Herkunft „label“); NV nur dort.
   if ((from == null && until == null) || year == null || parseBestBefore(state.best_before)) return;
   try {
-    const { data: existing } = await db
+    const { data: existing, error } = await db
       .from("wine_vintages")
-      .select("id, drink_from_year, drink_until_year")
+      .select("id, drink_from_year, drink_until_year, drink_window_source")
       .eq("wine_id", wineId)
       .eq("vintage_year", year)
       .maybeSingle();
-    // Aus der Recherche beim Erfassen: Herkunft „research“, Quelle aus den Recherche-Quellen.
-    const note = sourceNote(state.recognition.sources ?? []);
-    if (!existing || (existing.drink_from_year == null && existing.drink_until_year == null)) {
-      await saveVintageWindow(db, { rowId: existing?.id ?? null, wineId, year }, { drink_from_year: from, drink_until_year: until }, "research", note);
-    }
+    if (error) throw error;
+    // Nur ein leeres Trinkfenster füllen; von Hand gepflegtes (manual) nie überschreiben.
+    if (existing && (existing.drink_from_year != null || existing.drink_until_year != null || existing.drink_window_source === "manual")) return;
+    // Aus der Recherche beim Erfassen: Herkunft „research“, Quelle aus den Recherche-Quellen –
+    // fehlen sie (Teilresultat ohne recognition, z. B. „Verkostet“), eben ohne Quelle.
+    const note = sourceNote(recognitionSources(state));
+    await saveVintageWindow(db, { rowId: existing?.id ?? null, wineId, year }, { drink_from_year: from, drink_until_year: until }, "research", note);
   } catch (error) {
-    // Die Flasche trotzdem speichern; das Trinkfenster lässt sich nachtragen.
+    // Die Flasche trotzdem speichern. Nichts wird als „geprüft“ markiert – das leere
+    // Trinkfenster bleibt eine Lücke und wird beim nächsten Recherchelauf nachgeholt.
     console.error("storing drink window failed", error);
   }
+}
+
+/** Quellen der Erkennung/Recherche; fehlt das Teilresultat bzw. ist es kaputt: keine. */
+export function recognitionSources(state: Pick<IngestState, "recognition"> | null | undefined): string[] {
+  const sources = (state?.recognition as { sources?: unknown } | null | undefined)?.sources;
+  return Array.isArray(sources) ? sources.filter((s): s is string => typeof s === "string") : [];
 }
 
 /** Leere Stammdaten eines bestehenden Weins aus der Recherche ergänzen – nie überschreiben. */
@@ -497,7 +506,7 @@ export async function storeJobMedia(
 ) {
   if (!paths.length) return;
   try {
-    const kinds = labelKinds(paths.length, state.recognition.image_sides);
+    const kinds = labelKinds(paths.length, state.recognition?.image_sides);
     const media = await Promise.all(
       paths.map(async (path, i) => {
         const { data, error } = await db.storage.from(PHOTO_BUCKET).download(path);

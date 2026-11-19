@@ -131,7 +131,9 @@ export function readTasteResearch(raw: unknown, ctx: { wine: TasteWine; year: nu
   if (!raw) return null;
   const type = satTypeForWine(ctx.wine.type);
   // Shop-Adressen mit anderem Jahrgang (bzw. Datenblatt ohne Jahrgang im Namen) zählen nicht.
-  const checked = { ...(raw as TasteResearchRaw), sources: (raw as TasteResearchRaw).sources.filter((s) => shopSourceAllowed(s.url, ctx.year)) };
+  // Ohne Quellen-Liste (Teilresultat unvollständig): keine Quellen – validateTasteProfile verwirft dann.
+  const sources = Array.isArray((raw as Partial<TasteResearchRaw>).sources) ? (raw as TasteResearchRaw).sources : [];
+  const checked = { ...(raw as TasteResearchRaw), sources: sources.filter((s) => typeof s?.url === "string" && shopSourceAllowed(s.url, ctx.year)) };
   return validateTasteProfile(checked, { type, year: ctx.year, wineType: ctx.wine.type, documents: ctx.documents.map((d) => ({ name: d.name, year: d.year })) });
 }
 

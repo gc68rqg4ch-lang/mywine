@@ -778,7 +778,15 @@ async function completeAfterSave(jobId: string, wineId: string, s: TastedState, 
     if (!web) return;
     await fillWineGaps(db, wineId, web.proposal);
     const grapes = await resolveGrapes(db, web.proposal, wineId, web.grapes);
-    const state = { proposal: { ...web.proposal, grape_shares: grapes.shares }, grape_source: grapes.source, drink_from_year: web.drink.from, drink_until_year: web.drink.until } as IngestState;
+    // Vollständiges Teilresultat (auch recognition mit den Quellen der Websuche) – ohne
+    // recognition stürzte storeDrinkWindow beim Lesen der Quellen ab.
+    const state = {
+      proposal: { ...web.proposal, grape_shares: grapes.shares },
+      recognition: { model: "", confidence: 1, notes: null, enriched_fields: web.filled, sources: web.sources },
+      grape_source: grapes.source,
+      drink_from_year: web.drink.from,
+      drink_until_year: web.drink.until,
+    } as IngestState;
     await storeGrapes(db, wineId, state);
     await storeDrinkWindow(db, wineId, state);
   } catch (error) {

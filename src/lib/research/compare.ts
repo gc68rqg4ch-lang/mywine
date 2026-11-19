@@ -114,8 +114,10 @@ export function displayValue(field: SuggestionField, value: unknown): string {
 }
 
 /** Kurze Quelle aus der ersten URL: „bodegaspintia.com“ bzw. „Dokument: Datenblatt.pdf“. */
-export function sourceNote(sources: string[]) {
-  for (const url of sources) {
+export function sourceNote(sources: readonly string[] | null | undefined) {
+  // Fehlende Quellen (Teilresultat ohne sources) = keine Quelle, kein Absturz.
+  for (const url of sources ?? []) {
+    if (typeof url !== "string") continue;
     if (url.startsWith("dokument:")) return `Dokument: ${url.slice("dokument:".length)}`;
     try {
       return new URL(url).hostname.replace(/^www\./, "");
