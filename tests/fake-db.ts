@@ -91,7 +91,11 @@ export function fakeDb(tables: Record<string, Row[]>, rpc: Record<string, (args:
   return {
     writes,
     from: (t: string) => builder(t),
-    rpc: async (name: string, args: Row) => ({ data: rpc[name]?.(args) ?? null, error: null }),
+    // Fehler einer DB-Funktion: { __error: { code, message } } zurückgeben.
+    rpc: async (name: string, args: Row) => {
+      const out = rpc[name]?.(args) ?? null;
+      return out && typeof out === "object" && "__error" in out ? { data: null, error: (out as { __error: unknown }).__error } : { data: out, error: null };
+    },
     storage: {
       from: () => ({
         createSignedUrls: async (paths: string[]) => ({ data: paths.map((p) => ({ path: p, signedUrl: `https://signed.example/${p}` })), error: null }),

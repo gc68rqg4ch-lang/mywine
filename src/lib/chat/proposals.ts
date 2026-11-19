@@ -15,6 +15,8 @@ export type Proposal =
   | { kind: "fill"; itemId: string; percent: number }
   | { kind: "open"; itemId: string }
   | { kind: "drunk"; itemId: string }
+  /** Öffnen rückgängig: die offene Flasche wieder als ungeöffnet buchen. */
+  | { kind: "undoOpen"; itemId: string }
   | { kind: "rate"; wineId: string; vintageYear: number | null; personKey: string; rating: number }
   /** Spirituose: Füllstand der (einzigen) offenen Flasche (0 = leer); Knöpfe älterer Nachrichten. */
   | { kind: "spiritFill"; wineId: string; percent: number }
@@ -37,6 +39,8 @@ export function encodeProposal(p: Proposal) {
       return `co:${p.itemId}`;
     case "drunk":
       return `cd:${p.itemId}`;
+    case "undoOpen":
+      return `cu:${p.itemId}`;
     case "rate":
       return `cr:${p.wineId}:${p.vintageYear ?? "-"}:${p.personKey}:${Math.round(p.rating * 2)}`;
     case "spiritFill":
@@ -68,7 +72,7 @@ export function editKeyboard(jobId: string, labels: { yes: string; no: string } 
 }
 
 export function isChatCallback(data: string | undefined) {
-  return data === REJECT_DATA || /^c[fodrnewsz]:/.test(data ?? "");
+  return data === REJECT_DATA || /^c[fodrnewszu]:/.test(data ?? "");
 }
 
 export function decodeProposal(data: string | undefined): Proposal | null {
@@ -92,6 +96,8 @@ export function decodeProposal(data: string | undefined): Proposal | null {
       return rest.length === 1 ? { kind: "spiritEmpty", wineId: id } : null;
     case "cd":
       return rest.length === 1 ? { kind: "drunk", itemId: id } : null;
+    case "cu":
+      return rest.length === 1 ? { kind: "undoOpen", itemId: id } : null;
     case "cr": {
       if (rest.length !== 4) return null;
       const [, vintage, key, halves] = rest;

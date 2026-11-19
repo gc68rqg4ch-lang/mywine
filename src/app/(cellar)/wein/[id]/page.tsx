@@ -34,6 +34,9 @@ import { loadGrapeShares } from "@/lib/grapes/store";
 import { loadDocuments } from "@/lib/media/documents";
 import { loadPendingSuggestions } from "@/lib/research/suggestions";
 import { loadVintagePhotos } from "@/lib/media/store";
+import { alreadyOpenQuestion, openBottlesOfWine } from "@/lib/cellar/open-bottles";
+import { undoableItems } from "@/lib/cellar/undo-open";
+import { labelFromHint } from "@/lib/media/pick";
 import { currentScore, normalizeData } from "@/lib/tasting/sat";
 import { EditUnit, EditUnits } from "@/components/edit-unit";
 import { SPIRIT_DETAIL_FIELDS, WINE_DETAIL_FIELDS, WINE_SECTIONS, drinkRow, grapeLine, priceDetails, type WineDetailField, type WineSection } from "@/lib/cellar/wine-units";
@@ -277,6 +280,17 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
     price: priceOf(i),
   }));
 
+  // Offene Flasche zuerst: ist vom Wein schon eine offen (gleich welcher Jahrgang), braucht
+  // „Flasche öffnen“ eine Bestätigung – dieselbe Prüfung wie im Bot und im Chat.
+  const openOfWine = !spirit && charges.length ? await openBottlesOfWine(supabase, wine.id) : [];
+  const openQuestion = alreadyOpenQuestion(openOfWine, wine.type);
+  // Öffnen rückgängig (Wein und Spirituose): je Flasche nur kurz nach dem Öffnen und ohne
+  // Bewertung/Verkostung (gleiche Prüfung wie im Bot).
+  const undoable = await undoableItems(supabase, open.map((o) => o.inventory_item_id));
+  const alreadyOpen = openQuestion
+    ? { question: openQuestion, href: `${wineHref(wine.id, openOfWine[0].year, typeof query.von === "string" ? { von: query.von } : undefined)}#item:${openOfWine[0].itemId}` }
+    : null;
+
   const drinkSource = asDrinkSource(vintage?.drink_window_source);
   const drinkWindow = drinkWindowText(vintage?.drink_from_year ?? null, vintage?.drink_until_year ?? null, drinkSource);
   const latestReadiness = tastings.find((t) => t.readiness)?.readiness ?? null;
@@ -307,6 +321,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
               fill={o.fill_level_percent}
               openedOn={[o.date_opened ? `Geöffnet am ${formatDate(o.date_opened)}` : null, place(o)].filter(Boolean).join(" · ") || null}
               keep={fortified && keepStatus(o.date_opened, keepDays, today) ? <KeepBadge status={keepStatus(o.date_opened, keepDays, today)} /> : undefined}
+              canUndo={undoable.has(o.inventory_item_id)}
               price={itemPrice(o)}
             />
           </EditUnit>
@@ -341,6 +356,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                     .filter(Boolean)
                     .join(" · "),
                 }}
+                canUndo={undoable.has(o.inventory_item_id)}
                 price={itemPrice(o)}
               />
               {/* Likörwein: gut bis = Öffnungsdatum + Haltbarkeit (rechnet bei neuem Datum mit). */}
@@ -375,7 +391,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
       {!spirit && charges.length > 0 && (
         <section className="card stack">
           <h2 className="section-title">Flasche öffnen</h2>
-          <OpenBottleForm charges={charges} today={today} />
+          <OpenBottleForm charges={charges} today={today} alreadyOpen={alreadyOpen} />
         </section>
       )}
       {drunk.length > 0 && (
@@ -468,7 +484,8 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
                 wineId={wine.id}
                 vintageYear={year}
                 itemId={anchor?.inventory_item_id ?? null}
-                photos={photos.map(viewerPhoto)}
+                // Fotos eines anderen Jahrgangs (Hinweis) hier nicht ändern – nur die eigenen.
+                photos={photos.labelFrom === undefined ? photos.map(viewerPhoto) : []}
                 alt={photoAlt}
                 embedded
               />
@@ -489,6 +506,7 @@ export default async function WinePage({ params, searchParams }: PageProps<"/wei
         {photos.length > 0 && (
           <div className="details-photos">
             <PhotoGallery photos={photos.map(viewerPhoto)} alt={photoAlt} />
+            {photos.labelFrom !== undefined && <p className="muted photo-from">{labelFromHint(photos.labelFrom)}</p>}
           </div>
         )}
         {suggestions.length > 0 && <ResearchSuggestions suggestions={suggestions} />}

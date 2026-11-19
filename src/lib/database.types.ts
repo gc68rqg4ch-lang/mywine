@@ -2045,6 +2045,7 @@ export type Database = {
         }
       }
       spirit_bottle_empty: { Args: { p_item_id: string }; Returns: Json }
+      undo_open_bottle: { Args: { p_item_id: string }; Returns: string }
     }
     Enums: {
       event_type:

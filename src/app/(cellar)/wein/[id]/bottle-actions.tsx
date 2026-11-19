@@ -2,7 +2,7 @@
 
 import { useActionState, useId, useState, type ReactNode } from "react";
 import { FillGauge } from "@/components/fill-gauge";
-import { markDrunk, openBottle, updateFillLevel, type ActionState } from "../../actions";
+import { markDrunk, openBottle, undoOpenAction, updateFillLevel, type ActionState } from "../../actions";
 import { PriceLine, type PriceInfo } from "./price-card";
 
 function Feedback({ state }: { state: ActionState }) {
@@ -66,8 +66,18 @@ export type Charge = {
  * inventory_item-ID. Die Preis-Bearbeitung ist ein eigenes Formular je Charge, darum
  * hängen die Auswahlknöpfe per form-Attribut am Öffnen-Formular.
  */
-export function OpenBottleForm({ charges, today }: { charges: Charge[]; today: string }) {
+export function OpenBottleForm({
+  charges,
+  today,
+  alreadyOpen,
+}: {
+  charges: Charge[];
+  today: string;
+  /** Vom Wein ist schon eine Flasche offen: Rückfrage und Link dorthin – Öffnen erst nach „Trotzdem öffnen“. */
+  alreadyOpen?: { question: string; href: string } | null;
+}) {
   const [state, action, pending] = useActionState(openBottle, undefined);
+  const [confirming, setConfirming] = useState(false);
   const [fill, setFill] = useState(100);
   const [chargeId, setChargeId] = useState(charges[0]?.itemId ?? "");
   const formId = useId();
@@ -100,10 +110,33 @@ export function OpenBottleForm({ charges, today }: { charges: Charge[]; today: s
           <span>Geöffnet am</span>
           <input type="date" name="dateOpened" defaultValue={today} max={today} required />
         </label>
-        <Feedback state={state} />
-        <button type="submit" className="btn btn-primary" disabled={pending}>
-          {pending ? "Wird geöffnet …" : "Flasche öffnen"}
-        </button>
+        {/* Feedback zeigt die Rückfrage der Server-Aktion nicht doppelt, wenn sie hier schon steht. */}
+        {!(alreadyOpen && state?.error === alreadyOpen.question) && <Feedback state={state} />}
+        {alreadyOpen && confirming ? (
+          <div className="stack-sm" role="alert">
+            <p>{alreadyOpen.question}</p>
+            <input type="hidden" name="confirmOpen" value="1" />
+            <div className="row">
+              <button type="submit" className="btn btn-primary" disabled={pending}>
+                {pending ? "Wird geöffnet …" : "Trotzdem öffnen"}
+              </button>
+              <a className="btn" href={alreadyOpen.href}>
+                Zur offenen Flasche
+              </a>
+              <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => setConfirming(false)}>
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        ) : alreadyOpen ? (
+          <button type="button" className="btn" onClick={() => setConfirming(true)}>
+            Flasche öffnen
+          </button>
+        ) : (
+          <button type="submit" className="btn btn-primary" disabled={pending}>
+            {pending ? "Wird geöffnet …" : "Flasche öffnen"}
+          </button>
+        )}
       </form>
     </div>
   );
@@ -116,8 +149,20 @@ export type OpenBottleInfo = {
   label: string;
 };
 
-/** Eine offene Flasche: Füllstand ändern oder als ausgetrunken markieren. */
-export function OpenBottleControls({ bottle, price }: { bottle: OpenBottleInfo; /** Preis, Händler, Geschenk (vom Server). */ price?: ReactNode }) {
+/**
+ * Eine offene Flasche: Füllstand ändern, als ausgetrunken markieren oder – kurz nach dem Öffnen,
+ * ohne Bewertung/Verkostung (canUndo, geprüft auf dem Server) – das Öffnen rückgängig machen.
+ */
+export function OpenBottleControls({
+  bottle,
+  price,
+  canUndo = false,
+}: {
+  bottle: OpenBottleInfo;
+  /** Preis, Händler, Geschenk (vom Server). */
+  price?: ReactNode;
+  canUndo?: boolean;
+}) {
   const [fillState, fillAction, fillPending] = useActionState(updateFillLevel, undefined);
   const [drunkState, drunkAction, drunkPending] = useActionState(markDrunk, undefined);
   const [fill, setFill] = useState(bottle.fillLevel ?? 100);
@@ -158,6 +203,46 @@ export function OpenBottleControls({ bottle, price }: { bottle: OpenBottleInfo; 
           </button>
         )}
       </form>
+      <UndoOpen itemId={bottle.itemId} fillLevel={bottle.fillLevel} canUndo={canUndo} />
     </div>
+  );
+}
+
+/**
+ * „↩️ Öffnen rückgängig“ für die Karte einer offenen Flasche (Wein und Spirituose): zweistufig
+ * (Bestätigen/Abbrechen), unter 100 % mit Hinweis zum Füllstand. canUndo prüft der Server
+ * (undoOpenCheck); die Server-Aktion prüft nochmals.
+ */
+export function UndoOpen({ itemId, fillLevel, canUndo }: { itemId: string; fillLevel: number | null; canUndo: boolean }) {
+  const [undoState, undoAction, undoPending] = useActionState(undoOpenAction, undefined);
+  const [undoing, setUndoing] = useState(false);
+  const bottle = { itemId, fillLevel };
+  // Nach dem Rückgängigmachen verschwindet die Karte (neu geladen); bis dahin die Meldung zeigen.
+  if (!canUndo && !undoState) return null;
+  return (
+    <form action={undoAction} className="stack-sm">
+      <input type="hidden" name="itemId" value={bottle.itemId} />
+      <Feedback state={undoState} />
+      {canUndo && undoing ? (
+        <div className="stack-sm">
+          <p className="small">
+            Wieder als ungeöffnet buchen, als wäre sie nie geöffnet worden?
+            {bottle.fillLevel != null && bottle.fillLevel < 100 ? " Damit wird auch der Füllstand zurückgenommen." : ""}
+          </p>
+          <div className="row">
+            <button type="submit" className="btn btn-danger" disabled={undoPending}>
+              {undoPending ? "Wird gespeichert …" : "Ja, rückgängig"}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => setUndoing(false)}>
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      ) : canUndo ? (
+        <button type="button" className="btn btn-ghost" onClick={() => setUndoing(true)}>
+          ↩️ Öffnen rückgängig
+        </button>
+      ) : null}
+    </form>
   );
 }

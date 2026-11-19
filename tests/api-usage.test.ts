@@ -104,9 +104,9 @@ test("Jede Messages-Antwort wird protokolliert: Zweck aus dem Kontext, Wein, Auf
   assert.equal(net.tables.api_usage[1].purpose, "other");
   // Erkennung: Zweck recognize (das Ergebnis selbst ist hier egal)
   await parseTextEntry("Pintia 2019, 6 Flaschen").catch(() => null);
-  const haiku = net.tables.api_usage.find((r) => r.model === "claude-haiku-5-5")!;
-  assert.equal(haiku.purpose, "recognize");
-  assert.equal(haiku.cost_usd, 0.00018, "Haiku: 800×0.1 + 200×0.5");
+  const opus = net.tables.api_usage.find((r) => r.model === "claude-opus-5-5")!;
+  assert.equal(opus.purpose, "recognize");
+  assert.equal(opus.cost_usd, 0.0072, "Opus 5.5: 800×4 + 200×20");
   // Ungültige Wein-ID wird nicht übernommen
   assert.equal(usageRow("claude-haiku-5-5", null, { wineId: "kein-uuid" }).wine_id, null);
 });

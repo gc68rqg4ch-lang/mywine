@@ -52,6 +52,23 @@ export function vintagePhotos(rows: MediaRow[], year: number | null) {
     .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || newestFirst(a, b));
 }
 
+/**
+ * Fotos für die Weinseite: die eigenen des Jahrgangs (immer Vorrang); hat der Jahrgang keine,
+ * dieselben Etiketten wie die Liste (pickLabels: anderer Jahrgang bzw. ohne Jahrgang) mit
+ * from = Jahrgang dieser Fotos (null = ohne Jahrgang) für den Hinweis. Liste und Weinseite
+ * zeigen so nie Unterschiedliches.
+ */
+export function winePagePhotos(rows: MediaRow[], year: number | null): { photos: MediaRow[]; from?: number | null } {
+  const own = vintagePhotos(rows, year);
+  if (own.length) return { photos: own };
+  const picked = pickLabels(rows, year);
+  if (!picked) return { photos: [] };
+  return { photos: picked.back ? [picked.front, picked.back] : [picked.front], from: picked.front.vintage_year };
+}
+
+/** Hinweis zu Fotos eines anderen Jahrgangs: „Etikett von 1991“ bzw. „Etikett ohne Jahrgang“. */
+export const labelFromHint = (from: number | null) => (from == null ? "Etikett ohne Jahrgang" : `Etikett von ${from}`);
+
 export const MEDIA_KIND_LABELS: Record<MediaKind, string> = {
   label_front: "Vorderseite",
   label_back: "Rückseite",

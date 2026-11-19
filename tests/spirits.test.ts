@@ -411,6 +411,12 @@ test("Bot: unsichere Hauptkategorie → nur bestehende als Knöpfe, dann Unterka
   reset();
   await startAlbum({ kind: "spirit", category: "Sake", subcategory: "", age_years: 7, cask: "Charred Oak", distilled_year: 2015, bottled_year: 2022 });
   assert.equal(state().proposal.type, "spirit");
+  // Produzent «Woodford Reserve» = Name der vorhandenen Flasche «Woodford Reserve» (gleiche Art) → erst fragen.
+  assert.equal(state().step, "similar");
+  assert.match(lastText(), /Ist das <b>«Woodford Reserve» \(Woodford\)<\/b>\? Sonst lege ich «Rye Whiskey» neu an\./);
+  assert.deepEqual(buttons(), ["✅ Woodford Reserve", "➕ Neuer Wein", "✖️ Abbrechen"]);
+  await handleUpdate(cb(callbackData("simno", JOB)) as never);
+  assert.equal(state().new_wine, true);
   assert.match(lastText(), /🥃/);
   assert.match(lastText(), /Alter: 7 Jahre/);
   assert.match(lastText(), /Fass\/Finish: Charred Oak/);

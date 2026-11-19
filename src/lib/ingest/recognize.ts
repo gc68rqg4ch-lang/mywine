@@ -31,11 +31,27 @@ import {
 export type { SpiritLabel } from "@/lib/spirits/draft";
 import type { SpiritLabel } from "@/lib/spirits/draft";
 
+/** Kleine Aufgaben (Preisabgleich, Chat, Tagestext, Korrektur, Verkostungsnotiz): Haiku 5.5. */
 export const RECOGNITION_MODEL = "claude-haiku-5-5";
+/** Etikett- und Text-Erkennung (Foto, Text-Eintrag, „Nur verkostet“): Opus 5.5. */
+export const LABEL_MODEL = "claude-opus-5-5";
+/** Rückfall bei Fehler bzw. Überlast und Modell der Recherchen: Sonnet 5.5. */
 export const FALLBACK_MODEL = "claude-sonnet-5-5";
-export const MIN_CONFIDENCE = 0.7;
 
-// Sonnet 5.5 kann bei Sicherheitsklassifikatoren ablehnen; die serverseitige
+/** Rückfall-Modell nach einem Fehler – nie dasselbe Modell nochmals (Sonnet selbst: keiner). */
+export const fallbackFor = (model: string): string | null => (model === FALLBACK_MODEL ? null : FALLBACK_MODEL);
+
+/**
+ * Opus 5.5 lässt das Denken nicht abschalten (thinking „disabled“ → 400 bei jedem effort, siehe
+ * ai/structured.ts); darum so knapp wie möglich: effort „low“. Keine Sampling-Parameter (400).
+ */
+export const LABEL_EFFORT = "low" as const;
+const labelEffort = (model: string) => (model === LABEL_MODEL ? { effort: LABEL_EFFORT } : {});
+
+/** Fester Systemteil mit Cache-Marker (Opus/Sonnet 5.5 cachen ab 512 Tokens; kürzer: kein Cache, kein Aufschlag). */
+const cachedSystem = (text: string): Anthropic.Beta.BetaTextBlockParam[] => [{ type: "text", text, cache_control: { type: "ephemeral" } }];
+
+// Opus 5.5 und Sonnet 5.5 können bei Sicherheitsklassifikatoren ablehnen; die serverseitige
 // Fallback-Kette springt dann automatisch auf ein passendes Modell.
 export const SONNET_FALLBACK: { betas: Anthropic.Beta.AnthropicBeta[]; fallbacks: "default" } = {
   betas: ["server-side-fallback-2026-07-01"],
@@ -58,6 +74,13 @@ const NAME_RULE =
   "Den Produzenten nicht in den Namen – ausser der Name besteht nur aus einer Qualitäts-/Reifestufe oder einem Gattungswort (Reserva, Gran Reserva, Grande Reserva, Riserva, Crianza, Reserve, Grand Vin, Cuvée, Tinto, Rosso): dann Produzent bzw. Marke davor, z. B. „Legaris Reserva“, „Protos Reserva“, „Pago de los Capellanes Reserva“ (ohne „Bodegas“).";
 
 /**
+ * Gilt für Foto und Text: Gutsname als Weinname (Grand Vin eines Châteaus) – nicht die Appellation;
+ * Appellation bzw. Rebsorte nur, wenn der Wein weder eigenen Namen noch den Gutsnamen trägt.
+ */
+export const ESTATE_NAME_RULE =
+  "Ist der Name des Weinguts zugleich der Name des Weins (z. B. der Grand Vin eines Bordeaux-Châteaus), ist name dieser Name ohne „Château“, „Domaine“ o. ä. – z. B. name „La Dominique“, Produzent „Château La Dominique“; name „Tour de Pez“, Produzent „Château Tour de Pez“. Appellation und Klassifikation (Saint-Émilion Grand Cru, Grand Cru Classé, Cru Bourgeois, Premier Cru, DOCG …) gehören in appellation, nie in name. Die Appellation oder Rebsorte (wie auf dem Etikett hervorgehoben) ist name nur, wenn der Wein weder einen eigenen Namen noch den Gutsnamen als Weinnamen trägt.";
+
+/**
  * Gilt für Foto und Text: Name vollständig, bei Spirituosen mit Marke, wenn sie Teil des
  * Produktnamens ist; Grösse und Alkohol nur, was dasteht (keine Standardwerte).
  */
@@ -76,7 +99,7 @@ const RECOGNITION_SYSTEM = `Du liest Weinetiketten für eine private Weinsammlun
 Du bekommst Fotos der Vorder- und meist auch der Rückseite derselben Flasche.
 Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. Land aus "Product of Spain").
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
-- name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} Hat der Wein keinen eigenen Namen, nimm die Rebsorte oder Appellation, wie sie auf dem Etikett hervorgehoben ist. ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE}
+- name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} ${ESTATE_NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE}
 - country: ${COUNTRY_HINT} (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
 - ${PRODUCER_HINT}.
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira – das ist Wein), spirit (Spirituose: Whisky, Grappa, Likör, Obstbrand, Cognac/Brandy, Rum, Gin, Vodka, Tequila/Mezcal, Kräuterschnaps).
@@ -104,13 +127,28 @@ function enumFormat<S extends z.ZodType, L extends z.ZodType>(strict: S, lenient
   return { ...betaZodOutputFormat(strict), parse: (content: string) => lenient.parse(JSON.parse(content)) as z.infer<L> };
 }
 
-async function recognizeWith(model: string, images: LabelImage[]): Promise<Recognition> {
+/**
+ * Erkennung mit LABEL_MODEL; bei Fehler bzw. Überlast einmal mit dem Rückfall-Modell (Sonnet 5.5).
+ * Anmeldefehler und Nutzungslimit gehen durch (dort hilft kein anderes Modell).
+ */
+export async function withLabelFallback<T>(run: (model: string) => Promise<T>, label: string): Promise<T> {
+  try {
+    return await run(LABEL_MODEL);
+  } catch (error) {
+    const fallback = fallbackFor(LABEL_MODEL);
+    if (!fallback || error instanceof Anthropic.AuthenticationError || usageLimit(error)) throw error;
+    console.warn(`${label}: Rückfall auf ${fallback}`, error instanceof Error ? error.message : error);
+    return run(fallback);
+  }
+}
+
+async function recognizeWith(model: string, images: LabelImage[]): Promise<{ output: Recognition; model: string }> {
   // Kategorien der Spirituosen aus der DB (5 Min. zwischengespeichert; sonst feste Liste).
   const { categories } = await spiritCategoriesForAi();
   const response = await withUsage({ purpose: "recognize" }, () => anthropic().beta.messages.parse({
     model,
     max_tokens: 16000,
-    system: RECOGNITION_SYSTEM,
+    system: cachedSystem(RECOGNITION_SYSTEM),
     messages: [
       {
         role: "user",
@@ -120,8 +158,8 @@ async function recognizeWith(model: string, images: LabelImage[]): Promise<Recog
         ],
       },
     ],
-    output_config: { format: enumFormat(recognitionSchema(categories), recognitionSchema(categories, true)) },
-    ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
+    output_config: { ...labelEffort(model), format: enumFormat(recognitionSchema(categories), recognitionSchema(categories, true)) },
+    ...SONNET_FALLBACK,
   }));
 
   if (response.stop_reason === "refusal") {
@@ -130,7 +168,8 @@ async function recognizeWith(model: string, images: LabelImage[]): Promise<Recog
   if (response.stop_reason === "max_tokens" || !response.parsed_output) {
     throw new RecognitionError(`${model} hat kein gültiges Ergebnis geliefert.`);
   }
-  return response.parsed_output;
+  // Tatsächlich genutztes Modell (serverseitiger Rückfall bei Ablehnung möglich).
+  return { output: response.parsed_output, model: response.model || model };
 }
 
 export type RecognitionResult = {
@@ -153,15 +192,12 @@ export function cleanBestBefore(raw: string | null | undefined) {
   return bb ? toBestBeforeValue(bb) : null;
 }
 
-/** Etikett erkennen: zuerst Haiku, bei Konfidenz < 0.7 nochmals mit Sonnet. */
+/**
+ * Etikett erkennen mit Opus 5.5; bei Fehler bzw. Überlast Sonnet 5.5. Tiefe Konfidenz löst keinen
+ * zweiten Durchgang mehr aus (Sonnet liest nicht besser als Opus) – der Bot fragt dann nach.
+ */
 export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionResult> {
-  let model = RECOGNITION_MODEL;
-  let result = await recognizeWith(model, images);
-
-  if (result.confidence < MIN_CONFIDENCE) {
-    model = FALLBACK_MODEL;
-    result = await recognizeWith(model, images);
-  }
+  const { output: result, model } = await withLabelFallback((m) => recognizeWith(m, images), "recognize");
 
   const { confidence, uncertain_notes, image_sides, vintage_certain, best_before, spirit, ...wine } = result;
   // Spirituose (bzw. unsicher): Art „spirit“ nur bei sicherer Erkennung – sonst fragt Antoine.
@@ -550,7 +586,7 @@ export async function enrichFromWeb(proposal: WineProposal): Promise<{
 
 const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in der Schweiz aus einer kurzen Nachricht, z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“.
 Übernimm nur, was in der Nachricht steht oder sich eindeutig daraus ergibt; erfinde nichts.
-- name: Weinname ohne Jahrgang. ${NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
+- name: Weinname ohne Jahrgang. ${NAME_RULE} ${ESTATE_NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500, „50 cl“ = 500). ${SIZE_ALCOHOL_RULE}
 - ${COUNTRY_HINT}.
 - ${PRODUCER_HINT}.
@@ -558,7 +594,7 @@ const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in 
 - ${BEST_BEFORE_RULE}
 - purchase: Anzahl Flaschen, Lagerort (nur Weinkeller oder Wohnzimmer), bezahlter Preis (price) und Normalpreis (regular_price) pro Flasche in CHF, Händler. Ein einzelner Preis ist der bezahlte (price); regular_price nur, wenn ausdrücklich ein Normal-/Regulärpreis genannt ist (z. B. „49 statt 66“: price 49, regular_price 66). Nicht Genanntes: 0 bzw. leer. Ein Gesamtpreis für mehrere Flaschen wird durch die Anzahl geteilt.`;
 
-/** Freitext → Wein + Kaufangaben (Haiku, bei Fehler oder Ablehnung Sonnet). */
+/** Freitext → Wein + Kaufangaben (Opus 5.5, bei Fehler oder Überlast Sonnet 5.5). */
 export async function parseTextEntry(
   text: string,
 ): Promise<{ proposal: WineProposal; purchase: TextEntry["purchase"]; bestBefore: string | null; spirit: SpiritLabel | null }> {
@@ -567,23 +603,17 @@ export async function parseTextEntry(
     const response = await withUsage({ purpose: "recognize" }, () => anthropic().beta.messages.parse({
       model,
       max_tokens: 8000,
-      system: TEXT_SYSTEM,
+      system: cachedSystem(TEXT_SYSTEM),
       messages: [{ role: "user", content: text }],
-      output_config: { format: enumFormat(textEntrySchema(categories), textEntrySchema(categories, true)) },
-      ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
+      output_config: { ...labelEffort(model), format: enumFormat(textEntrySchema(categories), textEntrySchema(categories, true)) },
+      ...SONNET_FALLBACK,
     }));
     if (response.stop_reason === "refusal" || !response.parsed_output) {
       throw new RecognitionError(`${model} hat den Text nicht erfasst.`);
     }
     return response.parsed_output;
   };
-  let parsed: TextEntry;
-  try {
-    parsed = await run(RECOGNITION_MODEL);
-  } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError || usageLimit(error)) throw error;
-    parsed = await run(FALLBACK_MODEL);
-  }
+  const parsed: TextEntry = await withLabelFallback(run, "text entry");
   const { purchase, best_before, spirit, ...rest } = parsed;
   const wine = spirit.kind === "spirit" ? { ...rest, type: "spirit" as const } : rest;
   return {
@@ -623,35 +653,30 @@ export async function applyCorrection(
   return { ...normalizeProposal(wine), bestBefore: cleanBestBefore(best_before) };
 }
 
-const TASTED_SYSTEM = (today: string) => `Du erfasst für eine private Weinsammlung in der Schweiz einen Wein, den jemand irgendwo verkostet hat (Restaurant, Bar, bei Freunden), aus einer kurzen Nachricht – z. B. „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne, würd ich kaufen“.
-Übernimm nur, was in der Nachricht steht; erfinde nichts. Heute ist ${today}.
-- name: Weinname ohne Jahrgang. ${NAME_RULE} producer nur, wenn genannt (sonst null). vintage_year nur, wenn genannt (sonst null).
+// Fest (ohne Datum), damit der Systemteil gecacht werden kann; das Datum steht in der Nachricht.
+const TASTED_SYSTEM = `Du erfasst für eine private Weinsammlung in der Schweiz einen Wein, den jemand irgendwo verkostet hat (Restaurant, Bar, bei Freunden), aus einer kurzen Nachricht – z. B. „Heute im Kronenhalle den Pintia 2019 probiert, 120 Franken die Flasche, mit Sara, 4,5 Sterne, würd ich kaufen“.
+Übernimm nur, was in der Nachricht steht; erfinde nichts. Das heutige Datum steht vor der Nachricht.
+- name: Weinname ohne Jahrgang. ${NAME_RULE} ${ESTATE_NAME_RULE} producer nur, wenn genannt (sonst null). vintage_year nur, wenn genannt (sonst null).
 - type, country, region nur, wenn genannt bzw. eindeutig. ${COUNTRY_HINT}.
 - tasting: Datum (heute/gestern umrechnen, sonst leer), Ort, Preis mit Einheit (Flasche/Glas) und Währung, Anlass, Begleitung, Notiz, Sterne der schreibenden Person (-1 = nicht genannt), want_to_buy.`;
 
-/** Freitext „verkostet“ → Wein + Angaben zum Eintrag (Haiku, bei Fehler oder Ablehnung Sonnet). */
+/** Freitext „verkostet“ → Wein + Angaben zum Eintrag (Opus 5.5, bei Fehler oder Überlast Sonnet 5.5). */
 export async function parseTastedText(text: string, today: string): Promise<{ proposal: WineProposal; tasting: TastedText["tasting"] }> {
   const run = async (model: string) => {
     const response = await withUsage({ purpose: "recognize" }, () => anthropic().beta.messages.parse({
       model,
       max_tokens: 4000,
-      system: TASTED_SYSTEM(today),
-      messages: [{ role: "user", content: text }],
-      output_config: { format: betaZodOutputFormat(TastedTextSchema) },
-      ...(model === FALLBACK_MODEL ? SONNET_FALLBACK : {}),
+      system: cachedSystem(TASTED_SYSTEM),
+      messages: [{ role: "user", content: `Heute ist ${today}.\n\n${text}` }],
+      output_config: { ...labelEffort(model), format: betaZodOutputFormat(TastedTextSchema) },
+      ...SONNET_FALLBACK,
     }));
     if (response.stop_reason === "refusal" || !response.parsed_output) {
       throw new RecognitionError(`${model} hat den Text nicht erfasst.`);
     }
     return response.parsed_output;
   };
-  let parsed: TastedText;
-  try {
-    parsed = await run(RECOGNITION_MODEL);
-  } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError || usageLimit(error)) throw error;
-    parsed = await run(FALLBACK_MODEL);
-  }
+  const parsed: TastedText = await withLabelFallback(run, "tasted text");
   const { tasting, ...wine } = parsed;
   const proposal = normalizeProposal({ ...wine, appellation: null, grape_shares: [], alcohol_content: null, bottle_size_ml: null });
   return { proposal, tasting };

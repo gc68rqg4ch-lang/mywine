@@ -427,7 +427,7 @@ async function prepareBatchVintage(db: Db, itemId: string, to: number | null): P
   if (item.vintage_year === to) return fail(NOTHING);
   const target = await vintageExists(db, item.wine_id, to);
   const notes = [
-    `Nur diese Charge – Bewertungen, Verkostungen und Fotos bleiben bei ${yearText(item.vintage_year)}.`,
+    `Nur diese Charge – Fotos dieser Flasche ziehen mit; Bewertungen und Verkostungen bleiben bei ${yearText(item.vintage_year)}.`,
     ...(target.items ? [`Kommt zum bestehenden Jahrgang ${yearText(to)} dazu.`] : []),
   ];
   return ready(

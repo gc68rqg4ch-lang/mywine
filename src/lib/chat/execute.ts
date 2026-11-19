@@ -8,6 +8,7 @@ import { T } from "@/lib/bot/texts";
 import { emptySpiritBottle, setSpiritFill } from "@/lib/spirits/bottles";
 import { keepUntil, shortDate } from "@/lib/fortified/keep";
 import { keepOnOpen } from "@/lib/research/open-keep-auto";
+import { undoOpenBottle } from "@/lib/cellar/undo-open";
 
 export type ExecuteResult = { ok: boolean; text: string; itemId?: string };
 
@@ -88,6 +89,11 @@ export async function executeProposal(db: AdminClient, p: Proposal): Promise<Exe
       // Likörwein bzw. Likör: „offen gut bis 25.11.“ (Haltbarkeit fehlt noch → Schätzung nach Stil, Recherche ersetzt sie).
       const until = (type === "fortified" || type === "spirit") && batch?.wine_id ? keepUntil(todayIso(), await keepOnOpen(db, batch.wine_id)) : null;
       return { ok: true, text: `Ich habe ${item ? label(item) : "die Flasche"} geöffnet${until ? ` – offen gut bis ${shortDate(until)}` : ""}.`, itemId: openId ?? undefined };
+    }
+    case "undoOpen": {
+      // Erneute Prüfung des aktuellen Zustands (offen, ≤ 24 h, nichts angehängt) – dann zurückbuchen.
+      const result = await undoOpenBottle(db, p.itemId);
+      return result.ok ? { ok: true, text: result.text } : { ok: false, text: result.text };
     }
     case "rate": {
       const { data: persons, error } = await db.from("persons").select("id, name");
