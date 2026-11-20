@@ -4,6 +4,7 @@ import type { AdminClient } from "@/lib/supabase/admin";
 import type { Tables } from "@/lib/database.types";
 import { asWineType } from "@/lib/format";
 import { canonicalProducer } from "@/lib/producers/load";
+import { tidyWineName } from "./wine-names";
 import { bottleSizeOf, grapeNames, type StorageRoom, type WineProposal } from "./schema";
 import { relatedWines, similarWines } from "./wine-names";
 
@@ -85,15 +86,17 @@ export async function resolveWine(
     if (data) return data.id;
   }
 
-  // Produzent in der vorhandenen Schreibweise (gleich nach Normalisierung; Ähnliches fragt der Ablauf vorher).
+  // Produzent in der vorhandenen Schreibweise (gleich nach Normalisierung, ohne Zusätze wie
+  // Vineyards; Ähnliches fragt der Ablauf vorher) und nicht vorne im Weinnamen.
   const producer = proposal.producer?.trim() ? await canonicalProducer(db, proposal.producer) : null;
-  const existing = await findWine(db, proposal.name, producer);
+  const name = tidyWineName(proposal.name, producer, proposal.type) ?? proposal.name;
+  const existing = await findWine(db, name, producer);
   if (existing) return existing.id;
 
   const { data, error } = await db
     .from("wines")
     .insert({
-      name: proposal.name!.trim(),
+      name: name!.trim(),
       // Produzent darf fehlen (wird später ergänzt bzw. recherchiert).
       producer,
       country: proposal.country,

@@ -6,6 +6,8 @@ import "server-only";
 // encounter_id und das Datum des Eintrags (rated_at).
 
 import { scheduleTasteProfile } from "@/lib/research/taste-auto";
+import { harmonizeWine } from "@/lib/producers/load";
+import { sameProducer } from "@/lib/producers/match";
 import type { Database } from "@/lib/database.types";
 import { WINE_TYPE_LABELS, formatMoney, formatStarNumber, todayIso, wineName, type WineType } from "@/lib/format";
 import { isValidRating } from "@/lib/ratings";
@@ -292,7 +294,8 @@ export async function matchWine(
   if (forceNew) return { known: null };
   const candidates = await wineCandidates(db, name);
   if (producer) {
-    return { known: candidates.find((c) => c.producer?.toLowerCase() === producer.toLowerCase()) ?? null };
+    // Produzent gleich nach Normalisierung („DAOU“ = „DAOU Vineyards“).
+    return { known: candidates.find((c) => sameProducer(c.producer, producer)) ?? null };
   }
   if (candidates.length > 1) return { ambiguous: true, candidates };
   return { known: candidates[0] ?? null };
@@ -315,8 +318,9 @@ export async function prepareAddEncounter(db: Db, edit: Extract<Edit, { kind: "a
     if (!w) return fail("Diesen Wein gibt es nicht mehr.");
     wine = w;
   } else {
-    const name = clean(edit.wine.new.name);
-    const producer = clean(edit.wine.new.producer);
+    // Produzent in der gespeicherten Schreibweise, nicht vorne im Weinnamen (wie beim Einbuchen).
+    const typed = { name: clean(edit.wine.new.name), producer: clean(edit.wine.new.producer), type: edit.wine.new.type ?? null };
+    const { name, producer } = typed.name ? await harmonizeWine(db, typed) : typed;
     if (!name) return fail("Bitte den Namen des Weins angeben.");
     if (name.length > 200 || (producer?.length ?? 0) > 200) return fail("Name bzw. Produzent ist zu lang.");
     const type = edit.wine.new.type ?? null;

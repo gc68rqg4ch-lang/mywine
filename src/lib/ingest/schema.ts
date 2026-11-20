@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FALLBACK_CATEGORIES, spiritLabelSchema } from "@/lib/spirits/ai-categories";
 import type { SpiritCategory } from "@/lib/spirits/categories";
 import { sizeFromText } from "@/lib/research/price-match";
-import { completeSpiritName, completeWineName } from "./wine-names";
+import { completeSpiritName, completeWineName, tidyWineName } from "./wine-names";
 import { COUNTRY_HINT, PRODUCER_HINT, WINE_TYPES } from "@/lib/format";
 import { normalizeGrapeShares, type GrapeSource } from "@/lib/grapes/shares";
 import type { SpiritDraft, SpiritLabel } from "@/lib/spirits/draft";
@@ -71,9 +71,25 @@ export const RecognitionSchema = WineProposalSchema.extend({
     .array(z.enum(["front", "back", "other"]))
     .describe("Pro Foto in der gesendeten Reihenfolge: front = Vorderetikett, back = Rückenetikett, other = anderes"),
   best_before: BestBeforeField,
+  // Nicht nullable (Grenze von 16 Union-Feldern): "unclear" bzw. leer = unbekannt.
+  wine_color: z
+    .enum(["white", "rose", "red", "unclear"])
+    .describe("Farbe des Weins laut Foto (Etikett, Flasche, Text wie „Rosé“): white, rose, red; unclear, wenn nicht erkennbar (z. B. dunkle Flasche ohne Hinweis)")
+    .catch("unclear"),
+  label_note: z
+    .string()
+    .describe("Herkunfts-, Lagen- oder Vineyard-Angaben vom Etikett, die kein Weinname sind (z. B. „Vignoble de la Rivière“, „Estate grown“); leer = keine")
+    .catch(""),
+  producer_urls: z
+    .array(z.string())
+    .describe("Adressen (URLs bzw. Domains) des Produzenten, die auf dem Etikett lesbar aufgedruckt sind, z. B. „www.louis-roederer.com“; leer = keine")
+    .catch([]),
   spirit: SpiritLabelSchema,
 });
 export type Recognition = z.infer<typeof RecognitionSchema>;
+
+/** Farbe laut Foto (Erkennung) – für den Prüfschritt der Namen. */
+export type WineColor = Recognition["wine_color"];
 
 /** Erkennung (Foto) mit den aktuellen Kategorien. */
 export const recognitionSchema = (categories: SpiritCategory[], lenient = false) => RecognitionSchema.extend({ spirit: spiritLabelSchema(categories, { lenient }) });
@@ -123,6 +139,10 @@ export type IngestStep =
   | "restock"
   /** Ähnlicher bestehender Wein (andere Schreibweise): „Meinst du …?“ */
   | "similar"
+  /** Prüfschritt der Namen: Widerspruch bzw. Korrektur – Variante wählen (Knöpfe). */
+  | "name_check"
+  /** Prüfschritt der Namen: wartet auf den getippten Namen („✏️ Selbst eingeben“). */
+  | "name_input"
   /** Text-Erfassung: Produzent fehlt noch. */
   | "producer"
   /** Produzent ähnlich einem vorhandenen: „gleich wie «X»?“ (Knöpfe) oder neu. */
@@ -201,6 +221,10 @@ export type IngestState = {
   best_before?: string;
   /** Erster Vorschlag ohne vorherige Rückfrage: weitere Fotos innert 15 s gehören noch dazu. */
   photo_join?: boolean;
+  /** Herkunfts-/Lagenangabe vom Etikett, die kein Name ist – kommt in die Notiz des Jahrgangs. */
+  label_note?: string;
+  /** Prüfschritt der Namen: Varianten zur Auswahl (zuerst die Erkennung) und Begründung. */
+  name_check?: { variants: { name: string; producer: string | null }[]; reason: string };
   recognition: {
     model: string;
     confidence: number;
@@ -301,8 +325,12 @@ export function normalizeProposal(p: WineProposal, options: { spiritPossible?: b
   const alcohol = p.alcohol_content;
   const size = p.bottle_size_ml;
   return {
-    // Nur Stufe („Reserva“) → Marke davor („Legaris Reserva“), wie die bestehenden Weine.
-    name: p.type === "spirit" ? completeSpiritName(text(p.name), text(p.producer)) : completeWineName(text(p.name), text(p.producer)),
+    // Wein: Produzent vorne im Namen weg („DAOU Reserve …“ → „Reserve …“); nur Stufe („Reserva“) →
+    // Marke davor („Legaris Reserva“), wie die bestehenden Weine. Spirituose: Marke zum Namen.
+    name:
+      p.type === "spirit"
+        ? completeSpiritName(text(p.name), text(p.producer))
+        : completeWineName(tidyWineName(text(p.name), text(p.producer), p.type), text(p.producer)),
     producer: text(p.producer),
     vintage_year: year != null && year >= 1800 && year <= 2100 ? year : null,
     country: text(p.country),

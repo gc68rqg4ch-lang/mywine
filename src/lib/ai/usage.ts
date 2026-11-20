@@ -70,6 +70,9 @@ export function setUsageWriter(w: typeof writer) {
   writer = w;
 }
 
+/** Neue Zwecke vor ihrer Migration: so zählen (Stammdaten + Profil → Stammdaten, Prüfschritt → Erkennung). */
+const PURPOSE_FALLBACK: Partial<Record<Purpose, Purpose>> = { research_wine_taste: "research_wine", label_check: "recognize" };
+
 let missingWarned = false;
 
 export async function recordUsage(model: string, usage: ApiUsage | null | undefined, ctx: UsageContext = currentUsageContext()) {
@@ -77,10 +80,11 @@ export async function recordUsage(model: string, usage: ApiUsage | null | undefi
     try {
       await writer(usageRow(model, usage, ctx));
     } catch (error) {
-      // Neuer Zweck vor der Migration (Check api_usage_purpose_check): als Stammdaten-Recherche zählen.
+      // Neuer Zweck vor der Migration (Check api_usage_purpose_check): unter dem nächstliegenden zählen.
       const message = error instanceof Error ? error.message : String(error);
-      if (ctx.purpose !== "research_wine_taste" || !/purpose_check|23514/.test(message)) throw error;
-      await writer(usageRow(model, usage, { ...ctx, purpose: "research_wine" }));
+      const fallback = ctx.purpose ? PURPOSE_FALLBACK[ctx.purpose] : undefined;
+      if (!fallback || !/purpose_check|23514/.test(message)) throw error;
+      await writer(usageRow(model, usage, { ...ctx, purpose: fallback }));
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

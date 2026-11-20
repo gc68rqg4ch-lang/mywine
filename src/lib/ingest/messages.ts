@@ -55,7 +55,10 @@ export type CallbackAction =
   /** Preissuche: anderen Jahrgang/andere Grösse übernehmen, selbst eingeben, leer lassen */
   | "offeryes"
   | "offerself"
-  | "offerleave";
+  | "offerleave"
+  /** Prüfschritt der Namen: Variante wählen (Index) bzw. selbst eingeben. */
+  | "namepick"
+  | "nameself";
 
 export function callbackData(action: CallbackAction, jobId: string, value?: string) {
   return [action, jobId, value].filter(Boolean).join(":");
@@ -98,6 +101,8 @@ export function parseCallbackData(data: string | undefined) {
     "offeryes",
     "offerself",
     "offerleave",
+    "namepick",
+    "nameself",
   ];
   if (!actions.includes(action as CallbackAction) || !/^[0-9a-f-]{36}$/.test(jobId ?? "")) {
     return null;
@@ -184,6 +189,23 @@ export function reviewKeyboard(jobId: string): TgInlineKeyboard {
         { text: "✏️ Korrigieren", callback_data: callbackData("fix", jobId) },
         { text: "🗑️ Verwerfen", callback_data: callbackData("drop", jobId) },
       ],
+    ],
+  };
+}
+
+/**
+ * Prüfschritt der Namen: je Variante ein Knopf (Index; Produzent dazu, wenn er sich unterscheidet),
+ * „✏️ Selbst eingeben“, „✖️ Abbrechen“.
+ */
+export function nameCheckKeyboard(jobId: string, variants: { name: string; producer: string | null }[]): TgInlineKeyboard {
+  const producers = new Set(variants.map((v) => v.producer ?? ""));
+  return {
+    inline_keyboard: [
+      ...variants.map((v, i) => [
+        { text: `«${v.name}»${producers.size > 1 && v.producer ? ` (${v.producer})` : ""}`.slice(0, 64), callback_data: callbackData("namepick", jobId, String(i)) },
+      ]),
+      [{ text: T.nameCheckSelf, callback_data: callbackData("nameself", jobId) }],
+      cancelRow(jobId),
     ],
   };
 }

@@ -23,10 +23,12 @@ import { runPriceSearch } from "./price";
 import type { ResearchScope } from "./gaps";
 import { budgetReachedText, limitText, runDoneText, singleDoneText, type JobResult, type RunCounts } from "./job-text";
 import { researchAndFillWine, type ResearchOutcome, type TasteMode } from "./wine";
+import { runLabelCheck } from "@/lib/ingest/label-check-run";
+import type { AdminClient } from "@/lib/supabase/admin";
 
 type Db = SupabaseClient<Database>;
 export type JobRow = Database["public"]["Tables"]["research_jobs"]["Row"];
-export type JobKind = "page" | "research" | "window" | "keep" | "price";
+export type JobKind = "page" | "research" | "window" | "keep" | "price" | "label_check";
 
 /** Angaben für die Recherche – wie bisher an researchAndFillWine bzw. das Trinkfenster übergeben. */
 export type JobParams = {
@@ -43,6 +45,8 @@ export type JobParams = {
   chat_id?: number;
   /** Testlauf der Preissuche: nichts speichern, nichts senden, nur result schreiben. */
   dry_run?: boolean;
+  /** Testlauf „label_check“: Erfassung, deren Fotos erneut erkannt und geprüft werden. */
+  ingest_job_id?: string;
 };
 
 export type NewJob = { wineId: string; kind: JobKind; params: JobParams; vintageYear?: number | null };
@@ -173,7 +177,7 @@ export const toResult = (o: ResearchOutcome): JobResult => ({
 export async function runJob(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "params"> & { id?: string }): Promise<ResearchOutcome> {
   const p = (job.params ?? {}) as JobParams;
   // Verbrauchsprotokoll: Wein und Auftrag (Testlauf der Preissuche mit „:dry_run“).
-  const jobRef = `${job.id ?? job.kind}${p.dry_run === true ? ":dry_run" : ""}`;
+  const jobRef = `${job.id ?? job.kind}${p.dry_run === true || job.kind === "label_check" ? ":dry_run" : ""}`;
   return withUsage({ wineId: job.wine_id, jobRef }, () => runJobInner(db, job, p));
 }
 
@@ -186,6 +190,8 @@ async function runJobInner(db: Db, job: Pick<JobRow, "wine_id" | "kind" | "param
       if (!p.item_id || (!p.chat_id && p.dry_run !== true)) return { status: "nothing", filled: [], suggested: 0, seconds: 0 };
       return await runPriceSearch(db, { item_id: p.item_id, mode: p.mode === "regular" ? "regular" : "both", chat_id: p.chat_id ?? 0, ...(p.dry_run === true ? { dry_run: true } : {}) });
     }
+    // Testlauf der Erkennung samt Prüfschritt (immer ohne Speichern, auch ohne dry_run-Angabe).
+    if (job.kind === "label_check") return await runLabelCheck(db as AdminClient, p.ingest_job_id);
     const year = "year" in p ? { year: p.year ?? null } : {};
     if (job.kind === "page") return await researchAndFillWine(db, job.wine_id, "all", { taste: "always", ...year });
     return await researchAndFillWine(db, job.wine_id, p.scope === "all" ? "all" : "cellar", { taste: p.taste ?? "missing", ...year, skipRecent: p.skipRecent !== false });

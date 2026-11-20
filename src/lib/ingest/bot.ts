@@ -57,7 +57,6 @@ import {
   applyCorrection,
   enrichFromWeb,
   recognizeLabel,
-  type LabelImage,
 } from "./recognize";
 import { tastedIntent } from "@/lib/chat/tasted-text";
 import {
@@ -110,19 +109,16 @@ import {
   failJob,
   resolveGrapes,
   setProducer,
+  askCheckedNameText,
+  chooseCheckedName,
   setVintage,
   startTextIngest,
 } from "./flow";
 import { askPriceForItem, isPriceCallback, offerDetails, parsePriceCallback, releaseHeldPriceQuestions, storeFoundPrice } from "@/lib/research/price";
 import { chooseMainCategory, chooseSubCategory, kindPatch } from "./spirit-flow";
+import { IMAGE_TYPES, extensionOf, loadLabelImages } from "./images";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Grenze der Claude API pro Bild
-const IMAGE_TYPES = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-} as const;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -305,11 +301,6 @@ function pickImage(msg: TgMessage) {
   return null;
 }
 
-function extensionOf(path: string): keyof typeof IMAGE_TYPES | null {
-  const ext = path.split(".").pop()?.toLowerCase();
-  return ext && ext in IMAGE_TYPES ? (ext as keyof typeof IMAGE_TYPES) : null;
-}
-
 /** Erkennung eines vollständigen Albums – läuft nur im Request, der den Job beansprucht (exportiert für Tests). */
 export async function processJob(jobId: string, chatId: number) {
   const db = createAdminClient();
@@ -328,7 +319,8 @@ export async function processJob(jobId: string, chatId: number) {
 
     await sendMessage(chatId, T.photosReceived(photos.length));
 
-    let recognition = await recognizeLabel(await loadImages(db, photos.map((p) => p.path)));
+    let images = await loadLabelImages(db, photos.map((p) => p.path));
+    let recognition = await recognizeLabel(images);
     // Kam während der Erkennung noch ein Foto dazu (z. B. die Rückseite einzeln): nochmals mit
     // allen erkennen – erst dann die eine Rückfrage. Höchstens zweimal.
     for (let round = 0; round < 2; round++) {
@@ -336,7 +328,8 @@ export async function processJob(jobId: string, chatId: number) {
       if (now.length <= photos.length) break;
       photos = now;
       await savePhotos(photos);
-      recognition = await recognizeLabel(await loadImages(db, photos.map((p) => p.path)));
+      images = await loadLabelImages(db, photos.map((p) => p.path));
+      recognition = await recognizeLabel(images);
     }
 
     // Gekauft oder nur verkostet? Bildtext bzw. „wir verkosten einen Wein“ vorher entscheidet;
@@ -351,24 +344,10 @@ export async function processJob(jobId: string, chatId: number) {
       await askPhotoIntent(db, jobId, chatId, recognition, before?.caption);
       return;
     }
-    await continuePhotoPurchase(db, jobId, chatId, recognition, before?.caption, { firstQuestion: true });
+    await continuePhotoPurchase(db, jobId, chatId, recognition, before?.caption, { firstQuestion: true, images });
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }
-}
-
-async function loadImages(db: AdminClient, paths: string[]): Promise<LabelImage[]> {
-  return Promise.all(
-    paths.map(async (path) => {
-      const { data, error } = await db.storage.from(PHOTO_BUCKET).download(path);
-      if (error) throw error;
-      const ext = extensionOf(path) ?? "jpg";
-      return {
-        mediaType: IMAGE_TYPES[ext],
-        base64: Buffer.from(await data.arrayBuffer()).toString("base64"),
-      };
-    }),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +444,8 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
           "describe",
           "restock",
           "similar",
+          "name_check",
+          "name_input",
           "producer",
           "producer_match",
           "vintage",
@@ -658,6 +639,21 @@ async function handleCallback(cb: TgCallbackQuery, actor: Actor) {
       if (!chosen) return;
       await clearKeyboard(chatId, messageId);
       await advanceTo(db, job, chatId, "producer_match", { proposal: { ...state.proposal, producer: chosen }, producer_checked: chosen, producer_options: undefined });
+      return;
+    }
+
+    case "namepick":
+    case "nameself": {
+      // Prüfschritt der Namen: Variante übernehmen bzw. den Namen selbst tippen.
+      await answerCallback(cb.id);
+      if (state.step !== "name_check") return;
+      await clearKeyboard(chatId, messageId);
+      if (parsed.action === "nameself") {
+        await askCheckedNameText(db, job, chatId);
+        return;
+      }
+      const variant = state.name_check?.variants[Number(parsed.value)];
+      if (variant) await chooseCheckedName(db, job, chatId, "name_check", variant);
       return;
     }
 
@@ -882,6 +878,17 @@ async function handleText(msg: TgMessage, actor: Actor) {
       after(() => correctJob(job, state, chatId, text));
       return;
     }
+    case "name_check":
+    case "name_input": {
+      // Getippter Name (auch statt eines Knopfs): übernehmen, neu abgleichen, Vorschlag zeigen.
+      const name = text.replace(/\s+/g, " ").trim();
+      if (name.length < 2 || name.length > 200) {
+        await sendMessage(chatId, T.nameCheckRetry, cancelKeyboard(job.id));
+        return;
+      }
+      await chooseCheckedName(db, job, chatId, state.step, { name, producer: state.proposal.producer });
+      return;
+    }
     case "producer_match": {
       // Getippter Produzent statt Knopf: neu abgleichen.
       const producer = text.replace(/\s+/g, " ").trim().slice(0, 120);
@@ -977,6 +984,8 @@ export function purchaseAnswerFit(step: IngestState["step"], text: string): "ans
     case "correcting":
       return "answer";
     case "producer":
+    case "name_check":
+    case "name_input":
     case "vendor":
     case "vendor_new":
     case "gift_from":

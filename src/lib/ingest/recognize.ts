@@ -25,6 +25,7 @@ import {
   type Recognition,
   type TastedText,
   type TextEntry,
+  type WineColor,
   type WineProposal,
 } from "./schema";
 
@@ -81,6 +82,13 @@ export const ESTATE_NAME_RULE =
   "Ist der Name des Weinguts zugleich der Name des Weins (z. B. der Grand Vin eines Bordeaux-Châteaus), ist name dieser Name ohne „Château“, „Domaine“ o. ä. – z. B. name „La Dominique“, Produzent „Château La Dominique“; name „Tour de Pez“, Produzent „Château Tour de Pez“. Appellation und Klassifikation (Saint-Émilion Grand Cru, Grand Cru Classé, Cru Bourgeois, Premier Cru, DOCG …) gehören in appellation, nie in name. Die Appellation oder Rebsorte (wie auf dem Etikett hervorgehoben) ist name nur, wenn der Wein weder einen eigenen Namen noch den Gutsnamen als Weinnamen trägt.";
 
 /**
+ * Gilt für Foto und Text: der Weinname ist die Cuvée – keine Herkunfts-, Lagen- oder
+ * Vineyard-Angabe (die gehört in label_note); bei Champagner/Schaumwein die Cuvée-Bezeichnung.
+ */
+export const CUVEE_NAME_RULE =
+  "Der Weinname ist die Cuvée-Bezeichnung auf dem Vorderetikett. Herkunfts-, Lagen- oder Vineyard-Angaben (z. B. „Vignoble de la Rivière“, „Origine“, „Estate grown“, „Lieu-dit …“, „Single Vineyard“ ohne eigenen Namen) sind kein Name – sie gehören in label_note. Bei Champagner und Schaumwein ist der Name die Cuvée, z. B. „Brut Vintage“, „Rosé Vintage“, „Blanc de Blancs“, „Collection 243“, „Brut Nature“ – bei einem rosa Wein bzw. Etikett mit „Rosé“ steht das im Namen.";
+
+/**
  * Gilt für Foto und Text: Name vollständig, bei Spirituosen mit Marke, wenn sie Teil des
  * Produktnamens ist; Grösse und Alkohol nur, was dasteht (keine Standardwerte).
  */
@@ -99,7 +107,10 @@ const RECOGNITION_SYSTEM = `Du liest Weinetiketten für eine private Weinsammlun
 Du bekommst Fotos der Vorder- und meist auch der Rückseite derselben Flasche.
 Lies nur ab, was auf dem Etikett steht oder sich daraus eindeutig ergibt (z. B. Land aus "Product of Spain").
 Erfinde nichts: Was nicht lesbar oder nicht angegeben ist, ist null bzw. eine leere Liste.
-- name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${NAME_RULE} ${ESTATE_NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE}
+- name: der Weinname ohne Jahrgang (z. B. "Les Pagodes de Cos", "Pintia"). ${CUVEE_NAME_RULE} ${NAME_RULE} ${ESTATE_NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE}
+- wine_color: Farbe des Weins aus dem Foto – Etikett (Farbe, „Rosé“, „Blanc“, „Rouge“), Flasche bzw. sichtbarer Wein, Text: white, rose, red; unclear, wenn nicht erkennbar. Bei Spirituosen unclear.
+- label_note: Herkunfts-, Lagen- oder Vineyard-Angaben vom Etikett, die kein Name sind; sonst leer.
+- producer_urls: Adressen des Produzenten, die lesbar auf dem Etikett stehen (z. B. „www.louis-roederer.com“); sonst leer. Nichts erfinden.
 - country: ${COUNTRY_HINT} (Spanien, Frankreich, Italien, Portugal, Schweiz, USA, …).
 - ${PRODUCER_HINT}.
 - type: red (Rotwein), white (Weisswein), rose, sparkling (Schaumwein/Champagner/Cava), sweet (Süsswein), fortified (Port, Sherry, Madeira – das ist Wein), spirit (Spirituose: Whisky, Grappa, Likör, Obstbrand, Cognac/Brandy, Rum, Gin, Vodka, Tequila/Mezcal, Kräuterschnaps).
@@ -184,7 +195,27 @@ export type RecognitionResult = {
   vintageCertain: boolean;
   /** Ablaufdatum vom Etikett („2028-09“ bzw. „2027-05-31“), nur wenn gültig; sonst null. */
   bestBefore?: string | null;
+  /** Farbe laut Foto (für den Prüfschritt der Namen). */
+  color?: WineColor;
+  /** Herkunfts-/Lagenangabe vom Etikett, die kein Name ist (kommt in die Notiz des Jahrgangs). */
+  labelNote?: string | null;
+  /** Aufgedruckte Adressen des Produzenten (https://…), für die Recherche. */
+  producerUrls?: string[];
 };
+
+/** Aufgedruckte Adresse → https-URL (nur plausible Domains); sonst null. */
+export function labelUrl(raw: string): string | null {
+  const t = raw.trim().replace(/[),.;]+$/, "");
+  if (!t || /\s/.test(t)) return null;
+  try {
+    const u = new URL(/^https?:\/\//i.test(t) ? t : `https://${t}`);
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(u.hostname)) return null;
+    u.protocol = "https:";
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
 
 /** Ablaufdatum aus der Erkennung prüfen und vereinheitlichen; ungültig/leer → null. */
 export function cleanBestBefore(raw: string | null | undefined) {
@@ -199,7 +230,7 @@ export function cleanBestBefore(raw: string | null | undefined) {
 export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionResult> {
   const { output: result, model } = await withLabelFallback((m) => recognizeWith(m, images), "recognize");
 
-  const { confidence, uncertain_notes, image_sides, vintage_certain, best_before, spirit, ...wine } = result;
+  const { confidence, uncertain_notes, image_sides, vintage_certain, best_before, spirit, wine_color, label_note, producer_urls, ...wine } = result;
   // Spirituose (bzw. unsicher): Art „spirit“ nur bei sicherer Erkennung – sonst fragt Antoine.
   const proposal = spirit.kind === "spirit" ? { ...wine, type: "spirit" as const } : spirit.kind === "unsure" && wine.type === "spirit" ? { ...wine, type: null } : wine;
   return {
@@ -211,6 +242,9 @@ export async function recognizeLabel(images: LabelImage[]): Promise<RecognitionR
     imageSides: image_sides.length === images.length ? image_sides : null,
     vintageCertain: vintage_certain && proposal.vintage_year != null,
     bestBefore: cleanBestBefore(best_before),
+    color: wine_color,
+    labelNote: label_note?.trim().slice(0, 200) || null,
+    producerUrls: [...new Set((producer_urls ?? []).map(labelUrl).filter((u): u is string => !!u))].slice(0, 3),
   };
 }
 
@@ -245,14 +279,19 @@ export function researchTools(options: {
   inputSchema: Anthropic.Beta.BetaTool.InputSchema;
   maxSearches: number;
   fetchShops?: boolean;
+  /** Seiten des Produzenten (vom Etikett) gezielt per web_fetch abrufen – nur deren Domains. */
+  fetchUrls?: string[];
   /** false: ohne strict (keine Grammatik – für grosse Schemas; geprüft wird danach per Zod). */
   strict?: boolean;
 }): Anthropic.Beta.BetaToolUnion[] {
+  const producerHosts = [...new Set((options.fetchUrls ?? []).flatMap((u) => { try { return [new URL(u).hostname.replace(/^www\./, "")]; } catch { return []; } }))];
+  const fetchDomains = [...(options.fetchShops ? SHOP_DOMAINS : []), ...producerHosts];
+  const fetchUses = (options.fetchShops ? MAX_SHOP_FETCHES : 0) + Math.min(2, producerHosts.length * 2);
   return [
     // maxSearches 0: ohne Websuche (z. B. nur schätzen, wenn derselbe Wein eben schon gesucht wurde).
     ...(options.maxSearches > 0 ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: options.maxSearches, user_location: SWISS_LOCATION }] : []),
-    ...(options.fetchShops
-      ? [{ type: "web_fetch_20260209" as const, name: "web_fetch" as const, max_uses: MAX_SHOP_FETCHES, allowed_domains: [...SHOP_DOMAINS] }]
+    ...(fetchDomains.length
+      ? [{ type: "web_fetch_20260209" as const, name: "web_fetch" as const, max_uses: fetchUses, allowed_domains: [...new Set(fetchDomains)] }]
       : []),
     {
       name: options.toolName,
@@ -295,6 +334,8 @@ export async function webResearch<T>(options: {
   pages?: { url: string; title: string; text: string }[];
   /** Shops ohne Treffer: Datenblatt per web_fetch (nur Shop-Domains) suchen lassen. */
   fetchShops?: boolean;
+  /** Seiten des Produzenten (vom Etikett): per web_fetch abrufen lassen (nur deren Domains). */
+  fetchUrls?: string[];
   /** Höchstens so viele Durchgänge (pause_turn der Suchschleife); Standard 4. */
   maxRounds?: number;
   /** Höchstens so viele Ausgabe-Tokens je Runde; Standard RESEARCH_MAX_TOKENS. */
@@ -345,7 +386,7 @@ async function runWebResearch<T>(options: Parameters<typeof webResearch<T>>[0]):
   // festen Teils (Tools, Beilagen, Prompt), in Folgerunden (pause_turn, Nachfrage) wandert er mit
   // dem Verlauf mit. Mit Beilagen zusätzlich ein fester Marker am Ende des Prompts (bleibt in
   // Folgerunden stehen, auch wenn der Verlauf über das 20-Block-Fenster hinauswächst).
-  const cache = options.maxSearches > 0 || Boolean(options.fetchShops);
+  const cache = options.maxSearches > 0 || Boolean(options.fetchShops) || Boolean(options.fetchUrls?.length);
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     {
       role: "user",
@@ -430,6 +471,10 @@ export const EnrichmentSchema = WineProposalSchema.pick({
     )
     .describe("Je angefragtem Jahrgang ein Eintrag"),
   sources: z.array(z.string()).describe("URLs der verwendeten Quellen"),
+  // Für den Prüfschritt der Namen (nicht nullable: leer bzw. unclear = unbekannt).
+  wine_name: z.string().describe("Name der Cuvée, wie ihn die Quellen für genau diesen Wein nennen (die offizielle Seite des Produzenten geht vor); leer = unbekannt").catch(""),
+  wine_color: z.enum(["white", "rose", "red", "unclear"]).describe("Farbe des Weins, den die Quellen beschreiben; unclear = nicht genannt").catch("unclear"),
+  official_source: z.string().describe("URL der offiziellen Seite des Produzenten unter den Quellen (eigene Domain bzw. QR-Code-Seite); leer = keine").catch(""),
 });
 
 export type DrinkWindow = { from: number | null; until: number | null };
@@ -461,6 +506,8 @@ export type WineResearch = {
   fields: Partial<Pick<WineProposal, EnrichableField>>;
   vintages: { year: number | null; drink: DrinkWindow; grapes: GrapeShare[] }[];
   sources: string[];
+  /** Was die Quellen beschreiben (für den Prüfschritt): Name der Cuvée, Farbe, offizielle Seite. */
+  described?: { name: string | null; color: WineColor; official: string | null };
 };
 
 export type WineResearchInput = {
@@ -476,6 +523,8 @@ export type WineResearchInput = {
   /** Shops ohne Treffer: Datenblatt per web_fetch suchen lassen (Hinweis im Prompt: fetchNote). */
   fetchShops?: boolean;
   fetchNote?: string;
+  /** Adressen des Produzenten vom Etikett: gezielt abrufen (web_fetch), gehen vor. */
+  producerUrls?: string[];
 };
 
 /**
@@ -489,7 +538,8 @@ export function wineResearchRules(input: WineResearchInput) {
 ${input.vintages.map((v) => `- Jahrgang ${label(v.year)}: Trinkfenster ab/bis, Rebsorten mit Prozent${v.knownGrapes.length ? ` (bei uns erfasst: ${v.knownGrapes.join(", ")})` : ""}`).join("\n")}
 Bei uns gespeichert (nur Kontext): ${JSON.stringify(input.wine)}
 Melde den Wert aus den Quellen, auch wenn er von unseren Angaben abweicht – wir vergleichen selbst.
-Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech Sheet) des Produzenten, sonst seriöse Händler oder Fachpresse. Gib nur an, was die Quellen für genau diesen Wein belegen; sonst null bzw. leere Liste.
+Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech Sheet) des Produzenten, sonst seriöse Händler oder Fachpresse. Ist unter den Quellen eine offizielle Seite des Produzenten (eigene Domain, QR-Code-Seite), gelten deren Weinname, Rebsortenanteile und Herkunft vor Händlerseiten. Gib nur an, was die Quellen für genau diesen Wein belegen (gleiche Cuvée, gleiche Farbe – ein Rosé ist nicht der weisse Wein derselben Linie); sonst null bzw. leere Liste.
+- wine_name, wine_color: Name der Cuvée und Farbe, wie sie die Quellen für genau diesen Wein nennen; official_source: URL der offiziellen Seite des Produzenten, falls genutzt.
 - Für jeden genannten Jahrgang genau einen Eintrag in vintages.
 - Rebsorten: percent nur, wenn eine Quelle den Anteil für genau diesen Jahrgang belegt (Cuvées ändern sich); reinsortig = 100; sonst Rebsorten mit percent null. Internationale Schreibweise (Cabernet Sauvignon, Tempranillo …).
 - ${COUNTRY_HINT}.
@@ -498,7 +548,14 @@ Nutze bevorzugt die Website bzw. technische Datenblätter (Fiche technique, Tech
 
 /** Hinweise zu Beilagen der Stammdaten-Recherche (Datenblätter, Shops, web_fetch). */
 export const wineResearchNotes = (input: WineResearchInput) =>
-  `${input.documentsNote ?? ""}${input.pagesNote ?? ""}${input.fetchShops ? (input.fetchNote ?? "") : ""}`;
+  `${input.documentsNote ?? ""}${input.pagesNote ?? ""}${input.fetchShops ? (input.fetchNote ?? "") : ""}${producerUrlsNote(input.producerUrls)}`;
+
+/** Hinweis im Prompt: aufgedruckte Seiten des Produzenten zuerst abrufen. */
+export function producerUrlsNote(urls: string[] | undefined) {
+  return urls?.length
+    ? `\nAuf dem Etikett steht die Seite des Produzenten: ${urls.join(", ")}. Rufe sie zuerst mit web_fetch ab (bzw. die Seite dieses Weins dort); sie ist die offizielle Quelle und geht vor.`
+    : "";
+}
 
 /** Höchstens so viele Websuchen für die Stammdaten (mehr Jahrgänge → etwas mehr). */
 export const wineResearchSearches = (input: Pick<WineResearchInput, "vintages">) => Math.min(8, 3 + input.vintages.length);
@@ -529,7 +586,13 @@ export function readWineResearch(found: z.infer<typeof EnrichmentSchema> | null,
   // Ein Jahrgang: Shop-Adressen mit anderem Jahrgang (bzw. Datenblatt ohne Jahrgang) nicht als Quelle.
   const single = input.vintages.length === 1 ? input.vintages[0].year : undefined;
   const sources = single === undefined ? found.sources : found.sources.filter((s) => shopSourceAllowed(s, single));
-  return { fields, vintages: result, sources: cleanSources(sources) };
+  const official = typeof found.official_source === "string" && /^https?:\/\//.test(found.official_source) ? found.official_source.slice(0, 300) : null;
+  return {
+    fields,
+    vintages: result,
+    sources: cleanSources(official && !sources.includes(official) ? [official, ...sources] : sources),
+    described: { name: found.wine_name?.trim().slice(0, 200) || null, color: found.wine_color ?? "unclear", official },
+  };
 }
 
 /**
@@ -546,6 +609,7 @@ export async function researchWineWeb(input: WineResearchInput): Promise<WineRes
     documents: input.documents,
     pages: input.pages,
     fetchShops: input.fetchShops,
+    fetchUrls: input.producerUrls,
     toolDescription: "Meldet die per Websuche gefundenen Angaben zum Wein samt Quellen-URLs.",
     schema: EnrichmentSchema,
     maxSearches: wineResearchSearches(input),
@@ -557,18 +621,21 @@ export async function researchWineWeb(input: WineResearchInput): Promise<WineRes
  * Erfassung (Bot): leere Stammdaten, Trinkfenster und Rebsorten mit % des Jahrgangs in
  * einem Durchgang. Vorhandene Angaben bleiben. grapes = null: keine gesucht/gefunden.
  */
-export async function enrichFromWeb(proposal: WineProposal): Promise<{
+export async function enrichFromWeb(proposal: WineProposal, options: { producerUrls?: string[] } = {}): Promise<{
   proposal: WineProposal;
   filled: EnrichableField[];
   sources: string[];
   drink: DrinkWindow;
   grapes: { shares: GrapeShare[]; sources: string[] } | null;
+  /** Was die Quellen beschreiben (Name der Cuvée, Farbe, offizielle Seite) – für den Prüfschritt. */
+  described?: WineResearch["described"];
 }> {
   const none = { proposal, filled: [], sources: [], drink: { from: null, until: null }, grapes: null };
   const missing = missingEnrichableFields(proposal);
   const found = await researchWineWeb({
     wine: proposal,
     vintages: [{ year: proposal.vintage_year, knownGrapes: proposal.grape_shares.map((g) => g.grape) }],
+    ...(options.producerUrls?.length ? { producerUrls: options.producerUrls } : {}),
   });
   if (!found) return none;
   // Bei der Erfassung nur Leeres ergänzen; Etikett bzw. bekannter Wein gehen vor.
@@ -581,12 +648,13 @@ export async function enrichFromWeb(proposal: WineProposal): Promise<{
     sources: found.sources,
     drink: vintage?.drink ?? { from: null, until: null },
     grapes: vintage?.grapes.length && !hasCompletePercents(proposal.grape_shares) ? { shares: vintage.grapes, sources: found.sources } : null,
+    described: found.described,
   };
 }
 
 const TEXT_SYSTEM = `Du erfasst Weineinkäufe für eine private Weinsammlung in der Schweiz aus einer kurzen Nachricht, z. B. „Pintia 2019, 6 Flaschen, Weinkeller, 66 Franken bei Mövenpick“.
 Übernimm nur, was in der Nachricht steht oder sich eindeutig daraus ergibt; erfinde nichts.
-- name: Weinname ohne Jahrgang. ${NAME_RULE} ${ESTATE_NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
+- name: Weinname ohne Jahrgang. ${CUVEE_NAME_RULE} ${NAME_RULE} ${ESTATE_NAME_RULE} ${FULL_NAME_RULE} ${SPIRIT_NAME_RULE} producer nur, wenn genannt (sonst null – wird später recherchiert).
 - type, country, grape_shares, alcohol_content, bottle_size_ml nur, wenn genannt bzw. eindeutig (z. B. „Magnum“ = 1500, „50 cl“ = 500). ${SIZE_ALCOHOL_RULE}
 - ${COUNTRY_HINT}.
 - ${PRODUCER_HINT}.

@@ -6,7 +6,7 @@
 
 import { foldText } from "@/lib/text/fold";
 import { brandFromProducer, brandInName } from "@/lib/research/price-match";
-import { sameProducer } from "@/lib/producers/match";
+import { sameProducer, stripProducerFromName } from "@/lib/producers/match";
 
 /** Qualitäts-/Reifestufen und Gattungswörter – allein kein vollständiger Weinname. */
 const GENERIC = new Set([
@@ -46,6 +46,18 @@ export function completeWineName(name: string | null, producer: string | null): 
   if (!name || !producer?.trim() || !isGenericName(name)) return name;
   const b = brand(producer);
   return b ? `${b} ${name.trim()}` : name;
+}
+
+/**
+ * Wein: Produzent bzw. eine Variante davon vorne im Namen weg („DAOU Reserve Cabernet Sauvignon“,
+ * Produzent DAOU Vineyards → „Reserve Cabernet Sauvignon“) – ausser es bliebe nur eine Stufe bzw.
+ * ein Gattungswort („Legaris Reserva“ bleibt) oder nichts. Spirituosen: unverändert (Marke gehört
+ * dort zum Namen, siehe completeSpiritName).
+ */
+export function tidyWineName(name: string | null, producer: string | null, type?: string | null): string | null {
+  if (!name || type === "spirit") return name;
+  const rest = stripProducerFromName(name, producer);
+  return rest && rest !== name && !isGenericName(rest) ? rest : name;
 }
 
 /** Rechtsformen und „&“ – zählen beim Produzenten nicht als Wort. */

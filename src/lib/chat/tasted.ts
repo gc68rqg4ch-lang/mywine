@@ -40,6 +40,7 @@ import { TASTED_WINDOW_MS, announcesTasting, parseEncounterPrice } from "./taste
 import { looksLikeNewConcern, strongNewConcern, supersede } from "./pending";
 import { T } from "@/lib/bot/texts";
 import { placeFromText } from "@/lib/edit/places";
+import { harmonizeWine } from "@/lib/producers/load";
 import { PLACE_KIND_LABELS, type PlaceKind } from "@/lib/edit/types";
 
 export const TASTED_SOURCE = "telegram_tasted";
@@ -421,13 +422,14 @@ export async function startTastedFromPhoto(
     console.error("caption parse failed", error);
     return null;
   }) : null;
-  const proposal: WineProposal = {
+  // Produzent in der gespeicherten Schreibweise, nicht vorne im Weinnamen (wie beim Einbuchen).
+  const proposal: WineProposal = await harmonizeWine(db, {
     ...recognition.proposal,
     name: recognition.proposal.name ?? fromCaption?.proposal.name ?? null,
     producer: recognition.proposal.producer ?? fromCaption?.proposal.producer ?? null,
     // Jahrgang im Bildtext genannt: gilt; sonst der vom Etikett – der wird bestätigt.
     vintage_year: fromCaption?.proposal.vintage_year ?? recognition.proposal.vintage_year,
-  };
+  });
   if (!proposal.name) {
     await sendMessage(chatId, T.labelUnreadable);
     return;
@@ -526,7 +528,9 @@ export async function startTastedText(chatId: number, text: string, jobId?: stri
 export async function processTastedText(jobId: string, chatId: number, text: string) {
   const db = createAdminClient();
   try {
-    const { proposal, tasting: t } = await parseTastedText(text, todayIso());
+    const parsed = await parseTastedText(text, todayIso());
+    const { tasting: t } = parsed;
+    const proposal = await harmonizeWine(db, parsed.proposal);
     if (!proposal.name) {
       await db.from("ingest_jobs").update({ status: "discarded", error: "kein Wein erkannt" }).eq("id", jobId);
       await sendMessage(chatId, T.noWineInTasted);

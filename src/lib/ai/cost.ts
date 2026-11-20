@@ -26,12 +26,13 @@ export const FALLBACK_PRICE = MODEL_PRICES["claude-opus-5-5"];
 /** USD pro Websuche (10 USD pro 1000). */
 export const WEB_SEARCH_USD = 10 / 1000;
 
-export type Purpose = "recognize" | "chat" | "research_wine" | "research_taste" | "research_wine_taste" | "research_window" | "research_keep" | "research_price" | "daily_note" | "other";
-export const PURPOSES: readonly Purpose[] = ["recognize", "chat", "research_wine", "research_taste", "research_wine_taste", "research_window", "research_keep", "research_price", "daily_note", "other"];
+export type Purpose = "recognize" | "label_check" | "chat" | "research_wine" | "research_taste" | "research_wine_taste" | "research_window" | "research_keep" | "research_price" | "daily_note" | "other";
+export const PURPOSES: readonly Purpose[] = ["recognize", "label_check", "chat", "research_wine", "research_taste", "research_wine_taste", "research_window", "research_keep", "research_price", "daily_note", "other"];
 
 /** Anzeige auf /recherche. */
 export const PURPOSE_LABELS: Record<Purpose, string> = {
   recognize: "Erkennung (Foto/Text)",
+  label_check: "Prüfung der Namen (Einbuchen)",
   chat: "Chat mit Antoine",
   research_wine: "Recherche Stammdaten",
   research_taste: "Recherche Geschmacksprofil",

@@ -52,8 +52,13 @@ import {
   sizeKeyboard,
   vendorKeyboard,
   wineSummaryLines,
+  callbackData,
+  nameCheckKeyboard,
 } from "./messages";
-import { enrichFromWeb, parseTextEntry, type RecognitionResult } from "./recognize";
+import { enrichFromWeb, parseTextEntry, type LabelImage, type RecognitionResult } from "./recognize";
+import { checkLabelNames, decideNameCheck, type NameCheckInput } from "./name-check";
+import { needsNameCheck } from "./name-decision";
+import { loadLabelImages } from "./images";
 import { mainOptions, spiritStart, storeSpiritFields } from "./spirit-flow";
 import { scheduleSpiritResearch } from "@/lib/research/spirit-auto";
 import { scheduleOpenKeep } from "@/lib/research/open-keep-auto";
@@ -61,7 +66,7 @@ import { releaseHeldPriceQuestions, schedulePriceSearch, updateItemPrices } from
 import type { SpiritCategory } from "@/lib/spirits/categories";
 import { needsVintage, type IngestState, type IngestStep, type WineProposal } from "./schema";
 import { completeWineName } from "./wine-names";
-import { resolveProducer } from "@/lib/producers/load";
+import { harmonizeWine, resolveProducer } from "@/lib/producers/load";
 import {
   createInventoryItem,
   findSimilarWines,
@@ -143,84 +148,182 @@ export async function continuePhotoPurchase(
   /** Bildtext des Albums: „Geschenk von Marc“ wird direkt übernommen. */
   caption?: string | null,
   /** Erste Frage an die Person (ohne vorherige Rückfrage): weitere Fotos innert 15 s gehören dazu. */
-  options: { firstQuestion?: boolean } = {},
+  options: { firstQuestion?: boolean; images?: LabelImage[] } = {},
 ) {
   try {
-    let proposal = recognition.proposal;
-    let enriched: { filled: IngestState["recognition"]["enriched_fields"]; sources: string[] } = { filled: [], sources: [] };
+    const images = options.images ?? (await jobImages(db, jobId));
+    const { state, known, decision } = await photoProposal(db, recognition, caption, { ...options, images });
 
-    // Zuerst gegen bestehende Weine abgleichen; ein Durchgang Websuche für alles, was fehlt
-    // (Stammdaten, Trinkfenster, Rebsorten mit %) – auch bei bekannten Weinen; Vorhandenes bleibt.
-    const known = await findWine(db, proposal.name, proposal.producer);
-    if (known) proposal = mergeWithKnownWine(proposal, known);
-    // Spirituose (bzw. unsicher): keine Wein-Recherche (Trinkfenster, Rebsorten) – die Recherche
-    // der Spirituose läuft nach dem Einbuchen im Hintergrund.
-    const spirit = await spiritStart(db, proposal, recognition.spirit, known);
-    proposal = spirit.proposal;
-    const web =
-      spirit.spirit || spirit.unsure
-        ? null
-        : await enrichFromWeb(proposal).catch((error) => {
-            console.error("web enrichment failed", error);
-            return null;
-          });
-    if (web) {
-      proposal = web.proposal;
-      enriched = { filled: web.filled, sources: web.sources };
+    // Prüfschritt meldet einen Widerspruch bzw. eine Korrektur: erst die Variante wählen lassen.
+    if (decision.ask) {
+      const asked: IngestState = {
+        ...state,
+        step: "name_check",
+        photo_join: undefined,
+        name_check: { variants: decision.variants, reason: decision.reason },
+        recognition: { ...state.recognition, confidence: Math.min(state.recognition.confidence, decision.maxConfidence) },
+      };
+      const { error } = await db
+        .from("ingest_jobs")
+        .update({
+          status: "needs_review",
+          extracted: toJson(asked),
+          confidence: Math.round(asked.recognition.confidence * 100) / 100,
+          matched_wine_id: known?.id ?? null,
+        })
+        .eq("id", jobId);
+      if (error) throw error;
+      await sendMessage(chatId, T.nameCheckAsk(escapeHtml(decision.reason)), nameCheckKeyboard(jobId, decision.variants));
+      return;
     }
-    const grapes = spirit.spirit || spirit.unsure ? { shares: proposal.grape_shares, source: null, sources: [] as string[] } : await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
-    proposal = { ...proposal, grape_shares: grapes.shares };
-
-    const gift = giftInText(caption);
-    const captionQuantity = quantityInText(caption);
-    // Preise im Bildtext: ein Preis = bezahlt; „49 statt 66“ = beide; „Normalpreis 66“ = nur der.
-    const captionPrices = gift ? { paid: null, regular: null } : pricesInText(caption);
-    const state: IngestState = {
-      step: "review",
-      intent: "bought",
-      ...spirit.patch,
-      ...(options.firstQuestion ? { photo_join: true } : {}),
-      ...(gift ? giftPatch(gift.from, giftValueInText(caption)) : {}),
-      // Anzahl im Bildtext („6 Flaschen“): nicht nochmals fragen.
-      ...(captionQuantity ? { quantity: captionQuantity } : {}),
-      ...(captionPrices.paid != null ? { price: captionPrices.paid } : {}),
-      ...(captionPrices.regular != null ? { regular_price: captionPrices.regular } : {}),
-      proposal,
-      // Jahrgang nicht sicher gelesen → vor dem Speichern nachfragen.
-      ...(proposal.vintage_year != null && !recognition.vintageCertain ? { vintage_uncertain: true } : {}),
-      grape_source: grapes.source,
-      drink_from_year: web?.drink.from ?? null,
-      drink_until_year: web?.drink.until ?? null,
-      // Ablaufdatum vom Etikett, sonst aus dem Bildtext („haltbar bis 09/2028“).
-      ...bestBeforeState(recognition.bestBefore ?? (bestBeforeInText(caption) && toBestBeforeValue(bestBeforeInText(caption)!))),
-      recognition: {
-        model: recognition.model,
-        confidence: recognition.confidence,
-        notes: recognition.notes,
-        enriched_fields: enriched.filled,
-        sources: [...enriched.sources, ...grapes.sources].slice(0, 8),
-        ...(recognition.imageSides ? { image_sides: recognition.imageSides } : {}),
-      },
-    };
-
-    // Kein exakter Treffer, aber ein ähnlicher bestehender Wein (andere Schreibweise): erst fragen.
-    const similar = known ? [] : await findSimilarWines(db, proposal);
-    const { error } = await db
-      .from("ingest_jobs")
-      .update({
-        status: "needs_review",
-        extracted: toJson(similar.length ? { ...state, step: "similar", similar_ids: similar.map((w) => w.id) } : state),
-        confidence: Math.round(recognition.confidence * 100) / 100,
-        matched_wine_id: known?.id ?? null,
-      })
-      .eq("id", jobId);
-    if (error) throw error;
-
-    if (similar.length) await askSimilar(chatId, jobId, similar, proposal.name);
-    else await sendMessage(chatId, proposalMessage(state, Boolean(known), await summaryExtras(db, known?.id ?? null, state)), reviewKeyboard(jobId));
+    await presentProposal(db, jobId, chatId, state, known, recognition.confidence);
   } catch (error) {
     await failJob(db, jobId, chatId, "Die Erkennung ist fehlgeschlagen", error);
   }
+}
+
+/** Fotos einer Erfassung (photo_paths) – für den Prüfschritt; Fehler: keine (ohne Prüfung weiter). */
+async function jobImages(db: AdminClient, jobId: string): Promise<LabelImage[]> {
+  try {
+    const { data } = await db.from("ingest_jobs").select("photo_paths").eq("id", jobId).maybeSingle();
+    return data?.photo_paths?.length ? await loadLabelImages(db, data.photo_paths) : [];
+  } catch (error) {
+    console.error("loading photos for name check failed", error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
+/**
+ * Vorschlag aus der Erkennung berechnen (ohne zu speichern oder zu senden – auch für den
+ * Testlauf): Produzent einheitlich, Abgleich mit bestehenden Weinen, Websuche (Herstellerseite
+ * vom Etikett zuerst), Rebsorten, Prüfschritt der Namen.
+ */
+export async function photoProposal(
+  db: AdminClient,
+  recognition: RecognitionResult,
+  caption: string | null | undefined,
+  options: { firstQuestion?: boolean; images?: LabelImage[] } = {},
+) {
+  // Produzent in der gespeicherten Schreibweise, nicht vorne im Weinnamen (vor dem Abgleich).
+  let proposal = await harmonizeWine(db, recognition.proposal);
+  let enriched: { filled: IngestState["recognition"]["enriched_fields"]; sources: string[] } = { filled: [], sources: [] };
+
+  // Zuerst gegen bestehende Weine abgleichen; ein Durchgang Websuche für alles, was fehlt
+  // (Stammdaten, Trinkfenster, Rebsorten mit %) – auch bei bekannten Weinen; Vorhandenes bleibt.
+  const known = await findWine(db, proposal.name, proposal.producer);
+  if (known) proposal = mergeWithKnownWine(proposal, known);
+  // Spirituose (bzw. unsicher): keine Wein-Recherche (Trinkfenster, Rebsorten) – die Recherche
+  // der Spirituose läuft nach dem Einbuchen im Hintergrund.
+  const spirit = await spiritStart(db, proposal, recognition.spirit, known);
+  proposal = spirit.proposal;
+  const web =
+    spirit.spirit || spirit.unsure
+      ? null
+      : await enrichFromWeb(proposal, { producerUrls: recognition.producerUrls }).catch((error) => {
+          console.error("web enrichment failed", error);
+          return null;
+        });
+  if (web) {
+    // Recherchierter Produzent (nur wenn er fehlte): ebenfalls in der gespeicherten Schreibweise.
+    proposal = await harmonizeWine(db, web.proposal);
+    enriched = { filled: web.filled, sources: web.sources };
+  }
+  const grapes = spirit.spirit || spirit.unsure ? { shares: proposal.grape_shares, source: null, sources: [] as string[] } : await resolveGrapes(db, proposal, known?.id ?? null, web ? web.grapes : undefined);
+  proposal = { ...proposal, grape_shares: grapes.shares };
+
+  const gift = giftInText(caption);
+  const captionQuantity = quantityInText(caption);
+  // Preise im Bildtext: ein Preis = bezahlt; „49 statt 66“ = beide; „Normalpreis 66“ = nur der.
+  const captionPrices = gift ? { paid: null, regular: null } : pricesInText(caption);
+  const sources = [...enriched.sources, ...grapes.sources].slice(0, 8);
+  const state: IngestState = {
+    step: "review",
+    intent: "bought",
+    ...spirit.patch,
+    ...(options.firstQuestion ? { photo_join: true } : {}),
+    ...(gift ? giftPatch(gift.from, giftValueInText(caption)) : {}),
+    // Anzahl im Bildtext („6 Flaschen“): nicht nochmals fragen.
+    ...(captionQuantity ? { quantity: captionQuantity } : {}),
+    ...(captionPrices.paid != null ? { price: captionPrices.paid } : {}),
+    ...(captionPrices.regular != null ? { regular_price: captionPrices.regular } : {}),
+    proposal,
+    // Jahrgang nicht sicher gelesen → vor dem Speichern nachfragen.
+    ...(proposal.vintage_year != null && !recognition.vintageCertain ? { vintage_uncertain: true } : {}),
+    grape_source: grapes.source,
+    drink_from_year: web?.drink.from ?? null,
+    drink_until_year: web?.drink.until ?? null,
+    // Ablaufdatum vom Etikett, sonst aus dem Bildtext („haltbar bis 09/2028“).
+    ...bestBeforeState(recognition.bestBefore ?? (bestBeforeInText(caption) && toBestBeforeValue(bestBeforeInText(caption)!))),
+    ...(recognition.labelNote ? { label_note: recognition.labelNote } : {}),
+    recognition: {
+      model: recognition.model,
+      confidence: recognition.confidence,
+      notes: recognition.notes,
+      enriched_fields: enriched.filled,
+      sources,
+      ...(recognition.imageSides ? { image_sides: recognition.imageSides } : {}),
+    },
+  };
+
+  // Prüfschritt der Namen (nur Wein mit Fotos): ein kurzer Aufruf mit Sonnet 5.5.
+  const input: NameCheckInput = {
+    proposal,
+    color: recognition.color ?? "unclear",
+    labelNote: recognition.labelNote ?? null,
+    described: web?.described ?? null,
+    sources,
+  };
+  const check = needsNameCheck(proposal) && options.images?.length ? await checkLabelNames(options.images, input) : null;
+  const decision = needsNameCheck(proposal) ? decideNameCheck(input, check) : ({ ask: false } as const);
+  return { state, known, check, decision, described: web?.described ?? null };
+}
+
+/** Vorschlag zeigen: ähnlicher bestehender Wein → „Meinst du …?“, sonst die Zusammenfassung. */
+async function presentProposal(
+  db: AdminClient,
+  jobId: string,
+  chatId: number,
+  state: IngestState,
+  known: Awaited<ReturnType<typeof findWine>>,
+  confidence: number,
+) {
+  // Kein exakter Treffer, aber ein ähnlicher bestehender Wein (andere Schreibweise): erst fragen.
+  const similar = known ? [] : await findSimilarWines(db, state.proposal);
+  const { error } = await db
+    .from("ingest_jobs")
+    .update({
+      status: "needs_review",
+      extracted: toJson(similar.length ? { ...state, step: "similar", similar_ids: similar.map((w) => w.id) } : state),
+      confidence: Math.round(confidence * 100) / 100,
+      matched_wine_id: known?.id ?? null,
+    })
+    .eq("id", jobId);
+  if (error) throw error;
+
+  if (similar.length) await askSimilar(chatId, jobId, similar, state.proposal.name);
+  else await sendMessage(chatId, proposalMessage(state, Boolean(known), await summaryExtras(db, known?.id ?? null, state)), reviewKeyboard(jobId));
+}
+
+/**
+ * Prüfschritt: gewählte bzw. getippte Variante übernehmen (Produzent einheitlich), neu mit den
+ * bestehenden Weinen abgleichen und den Vorschlag zeigen – wie ohne Rückfrage.
+ */
+export async function chooseCheckedName(db: AdminClient, job: IngestJob, chatId: number, from: IngestStep, variant: { name: string; producer: string | null }) {
+  const state = jobState(job)!;
+  const name = variant.name.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!name) return;
+  let proposal = await harmonizeWine(db, { ...state.proposal, name: completeWineName(name, variant.producer ?? state.proposal.producer), producer: variant.producer ?? state.proposal.producer });
+  const known = await findWine(db, proposal.name, proposal.producer);
+  if (known) proposal = mergeWithKnownWine(proposal, known);
+  const next = await advanceJob(db, job, from, { step: "review", proposal, name_check: undefined }, { matched_wine_id: known?.id ?? null });
+  if (!next) return;
+  await presentProposal(db, job.id, chatId, jobState(next)!, known, state.recognition.confidence);
+}
+
+/** „✏️ Selbst eingeben“ beim Prüfschritt: auf den Namen warten. */
+export async function askCheckedNameText(db: AdminClient, job: IngestJob, chatId: number) {
+  const next = await advanceJob(db, job, "name_check", { step: "name_input" });
+  if (next) await sendMessage(chatId, T.nameCheckType, { inline_keyboard: [[{ text: "✖️ Abbrechen", callback_data: callbackData("drop", job.id) }]] });
 }
 
 // ---------------------------------------------------------------------------
@@ -543,6 +646,7 @@ export async function saveJob(job: IngestJob, chatId: number) {
     await ensureVintage(db, wineId, state.proposal.vintage_year).catch((error) => console.error("ensure vintage failed", error));
     await storeDrinkWindow(db, wineId, state);
     await storeBestBefore(db, wineId, state);
+    await storeLabelNote(db, wineId, state);
     // Händler aus dem Text erst jetzt anlegen bzw. zuordnen.
     const vendor =
       state.vendor_id === undefined && state.vendor_name ? await resolveVendor(db, state.vendor_name, { similar: true }) : null;
@@ -783,7 +887,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
   const db = createAdminClient();
   try {
     const parsed = await parseTextEntry(text);
-    let proposal = parsed.proposal;
+    let proposal = await harmonizeWine(db, parsed.proposal);
     if (!proposal.name) {
       await db.from("ingest_jobs").update({ status: "discarded", error: "kein Wein erkannt" }).eq("id", jobId);
       await sendMessage(
@@ -811,7 +915,7 @@ export async function processTextJob(jobId: string, chatId: number, text: string
             return null;
           });
     if (web) {
-      proposal = web.proposal;
+      proposal = await harmonizeWine(db, web.proposal);
       enriched = { ...enriched, enriched_fields: web.filled, sources: web.sources };
       drink = web.drink;
     }
@@ -938,7 +1042,7 @@ export async function setProducer(db: AdminClient, job: IngestJob, chatId: numbe
   const state = jobState(job)!;
   const cleaned = producer.replace(/\s+/g, " ").trim().slice(0, 120);
   // Nur Stufe („Reserva“) → jetzt mit Marke („Legaris Reserva“).
-  let proposal: WineProposal = { ...state.proposal, name: completeWineName(state.proposal.name, cleaned), producer: cleaned };
+  let proposal: WineProposal = await harmonizeWine(db, { ...state.proposal, name: completeWineName(state.proposal.name, cleaned), producer: cleaned });
   const known = await findWine(db, proposal.name, proposal.producer);
   if (known) proposal = mergeWithKnownWine(proposal, known);
   const similar = known || state.new_wine ? [] : await findSimilarWines(db, proposal);
@@ -1058,6 +1162,28 @@ export async function summaryExtras(db: AdminClient, wineId: string | null, stat
   if (until != null && until !== bb.year) return [T.bestBeforeKeepsUntil(until, formatBestBefore(bb))];
   if (until == null && from != null && from > bb.year) return [T.bestBeforeKeepsFrom(from, formatBestBefore(bb))];
   return [];
+}
+
+/**
+ * Herkunfts-/Lagenangabe vom Etikett, die kein Name ist („Vignoble de la Rivière“): an die Notiz
+ * des Jahrgangs hängen (nie doppelt, nichts überschreiben). Fehler: nur melden.
+ */
+export async function storeLabelNote(db: AdminClient, wineId: string, state: Pick<IngestState, "label_note" | "proposal">) {
+  const note = state.label_note?.trim();
+  if (!note) return;
+  const year = state.proposal.vintage_year;
+  try {
+    const rowId = await ensureVintage(db, wineId, year);
+    const { data: row, error } = await db.from("wine_vintages").select("notes").eq("id", rowId).maybeSingle();
+    if (error) throw error;
+    const notes = appendNote(row?.notes, T.labelNote(note));
+    if (notes !== row?.notes) {
+      const { error: updateError } = await db.from("wine_vintages").update({ notes }).eq("id", rowId);
+      if (updateError) throw updateError;
+    }
+  } catch (error) {
+    console.error("storing label note failed", error instanceof Error ? error.message : error);
+  }
 }
 
 /**

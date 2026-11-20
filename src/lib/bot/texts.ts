@@ -258,6 +258,15 @@ export const T = {
   vendorAll: (page: number, pages: number) => (pages > 1 ? `Alle Händler (Seite ${page + 1} von ${pages}):` : "Alle Händler:"),
   vendorSimilar: (existing: string, typed: string) => `Meinst du <b>${existing}</b>? Oder soll ich «${typed}» als neuen Händler anlegen?`,
   vendorRetry: "Wie heisst der Händler? Schreib mir einfach den Namen – oder tippe „Überspringen“.",
+  /** Prüfschritt der Namen: Widerspruch bzw. Korrektur – welche Variante stimmt? (Werte schon entschärft) */
+  nameCheckAsk: (reason: string) => `🔎 Beim Namen bin ich nicht sicher: ${reason}\nWelcher stimmt?`,
+  nameCheckColor: (photo: string, sources: string) => `Das Etikett wirkt ${photo}, die Quellen beschreiben aber einen ${sources}.`,
+  nameCheckCorrected: "Der zweite Blick ergibt einen anderen Namen.",
+  nameCheckSelf: "✏️ Selbst eingeben",
+  /** Notiz des Jahrgangs: Herkunfts-/Lagenangabe vom Etikett (kein Weinname). */
+  labelNote: (note: string) => `Etikett: ${note}`,
+  nameCheckType: "Wie heisst der Wein (ohne Produzent und Jahrgang)? Schreib mir einfach den Namen.",
+  nameCheckRetry: "Schreib mir bitte nur den Namen des Weins – oder tippe einen der Knöpfe.",
   producerAsk: "Von welchem Weingut ist er?",
   producerRetry: "Von welchem Weingut ist er? Der Name genügt.",
   restockAsk: "Diesen Wein mit diesem Jahrgang hast du schon im Bestand. Hast du nachgekauft?",
